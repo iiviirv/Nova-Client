@@ -26,9 +26,8 @@ import 'proxy_controller.dart';
 ///
 /// EventChannel `nova.proxy/events` emits maps:
 ///   * `{ "type": "state", "value": "connected" }`
-///   * `{ "type": "traffic", "up": <bps>, "down": <bps>,
-///        "upTotal": <bytes>, "downTotal": <bytes> }`
-///   * `{ "type": "error", "message": "<text>" }`
+///   * `{ "type": "traffic", "up": bps, "down": bps, "upTotal": bytes, "downTotal": bytes }`
+///   * `{ "type": "error", "message": "text" }`
 ///
 /// Until the native hosts ship, the app wires up [MockProxyController]; flip the
 /// instance in `main.dart` to switch over with zero UI changes.
