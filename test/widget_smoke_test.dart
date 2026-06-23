@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/app.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';

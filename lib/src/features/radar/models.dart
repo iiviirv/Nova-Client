@@ -1,6 +1,6 @@
-/// Data models for Nova Radar — the Cloudflare clean-IP scanner consolidated
-/// into Nova Client. Ported from the original NovaRadar Go backend
-/// (`IRNova/NovaRadar`: sources.go / scanner.go).
+// Data models for Nova Radar — the Cloudflare clean-IP scanner consolidated
+// into Nova Client. Ported from the original NovaRadar Go backend
+// (IRNova/NovaRadar: sources.go / scanner.go).
 
 enum SourceType { cidr, proxyip, domain }
 
