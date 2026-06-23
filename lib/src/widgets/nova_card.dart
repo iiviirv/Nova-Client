@@ -26,25 +26,20 @@ class NovaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    final BoxDecoration decoration = BoxDecoration(
-      color: raised ? nova.surface2 : nova.surface,
-      borderRadius: NovaRadii.cardR,
-      border: Border.all(color: borderColor ?? nova.border),
-    );
-
     final Widget body = Padding(padding: padding, child: child);
 
-    if (onTap == null) {
-      return DecoratedBox(decoration: decoration, child: body);
-    }
+    // Paint the surface on a Material (not a bare DecoratedBox) so that any
+    // ListTile/SwitchListTile descendants find a Material ancestor below the
+    // card's background — otherwise Flutter asserts their ink/background would
+    // be hidden by the card's colored box.
     return Material(
-      color: Colors.transparent,
-      borderRadius: NovaRadii.cardR,
-      child: InkWell(
+      color: raised ? nova.surface2 : nova.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: NovaRadii.cardR,
-        onTap: onTap,
-        child: Ink(decoration: decoration, child: body),
+        side: BorderSide(color: borderColor ?? nova.border),
       ),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? body : InkWell(onTap: onTap, child: body),
     );
   }
 }
