@@ -55,6 +55,41 @@ class RadarController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _binding = false;
+  bool get isBindingSubscription => _binding;
+
+  String? _bindError;
+  String? get bindError => _bindError;
+
+  /// Fetches [subUrl], derives the core config and exit colo, and binds them.
+  /// Best-effort: progress shows via [isBindingSubscription] and failures via
+  /// [bindError]. [fetch] overrides the transport (used in tests).
+  Future<void> bindSubscription(
+    String subUrl, {
+    SubscriptionFetcher? fetch,
+  }) async {
+    if (_binding || subUrl.isEmpty) return;
+    _binding = true;
+    _bindError = null;
+    notifyListeners();
+    try {
+      final NovaCoreConfig? cfg = await fetchCoreConfig(subUrl, fetch: fetch);
+      if (cfg == null) {
+        _bindError = 'empty';
+        _binding = false;
+        notifyListeners();
+        return;
+      }
+      final String colo = await fetchExitColo(fetch: fetch);
+      _binding = false;
+      applyCoreConfig(cfg, colo: colo);
+    } catch (e) {
+      _bindError = e.toString();
+      _binding = false;
+      notifyListeners();
+    }
+  }
+
   void attachPrefs(SharedPreferences prefs) {
     _prefs = prefs;
     _load();

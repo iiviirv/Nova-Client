@@ -62,6 +62,14 @@ class NovaStrings {
   String get ports => t('radar.ports');
   String get copyAll => t('radar.copyAll');
   String get latency => t('radar.latency');
+  String get subOffTitle => t('radar.sub.offTitle');
+  String get subOffBody => t('radar.sub.offBody');
+  String get subUse => t('radar.sub.use');
+  String get subNeedProfile => t('radar.sub.needProfile');
+  String get subOnTitle => t('radar.sub.onTitle');
+  String get subRefresh => t('radar.sub.refresh');
+  String get subConnecting => t('radar.sub.connecting');
+  String get subError => t('radar.sub.error');
 
   // ---- Common ----
   String get save => t('common.save');
@@ -104,6 +112,16 @@ class NovaStrings {
     'radar.ports': 'Ports',
     'radar.copyAll': 'Copy all',
     'radar.latency': 'Latency',
+    'radar.sub.offTitle': 'No subscription connected',
+    'radar.sub.offBody':
+        'Radar will export plain ip:port. Connect your Nova subscription to get '
+            'ready-to-import nodes named like the panel.',
+    'radar.sub.use': 'Use active subscription',
+    'radar.sub.needProfile': 'Add a subscription in Profiles first',
+    'radar.sub.onTitle': 'Using subscription',
+    'radar.sub.refresh': 'Refresh',
+    'radar.sub.connecting': 'Connecting',
+    'radar.sub.error': 'Could not load that subscription',
     'common.save': 'Save',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
@@ -145,6 +163,16 @@ class NovaStrings {
     'radar.ports': 'پورت‌ها',
     'radar.copyAll': 'کپی همه',
     'radar.latency': 'تأخیر',
+    'radar.sub.offTitle': 'اشتراکی متصل نیست',
+    'radar.sub.offBody':
+        'رادار فقط ip:port ساده می‌دهد. اشتراک نوای خود را وصل کنید تا نودهای '
+            'آماده‌ی ورود با نام‌گذاری پنل بگیرید.',
+    'radar.sub.use': 'استفاده از اشتراک فعال',
+    'radar.sub.needProfile': 'اول یک اشتراک در پروفایل‌ها اضافه کنید',
+    'radar.sub.onTitle': 'در حال استفاده از اشتراک',
+    'radar.sub.refresh': 'بازخوانی',
+    'radar.sub.connecting': 'در حال اتصال',
+    'radar.sub.error': 'بارگیری این اشتراک ممکن نشد',
     'common.save': 'ذخیره',
     'common.cancel': 'لغو',
     'common.reset': 'بازنشانی',

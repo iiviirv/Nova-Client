@@ -35,5 +35,14 @@ Future<void> main() async {
     theme.attachPrefs(prefs);
     profiles.attachPrefs(prefs);
     radar.attachPrefs(prefs);
+
+    // If a subscription is active, bind it to the Radar in the background so
+    // scans export ready-to-import nodes without the user lifting a finger.
+    final active = profiles.active;
+    if (active != null &&
+        active.isSubscription &&
+        (active.subscriptionUrl ?? '').isNotEmpty) {
+      radar.bindSubscription(active.subscriptionUrl!);
+    }
   });
 }
