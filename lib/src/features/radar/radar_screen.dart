@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/proxy/singbox/nova_naming.dart';
 import '../../core/util/format.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -37,6 +38,8 @@ class RadarScreen extends StatelessWidget {
               children: <Widget>[
                 _RadarHeader(s: s),
                 const SizedBox(height: NovaSpace.xl),
+                _SubscriptionBanner(radar: radar, s: s),
+                const SizedBox(height: NovaSpace.lg),
                 _ScanPanel(radar: radar, stats: stats, s: s),
                 const SizedBox(height: NovaSpace.lg),
                 _PortSelector(radar: radar, s: s),
@@ -73,6 +76,124 @@ class _RadarHeader extends StatelessWidget {
                 .bodyMedium
                 ?.copyWith(color: nova.muted)),
       ],
+    );
+  }
+}
+
+/// Connects the Radar to the active Nova subscription so scans export real,
+/// importable nodes (stamped into the subscription template and named like the
+/// panel) instead of bare `ip:port`.
+class _SubscriptionBanner extends StatelessWidget {
+  const _SubscriptionBanner({required this.radar, required this.s});
+  final RadarController radar;
+  final NovaStrings s;
+
+  /// The subscription URL to bind: the active profile if it's a subscription,
+  /// otherwise the first subscription profile that carries a URL.
+  String? _subUrl(BuildContext context) {
+    final profiles = NovaScope.of(context).profiles;
+    final active = profiles.active;
+    if (active != null &&
+        active.isSubscription &&
+        (active.subscriptionUrl ?? '').isNotEmpty) {
+      return active.subscriptionUrl;
+    }
+    for (final p in profiles.profiles) {
+      if (p.isSubscription && (p.subscriptionUrl ?? '').isNotEmpty) {
+        return p.subscriptionUrl;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final cfg = radar.coreConfig;
+    final String? subUrl = _subUrl(context);
+    final bool busy = radar.isBindingSubscription;
+
+    if (cfg != null) {
+      final String flag = coloToFlag(radar.exitColo).trim();
+      final String host =
+          flag.isEmpty ? cfg.workerHost : '$flag  ${cfg.workerHost}';
+      return NovaCard(
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.cloud_done_rounded, color: nova.success, size: 20),
+            const SizedBox(width: NovaSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(s.subOnTitle,
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(host,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: nova.muted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: NovaSpace.md),
+            if (subUrl != null)
+              NovaButton(
+                label: s.subRefresh,
+                icon: Icons.refresh_rounded,
+                variant: NovaButtonVariant.ghost,
+                loading: busy,
+                onPressed:
+                    busy ? null : () => radar.bindSubscription(subUrl),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.cloud_off_rounded, color: nova.muted, size: 20),
+              const SizedBox(width: NovaSpace.md),
+              Expanded(
+                child: Text(s.subOffTitle,
+                    style: Theme.of(context).textTheme.titleSmall),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(s.subOffBody,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.md),
+          NovaButton(
+            label: subUrl != null ? s.subUse : s.subNeedProfile,
+            icon: Icons.cloud_sync_rounded,
+            variant: NovaButtonVariant.secondary,
+            expand: true,
+            loading: busy,
+            onPressed: (subUrl != null && !busy)
+                ? () => radar.bindSubscription(subUrl)
+                : null,
+          ),
+          if (radar.bindError != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(s.subError,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: nova.danger)),
+          ],
+        ],
+      ),
     );
   }
 }
