@@ -1,0 +1,77 @@
+name: Build APK
+
+# Builds a sideloadable Android APK on demand and on every PR to main (so the
+# artifact is available without merging), and publishes it to a GitHub Release
+# when a v* tag is pushed.
+#
+# The release APK is signed with the debug key (the Flutter template's default),
+# which is fine for sideloaded testing — it installs after enabling "install
+# from unknown sources". Production builds should add a real signing config.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # needed to create/update releases on tag builds
+
+jobs:
+  build-apk:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org online.novaproxy --project-name nova_client .
+
+      - name: Add INTERNET permission and set app label
+        run: |
+          set -euo pipefail
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+            sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' "$MANIFEST"
+          fi
+          sed -i 's|android:label="nova_client"|android:label="Nova Client"|' "$MANIFEST"
+          echo "----- AndroidManifest.xml -----"
+          cat "$MANIFEST"
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Stage APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/nova-client.apk
+          ls -lh dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nova-client-apk
+          path: dist/nova-client.apk
+          if-no-files-found: error
+
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/nova-client.apk
+          generate_release_notes: true
