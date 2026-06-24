@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/proxy/subscription.dart';
 import 'models.dart';
 import 'scanner.dart';
 import 'sources.dart';
@@ -38,6 +39,21 @@ class RadarController extends ChangeNotifier {
   List<ScanResult> get results => List<ScanResult>.unmodifiable(_results);
 
   bool get isScanning => _scanner?.isScanning ?? false;
+
+  NovaCoreConfig? _coreConfig;
+  NovaCoreConfig? get coreConfig => _coreConfig;
+
+  String _exitColo = '';
+  String get exitColo => _exitColo;
+
+  /// Binds the active subscription's core config (and the exit colo used for
+  /// flagging) so scans emit real, importable nodes named like the worker.
+  /// Pass `null` to unbind and fall back to bare `ip:port#name` results.
+  void applyCoreConfig(NovaCoreConfig? config, {String colo = ''}) {
+    _coreConfig = config;
+    _exitColo = colo;
+    notifyListeners();
+  }
 
   void attachPrefs(SharedPreferences prefs) {
     _prefs = prefs;
@@ -116,7 +132,7 @@ class RadarController extends ChangeNotifier {
     _stats = const ScanStats(scanning: true);
     notifyListeners();
 
-    final scanner = NovaScanner();
+    final scanner = NovaScanner(coreConfig: _coreConfig, colo: _exitColo);
     _scanner = scanner;
     _statsSub = scanner.onStats.listen((s) {
       _stats = s;
