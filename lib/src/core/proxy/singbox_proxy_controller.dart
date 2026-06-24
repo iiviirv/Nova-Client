@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
+import 'singbox/share_link.dart';
+import 'singbox/singbox_config.dart';
 
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///
@@ -113,9 +115,20 @@ class SingboxProxyController extends ProxyController {
     _state = ProxyConnectionState.connecting;
     _lastError = null;
     notifyListeners();
+
+    final String config;
+    try {
+      config = _buildSingboxConfig(profile);
+    } on FormatException catch (e) {
+      _lastError = e.message;
+      _state = ProxyConnectionState.error;
+      notifyListeners();
+      return;
+    }
+
     try {
       await _control.invokeMethod<void>('start', <String, dynamic>{
-        'configJson': _buildSingboxConfig(profile),
+        'configJson': config,
       });
     } on PlatformException catch (e) {
       _lastError = e.message;
@@ -137,14 +150,22 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
-  /// Translates a [ProxyProfile] into a sing-box config document. The full
-  /// builder (outbound construction per protocol, DNS, routing rules, TUN
-  /// inbound) is the next integration step; the profile URI is passed through
-  /// so the native side can parse share links it already understands.
+  /// Translates a [ProxyProfile] into a sing-box config document: parse the
+  /// share link into a [ProxyNode], then build the full config (TUN inbound,
+  /// DNS, per-protocol outbound, rule-based routing). A profile that already
+  /// holds a full sing-box JSON config is passed through unchanged.
+  ///
+  /// Throws [FormatException] when the link can't be parsed.
   String _buildSingboxConfig(ProxyProfile profile) {
-    // Placeholder pass-through. Replaced by the structured config builder when
-    // the native core is wired up.
-    return profile.uri;
+    final String trimmed = profile.uri.trim();
+    if (profile.kind == ProxyKind.singboxConfig || trimmed.startsWith('{')) {
+      return trimmed;
+    }
+    final node = parseShareLink(trimmed);
+    if (node == null) {
+      throw const FormatException('Unsupported or invalid profile link');
+    }
+    return SingboxConfig.build(node);
   }
 
   @override
