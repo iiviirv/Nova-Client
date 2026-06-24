@@ -62,4 +62,35 @@ class ProxyNode {
   final String? grpcServiceName;
 
   bool get hasTls => tls;
+
+  /// Returns a copy with selected fields overridden. Used to stamp a Radar
+  /// clean IP into a subscription template node: keep every protocol/transport
+  /// field and only swap the address, port, and display name.
+  ProxyNode copyWith({
+    String? server,
+    int? port,
+    String? tag,
+    String? sni,
+    String? wsHost,
+  }) {
+    return ProxyNode(
+      protocol: protocol,
+      server: server ?? this.server,
+      port: port ?? this.port,
+      tag: tag ?? this.tag,
+      uuid: uuid,
+      password: password,
+      method: method,
+      tls: tls,
+      sni: sni ?? this.sni,
+      allowInsecure: allowInsecure,
+      alpn: alpn,
+      fingerprint: fingerprint,
+      flow: flow,
+      network: network,
+      wsPath: wsPath,
+      wsHost: wsHost ?? this.wsHost,
+      grpcServiceName: grpcServiceName,
+    );
+  }
 }
