@@ -130,8 +130,8 @@ class SingboxProxyController extends ProxyController {
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
       });
-    } on PlatformException catch (e) {
-      _lastError = e.message;
+    } catch (e) {
+      _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();
     }
@@ -143,8 +143,8 @@ class SingboxProxyController extends ProxyController {
     notifyListeners();
     try {
       await _control.invokeMethod<void>('stop');
-    } on PlatformException catch (e) {
-      _lastError = e.message;
+    } catch (e) {
+      _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();
     }
