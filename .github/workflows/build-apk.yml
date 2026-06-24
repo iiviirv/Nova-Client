@@ -56,8 +56,12 @@ jobs:
       - name: Install Android NDK ${{ env.NDK_VERSION }}
         if: steps.libbox-cache.outputs.cache-hit != 'true'
         run: |
-          set -euxo pipefail
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;${NDK_VERSION}" >/dev/null
+          # No pipefail: `yes` dies with SIGPIPE once sdkmanager stops reading,
+          # which is expected. Verify the install succeeded by checking the dir.
+          set -eu
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;${NDK_VERSION}" >/dev/null || true
+          test -d "$ANDROID_HOME/ndk/${NDK_VERSION}"
+          echo "NDK installed at $ANDROID_HOME/ndk/${NDK_VERSION}"
 
       - name: Build libbox.aar (sing-box ${{ env.SINGBOX_VERSION }})
         if: steps.libbox-cache.outputs.cache-hit != 'true'
