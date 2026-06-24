@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import '../../core/proxy/singbox/nova_naming.dart';
+import '../../core/proxy/singbox/share_link_builder.dart';
+import '../../core/proxy/subscription.dart';
 import 'models.dart';
 import 'sources.dart';
 
@@ -23,6 +26,9 @@ class NovaScanner {
     this.deepConcurrency = 100,
     this.quickTimeout = const Duration(seconds: 2),
     this.deepTimeout = const Duration(seconds: 3),
+    this.coreConfig,
+    this.colo = '',
+    this.suffix = kRadarSuffix,
   });
 
   final int sampleSize;
@@ -30,6 +36,17 @@ class NovaScanner {
   final int deepConcurrency;
   final Duration quickTimeout;
   final Duration deepTimeout;
+
+  /// The active subscription's core config. When present, results are real
+  /// `vless://` nodes stamped into its template; when null, the scanner falls
+  /// back to a bare `ip:port#name`.
+  final NovaCoreConfig? coreConfig;
+
+  /// The exit datacenter colo used to flag node names, matching the core.
+  final String colo;
+
+  /// Marker appended to Radar-found node names.
+  final String suffix;
 
   final StreamController<ScanResult> _resultsCtrl =
       StreamController<ScanResult>.broadcast();
@@ -219,9 +236,11 @@ class NovaScanner {
       if (kTlsPorts.contains(port)) {
         final Socket raw = await Socket.connect(ip, port, timeout: deepTimeout);
         try {
+          // Present the active worker host as SNI so the handshake validates
+          // against the endpoint traffic actually uses, not a stale constant.
           final SecureSocket secure = await SecureSocket.secure(
             raw,
-            host: kVlessSni,
+            host: coreConfig?.sni ?? kVlessSni,
             onBadCertificate: (_) => true,
           ).timeout(deepTimeout);
           secure.destroy();
@@ -318,13 +337,17 @@ class NovaScanner {
     if (!_statsCtrl.isClosed) _statsCtrl.add(_stats());
   }
 
-  String _novaLink(String ip, int port) => '$ip:$port#Nova-${_novaId()}';
-
-  String _novaId() {
-    const String chars =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    return List<String>.generate(5, (_) => chars[_rng.nextInt(chars.length)])
-        .join();
+  /// Builds the result entry for a clean [ip]:[port]. With an active core
+  /// config this is a full, importable `vless://` node stamped into the
+  /// subscription template and named `{flag} Nova-{id}{suffix}` exactly like
+  /// the worker; otherwise it falls back to a bare `ip:port#name`.
+  String _novaLink(String ip, int port) {
+    final String name = novaNodeName(colo: colo, suffix: suffix, rng: _rng);
+    final template = coreConfig?.template;
+    if (template != null) {
+      return stampCleanIp(template: template, ip: ip, port: port, name: name);
+    }
+    return '$ip:$port#$name';
   }
 }
 
