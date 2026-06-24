@@ -1,9 +1,12 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
 import 'src/core/proxy/mock_proxy_controller.dart';
 import 'src/core/proxy/proxy_controller.dart';
+import 'src/core/proxy/singbox_proxy_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
 import 'src/theme/theme_controller.dart';
@@ -18,10 +21,10 @@ Future<void> main() async {
   final RadarController radar = RadarController();
 
   // The data path is a modified sing-box core, bound natively per platform.
-  // That native binding is out of scope for this milestone, so the UI runs
-  // against the simulated controller. Swap this single line for
-  // `SingboxProxyController()` once the platform hosts ship — no UI changes.
-  final ProxyController proxy = MockProxyController();
+  // Android ships the real VpnService + libbox host; other platforms (and
+  // tests) fall back to the simulated controller until their hosts land.
+  final ProxyController proxy =
+      Platform.isAndroid ? SingboxProxyController() : MockProxyController();
 
   runApp(NovaApp(
     theme: theme,
