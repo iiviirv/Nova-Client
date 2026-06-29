@@ -41,7 +41,7 @@ cd sing-box
 go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
 go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
 PATH="$PATH:$(go env GOPATH)/bin" go run ./cmd/internal/build_libbox -target apple -platform ios
-cp -R Libbox.xcframework /path/to/Nova-Client/ios/Frameworks/
+cp -R Libbox.xcframework /path/to/nova-app/ios/Frameworks/
 ```
 
 ## Honest status
