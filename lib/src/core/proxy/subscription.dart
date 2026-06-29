@@ -11,6 +11,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../models/proxy_profile.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/share_link.dart';
 
@@ -120,6 +121,32 @@ Future<String> fetchExitColo({SubscriptionFetcher? fetch}) async {
   } catch (_) {
     return '';
   }
+}
+
+/// Resolves the node a [profile] should actually connect through.
+///
+/// This is the piece that lets the tunnel connect to a **subscription**: a
+/// subscription profile carries its source URL in [ProxyProfile.subscriptionUrl]
+/// and an empty [ProxyProfile.uri], so parsing `uri` as a single link (the old
+/// behaviour) always failed with "Unsupported or invalid profile link". Here we
+/// fetch the subscription, expand it, and return a real connectable node (the
+/// template, which carries the shared auth/TLS/transport fields). A single-link
+/// profile still just parses its `uri`.
+///
+/// Returns `null` only when nothing usable could be resolved.
+Future<ProxyNode?> resolveProfileNode(
+  ProxyProfile profile, {
+  SubscriptionFetcher? fetch,
+}) async {
+  if (profile.isSubscription || (profile.subscriptionUrl ?? '').isNotEmpty) {
+    final String url = (profile.subscriptionUrl ?? '').trim();
+    if (url.isEmpty) return null;
+    final NovaCoreConfig? core = await fetchCoreConfig(url, fetch: fetch);
+    return core?.template;
+  }
+  final String trimmed = profile.uri.trim();
+  if (trimmed.isEmpty) return null;
+  return parseShareLink(trimmed);
 }
 
 /// Default transport: a plain GET with a non-browser User-Agent so the worker
