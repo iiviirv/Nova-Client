@@ -112,7 +112,7 @@ class _NovaConnectOrbState extends State<NovaConnectOrb>
                           label: widget.label,
                           statusText: widget.statusText,
                         )
-                      : NovaLogo(size: widget.size * 0.42),
+                      : NovaLogo(size: widget.size * 0.56),
                 ),
               );
             },
@@ -179,7 +179,12 @@ class _OrbPainter extends CustomPainter {
     final Offset c = size.center(Offset.zero);
     final double r = size.shortestSide / 2;
 
-    // 1) Radial glow.
+    final double strokeW = size.shortestSide * 0.05;
+    // The sweep ring sits near the outer edge so the dark disc it encloses is
+    // large enough to hold the Nova mark without the logo spilling past it.
+    final double ringR = r - strokeW * 0.8;
+
+    // 1) Radial glow, sized to the ring.
     final double glowAlpha = busy
         ? 0.35 + 0.35 * pulse
         : connected
@@ -191,12 +196,10 @@ class _OrbPainter extends CustomPainter {
           accent.withValues(alpha: glowAlpha),
           accent.withValues(alpha: 0),
         ],
-      ).createShader(Rect.fromCircle(center: c, radius: r * 0.6));
-    canvas.drawCircle(c, r * 0.6, glow);
+      ).createShader(Rect.fromCircle(center: c, radius: ringR));
+    canvas.drawCircle(c, ringR, glow);
 
     // 2) Sweep ring stroke.
-    final double ringR = r * 0.84;
-    final double strokeW = size.shortestSide * 0.05;
     final List<Color> sweep =
         connected ? NovaGradients.orbSweepConnected : NovaGradients.orbSweepIdle;
     final double rot = busy ? spin * 2 * math.pi : -math.pi / 2;
@@ -205,16 +208,16 @@ class _OrbPainter extends CustomPainter {
       ..strokeWidth = strokeW
       ..strokeCap = StrokeCap.round
       ..shader = SweepGradient(
-        colors: connected || busy
-            ? sweep
-            : <Color>[accent, accent.withValues(alpha: 0.35), accent],
+        // Idle uses the cyan→violet sweep too (matching the native orb), not a
+        // flat single-accent ring.
+        colors: connected || busy ? sweep : NovaGradients.orbSweepIdle,
         transform: GradientRotation(rot),
-      ).createShader(Rect.fromCircle(center: c, radius: ringR / 2));
-    canvas.drawCircle(c, ringR / 2, ring);
+      ).createShader(Rect.fromCircle(center: c, radius: ringR));
+    canvas.drawCircle(c, ringR, ring);
 
-    // 3) Inner dark screen disc.
+    // 3) Inner dark screen disc filling the ring.
     final Paint disc = Paint()..color = const Color(0xFF0A0C12);
-    canvas.drawCircle(c, ringR / 2 - strokeW * 0.8, disc);
+    canvas.drawCircle(c, ringR - strokeW * 0.6, disc);
   }
 
   @override

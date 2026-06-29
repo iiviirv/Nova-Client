@@ -10,7 +10,6 @@ import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
-import '../../widgets/gradient_text.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
 import '../../widgets/nova_logo.dart';
@@ -64,7 +63,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             constraints:
                 const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
               children: <Widget>[
                 const _HomeHeader(),
                 const SizedBox(height: 14),
@@ -101,18 +100,18 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
     return Row(
       children: <Widget>[
-        const NovaLogo(size: 30),
-        const SizedBox(width: 10),
-        GradientText(
-          'Nova',
+        Text(
+          s.t('home.title'),
           style: Theme.of(context)
               .textTheme
-              .headlineSmall
+              .headlineMedium
               ?.copyWith(fontWeight: FontWeight.w800),
         ),
         const Spacer(),
+        const NovaLogo(size: 34),
       ],
     );
   }
@@ -231,18 +230,18 @@ class _SummaryViewState extends State<_SummaryView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const SizedBox(height: 6),
+        const SizedBox(height: 2),
         Row(
           children: <Widget>[
             NovaConnectOrb(
               state: proxy.state,
-              size: 168,
+              size: 150,
               onTap: hasProfile || proxy.state.isActive ? proxy.toggle : null,
             ),
-            const SizedBox(width: 22),
+            const SizedBox(width: 20),
             Expanded(
               child: SizedBox(
-                height: 168,
+                height: 150,
                 child: _StatusColumn(
                   state: proxy.state,
                   since: proxy.connectedSince,
@@ -252,7 +251,7 @@ class _SummaryViewState extends State<_SummaryView> {
             ),
           ],
         ),
-        SizedBox(height: proxy.state.isActive ? 18 : 26),
+        SizedBox(height: proxy.state.isActive ? 14 : 18),
         _MetricsBlock(proxy: proxy),
         if (hasProfile) ...<Widget>[
           const SizedBox(height: 10),
@@ -442,32 +441,32 @@ class _MetricsBlock extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            // Speed tiles.
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _SpeedTile(
-                    label: NovaStrings.of(context).download,
-                    icon: Icons.arrow_downward_rounded,
-                    color: nova.cyan,
-                    value: active
-                        ? Fmt.bps(proxy.traffic.downlinkBps)
-                        : '—',
+            // Live throughput tiles only matter while connected — when idle
+            // they would just read "—" and push the tools row below the fold.
+            if (active) ...<Widget>[
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _SpeedTile(
+                      label: NovaStrings.of(context).download,
+                      icon: Icons.arrow_downward_rounded,
+                      color: nova.cyan,
+                      value: Fmt.bps(proxy.traffic.downlinkBps),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _SpeedTile(
-                    label: NovaStrings.of(context).upload,
-                    icon: Icons.arrow_upward_rounded,
-                    color: nova.violet,
-                    value:
-                        active ? Fmt.bps(proxy.traffic.uplinkBps) : '—',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SpeedTile(
+                      label: NovaStrings.of(context).upload,
+                      icon: Icons.arrow_upward_rounded,
+                      color: nova.violet,
+                      value: Fmt.bps(proxy.traffic.uplinkBps),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         );
       },
