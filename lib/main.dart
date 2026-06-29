@@ -12,6 +12,7 @@ import 'src/core/proxy/singbox_proxy_controller.dart';
 import 'src/features/cloudflare/cloudflare_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
+import 'src/features/settings/settings_controller.dart';
 import 'src/theme/theme_controller.dart';
 
 Future<void> main() async {
@@ -23,6 +24,7 @@ Future<void> main() async {
   final ProfilesController profiles = ProfilesController();
   final RadarController radar = RadarController();
   final CloudflareController cloudflare = CloudflareController();
+  final SettingsController settings = SettingsController();
 
   // The data path is a modified sing-box core, bound per platform. Android ships
   // the VpnService + libbox host; desktop (macOS/Windows/Linux) runs the bundled
@@ -40,6 +42,9 @@ Future<void> main() async {
 
   final ConnInfoController connInfo = ConnInfoController(proxy);
 
+  // The host builds each config from the user's live routing/DNS choices.
+  proxy.routeOptionsProvider = () => settings.routeOptions;
+
   runApp(NovaApp(
     theme: theme,
     proxy: proxy,
@@ -47,6 +52,7 @@ Future<void> main() async {
     profiles: profiles,
     radar: radar,
     cloudflare: cloudflare,
+    settings: settings,
   ));
 
   // Hydrate persisted preferences without blocking first paint.
@@ -55,6 +61,7 @@ Future<void> main() async {
     profiles.attachPrefs(prefs);
     radar.attachPrefs(prefs);
     cloudflare.attachPrefs(prefs);
+    settings.attachPrefs(prefs);
 
     // If a subscription is active, bind it to the Radar in the background so
     // scans export ready-to-import nodes without the user lifting a finger.

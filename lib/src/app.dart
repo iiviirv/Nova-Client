@@ -6,6 +6,7 @@ import 'core/proxy/proxy_controller.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
 import 'features/profiles/profiles_controller.dart';
 import 'features/radar/radar_controller.dart';
+import 'features/settings/settings_controller.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'l10n/nova_strings.dart';
 import 'theme/nova_theme.dart';
@@ -26,6 +27,7 @@ class NovaApp extends StatelessWidget {
     required this.profiles,
     required this.radar,
     required this.cloudflare,
+    required this.settings,
   });
 
   final ThemeController theme;
@@ -34,6 +36,7 @@ class NovaApp extends StatelessWidget {
   final ProfilesController profiles;
   final RadarController radar;
   final CloudflareController cloudflare;
+  final SettingsController settings;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +47,7 @@ class NovaApp extends StatelessWidget {
       profiles: profiles,
       radar: radar,
       cloudflare: cloudflare,
+      settings: settings,
       child: ListenableBuilder(
         listenable: theme,
         builder: (context, _) {

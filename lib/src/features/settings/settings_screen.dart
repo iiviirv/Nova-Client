@@ -47,8 +47,8 @@ class SettingsScreen extends StatelessWidget {
                       _NavRow(
                         icon: Icons.alt_route_rounded,
                         color: nova.violet,
-                        title: 'Routing',
-                        subtitle: 'Rules, GeoIP and ad blocking',
+                        title: 'Routing & DNS',
+                        subtitle: 'Mode, GeoIP rules, ad blocking, DNS',
                         onTap: () => _push(context, const RoutingScreen()),
                       ),
                       _div(nova.border),
@@ -81,7 +81,15 @@ class SettingsScreen extends StatelessWidget {
                         label: s.theme,
                         child: Wrap(
                           spacing: 8,
+                          runSpacing: 8,
                           children: <Widget>[
+                            NovaPill(
+                              label: 'System',
+                              icon: Icons.brightness_auto,
+                              selected: theme.themeMode == ThemeMode.system,
+                              onTap: () =>
+                                  theme.setThemeMode(ThemeMode.system),
+                            ),
                             NovaPill(
                               label: 'Dark',
                               icon: Icons.dark_mode,

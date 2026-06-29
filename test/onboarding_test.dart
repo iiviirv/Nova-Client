@@ -6,6 +6,7 @@ import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
 import 'package:nova_client/src/features/radar/radar_controller.dart';
+import 'package:nova_client/src/features/settings/settings_controller.dart';
 import 'package:nova_client/src/theme/theme_controller.dart';
 
 void main() {
@@ -25,6 +26,7 @@ void main() {
       profiles: profiles,
       radar: radar,
       cloudflare: cloudflare,
+      settings: SettingsController(prefs: prefs),
     ));
     await tester.pumpAndSettle();
 
