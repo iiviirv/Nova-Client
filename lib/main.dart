@@ -29,7 +29,9 @@ Future<void> main() async {
   // until their hosts land.
   final bool isDesktop =
       Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-  final ProxyController proxy = Platform.isAndroid
+  // Android + iOS share the MethodChannel host (VpnService / NetworkExtension);
+  // desktop runs the bundled sing-box from Dart; anything else is simulated.
+  final ProxyController proxy = (Platform.isAndroid || Platform.isIOS)
       ? SingboxProxyController()
       : isDesktop
           ? DesktopProxyController()
