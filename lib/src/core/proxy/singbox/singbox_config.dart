@@ -58,7 +58,7 @@ class SingboxConfig {
   }) {
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
-      'dns': _dns(options),
+      'dns': _dns(options, directDomains: _directDomains(<ProxyNode>[node])),
       'inbounds': <Map<String, dynamic>>[_tunInbound()],
       'outbounds': <Map<String, dynamic>>[
         _outbound(node),
@@ -110,7 +110,7 @@ class SingboxConfig {
     }
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
-      'dns': _dns(options),
+      'dns': _dns(options, directDomains: _directDomains(picked)),
       'inbounds': <Map<String, dynamic>>[_tunInbound()],
       'outbounds': <Map<String, dynamic>>[
         // Auto-pick the lowest-latency node and keep checking, without tearing
@@ -159,10 +159,14 @@ class SingboxConfig {
         'sniff_override_destination': false,
       };
 
-  static Map<String, dynamic> _dns(SingboxRouteOptions o) {
+  static Map<String, dynamic> _dns(
+    SingboxRouteOptions o, {
+    Iterable<String> directDomains = const <String>[],
+  }) {
     // The chosen resolver (IP-based DoH, so it needs no bootstrap resolver),
     // routed through the proxy. Empty = Nova default (Cloudflare).
     final String remote = o.dns.isEmpty ? '1.1.1.1' : o.dns;
+    final List<String> direct = directDomains.toList();
     return <String, dynamic>{
       'servers': <Map<String, dynamic>>[
         <String, dynamic>{
@@ -178,6 +182,12 @@ class SingboxConfig {
         <String, dynamic>{'tag': 'block', 'address': 'rcode://success'},
       ],
       'rules': <Map<String, dynamic>>[
+        // The proxy's own server domains MUST resolve directly. Otherwise
+        // resolving them falls through to `remote`, which is reached *through*
+        // the proxy, which needs them resolved first — sing-box aborts startup
+        // with "DNS query loopback in transport[remote]" and nothing connects.
+        if (direct.isNotEmpty)
+          <String, dynamic>{'domain': direct, 'server': 'local'},
         // Only reference rule-sets that _route() actually defines, otherwise
         // sing-box rejects the config for an undefined rule_set reference.
         if (o.blockAds && o.mode != SingboxMode.direct)
@@ -292,6 +302,33 @@ class SingboxConfig {
         'tag': tag,
         'format': 'binary',
         'url': url,
-        'download_detour': 'direct',
+        // Pull rule-sets through the tunnel, not `direct`: the hosts
+        // (githubusercontent) are blocked on some ISPs, and the proxy exit
+        // (Cloudflare) reaches them reliably once it is up.
+        'download_detour': 'proxy',
       };
+
+  /// The server/SNI/WS-host domains the proxy outbounds dial. These must resolve
+  /// via the direct DNS so bringing the proxy up doesn't depend on a resolver
+  /// that is itself reached through the proxy (the startup DNS loop). IP
+  /// literals are skipped — they need no resolution.
+  static List<String> _directDomains(List<ProxyNode> nodes) {
+    final Set<String> out = <String>{};
+    for (final ProxyNode n in nodes) {
+      for (final String? d in <String?>[n.server, n.sni, n.wsHost]) {
+        if (d != null && d.isNotEmpty && !_isIpLiteral(d)) out.add(d);
+      }
+    }
+    return out.toList();
+  }
+
+  static bool _isIpLiteral(String host) {
+    if (host.contains(':')) return true; // IPv6
+    final List<String> parts = host.split('.');
+    if (parts.length != 4) return false;
+    return parts.every((String p) {
+      final int? v = int.tryParse(p);
+      return v != null && v >= 0 && v <= 255;
+    });
+  }
 }
