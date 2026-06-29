@@ -13,6 +13,7 @@ class ThemeController extends ChangeNotifier {
 
   static const _kThemeKey = 'nova.themeMode';
   static const _kLocaleKey = 'nova.locale';
+  static const _kOnboardedKey = 'nova.onboarded';
 
   /// Locales Nova ships with. English (LTR) and Persian/Farsi (RTL).
   static const List<Locale> supportedLocales = <Locale>[
@@ -30,6 +31,13 @@ class ThemeController extends ChangeNotifier {
 
   bool get isFarsi => _locale.languageCode == 'fa';
 
+  // Whether the first-run onboarding is complete, and whether prefs have loaded
+  // yet (so the root can avoid flashing onboarding for returning users).
+  bool _onboarded = false;
+  bool get onboarded => _onboarded;
+  bool _loaded = false;
+  bool get loaded => _loaded;
+
   void _load() {
     final prefs = _prefs;
     if (prefs == null) return;
@@ -44,13 +52,21 @@ class ThemeController extends ChangeNotifier {
     if (lang != null) {
       _locale = Locale(lang);
     }
+    _onboarded = prefs.getBool(_kOnboardedKey) ?? false;
   }
 
   /// Attaches a [SharedPreferences] instance after async init and reloads.
   void attachPrefs(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
+    _loaded = true;
     notifyListeners();
+  }
+
+  Future<void> setOnboarded() async {
+    _onboarded = true;
+    notifyListeners();
+    await _prefs?.setBool(_kOnboardedKey, true);
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

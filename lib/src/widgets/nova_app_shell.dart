@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/cloudflare/cloudflare_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/profiles/profiles_screen.dart';
 import '../features/radar/radar_screen.dart';
@@ -13,7 +14,10 @@ import 'nova_logo.dart';
 /// narrow (mobile) layouts and a navigation rail on wide (desktop/tablet)
 /// layouts — both styled in the Nova language.
 class NovaAppShell extends StatefulWidget {
-  const NovaAppShell({super.key});
+  const NovaAppShell({super.key, this.startAction});
+
+  /// One-time action picked during onboarding: 'deploy' | 'panel' | 'add'.
+  final String? startAction;
 
   @override
   State<NovaAppShell> createState() => _NovaAppShellState();
@@ -29,6 +33,23 @@ class _NovaAppShellState extends State<NovaAppShell> {
     RoutingScreen(),
     SettingsScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    final String? action = widget.startAction;
+    if (action == null) return;
+    // Land where the onboarding choice points.
+    _index = 1; // Configs/Profiles
+    if (action == 'deploy' || action == 'panel') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
