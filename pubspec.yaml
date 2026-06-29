@@ -30,6 +30,10 @@ dependencies:
   http: ^1.2.0
   path_provider: ^2.1.0
 
+  # Cloudflare OAuth (PKCE) + the Workers deploy multipart upload.
+  crypto: ^3.0.0
+  http_parser: ^4.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
