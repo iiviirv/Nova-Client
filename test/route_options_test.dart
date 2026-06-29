@@ -50,6 +50,34 @@ void main() {
     expect(hasIran(off), isFalse);
   });
 
+  test('proxy server domains resolve via the direct DNS (no startup loopback)',
+      () {
+    // Regression: the core aborted with "DNS query loopback in
+    // transport[remote]" because the proxy's own server domain fell through to
+    // the proxy-detoured resolver. It must be pinned to the `local` server.
+    final cfg = SingboxConfig.buildMap(node);
+    final List<dynamic> rules = (cfg['dns'] as Map)['rules'] as List<dynamic>;
+    final Map<String, dynamic> directRule = rules.firstWhere(
+      (dynamic r) => (r as Map)['server'] == 'local' && r.containsKey('domain'),
+      orElse: () => <String, dynamic>{},
+    ) as Map<String, dynamic>;
+    final List<dynamic> domains =
+        (directRule['domain'] as List<dynamic>? ?? <dynamic>[]);
+    expect(domains, contains('sub.lillio.org'),
+        reason: 'the proxy server domain must resolve directly');
+  });
+
+  test('rule-sets download through the proxy, not direct', () {
+    final cfg = SingboxConfig.buildMap(node,
+        options: const SingboxRouteOptions(bypassIran: true));
+    final List<dynamic> sets =
+        (cfg['route'] as Map)['rule_set'] as List<dynamic>;
+    expect(sets, isNotEmpty);
+    for (final dynamic rs in sets) {
+      expect((rs as Map)['download_detour'], 'proxy');
+    }
+  });
+
   test('DNS choice changes the remote resolver', () {
     final def = SingboxConfig.buildMap(node);
     final google = SingboxConfig.buildMap(node,
