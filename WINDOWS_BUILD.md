@@ -11,8 +11,8 @@ three steps.
 
 ## 2. Get the code
 ```powershell
-git clone -b claude/macos-desktop-core https://github.com/iiviirv/Nova-Client.git
-cd Nova-Client
+git clone https://github.com/iiviirv/nova-app.git
+cd nova-app
 flutter pub get
 ```
 
