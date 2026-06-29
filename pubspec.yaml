@@ -19,6 +19,10 @@ dependencies:
   # UI
   cupertino_icons: ^1.0.6
 
+  # QR-code scanning for importing configs/subscriptions from a camera.
+  # 7.x ships Swift Package Manager support, so no CocoaPods is required.
+  mobile_scanner: ^7.2.0
+
   # Persistence for profiles, radar sources/ports and theme/locale.
   shared_preferences: ^2.2.0
 
