@@ -138,15 +138,31 @@ Future<ProxyNode?> resolveProfileNode(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
 }) async {
-  if (profile.isSubscription || (profile.subscriptionUrl ?? '').isNotEmpty) {
-    final String url = (profile.subscriptionUrl ?? '').trim();
-    if (url.isEmpty) return null;
-    final NovaCoreConfig? core = await fetchCoreConfig(url, fetch: fetch);
+  final String raw = _profilePayload(profile);
+  if (raw.isEmpty) return null;
+  if (_isHttpUrl(raw)) {
+    final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
     return core?.template;
   }
-  final String trimmed = profile.uri.trim();
-  if (trimmed.isEmpty) return null;
-  return parseShareLink(trimmed);
+  return parseShareLink(raw);
+}
+
+/// The text a profile actually carries, preferring the subscription field but
+/// falling back to [ProxyProfile.uri]. Either one may legitimately hold the URL
+/// or the share link depending on how the profile was added.
+String _profilePayload(ProxyProfile profile) {
+  final String sub = (profile.subscriptionUrl ?? '').trim();
+  if (sub.isNotEmpty) return sub;
+  return profile.uri.trim();
+}
+
+/// Whether [raw] is a fetchable subscription URL (vs an inline share link). This
+/// is decided by the content, not the profile's declared kind, so a `vless://`
+/// link tagged "Subscription" or an `https://…/sub` URL tagged "VLESS" both
+/// still resolve instead of failing as "Unsupported or invalid profile link".
+bool _isHttpUrl(String raw) {
+  final String l = raw.toLowerCase();
+  return l.startsWith('http://') || l.startsWith('https://');
 }
 
 /// Resolves every candidate node for a [profile], not just one: a subscription
@@ -160,19 +176,17 @@ Future<List<ProxyNode>> resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
 }) async {
-  if (profile.isSubscription || (profile.subscriptionUrl ?? '').isNotEmpty) {
-    final String url = (profile.subscriptionUrl ?? '').trim();
-    if (url.isEmpty) return const <ProxyNode>[];
-    final NovaCoreConfig? core = await fetchCoreConfig(url, fetch: fetch);
+  final String raw = _profilePayload(profile);
+  if (raw.isEmpty) return const <ProxyNode>[];
+  if (_isHttpUrl(raw)) {
+    final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
     if (core == null) return const <ProxyNode>[];
     final List<ProxyNode> real = core.nodes
         .where((ProxyNode n) => (n.uuid ?? '').isNotEmpty)
         .toList();
     return real.isNotEmpty ? real : core.nodes;
   }
-  final String trimmed = profile.uri.trim();
-  if (trimmed.isEmpty) return const <ProxyNode>[];
-  final ProxyNode? node = parseShareLink(trimmed);
+  final ProxyNode? node = parseShareLink(raw);
   return node == null ? const <ProxyNode>[] : <ProxyNode>[node];
 }
 

@@ -62,4 +62,42 @@ void main() {
     print('multi: ${nodes.length} nodes -> urltest of $members, '
         'json ${jsonEncode(cfg).length} bytes');
   }, timeout: const Timeout(Duration(seconds: 30)));
+
+  // The add dialog used to tag profiles purely by the selected pill, so a
+  // mismatched kind produced "Unsupported or invalid profile link". Resolution
+  // now keys off the actual content, so both mismatches still connect.
+  group('content-driven resolution tolerates a wrong kind tag', () {
+    const String shareLink =
+        'vless://b90f8c50-b795-4a6d-84dd-d057e87c7f3a@104.17.214.82:443'
+        '?security=tls&type=ws&path=/&host=sub.lillio.org&sni=sub.lillio.org#n';
+
+    test('a share link mis-tagged as a subscription still parses', () async {
+      final profile = ProxyProfile(
+        id: 't',
+        name: 'x',
+        kind: ProxyKind.subscription, // wrong tag on purpose
+        uri: '',
+        subscriptionUrl: shareLink, // a vless:// link, not an http URL
+      );
+      final nodes = await resolveProfileNodes(profile);
+      expect(nodes.length, 1);
+      expect(nodes.first.server, '104.17.214.82');
+      expect(nodes.first.uuid, isNotNull);
+    });
+
+    test('an http subscription mis-tagged as vless is still fetched', () async {
+      final profile = ProxyProfile(
+        id: 't',
+        name: 'x',
+        kind: ProxyKind.vless, // wrong tag on purpose
+        uri: 'https://example.com/sub', // an http URL, not a share link
+      );
+      final nodes = await resolveProfileNodes(
+        profile,
+        fetch: (Uri url) async => base64.encode(utf8.encode(shareLink)),
+      );
+      expect(nodes.length, 1);
+      expect(nodes.first.server, '104.17.214.82');
+    });
+  });
 }
