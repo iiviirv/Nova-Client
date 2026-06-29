@@ -1,16 +1,40 @@
-# Nova Client on iOS, status and plan
+# Nova Client on iOS
 
-iOS uses Apple's **Network Extension** (a Packet Tunnel Provider) to run the
-sing-box core, the iOS equivalent of the Android VpnService. The Flutter app
-talks to it over the same `nova.proxy/control` MethodChannel the Android host
-uses, so once the extension is wired, iOS shares all the app UI and Dart logic.
+iOS runs the sing-box core in a **Network Extension** (Packet Tunnel Provider),
+driven by the same `nova.proxy/control` MethodChannel the Android host uses, so
+the whole Flutter UI and Dart logic work unchanged.
 
-## Done
-- **Core built**: `Libbox.xcframework` (device arm64 + simulator) is generated and
-  placed in `ios/Frameworks/` (gitignored, rebuildable). It exposes the same
-  `Libbox` API the Android `.aar` does.
+## What's already in the repo
+- **Core**: `Libbox.xcframework` in `ios/Frameworks/` (device + simulator;
+  gitignored, rebuildable, see below).
+- **App-side host**: `ios/Runner/NovaProxyHost.swift` (the MethodChannel /
+  EventChannel via `NETunnelProviderManager`), registered in `AppDelegate.swift`.
+- **Extension**: `ios/NovaTunnel/PacketTunnelProvider.swift` (the libbox
+  PlatformInterface: openTun + interface monitor + service lifecycle), plus
+  `Info.plist` and `NovaTunnel.entitlements`.
+- **Entitlements**: `ios/Runner/Runner.entitlements` (NetworkExtension + App
+  Group `group.online.novaproxy.novaClient`).
+- **Dart**: `main.dart` already routes iOS to `SingboxProxyController`.
 
-### Rebuild the core
+## Remaining (Xcode, with the Apple Developer account @irnova_proxy)
+These steps create the extension target and wire the provided files into it.
+
+1. **Add the target**: File > New > Target > **Network Extension** (Packet Tunnel
+   Provider). Name it **NovaTunnel**, bundle id
+   `online.novaproxy.novaClient.NovaTunnel`. Delete the auto-generated
+   `PacketTunnelProvider.swift`/`Info.plist` and instead **add the existing files**
+   from `ios/NovaTunnel/` to this target.
+2. **Add `NovaProxyHost.swift`** to the Runner target (if not auto-added).
+3. **Frameworks**: add `ios/Frameworks/Libbox.xcframework` to the **NovaTunnel**
+   target ("Do Not Embed").
+4. **Signing & Capabilities** on **both** Runner and NovaTunnel:
+   - Network Extensions (Packet Tunnel)
+   - App Groups -> `group.online.novaproxy.novaClient`
+   - Point each target at its `.entitlements` file (already provided).
+   - Select your team; let Xcode create the provisioning profiles.
+5. **Run on a real device** (the simulator's NE support is limited).
+
+## Rebuild the core
 ```sh
 git clone --depth 1 -b v1.11.15 https://github.com/sagernet/sing-box.git
 cd sing-box
@@ -20,29 +44,13 @@ PATH="$PATH:$(go env GOPATH)/bin" go run ./cmd/internal/build_libbox -target app
 cp -R Libbox.xcframework /path/to/Nova-Client/ios/Frameworks/
 ```
 
-## Remaining (in Xcode, needs the Apple Developer account: @irnova_proxy)
-1. **Add a Packet Tunnel target**: File > New > Target > Network Extension >
-   Packet Tunnel Provider (e.g. `NovaTunnel`). Embed it in Runner.
-2. **Capabilities** on both Runner and the extension:
-   - Network Extensions (Packet Tunnel)
-   - App Groups (e.g. `group.online.novaproxy.client`) so the app and the
-     extension share the profile/config and stats.
-3. **Link `Libbox.xcframework`** into the extension target ("Do Not Embed", it's
-   a static-ish Go framework).
-4. **PacketTunnelProvider.swift** (in the extension): start the sing-box instance
-   with the config from the app group, implementing the libbox PlatformInterface
-   over the `NEPacketTunnelFlow`. The canonical reference is sing-box's own iOS
-   app (`sing-box-for-apple`, the `ExtensionProvider`), which can be adapted
-   nearly verbatim against this same `Libbox.xcframework`.
-5. **App-side host** (in Runner): a `NovaProxyHost.swift` implementing the
-   `nova.proxy/control` MethodChannel via `NETunnelProviderManager`
-   (start/stop/status) and the `nova.proxy/events` EventChannel for state +
-   traffic (read from the app group, written by the extension).
-6. **Signing**: sign Runner + the extension with the team from the Apple account.
-   A real device is needed for full testing (the simulator's NE support is
-   limited).
-7. **Flip the controller**: in `lib/main.dart`, route iOS to
-   `SingboxProxyController()` (the MethodChannel client) instead of the mock.
-
-After step 7 the existing Flutter UI (dashboard, profiles, Cloudflare, radar,
-onboarding) drives the iOS tunnel with no further UI work.
+## Honest status
+- The Swift was written against this exact `Libbox.xcframework` API but **not yet
+  compiled** (the target doesn't exist until step 1). Expect to fix small
+  signature/protocol-name details on the first Xcode build (the generated header
+  uses names like `LibboxPlatformInterfaceProtocol`, `LibboxTunOptionsProtocol`).
+- `openTun` and the interface monitor are adapted from the canonical
+  **sing-box-for-apple** `ExtensionPlatformInterface`; if routing misbehaves,
+  diff against that project (it targets the same framework).
+- Live traffic stats from the extension are a TODO (state is wired via
+  `NEVPNStatus`); the dashboard shows connected/disconnected today.
