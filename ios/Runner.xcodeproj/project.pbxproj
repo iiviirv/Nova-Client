@@ -242,6 +242,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				90ECA5A7B1DC3D7BA340DCF2 /* Embed App Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				557E2D0EDE43E16E7B4A61FE /* Strip Desktop Binaries */,
 			);
 			buildRules = (
 			);
@@ -343,6 +344,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+		};
+		557E2D0EDE43E16E7B4A61FE /* Strip Desktop Binaries */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Desktop Binaries";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The desktop sing-box binaries (assets/bin) are bundled as Flutter assets for\n# macOS/Windows; iOS uses the Network Extension instead, and Apple rejects any\n# standalone executable in the app. Remove them from the iOS bundle.\nBIN=\"$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Frameworks/App.framework/flutter_assets/assets/bin\"\nif [ -d \"$BIN\" ]; then rm -rf \"$BIN\" && echo \"Stripped desktop binaries from iOS bundle\"; fi\n";
 		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
