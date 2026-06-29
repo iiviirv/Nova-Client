@@ -449,17 +449,37 @@ Future<void> showAddServerDialog(BuildContext context) async {
 
   if (added == true && uriCtrl.text.trim().isNotEmpty) {
     final String uri = uriCtrl.text.trim();
+    // Trust what was pasted over the selected pill: a link's scheme tells us
+    // exactly what it is, so an https://…/sub URL or a vless:// link always
+    // lands in the right field instead of failing later as an invalid link.
+    final ProxyKind resolved = _detectKind(uri) ?? kind;
+    final bool isSub = resolved == ProxyKind.subscription;
     profiles.add(ProxyProfile(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: nameCtrl.text.trim().isEmpty
           ? 'Server ${profiles.profiles.length + 1}'
           : nameCtrl.text.trim(),
-      kind: kind,
-      uri: kind == ProxyKind.subscription ? '' : uri,
-      subscriptionUrl: kind == ProxyKind.subscription ? uri : null,
+      kind: resolved,
+      uri: isSub ? '' : uri,
+      subscriptionUrl: isSub ? uri : null,
       updatedAt: DateTime.now(),
     ));
   }
   nameCtrl.dispose();
   uriCtrl.dispose();
+}
+
+/// Infers the profile kind from the scheme of what was pasted, or null when it
+/// is not recognisable (so the manually selected pill is used as the fallback).
+ProxyKind? _detectKind(String raw) {
+  final String s = raw.trim();
+  final String l = s.toLowerCase();
+  if (l.startsWith('http://') || l.startsWith('https://')) {
+    return ProxyKind.subscription;
+  }
+  if (l.startsWith('vless://')) return ProxyKind.vless;
+  if (l.startsWith('trojan://')) return ProxyKind.trojan;
+  if (l.startsWith('ss://')) return ProxyKind.shadowsocks;
+  if (s.startsWith('{')) return ProxyKind.singboxConfig;
+  return null;
 }
