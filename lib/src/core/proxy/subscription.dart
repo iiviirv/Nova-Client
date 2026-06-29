@@ -156,6 +156,21 @@ String _profilePayload(ProxyProfile profile) {
   return profile.uri.trim();
 }
 
+/// An actionable reason a [profile] resolved to zero nodes, so the UI can say
+/// what to fix instead of a blanket "Unsupported or invalid profile link".
+String emptyResolveMessage(ProxyProfile profile) {
+  final String raw = _profilePayload(profile);
+  if (raw.isEmpty) {
+    return 'This profile is empty. Add your Nova subscription URL or a '
+        'vless:// link.';
+  }
+  if (_isHttpUrl(raw)) {
+    return 'That subscription returned no nodes. Make sure the URL is your '
+        'Nova /sub link (it should return a node list, not a web page).';
+  }
+  return "That link isn't a supported vless://, trojan://, or ss:// link.";
+}
+
 /// Whether [raw] is a fetchable subscription URL (vs an inline share link). This
 /// is decided by the content, not the profile's declared kind, so a `vless://`
 /// link tagged "Subscription" or an `https://…/sub` URL tagged "VLESS" both
