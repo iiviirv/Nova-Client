@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
+import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
 
@@ -168,12 +169,16 @@ class SingboxProxyController extends ProxyController {
     }
     // Resolves single links directly and subscriptions by fetching + expanding
     // them, so a subscription profile (empty uri, URL in subscriptionUrl) can
-    // actually connect instead of failing as an "invalid profile link".
-    final node = await resolveProfileNode(profile);
-    if (node == null) {
+    // actually connect instead of failing as an "invalid profile link". A
+    // subscription returns its whole node list so the core auto-picks the
+    // fastest via a urltest; a single link is just the one node.
+    final List<ProxyNode> nodes = await resolveProfileNodes(profile);
+    if (nodes.isEmpty) {
       throw const FormatException('Unsupported or invalid profile link');
     }
-    return SingboxConfig.build(node);
+    return nodes.length == 1
+        ? SingboxConfig.build(nodes.first)
+        : SingboxConfig.buildMulti(nodes);
   }
 
   @override

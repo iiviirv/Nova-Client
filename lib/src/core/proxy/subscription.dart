@@ -149,6 +149,33 @@ Future<ProxyNode?> resolveProfileNode(
   return parseShareLink(trimmed);
 }
 
+/// Resolves every candidate node for a [profile], not just one: a subscription
+/// expands to its whole node list so the core can auto-pick the fastest via a
+/// `urltest`, and a single-link profile yields a one-element list. Returns an
+/// empty list when nothing usable resolves.
+///
+/// Real Nova nodes carry a uuid; the free-notice banner is dropped when any
+/// real node exists so it never wastes a slot in the auto-selector.
+Future<List<ProxyNode>> resolveProfileNodes(
+  ProxyProfile profile, {
+  SubscriptionFetcher? fetch,
+}) async {
+  if (profile.isSubscription || (profile.subscriptionUrl ?? '').isNotEmpty) {
+    final String url = (profile.subscriptionUrl ?? '').trim();
+    if (url.isEmpty) return const <ProxyNode>[];
+    final NovaCoreConfig? core = await fetchCoreConfig(url, fetch: fetch);
+    if (core == null) return const <ProxyNode>[];
+    final List<ProxyNode> real = core.nodes
+        .where((ProxyNode n) => (n.uuid ?? '').isNotEmpty)
+        .toList();
+    return real.isNotEmpty ? real : core.nodes;
+  }
+  final String trimmed = profile.uri.trim();
+  if (trimmed.isEmpty) return const <ProxyNode>[];
+  final ProxyNode? node = parseShareLink(trimmed);
+  return node == null ? const <ProxyNode>[] : <ProxyNode>[node];
+}
+
 /// Default transport: a plain GET with a non-browser User-Agent so the worker
 /// returns raw config text (a browser UA gets the HTML hub instead).
 Future<String> _httpFetch(Uri url) async {
