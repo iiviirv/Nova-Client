@@ -11,12 +11,18 @@ class SingboxRouteOptions {
     this.blockAds = true,
     this.bypassIran = true,
     this.bypassLan = true,
+    this.dns = '',
   });
 
   final SingboxMode mode;
   final bool blockAds;
   final bool bypassIran;
   final bool bypassLan;
+
+  /// The upstream resolver IP the remote DNS server points at (DoH). Empty
+  /// means Nova's default (Cloudflare 1.1.1.1). Matches the native app's DNS
+  /// picker: '' / 1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 94.140.14.14.
+  final String dns;
 }
 
 /// Builds a sing-box configuration document from a [ProxyNode].
@@ -154,11 +160,14 @@ class SingboxConfig {
       };
 
   static Map<String, dynamic> _dns(SingboxRouteOptions o) {
+    // The chosen resolver (IP-based DoH, so it needs no bootstrap resolver),
+    // routed through the proxy. Empty = Nova default (Cloudflare).
+    final String remote = o.dns.isEmpty ? '1.1.1.1' : o.dns;
     return <String, dynamic>{
       'servers': <Map<String, dynamic>>[
         <String, dynamic>{
           'tag': 'remote',
-          'address': 'https://1.1.1.1/dns-query',
+          'address': 'https://$remote/dns-query',
           'detour': 'proxy',
         },
         <String, dynamic>{

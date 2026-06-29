@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
+import 'singbox/singbox_config.dart';
 
 /// High-level connection lifecycle states surfaced to the UI.
 enum ProxyConnectionState { disconnected, connecting, connected, disconnecting, error }
@@ -63,6 +64,16 @@ abstract class ProxyController extends ChangeNotifier {
     }
     super.notifyListeners();
   }
+
+  /// Supplies the current routing/DNS options at connect time. Set once at
+  /// startup from the settings controller; the real (sing-box / desktop) hosts
+  /// read it when building the config so the Routing and DNS screens actually
+  /// take effect. Null falls back to the defaults.
+  SingboxRouteOptions Function()? routeOptionsProvider;
+
+  /// The options to build the next config with (defaults when unset).
+  SingboxRouteOptions get routeOptions =>
+      routeOptionsProvider?.call() ?? const SingboxRouteOptions();
 
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);

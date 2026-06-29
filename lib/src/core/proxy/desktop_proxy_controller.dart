@@ -123,9 +123,10 @@ class DesktopProxyController extends ProxyController {
       // fastest via a urltest; a single link is just the one node.
       final List<ProxyNode> nodes = await resolveProfileNodes(profile);
       if (nodes.isEmpty) throw 'Unsupported or invalid profile link';
+      final SingboxRouteOptions opts = routeOptions;
       cfg = nodes.length == 1
-          ? SingboxConfig.buildMap(nodes.first)
-          : SingboxConfig.buildMultiMap(nodes);
+          ? SingboxConfig.buildMap(nodes.first, options: opts)
+          : SingboxConfig.buildMultiMap(nodes, options: opts);
     }
     cfg['inbounds'] = <Map<String, dynamic>>[
       <String, dynamic>{

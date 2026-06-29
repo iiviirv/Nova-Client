@@ -6,6 +6,7 @@ import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
 import 'package:nova_client/src/features/radar/radar_controller.dart';
+import 'package:nova_client/src/features/settings/settings_controller.dart';
 import 'package:nova_client/src/theme/theme_controller.dart';
 
 Future<void> _pumpShell(WidgetTester tester) async {
@@ -23,6 +24,7 @@ Future<void> _pumpShell(WidgetTester tester) async {
     profiles: profiles,
     radar: RadarController()..attachPrefs(prefs),
     cloudflare: CloudflareController()..attachPrefs(prefs),
+    settings: SettingsController(prefs: prefs),
   ));
   // The connect orb pulses continuously, so the tree never fully settles;
   // pump a couple of fixed frames instead of pumpAndSettle.

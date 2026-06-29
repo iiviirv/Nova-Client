@@ -176,9 +176,10 @@ class SingboxProxyController extends ProxyController {
     if (nodes.isEmpty) {
       throw const FormatException('Unsupported or invalid profile link');
     }
+    final SingboxRouteOptions opts = routeOptions;
     return nodes.length == 1
-        ? SingboxConfig.build(nodes.first)
-        : SingboxConfig.buildMulti(nodes);
+        ? SingboxConfig.build(nodes.first, options: opts)
+        : SingboxConfig.buildMulti(nodes, options: opts);
   }
 
   @override
