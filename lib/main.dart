@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/proxy/desktop_proxy_controller.dart';
 import 'src/core/proxy/mock_proxy_controller.dart';
 import 'src/core/proxy/proxy_controller.dart';
 import 'src/core/proxy/singbox_proxy_controller.dart';
@@ -20,11 +21,17 @@ Future<void> main() async {
   final ProfilesController profiles = ProfilesController();
   final RadarController radar = RadarController();
 
-  // The data path is a modified sing-box core, bound natively per platform.
-  // Android ships the real VpnService + libbox host; other platforms (and
-  // tests) fall back to the simulated controller until their hosts land.
-  final ProxyController proxy =
-      Platform.isAndroid ? SingboxProxyController() : MockProxyController();
+  // The data path is a modified sing-box core, bound per platform. Android ships
+  // the VpnService + libbox host; desktop (macOS/Windows/Linux) runs the bundled
+  // sing-box process from pure Dart; iOS and tests use the simulated controller
+  // until their hosts land.
+  final bool isDesktop =
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  final ProxyController proxy = Platform.isAndroid
+      ? SingboxProxyController()
+      : isDesktop
+          ? DesktopProxyController()
+          : MockProxyController();
 
   runApp(NovaApp(
     theme: theme,
