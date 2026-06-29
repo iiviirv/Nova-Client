@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
-import 'singbox/share_link.dart';
 import 'singbox/singbox_config.dart';
+import 'subscription.dart';
 
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///
@@ -118,9 +118,14 @@ class SingboxProxyController extends ProxyController {
 
     final String config;
     try {
-      config = _buildSingboxConfig(profile);
+      config = await _buildSingboxConfig(profile);
     } on FormatException catch (e) {
       _lastError = e.message;
+      _state = ProxyConnectionState.error;
+      notifyListeners();
+      return;
+    } catch (e) {
+      _lastError = 'Could not load subscription: $e';
       _state = ProxyConnectionState.error;
       notifyListeners();
       return;
@@ -156,12 +161,15 @@ class SingboxProxyController extends ProxyController {
   /// holds a full sing-box JSON config is passed through unchanged.
   ///
   /// Throws [FormatException] when the link can't be parsed.
-  String _buildSingboxConfig(ProxyProfile profile) {
+  Future<String> _buildSingboxConfig(ProxyProfile profile) async {
     final String trimmed = profile.uri.trim();
     if (profile.kind == ProxyKind.singboxConfig || trimmed.startsWith('{')) {
       return trimmed;
     }
-    final node = parseShareLink(trimmed);
+    // Resolves single links directly and subscriptions by fetching + expanding
+    // them, so a subscription profile (empty uri, URL in subscriptionUrl) can
+    // actually connect instead of failing as an "invalid profile link".
+    final node = await resolveProfileNode(profile);
     if (node == null) {
       throw const FormatException('Unsupported or invalid profile link');
     }

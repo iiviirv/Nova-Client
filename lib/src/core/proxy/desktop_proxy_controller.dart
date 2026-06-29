@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
-import 'singbox/share_link.dart';
+import 'subscription.dart';
 import 'singbox/singbox_config.dart';
 
 /// Drives the proxy on **desktop** (macOS, Windows, Linux) from pure Dart, no
@@ -73,7 +73,7 @@ class DesktopProxyController extends ProxyController {
     }
     _setState(ProxyConnectionState.connecting);
     try {
-      final String config = _buildConfig(profile);
+      final String config = await _buildConfig(profile);
       final String binary = await _ensureBinary();
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');
@@ -110,13 +110,15 @@ class DesktopProxyController extends ProxyController {
 
   /// Build the sing-box config for [profile] and swap its TUN inbound for a
   /// local `mixed` inbound plus a Clash API controller, so it runs unprivileged.
-  String _buildConfig(ProxyProfile profile) {
+  Future<String> _buildConfig(ProxyProfile profile) async {
     final String trimmed = profile.uri.trim();
     final Map<String, dynamic> cfg;
     if (profile.kind == ProxyKind.singboxConfig || trimmed.startsWith('{')) {
       cfg = (jsonDecode(trimmed) as Map).cast<String, dynamic>();
     } else {
-      final node = parseShareLink(trimmed);
+      // Resolves single links directly and subscriptions by fetching them, so a
+      // subscription profile can connect instead of failing as an invalid link.
+      final node = await resolveProfileNode(profile);
       if (node == null) throw 'Unsupported or invalid profile link';
       cfg = SingboxConfig.buildMap(node);
     }
