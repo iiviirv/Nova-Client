@@ -4,143 +4,102 @@
 
 # Nova Client
 
-**An optimised, Nova-branded proxy client — a streamlined [Karing](https://github.com/KaringX/karing) fork — with the [Nova Radar](https://github.com/IRNova/NovaRadar) Cloudflare clean‑IP scanner built right in.**
+**Fast, free, unrestricted internet, on every device.**
 
-Built in Flutter · dark‑first · bilingual (English + فارسی) · follows the [Nova Proxy](https://github.com/IRNova/Nova-Proxy) design language.
+A single Flutter codebase that runs Nova on **iOS, Android, macOS, Windows and Linux**, powered by the [sing-box](https://github.com/SagerNet/sing-box) core, with a one-tap connect, your own free Cloudflare panel, and a built-in clean-IP scanner.
+
+Dark-first · bilingual (English + فارسی, RTL) · follows the [Nova Proxy](https://github.com/IRNova/Nova-Proxy) design language.
 
 </div>
 
 ---
 
-## What this is
+## Platform support
 
-Nova Client brings two Nova tools into a single cross‑platform app:
+One codebase, one UI, with the sing-box data path bound natively per platform.
 
-1. **A proxy client** in the spirit of Karing (a sing‑box GUI) — connect, manage
-   profiles & subscriptions, and control routing — re‑skinned and slimmed down
-   to the Nova Proxy visual language.
-2. **Nova Radar** — the Cloudflare clean‑IP scanner (originally a Go + Wails
-   desktop app) **ported to Dart** and consolidated in as a first‑class tab.
+| Platform | Tunnel | Status | How to get it |
+|----------|--------|--------|---------------|
+| **iOS** | Network Extension (Packet Tunnel) | ✅ Builds, signs, runs on device + **TestFlight** | TestFlight invite, or build, see [`ios/IOS_BUILD.md`](ios/IOS_BUILD.md) |
+| **macOS** | bundled sing-box + system proxy | ✅ Working (verified) | `flutter build macos` |
+| **Windows** | bundled sing-box + WinINET proxy (no admin) | ✅ Buildable | see [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md) |
+| **Linux** | bundled sing-box + proxy | ⚠️ Builds; desktop core runs, system-proxy WIP | `flutter build linux` |
+| **Android** | `VpnService` + libbox | ✅ Buildable here | `flutter build apk` (the mature production Android app is the native build at [iiviirv/nova-app](https://github.com/iiviirv/nova-app)) |
 
-This milestone delivers the **design system**, the **app shell**, and a
-**fully functional Radar**. The proxy data path (the modified sing‑box core)
-is wired behind a clean integration boundary — see
-[Architecture](#architecture).
+On **desktop** the core is the bundled `sing-box` process driven from pure Dart; on **iOS** it's a Network Extension; on **Android** it's the `VpnService`. The whole UI and all the Cloudflare / Radar logic are shared.
 
-## Status at a glance
+## Features
 
-| Area | State |
-|------|-------|
-| Nova design system (colors, gradient, type, radii) | ✅ Ported from `tokens.css` |
-| Brand mark (the neon “N”), gradient, badges | ✅ Drawn from the brand SVG |
-| App shell + responsive navigation (rail / bottom bar) | ✅ |
-| Bilingual UI (English + فارسی, RTL) | ✅ |
-| Dashboard (connect orb, live traffic, active profile) | ✅ UI · drives the proxy controller |
-| Profiles & subscriptions (add / select / persist) | ✅ |
-| Routing controls (mode + rule toggles) | ✅ UI |
-| **Nova Radar scanner** | ✅ **Functional** (source fetch → IP gen → two‑phase TCP+TLS verify → latency sort → live progress → export) |
-| sing‑box core (native VPN data path) | 🔌 Integration boundary (next milestone) |
+- **One-tap connect** with live status, country, IP, ping and traffic.
+- **Connect Cloudflare**: sign in (PKCE OAuth), see your Workers + KV + D1 counts, **deploy your own free panel** (live timer, duplicate-name guard, timeout, password setup), delete workers.
+- **Import from a panel**: pull a worker's configs into the app.
+- **Servers**: subscriptions and single links (vless / vmess / trojan / ss / base64 / Clash), ping-sorted with country flags.
+- **Nova Radar**: a Cloudflare clean-IP scanner (all TLS ports, configurable count, optional country target, strict `ip:port#name` output, one-tap push to your panel).
+- **First-run onboarding**: pick a language, then deploy / import / add a config.
+- **Routing** modes (rule / global / direct) with Iran + ad rule-sets, and a dark-first, fully bilingual UI.
 
-## Design language
+## Install / build per platform
 
-The whole UI is driven by the Nova Proxy design tokens, ported 1:1 from
-`irnova-site/design-system/tokens.css` (kept here at
-[`docs/nova-design-tokens.css`](docs/nova-design-tokens.css) for provenance):
+You need [Flutter](https://docs.flutter.dev/get-started/install) (stable, ≥ 3.27) and the toolchain for your target.
 
-- **Signature gradient** `linear-gradient(120deg, #22d3ee → #818cf8 → #a855f7)` —
-  buttons, the logo, gradient text, progress, the connect orb.
-- **Dark‑first** surfaces (`#05060a` page, translucent `surface` cards, hairline
-  borders) with an opt‑in light theme.
-- **Accents** cyan `#22d3ee` / violet `#a855f7` / indigo `#818cf8`.
-- **Radii** 16 (cards) / 10 (inputs) / pill, and the accent elevation shadow.
-- **Type** Inter (Latin) + Vazirmatn (Farsi), with the fluid weight/tracking
-  scale.
+```bash
+git clone -b claude/macos-desktop-core https://github.com/iiviirv/Nova-Client.git
+cd Nova-Client && flutter pub get
+```
 
-These live in [`lib/src/theme/`](lib/src/theme) and are exposed to every widget
-via a `ThemeExtension` (`context.nova.cyan`, …).
+- **iOS**: open `ios/Runner.xcworkspace` in Xcode, then `flutter build ios` (signing + the NetworkExtension are described in [`ios/IOS_BUILD.md`](ios/IOS_BUILD.md)). Easiest for testers: a TestFlight invite.
+- **macOS**: `flutter build macos` (or `flutter run -d macos`).
+- **Windows**: see the step-by-step [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md) (needs Visual Studio with the Desktop C++ workload).
+- **Android**: `flutter build apk`.
+
+The bundled sing-box core binaries and how they're built/managed are documented in [`docs/DESKTOP.md`](docs/DESKTOP.md).
 
 ## Architecture
 
 ```
-lib/
-├── main.dart                     # entry — builds controllers, hydrates prefs
-└── src/
-    ├── app.dart                  # MaterialApp, theme/locale, NovaScope
-    ├── theme/                    # design tokens → ThemeData (the design system)
-    ├── l10n/                     # bilingual strings (en/fa) + delegate
-    ├── widgets/                  # NovaLogo, NovaButton, NovaCard, app shell, …
-    ├── core/
-    │   ├── proxy/                # ProxyController boundary
-    │   │   ├── proxy_controller.dart        # abstract: state + traffic
-    │   │   ├── mock_proxy_controller.dart   # simulated, drives the UI today
-    │   │   └── singbox_proxy_controller.dart# real core (MethodChannel contract)
-    │   ├── models/               # ProxyProfile
-    │   └── util/                 # formatting helpers
-    └── features/
-        ├── dashboard/            # connect screen
-        ├── profiles/             # profiles & subscriptions
-        ├── radar/                # ★ Nova Radar (ported scanner)
-        │   ├── models.dart       # IpSource / ScanResult / ScanStats
-        │   ├── sources.dart      # source fetch, CIDR math, random IP gen
-        │   ├── scanner.dart      # two-phase TCP + TLS verification
-        │   └── radar_controller.dart
-        ├── routing/              # routing mode + rules
-        └── settings/             # theme, language, links
+lib/src/
+├── app.dart                       # MaterialApp, theme/locale, onboarding gate, NovaScope
+├── theme/  l10n/  widgets/        # design system, bilingual strings, shared widgets
+├── core/proxy/
+│   ├── proxy_controller.dart      # the UI<->core boundary (state + traffic)
+│   ├── desktop_proxy_controller.dart   # macOS/Windows/Linux: runs bundled sing-box from Dart
+│   ├── singbox_proxy_controller.dart   # Android + iOS: MethodChannel to the native host
+│   └── singbox/                   # share-link parsing + sing-box config builder
+└── features/
+    ├── dashboard/ profiles/ routing/ settings/
+    ├── cloudflare/                # OAuth + Deploy + Panel clients, hub + deploy screens
+    ├── onboarding/                # first-run language + how-to-start
+    └── radar/                     # the clean-IP scanner
 ```
 
-**The sing‑box boundary.** The UI never talks to the native core directly — it
-talks to a `ProxyController`. Today that's `MockProxyController` (a faithful
-connection + traffic simulation) so the dashboard works end‑to‑end. The real
-[`SingboxProxyController`](lib/src/core/proxy/singbox_proxy_controller.dart)
-documents the `MethodChannel`/`EventChannel` contract each platform host
-(Android `VpnService`, iOS/macOS Network Extension, desktop TUN helper) must
-implement. Switching over is a one‑line change in `main.dart`.
-
-## Nova Radar — what was ported
-
-The Go backend (`scanner.go` / `sources.go`) was reimplemented in pure Dart
-using `dart:io` sockets, preserving the original algorithm:
-
-1. Fetch the enabled IP **sources** in parallel (9 sources: Cloudflare official,
-   ASN ranges, CM list, reverse‑proxy IPs, resolved domains), with the built‑in
-   Cloudflare ranges as fallback.
-2. Generate up to 512 random candidate IPs spread across the CIDRs.
-3. **Phase 1 — quick scan:** bounded‑concurrency TCP connect to each `ip:port`.
-4. **Phase 2 — deep test:** a real **TLS handshake** (with the Nova Worker SNI)
-   on TLS ports, or a TCP read probe on HTTP ports — 3× per candidate, keep
-   those passing ≥2.
-5. Sort fastest‑first, stream results live, and export as `ip:port#Nova-XXXXX`.
-
-## Build & run
-
-> This repo was authored in an environment without the Flutter SDK, so it is
-> verified by CI (`flutter analyze` + `flutter test`) rather than locally. To
-> run it you need [Flutter](https://docs.flutter.dev/get-started/install)
-> (stable, ≥ 3.19).
-
-```bash
-flutter pub get
-flutter run            # pick a device/desktop target
-flutter test           # unit + widget tests
-flutter analyze
-```
-
-Platform folders (`android/`, `ios/`, …) are generated with
-`flutter create . --org online.novaproxy` on first checkout (kept out of the
-repo to stay lean).
-
-## Roadmap
-
-- [ ] Native sing‑box core + per‑platform VPN service behind `SingboxProxyController`.
-- [ ] Subscription parsing & node health‑check / ping.
-- [ ] One‑click “use this IP” — feed a Radar result straight into the active profile.
-- [ ] iCloud / WebDAV profile sync (Karing parity).
+Native hosts implement the same `nova.proxy/control` channel:
+- **Android**: `android/.../NovaVpnService.kt` (VpnService + libbox).
+- **iOS**: `ios/NovaTunnel/PacketTunnelProvider.swift` + `ios/Runner/NovaProxyHost.swift` (NetworkExtension; core is `Libbox.xcframework`).
+- **Desktop**: no native host needed, the Dart controller runs the bundled `sing-box` and points the OS proxy at it.
 
 ## Credits
 
-- [Karing](https://github.com/KaringX/karing) — the sing‑box GUI this client is modelled on.
-- [Nova Radar](https://github.com/IRNova/NovaRadar) — the scanner consolidated here.
-- [Nova Proxy](https://github.com/IRNova/Nova-Proxy) & [novaproxy.online](https://novaproxy.online) — the product and design language.
+Built on [sing-box](https://github.com/SagerNet/sing-box) (GPL-3.0) by the SagerNet team. UI modelled on [Karing](https://github.com/KaringX/karing). Part of [Nova Proxy](https://github.com/IRNova/Nova-Proxy).
+
+---
+<div dir="rtl">
+
+## نوا کلاینت
+
+**اینترنت سریع، رایگان و بدون محدودیت، روی همه‌ی دستگاه‌ها.**
+
+یک کدِ واحد با فلاتر که نوا را روی **iOS، اندروید، مک، ویندوز و لینوکس** اجرا می‌کند؛ با هسته‌ی sing-box، اتصال یک‌لمسی، پنل رایگان اختصاصی روی Cloudflare و اسکنر آی‌پی تمیز.
+
+- **iOS**: با Network Extension؛ روی دستگاه و **TestFlight** اجرا می‌شود.
+- **مک**: کار می‌کند (تأییدشده) با `flutter build macos`.
+- **ویندوز**: قابل ساخت؛ راهنما در `WINDOWS_BUILD.md` (بدون نیاز به دسترسی ادمین).
+- **اندروید**: قابل ساخت؛ نسخه‌ی اصلی اندروید به‌صورت native در iiviirv/nova-app منتشر شده است.
+
+امکانات: اتصال یک‌لمسی، اتصال به Cloudflare و ساخت/وارد کردن پنل، اسکنر رادار، آنبوردینگ، و رابط کاملاً دوزبانه (انگلیسی + فارسی).
+
+ساخته‌شده بر پایه‌ی sing-box (مجوز GPL-3.0).
+
+</div>
 
 <div align="center">
   <a href="https://novaproxy.online/">Website</a> ·
