@@ -1,21 +1,40 @@
-import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/conn_info_controller.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../core/util/format.dart';
 import '../../l10n/nova_strings.dart';
-import '../../theme/nova_gradients.dart';
 import '../../theme/nova_radii.dart';
+import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
-import '../../widgets/nova_card.dart';
+import '../../widgets/gradient_text.dart';
+import '../../widgets/nova_components.dart';
+import '../../widgets/nova_connect_orb.dart';
 import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_scope.dart';
+import '../../widgets/nova_segmented_tabs.dart';
+import '../cloudflare/cloudflare_controller.dart';
+import '../cloudflare/cloudflare_screen.dart';
+import '../cloudflare/deploy_screen.dart';
+import '../radar/radar_screen.dart';
+import '../servers/servers_body.dart';
 
-/// The home screen: the connect control, live status and traffic, and the
-/// active profile. The connect orb is the visual anchor of the app.
-class DashboardScreen extends StatelessWidget {
+/// The home screen — a faithful port of the native Android dashboard:
+/// a Summary/Configs segmented header, a Cloudflare chip, the connect orb with
+/// a live uptime timer, a metrics block (exit country/IP/ping + up/down speed),
+/// the active config card, and a tools row.
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  int _tab = 0; // 0 = Summary, 1 = Configs
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +42,11 @@ class DashboardScreen extends StatelessWidget {
     final s = NovaStrings.of(context);
 
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.profiles]),
+      listenable: Listenable.merge(<Listenable>[
+        scope.proxy,
+        scope.profiles,
+        scope.cloudflare,
+      ]),
       builder: (context, _) {
         final proxy = scope.proxy;
         final active = scope.profiles.active;
@@ -34,27 +57,36 @@ class DashboardScreen extends StatelessWidget {
           });
         }
 
+        final int configCount = scope.profiles.profiles.length;
+
         return Center(
           child: ConstrainedBox(
             constraints:
                 const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
             child: ListView(
-              padding: const EdgeInsets.all(NovaSpace.xl),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
               children: <Widget>[
-                _Header(),
-                const SizedBox(height: NovaSpace.xxl),
-                Center(
-                  child: _ConnectOrb(
-                    state: proxy.state,
-                    onTap: active == null ? null : proxy.toggle,
-                  ),
+                const _HomeHeader(),
+                const SizedBox(height: 14),
+                NovaSegmentedTabs(
+                  selected: _tab,
+                  onChanged: (i) => setState(() => _tab = i),
+                  segments: <NovaSegment>[
+                    NovaSegment(label: s.t('home.summary'), icon: Icons.home_rounded),
+                    NovaSegment(
+                      label: s.t('home.configs'),
+                      icon: Icons.grid_view_rounded,
+                      badge: configCount,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: NovaSpace.xl),
-                Center(child: _StatusText(state: proxy.state, error: proxy.lastError)),
-                const SizedBox(height: NovaSpace.xxl),
-                _TrafficRow(traffic: proxy.traffic, active: proxy.state.isActive),
-                const SizedBox(height: NovaSpace.lg),
-                _ActiveProfileCard(s: s),
+                const SizedBox(height: 12),
+                const _CloudflareChip(),
+                const SizedBox(height: 14),
+                if (_tab == 0)
+                  _SummaryView(proxy: proxy)
+                else
+                  const ServersBody(compact: true),
               ],
             ),
           ),
@@ -64,334 +96,658 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader();
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        const NovaLogo(size: 34),
-        const SizedBox(width: NovaSpace.md),
-        Text('Nova Client',
-            style: Theme.of(context).textTheme.titleLarge),
+        const NovaLogo(size: 30),
+        const SizedBox(width: 10),
+        GradientText(
+          'Nova',
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w800),
+        ),
         const Spacer(),
       ],
     );
   }
 }
 
-class _ConnectOrb extends StatefulWidget {
-  const _ConnectOrb({required this.state, required this.onTap});
-  final ProxyConnectionState state;
-  final VoidCallback? onTap;
-
-  @override
-  State<_ConnectOrb> createState() => _ConnectOrbState();
-}
-
-class _ConnectOrbState extends State<_ConnectOrb>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 2),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
+/// Full-width Cloudflare status chip → opens the Cloudflare hub.
+class _CloudflareChip extends StatelessWidget {
+  const _CloudflareChip();
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    final s = NovaStrings.of(context);
-    final bool active = widget.state.isActive;
-    final bool busy = widget.state.isBusy;
-
-    final String label = switch (widget.state) {
-      ProxyConnectionState.connected => s.disconnect,
-      ProxyConnectionState.connecting => s.connecting,
-      ProxyConnectionState.disconnecting => s.connecting,
-      _ => s.connect,
-    };
+    final cf = NovaScope.of(context).cloudflare;
+    final bool connected = cf.phase == CfPhase.connected;
+    final text = Theme.of(context).textTheme;
 
     return GestureDetector(
-      onTap: busy ? null : widget.onTap,
-      child: AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, _) {
-          return SizedBox(
-            width: 240,
-            height: 240,
-            child: CustomPaint(
-              painter: _OrbPainter(
-                t: _pulse.value,
-                active: active,
-                cyan: nova.cyan,
-                violet: nova.violet,
-                ring: nova.border,
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    if (busy)
-                      SizedBox(
-                        width: 34,
-                        height: 34,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: nova.cyan,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        decoration: BoxDecoration(
+          color: nova.surface,
+          borderRadius: NovaRadii.chipR,
+          border: Border.all(color: nova.border.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.cloud_rounded, size: 17, color: nova.cyan),
+            const SizedBox(width: 10),
+            Expanded(
+              child: connected
+                  ? Text.rich(
+                      TextSpan(children: <InlineSpan>[
+                        TextSpan(
+                          text: 'Connected to Cloudflare  ',
+                          style: text.labelLarge
+                              ?.copyWith(color: nova.muted, fontSize: 12),
                         ),
-                      )
-                    else
-                      Icon(
-                        Icons.power_settings_new,
-                        size: 56,
-                        color: active ? nova.cyan : nova.muted,
-                      ),
-                    const SizedBox(height: 10),
-                    Text(
-                      label,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: active ? nova.text : nova.muted,
+                        TextSpan(
+                          text: cf.accountName.isEmpty ? '·' : cf.accountName,
+                          style: text.labelLarge?.copyWith(
+                            color: NovaSemantics.successGreen,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
                           ),
+                        ),
+                      ]),
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : Text(
+                      'Connect Cloudflare',
+                      style: text.labelLarge?.copyWith(
+                        color: nova.muted,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
                     ),
-                  ],
-                ),
-              ),
             ),
-          );
-        },
+            Icon(Icons.chevron_right_rounded, size: 18, color: nova.muted),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _OrbPainter extends CustomPainter {
-  _OrbPainter({
-    required this.t,
-    required this.active,
-    required this.cyan,
-    required this.violet,
-    required this.ring,
-  });
-
-  final double t;
-  final bool active;
-  final Color cyan;
-  final Color violet;
-  final Color ring;
+/// The Summary tab: orb + uptime hero, metrics, config card, tools.
+class _SummaryView extends StatefulWidget {
+  const _SummaryView({required this.proxy});
+  final ProxyController proxy;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final Offset c = size.center(Offset.zero);
-    final double r = size.shortestSide / 2;
+  State<_SummaryView> createState() => _SummaryViewState();
+}
 
-    // Idle ring.
-    final Paint ringPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = ring;
-    canvas.drawCircle(c, r - 16, ringPaint);
+class _SummaryViewState extends State<_SummaryView> {
+  Timer? _ticker;
 
-    if (active) {
-      // Expanding pulse rings.
-      for (int i = 0; i < 2; i++) {
-        final double phase = (t + i * 0.5) % 1.0;
-        final double radius = (r - 60) + phase * 56;
-        final Paint pulse = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
-          ..color = cyan.withValues(alpha: (1 - phase) * 0.5);
-        canvas.drawCircle(c, radius, pulse);
-      }
-      // Glow.
-      final Paint glow = Paint()
-        ..shader = NovaGradients.glow(cyan, opacity: 0.45)
-            .createShader(Rect.fromCircle(center: c, radius: r));
-      canvas.drawCircle(c, r, glow);
-    }
-
-    // Inner disc with the signature gradient sweep.
-    final Rect inner = Rect.fromCircle(center: c, radius: r - 30);
-    final Paint disc = Paint()
-      ..shader = SweepGradient(
-        startAngle: 0,
-        endAngle: 2 * math.pi,
-        transform: GradientRotation(t * 2 * math.pi),
-        colors: active
-            ? <Color>[cyan, violet, cyan]
-            : <Color>[ring, ring.withValues(alpha: 0.4), ring],
-      ).createShader(inner);
-    canvas.drawCircle(c, r - 30, disc..style = PaintingStyle.stroke..strokeWidth = 4);
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
   }
 
   @override
-  bool shouldRepaint(_OrbPainter old) => old.t != t || old.active != active;
+  void didUpdateWidget(_SummaryView old) {
+    super.didUpdateWidget(old);
+    _syncTicker();
+  }
+
+  void _syncTicker() {
+    if (widget.proxy.state.isActive) {
+      _ticker ??= Timer.periodic(
+          const Duration(seconds: 1), (_) => setState(() {}));
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final proxy = widget.proxy;
+    final scope = NovaScope.of(context);
+    final bool hasProfile = scope.profiles.active != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: 6),
+        Row(
+          children: <Widget>[
+            NovaConnectOrb(
+              state: proxy.state,
+              size: 168,
+              onTap: hasProfile || proxy.state.isActive ? proxy.toggle : null,
+            ),
+            const SizedBox(width: 22),
+            Expanded(
+              child: SizedBox(
+                height: 168,
+                child: _StatusColumn(
+                  state: proxy.state,
+                  since: proxy.connectedSince,
+                  error: proxy.lastError,
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: proxy.state.isActive ? 18 : 26),
+        _MetricsBlock(proxy: proxy),
+        if (hasProfile) ...<Widget>[
+          const SizedBox(height: 10),
+          _ConfigCard(),
+        ],
+        const SizedBox(height: 10),
+        const _ToolsRow(),
+      ],
+    );
+  }
 }
 
-class _StatusText extends StatelessWidget {
-  const _StatusText({required this.state, required this.error});
+class _StatusColumn extends StatelessWidget {
+  const _StatusColumn({
+    required this.state,
+    required this.since,
+    required this.error,
+  });
+
   final ProxyConnectionState state;
+  final DateTime? since;
   final String? error;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     final s = NovaStrings.of(context);
-    final (String text, Color color) = switch (state) {
-      ProxyConnectionState.connected => (s.connected, nova.success),
-      ProxyConnectionState.connecting => (s.connecting, nova.cyan),
-      ProxyConnectionState.disconnecting => (s.connecting, nova.muted),
-      ProxyConnectionState.error => (error ?? 'Error', nova.danger),
-      ProxyConnectionState.disconnected => (s.disconnected, nova.muted),
-    };
-    return Row(
+    final text = Theme.of(context).textTheme;
+    final bool connected = state.isActive;
+
+    final Color badgeColor =
+        connected ? NovaSemantics.successGreen : nova.muted;
+    final String badgeLabel = connected ? s.connected : s.disconnected;
+
+    Widget body;
+    switch (state) {
+      case ProxyConnectionState.connected:
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              Fmt.uptime(since),
+              style: text.displayMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                fontSize: 46,
+                height: 1.0,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Secure',
+                style: text.titleMedium?.copyWith(
+                  color: NovaSemantics.connectGreen,
+                  fontWeight: FontWeight.w600,
+                )),
+          ],
+        );
+      case ProxyConnectionState.connecting:
+        body = Text(s.connecting,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800));
+      case ProxyConnectionState.disconnecting:
+        body = Text(s.connecting,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800));
+      case ProxyConnectionState.error:
+        body = Text(error ?? 'Error',
+            style: text.titleMedium?.copyWith(color: nova.danger));
+      case ProxyConnectionState.disconnected:
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(s.tapToConnect,
+                style:
+                    text.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(s.disconnected,
+                style: text.bodyMedium?.copyWith(color: nova.muted)),
+          ],
+        );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 8),
-        Text(text,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(color: color)),
+        NovaStatusBadge(label: badgeLabel, color: badgeColor),
+        const SizedBox(height: 16),
+        body,
       ],
     );
   }
 }
 
-class _TrafficRow extends StatelessWidget {
-  const _TrafficRow({required this.traffic, required this.active});
-  final TrafficStats traffic;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = NovaStrings.of(context);
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: _TrafficTile(
-            icon: Icons.south_rounded,
-            label: s.download,
-            value: active ? Fmt.bps(traffic.downlinkBps) : '—',
-            total: active ? Fmt.bytes(traffic.downlinkTotal) : null,
-            color: context.nova.cyan,
-          ),
-        ),
-        const SizedBox(width: NovaSpace.md),
-        Expanded(
-          child: _TrafficTile(
-            icon: Icons.north_rounded,
-            label: s.upload,
-            value: active ? Fmt.bps(traffic.uplinkBps) : '—',
-            total: active ? Fmt.bytes(traffic.uplinkTotal) : null,
-            color: context.nova.violet,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _TrafficTile extends StatelessWidget {
-  const _TrafficTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.total,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final String? total;
-  final Color color;
+/// Country/IP/ping row + download/upload speed tiles.
+class _MetricsBlock extends StatelessWidget {
+  const _MetricsBlock({required this.proxy});
+  final ProxyController proxy;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    return NovaCard(
+    final connInfo = NovaScope.of(context).connInfo;
+    final text = Theme.of(context).textTheme;
+    final bool active = proxy.state.isActive;
+
+    return ListenableBuilder(
+      listenable: connInfo,
+      builder: (context, _) {
+        final ConnInfo info = connInfo.info;
+        final bool loading = connInfo.loading;
+        final String country = !active
+            ? '—'
+            : info.hasGeo
+                ? (info.countryCode ?? '—')
+                : (loading ? '…' : '—');
+        final String ip = !active
+            ? '—'
+            : (info.ip ?? (loading ? '…' : '—'));
+        final String ping = !active
+            ? '—'
+            : info.pingMs != null
+                ? '${info.pingMs} ms'
+                : (loading ? '…' : '—');
+
+        return Column(
+          children: <Widget>[
+            // Country + IP / ping card.
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: nova.surface,
+                borderRadius: NovaRadii.heroR,
+                border: Border.all(color: nova.border),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            Icon(Icons.public, size: 18, color: nova.indigo),
+                            const SizedBox(width: 8),
+                            if (active && info.hasGeo) ...<Widget>[
+                              NovaCountryFlag(iso2: info.countryCode, size: 16),
+                              const SizedBox(width: 6),
+                            ],
+                            Text(country,
+                                style: text.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          active ? ip : 'Not connected',
+                          style: text.bodySmall?.copyWith(color: nova.muted),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Icon(Icons.speed_rounded, size: 16, color: nova.cyan),
+                          const SizedBox(width: 4),
+                          Text(ping,
+                              style: text.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text('PING',
+                          style: text.labelSmall?.copyWith(
+                            color: nova.muted,
+                            fontSize: 10,
+                            letterSpacing: 1.5,
+                          )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Speed tiles.
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _SpeedTile(
+                    label: NovaStrings.of(context).download,
+                    icon: Icons.arrow_downward_rounded,
+                    color: nova.cyan,
+                    value: active
+                        ? Fmt.bps(proxy.traffic.downlinkBps)
+                        : '—',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _SpeedTile(
+                    label: NovaStrings.of(context).upload,
+                    icon: Icons.arrow_upward_rounded,
+                    color: nova.violet,
+                    value:
+                        active ? Fmt.bps(proxy.traffic.uplinkBps) : '—',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SpeedTile extends StatelessWidget {
+  const _SpeedTile({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.value,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: nova.surface,
+        borderRadius: NovaRadii.cardR,
+        border: Border.all(color: nova.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: nova.muted)),
+              NovaIconChip(icon: icon, color: color, size: 26, radius: 8),
+              const SizedBox(width: 8),
+              Text(label.toUpperCase(),
+                  style: text.labelSmall?.copyWith(
+                    color: nova.muted,
+                    letterSpacing: 0.6,
+                  )),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-          if (total != null)
-            Text(total!,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: nova.muted)),
+          const SizedBox(height: 10),
+          Text(value,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
 
-class _ActiveProfileCard extends StatelessWidget {
-  const _ActiveProfileCard({required this.s});
-  final NovaStrings s;
+/// The active config / server summary card.
+class _ConfigCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final scope = NovaScope.of(context);
+    final active = scope.profiles.active!;
+    final proxy = scope.proxy;
+    final text = Theme.of(context).textTheme;
+    final bool connected = proxy.state.isActive;
+    final int? latency = active.lastLatencyMs;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: nova.surface,
+        borderRadius: NovaRadii.heroR,
+        border: Border.all(color: nova.border),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              NovaIconChip(
+                icon: active.isSubscription
+                    ? Icons.cloud_sync_rounded
+                    : Icons.dns_rounded,
+                color: nova.indigo,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(active.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: text.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 8),
+                        NovaProtocolBadge(
+                          label: active.kind.label,
+                          color: nova.cyan,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      active.isSubscription
+                          ? '${active.nodeCount} nodes'
+                          : 'Single config',
+                      style: text.bodySmall?.copyWith(color: nova.muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (latency != null)
+                Row(
+                  children: <Widget>[
+                    Text('$latency ms',
+                        style: text.titleSmall?.copyWith(
+                          color: NovaSemantics.successGreen,
+                          fontWeight: FontWeight.w700,
+                        )),
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: NovaSemantics.successGreen,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(height: 1, color: nova.border),
+          ),
+          Row(
+            children: <Widget>[
+              _ConfigMetric(
+                icon: Icons.schedule_rounded,
+                label: 'Time',
+                value: connected
+                    ? Fmt.uptime(proxy.connectedSince)
+                    : '—',
+              ),
+              _ConfigMetric(
+                icon: Icons.data_usage_rounded,
+                label: 'Data',
+                value: '∞',
+              ),
+              _ConfigMetric(
+                icon: Icons.calendar_month_rounded,
+                label: 'Expiry',
+                value: '—',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfigMetric extends StatelessWidget {
+  const _ConfigMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final scope = NovaScope.of(context);
     final nova = context.nova;
-    final active = scope.profiles.active;
-
-    return NovaCard(
-      child: Row(
+    final text = Theme.of(context).textTheme;
+    return Expanded(
+      child: Column(
         children: <Widget>[
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: nova.surface2,
-              borderRadius: NovaRadii.smR,
+          Icon(icon, size: 14, color: nova.muted),
+          const SizedBox(height: 5),
+          Text(label.toUpperCase(),
+              style: text.labelSmall
+                  ?.copyWith(color: nova.muted, fontSize: 10, letterSpacing: 0.6)),
+          const SizedBox(height: 3),
+          Text(value,
+              style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Radar / Deploy / Panel quick-access tiles.
+class _ToolsRow extends StatelessWidget {
+  const _ToolsRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _ToolCard(
+            icon: Icons.radar_rounded,
+            label: 'Radar',
+            color: nova.cyan,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const RadarScreen()),
             ),
-            child: Icon(Icons.layers, color: nova.cyan, size: 20),
           ),
-          const SizedBox(width: NovaSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(s.activeProfile,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: nova.muted)),
-                const SizedBox(height: 2),
-                Text(
-                  active?.name ?? s.noProfile,
-                  style: Theme.of(context).textTheme.titleSmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ToolCard(
+            icon: Icons.cloud_upload_rounded,
+            label: 'Deploy',
+            color: nova.indigo,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
             ),
           ),
-          if (active?.lastLatencyMs != null)
-            Text('${active!.lastLatencyMs} ms',
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ToolCard(
+            icon: Icons.dashboard_rounded,
+            label: 'Panel',
+            color: nova.violet,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ToolCard extends StatelessWidget {
+  const _ToolCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: nova.surface,
+          borderRadius: NovaRadii.toolR,
+          border: Border.all(color: nova.border),
+        ),
+        child: Column(
+          children: <Widget>[
+            NovaIconChip(icon: icon, color: color, size: 44, radius: 22),
+            const SizedBox(height: 8),
+            Text(label,
                 style: Theme.of(context)
                     .textTheme
                     .labelMedium
-                    ?.copyWith(color: nova.success)),
-        ],
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }

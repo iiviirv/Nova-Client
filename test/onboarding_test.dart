@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nova_client/src/app.dart';
+import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
@@ -16,9 +17,11 @@ void main() {
     final radar = RadarController()..attachPrefs(prefs);
     final cloudflare = CloudflareController()..attachPrefs(prefs);
 
+    final proxy = MockProxyController();
     await tester.pumpWidget(NovaApp(
       theme: theme,
-      proxy: MockProxyController(),
+      proxy: proxy,
+      connInfo: ConnInfoController(proxy),
       profiles: profiles,
       radar: radar,
       cloudflare: cloudflare,

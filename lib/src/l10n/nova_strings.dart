@@ -29,6 +29,8 @@ class NovaStrings {
   // ---- Navigation ----
   String get navDashboard => t('nav.dashboard');
   String get navProfiles => t('nav.profiles');
+  String get navServers => t('nav.servers');
+  String get navStats => t('nav.stats');
   String get navRadar => t('nav.radar');
   String get navRouting => t('nav.routing');
   String get navSettings => t('nav.settings');
@@ -83,6 +85,8 @@ class NovaStrings {
   static const Map<String, String> _en = <String, String>{
     'nav.dashboard': 'Home',
     'nav.profiles': 'Profiles',
+    'nav.servers': 'Servers',
+    'nav.stats': 'Stats',
     'nav.radar': 'Radar',
     'nav.routing': 'Routing',
     'nav.settings': 'Settings',
@@ -94,6 +98,8 @@ class NovaStrings {
     'dash.tapToConnect': 'Tap to connect',
     'dash.download': 'Download',
     'dash.upload': 'Upload',
+    'home.summary': 'Summary',
+    'home.configs': 'Configs',
     'dash.activeProfile': 'Active profile',
     'dash.noProfile': 'No profile selected',
     'radar.title': 'Nova Radar',
@@ -134,6 +140,8 @@ class NovaStrings {
   static const Map<String, String> _fa = <String, String>{
     'nav.dashboard': 'خانه',
     'nav.profiles': 'پروفایل‌ها',
+    'nav.servers': 'سرورها',
+    'nav.stats': 'آمار',
     'nav.radar': 'رادار',
     'nav.routing': 'مسیریابی',
     'nav.settings': 'تنظیمات',
@@ -145,6 +153,8 @@ class NovaStrings {
     'dash.tapToConnect': 'برای اتصال لمس کنید',
     'dash.download': 'دانلود',
     'dash.upload': 'آپلود',
+    'home.summary': 'خلاصه',
+    'home.configs': 'پیکربندی‌ها',
     'dash.activeProfile': 'پروفایل فعال',
     'dash.noProfile': 'پروفایلی انتخاب نشده',
     'radar.title': 'رادار نوا',

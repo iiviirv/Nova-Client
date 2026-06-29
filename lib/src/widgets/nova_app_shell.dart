@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../core/proxy/proxy_controller.dart';
 import '../features/cloudflare/cloudflare_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
-import '../features/profiles/profiles_screen.dart';
-import '../features/radar/radar_screen.dart';
-import '../features/routing/routing_screen.dart';
+import '../features/servers/servers_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/stats/stats_screen.dart';
 import '../l10n/nova_strings.dart';
 import '../theme/nova_theme.dart';
+import 'nova_connect_button.dart';
 import 'nova_logo.dart';
+import 'nova_scope.dart';
 
-/// The top-level navigation scaffold. Adapts between a bottom navigation bar on
-/// narrow (mobile) layouts and a navigation rail on wide (desktop/tablet)
-/// layouts — both styled in the Nova language.
+/// The top-level navigation scaffold. On narrow (mobile) layouts it shows the
+/// signature Nova bottom bar — four tabs (Home · Servers · Stats · Settings)
+/// with a floating gradient Connect button overflowing the center. On wide
+/// (desktop/tablet) layouts it switches to a vertical rail. Radar, Deploy and
+/// Panel are reached as pushed "Tools" routes from the Home screen.
 class NovaAppShell extends StatefulWidget {
   const NovaAppShell({super.key, this.startAction});
 
@@ -28,9 +32,8 @@ class _NovaAppShellState extends State<NovaAppShell> {
 
   static const List<Widget> _screens = <Widget>[
     DashboardScreen(),
-    ProfilesScreen(),
-    RadarScreen(),
-    RoutingScreen(),
+    ServersScreen(),
+    StatsScreen(),
     SettingsScreen(),
   ];
 
@@ -39,8 +42,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
     super.initState();
     final String? action = widget.startAction;
     if (action == null) return;
-    // Land where the onboarding choice points.
-    _index = 1; // Configs/Profiles
+    _index = 1; // Servers/Configs
     if (action == 'deploy' || action == 'panel') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -51,20 +53,32 @@ class _NovaAppShellState extends State<NovaAppShell> {
     }
   }
 
+  void _toggleConnect() {
+    final proxy = NovaScope.of(context).proxy;
+    if (proxy.activeProfile == null && !proxy.state.isActive) {
+      setState(() => _index = 1); // nudge to Servers to pick one
+      return;
+    }
+    proxy.toggle();
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
     final nova = context.nova;
 
-    final List<_Dest> dests = <_Dest>[
-      _Dest(Icons.shield_outlined, Icons.shield, s.navDashboard),
-      _Dest(Icons.layers_outlined, Icons.layers, s.navProfiles),
-      _Dest(Icons.radar_outlined, Icons.radar, s.navRadar),
-      _Dest(Icons.route_outlined, Icons.route, s.navRouting),
-      _Dest(Icons.settings_outlined, Icons.settings, s.navSettings),
+    // Left-of-center and right-of-center tabs; the connect button sits between.
+    final List<_Dest> leftDests = <_Dest>[
+      _Dest(Icons.home_outlined, Icons.home_rounded, s.navDashboard),
+      _Dest(Icons.dns_outlined, Icons.dns_rounded, s.navServers),
+    ];
+    final List<_Dest> rightDests = <_Dest>[
+      _Dest(Icons.bar_chart_outlined, Icons.bar_chart_rounded, s.navStats),
+      _Dest(Icons.tune_outlined, Icons.tune_rounded, s.navSettings),
     ];
 
     final Widget body = SafeArea(
+      bottom: false,
       child: IndexedStack(index: _index, children: _screens),
     );
 
@@ -77,8 +91,9 @@ class _NovaAppShellState extends State<NovaAppShell> {
               children: <Widget>[
                 _NovaRail(
                   index: _index,
-                  dests: dests,
+                  dests: <_Dest>[...leftDests, ...rightDests],
                   onSelect: (i) => setState(() => _index = i),
+                  onConnect: _toggleConnect,
                 ),
                 VerticalDivider(width: 1, color: nova.border),
                 Expanded(child: body),
@@ -90,8 +105,10 @@ class _NovaAppShellState extends State<NovaAppShell> {
           body: body,
           bottomNavigationBar: _NovaBottomBar(
             index: _index,
-            dests: dests,
+            leftDests: leftDests,
+            rightDests: rightDests,
             onSelect: (i) => setState(() => _index = i),
+            onConnect: _toggleConnect,
           ),
         );
       },
@@ -106,42 +123,91 @@ class _Dest {
   final String label;
 }
 
+/// The rounded-top bottom bar with the floating connect button straddling its
+/// top edge in the center.
 class _NovaBottomBar extends StatelessWidget {
   const _NovaBottomBar({
     required this.index,
-    required this.dests,
+    required this.leftDests,
+    required this.rightDests,
     required this.onSelect,
+    required this.onConnect,
   });
 
-  final int index;
-  final List<_Dest> dests;
+  final int index; // 0,1 = left; 2,3 = right
+  final List<_Dest> leftDests;
+  final List<_Dest> rightDests;
   final ValueChanged<int> onSelect;
+  final VoidCallback onConnect;
+
+  static const double _barHeight = 64;
+  static const double _protrusion = 24;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    return Container(
-      decoration: BoxDecoration(
-        color: nova.navBg,
-        border: Border(top: BorderSide(color: nova.border)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: <Widget>[
-              for (int i = 0; i < dests.length; i++)
-                Expanded(
-                  child: _NavItem(
-                    dest: dests[i],
-                    selected: i == index,
-                    onTap: () => onSelect(i),
-                  ),
+    final double bottomInset = MediaQuery.of(context).padding.bottom;
+    final proxy = NovaScope.of(context).proxy;
+
+    return SizedBox(
+      height: _barHeight + _protrusion + bottomInset,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          // The bar surface, pinned to the bottom.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _barHeight + bottomInset,
+            child: Container(
+              decoration: BoxDecoration(
+                color: nova.navBg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(26),
                 ),
-            ],
+                border: Border(top: BorderSide(color: nova.border)),
+              ),
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < leftDests.length; i++)
+                    Expanded(
+                      child: _NavItem(
+                        dest: leftDests[i],
+                        selected: index == i,
+                        onTap: () => onSelect(i),
+                      ),
+                    ),
+                  const Spacer(), // center slot reserved for the connect button
+                  for (int i = 0; i < rightDests.length; i++)
+                    Expanded(
+                      child: _NavItem(
+                        dest: rightDests[i],
+                        selected: index == i + 2,
+                        onTap: () => onSelect(i + 2),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
+          // Floating connect button, centered over the bar's top edge.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ListenableBuilder(
+                listenable: proxy,
+                builder: (context, _) => NovaConnectButton(
+                  state: proxy.state,
+                  onTap: onConnect,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -164,19 +230,25 @@ class _NavItem extends StatelessWidget {
     final Color color = selected ? nova.cyan : nova.muted;
     return InkWell(
       onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(selected ? dest.activeIcon : dest.icon, color: color, size: 24),
-          const SizedBox(height: 4),
-          Text(
-            dest.label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-          ),
-        ],
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(selected ? dest.activeIcon : dest.icon, color: color, size: 24),
+            const SizedBox(height: 3),
+            Text(
+              dest.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -187,33 +259,48 @@ class _NovaRail extends StatelessWidget {
     required this.index,
     required this.dests,
     required this.onSelect,
+    required this.onConnect,
   });
 
   final int index;
   final List<_Dest> dests;
   final ValueChanged<int> onSelect;
+  final VoidCallback onConnect;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final proxy = NovaScope.of(context).proxy;
     return Container(
       width: 88,
       color: nova.bgAlt,
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 20),
-          const NovaLogoBadge(size: 44),
-          const SizedBox(height: 24),
-          for (int i = 0; i < dests.length; i++)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: _RailItem(
-                dest: dests[i],
-                selected: i == index,
-                onTap: () => onSelect(i),
+      child: SafeArea(
+        right: false,
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: 20),
+            const NovaLogoBadge(size: 44),
+            const SizedBox(height: 20),
+            ListenableBuilder(
+              listenable: proxy,
+              builder: (context, _) => NovaConnectButton(
+                state: proxy.state,
+                onTap: onConnect,
+                size: 52,
               ),
             ),
-        ],
+            const SizedBox(height: 20),
+            for (int i = 0; i < dests.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _RailItem(
+                  dest: dests[i],
+                  selected: i == index,
+                  onTap: () => onSelect(i),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

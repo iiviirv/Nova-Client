@@ -48,6 +48,22 @@ abstract class ProxyController extends ChangeNotifier {
   /// Human-readable error from the last failed connection attempt, if any.
   String? get lastError;
 
+  /// When the tunnel last became active, used by the dashboard's uptime timer.
+  /// Maintained centrally by observing [state] on every notification so the
+  /// per-platform implementations don't each have to track it.
+  DateTime? _connectedSince;
+  DateTime? get connectedSince => _connectedSince;
+
+  @override
+  void notifyListeners() {
+    if (state.isActive) {
+      _connectedSince ??= DateTime.now();
+    } else {
+      _connectedSince = null;
+    }
+    super.notifyListeners();
+  }
+
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);
 

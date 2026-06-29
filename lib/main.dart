@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/proxy/conn_info_controller.dart';
 import 'src/core/proxy/desktop_proxy_controller.dart';
 import 'src/core/proxy/mock_proxy_controller.dart';
 import 'src/core/proxy/proxy_controller.dart';
@@ -37,9 +38,12 @@ Future<void> main() async {
           ? DesktopProxyController()
           : MockProxyController();
 
+  final ConnInfoController connInfo = ConnInfoController(proxy);
+
   runApp(NovaApp(
     theme: theme,
     proxy: proxy,
+    connInfo: connInfo,
     profiles: profiles,
     radar: radar,
     cloudflare: cloudflare,

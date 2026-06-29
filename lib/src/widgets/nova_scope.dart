@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../core/proxy/conn_info_controller.dart';
 import '../core/proxy/proxy_controller.dart';
 import '../features/cloudflare/cloudflare_controller.dart';
 import '../features/profiles/profiles_controller.dart';
@@ -18,6 +19,7 @@ class NovaScope extends InheritedWidget {
     super.key,
     required this.theme,
     required this.proxy,
+    required this.connInfo,
     required this.profiles,
     required this.radar,
     required this.cloudflare,
@@ -26,6 +28,7 @@ class NovaScope extends InheritedWidget {
 
   final ThemeController theme;
   final ProxyController proxy;
+  final ConnInfoController connInfo;
   final ProfilesController profiles;
   final RadarController radar;
   final CloudflareController cloudflare;
@@ -41,6 +44,7 @@ class NovaScope extends InheritedWidget {
   bool updateShouldNotify(NovaScope oldWidget) =>
       theme != oldWidget.theme ||
       proxy != oldWidget.proxy ||
+      connInfo != oldWidget.connInfo ||
       profiles != oldWidget.profiles ||
       radar != oldWidget.radar ||
       cloudflare != oldWidget.cloudflare;
