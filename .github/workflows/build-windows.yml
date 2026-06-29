@@ -1,0 +1,38 @@
+name: Build Windows
+
+# Builds the Nova Client Windows desktop app (bundling the committed
+# sing-box-windows-amd64 core) and uploads a ready-to-run Nova-Windows.zip as a
+# workflow artifact. Run it manually from the Actions tab.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows desktop app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.3
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows (release)
+        run: flutter build windows --release
+
+      - name: Package Nova-Windows.zip
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Nova-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nova-Windows
+          path: Nova-Windows.zip
+          if-no-files-found: error

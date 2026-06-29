@@ -83,14 +83,14 @@ class NovaColors {
   static const NovaColors dark = NovaColors(
     brightness: Brightness.dark,
     cyan: Color(0xFF22D3EE),
-    violet: Color(0xFFA855F7),
-    indigo: Color(0xFF818CF8),
+    violet: Color(0xFF9D4EFB), // matches native Android NovaViolet
+    indigo: Color(0xFF7C5CFF), // matches native Android NovaIndigo
     indigoStrong: Color(0xFF6366F1),
     onAccent: Color(0xFF05060A),
-    bg: Color(0xFF05060A),
-    bgAlt: Color(0xFF090B12),
-    surface: Color(0x0AFFFFFF), // rgba(255,255,255,0.04)
-    surface2: Color(0x0FFFFFFF), // rgba(255,255,255,0.06)
+    bg: Color(0xFF070809), // native Android NovaBackground
+    bgAlt: Color(0xFF0C0E13),
+    surface: Color(0x12FFFFFF), // ~surface card fill, a touch more visible
+    surface2: Color(0x1AFFFFFF), // selected/raised surface
     navBg: Color(0xB305060A), // rgba(5,6,10,0.7)
     codeBg: Color(0xFF0B0E16),
     border: Color(0x17FFFFFF), // rgba(255,255,255,0.09)
