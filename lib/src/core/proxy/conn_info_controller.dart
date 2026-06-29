@@ -11,8 +11,19 @@ import 'proxy_controller.dart';
 /// Android `NovaConnInfo`, which polls roughly every 6 seconds while connected.
 @immutable
 class ConnInfo {
-  const ConnInfo({this.ip, this.countryCode, this.countryName, this.pingMs});
+  const ConnInfo({
+    this.reachable = false,
+    this.ip,
+    this.countryCode,
+    this.countryName,
+    this.pingMs,
+  });
 
+  /// Whether a tiny request actually completes through the tunnel. This is the
+  /// honest "is traffic getting through" signal, kept separate from [hasGeo]
+  /// because geo providers rate-limit a shared exit IP and a failed lookup must
+  /// never be read as a dead tunnel.
+  final bool reachable;
   final String? ip;
   final String? countryCode; // ISO-2, e.g. "DE"
   final String? countryName;
@@ -72,10 +83,11 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   Future<void> _refresh() async {
-    final int? ping = await _measurePing();
-    final ConnInfo? geo = await _fetchGeo();
+    final (bool reachable, int? ping) = await _probe();
+    final ConnInfo? geo = reachable ? await _fetchGeo() : null;
     _loading = false;
     _info = ConnInfo(
+      reachable: reachable,
       ip: geo?.ip ?? _info.ip,
       countryCode: geo?.countryCode ?? _info.countryCode,
       countryName: geo?.countryName ?? _info.countryName,
@@ -84,42 +96,63 @@ class ConnInfoController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// ip-api.com over plain HTTP (the native app whitelists cleartext for it);
-  /// returns IP + ISO country code/name.
-  Future<ConnInfo?> _fetchGeo() async {
-    try {
-      final Uri url = Uri.parse(
-        'http://ip-api.com/json/?fields=status,country,countryCode,query',
-      );
-      final HttpClientRequest req = await _client.getUrl(url);
-      final HttpClientResponse res = await req.close();
-      if (res.statusCode != 200) return null;
-      final String body = await res.transform(utf8.decoder).join();
-      final Map<String, dynamic> j = jsonDecode(body) as Map<String, dynamic>;
-      if (j['status'] != 'success') return null;
-      return ConnInfo(
-        ip: j['query'] as String?,
-        countryCode: (j['countryCode'] as String?)?.toUpperCase(),
-        countryName: j['country'] as String?,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Round-trip time to Cloudflare's trace endpoint as a coarse ping.
-  Future<int?> _measurePing() async {
+  /// A tiny `generate_204` request through the tunnel: its completion is the
+  /// reachability signal, and its round-trip doubles as a coarse ping. Uses a
+  /// non-Cloudflare host on purpose (a Nova worker can't relay to Cloudflare's
+  /// own endpoints without hitting loop protection, which is why pinging
+  /// 1.1.1.1 used to always fail).
+  Future<(bool, int?)> _probe() async {
     try {
       final Stopwatch sw = Stopwatch()..start();
       final HttpClientRequest req = await _client
-          .getUrl(Uri.parse('https://1.1.1.1/cdn-cgi/trace'));
+          .getUrl(Uri.parse('https://www.gstatic.com/generate_204'));
+      req.followRedirects = false;
       final HttpClientResponse res = await req.close();
       await res.drain<void>();
       sw.stop();
-      return sw.elapsedMilliseconds;
+      final bool ok = res.statusCode >= 200 && res.statusCode < 400;
+      return (ok, ok ? sw.elapsedMilliseconds : null);
     } catch (_) {
-      return null;
+      return (false, null);
     }
+  }
+
+  /// Best-effort exit IP + country over HTTPS, trying providers in turn. ipinfo
+  /// is last because it rate-limits shared exit IPs hardest; ip-api is avoided
+  /// (cleartext, blocked on a modern SDK).
+  Future<ConnInfo?> _fetchGeo() async {
+    const List<String> urls = <String>[
+      'https://ipwho.is/',
+      'https://api.ip.sb/geoip',
+      'https://ipinfo.io/json',
+    ];
+    for (final String url in urls) {
+      try {
+        final HttpClientRequest req = await _client.getUrl(Uri.parse(url));
+        final HttpClientResponse res = await req.close();
+        if (res.statusCode != 200) {
+          await res.drain<void>();
+          continue;
+        }
+        final String body = await res.transform(utf8.decoder).join();
+        final Map<String, dynamic> j = jsonDecode(body) as Map<String, dynamic>;
+        final String? ip = j['ip'] as String?;
+        if (ip == null || ip.isEmpty) continue;
+        // ipwho.is / api.ip.sb expose "country_code"; ipinfo's "country" is the
+        // ISO code. "country" (full name) is only present on ipwho.is/ip-api.
+        final String? cc = (j['country_code'] ?? j['country']) as String?;
+        final String? name =
+            j['country'] is String && (cc != j['country']) ? j['country'] as String? : null;
+        return ConnInfo(
+          ip: ip,
+          countryCode: cc?.toUpperCase(),
+          countryName: name,
+        );
+      } catch (_) {
+        // Try the next provider.
+      }
+    }
+    return null;
   }
 
   @override

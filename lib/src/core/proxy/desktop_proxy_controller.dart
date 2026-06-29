@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
 import 'subscription.dart';
+import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 
 /// Drives the proxy on **desktop** (macOS, Windows, Linux) from pure Dart, no
@@ -118,9 +119,13 @@ class DesktopProxyController extends ProxyController {
     } else {
       // Resolves single links directly and subscriptions by fetching them, so a
       // subscription profile can connect instead of failing as an invalid link.
-      final node = await resolveProfileNode(profile);
-      if (node == null) throw 'Unsupported or invalid profile link';
-      cfg = SingboxConfig.buildMap(node);
+      // A subscription expands to its whole node list so the core auto-picks the
+      // fastest via a urltest; a single link is just the one node.
+      final List<ProxyNode> nodes = await resolveProfileNodes(profile);
+      if (nodes.isEmpty) throw 'Unsupported or invalid profile link';
+      cfg = nodes.length == 1
+          ? SingboxConfig.buildMap(nodes.first)
+          : SingboxConfig.buildMultiMap(nodes);
     }
     cfg['inbounds'] = <Map<String, dynamic>>[
       <String, dynamic>{
