@@ -174,7 +174,7 @@ class SingboxProxyController extends ProxyController {
     // fastest via a urltest; a single link is just the one node.
     final List<ProxyNode> nodes = await resolveProfileNodes(profile);
     if (nodes.isEmpty) {
-      throw const FormatException('Unsupported or invalid profile link');
+      throw FormatException(emptyResolveMessage(profile));
     }
     final SingboxRouteOptions opts = routeOptions;
     return nodes.length == 1

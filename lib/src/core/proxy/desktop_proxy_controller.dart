@@ -149,7 +149,7 @@ class DesktopProxyController extends ProxyController {
       // A subscription expands to its whole node list so the core auto-picks the
       // fastest via a urltest; a single link is just the one node.
       final List<ProxyNode> nodes = await resolveProfileNodes(profile);
-      if (nodes.isEmpty) throw 'Unsupported or invalid profile link';
+      if (nodes.isEmpty) throw emptyResolveMessage(profile);
       final SingboxRouteOptions opts = routeOptions;
       cfg = nodes.length == 1
           ? SingboxConfig.buildMap(nodes.first, options: opts)
