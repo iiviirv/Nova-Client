@@ -1,4 +1,8 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../l10n/nova_strings.dart';
@@ -305,7 +309,7 @@ class _EmptyState extends StatelessWidget {
           icon: Icons.add_rounded,
           title: 'Add a config',
           subtitle: 'Paste a vless:// link or subscription URL',
-          onTap: () => showAddServerDialog(context),
+          onTap: () => showAddConfigSheet(context),
         ),
       ],
     );
@@ -384,12 +388,14 @@ class _EmptyAction extends StatelessWidget {
 
 /// Add-config dialog: name + URI + protocol kind. Shared entry point used by
 /// the Servers screen header and the empty state.
-Future<void> showAddServerDialog(BuildContext context) async {
+Future<void> showAddServerDialog(BuildContext context,
+    {String? prefill}) async {
   final profiles = NovaScope.of(context).profiles;
   final s = NovaStrings.of(context);
   final TextEditingController nameCtrl = TextEditingController();
-  final TextEditingController uriCtrl = TextEditingController();
-  ProxyKind kind = ProxyKind.subscription;
+  final TextEditingController uriCtrl =
+      TextEditingController(text: prefill ?? '');
+  ProxyKind kind = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final bool? added = await showDialog<bool>(
     context: context,
@@ -482,4 +488,175 @@ ProxyKind? _detectKind(String raw) {
   if (l.startsWith('ss://')) return ProxyKind.shadowsocks;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
   return null;
+}
+
+/// The "Add config" entry point: an options sheet (Scan QR / Paste / Enter
+/// manually) that all funnel into [showAddServerDialog] so naming and kind
+/// detection stay shared. QR scanning is only offered where a camera exists.
+Future<void> showAddConfigSheet(BuildContext context) async {
+  final nova = context.nova;
+  final bool canScan =
+      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: nova.bgAlt,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (BuildContext sheetCtx) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const SizedBox(height: 10),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: nova.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (canScan)
+              _AddOption(
+                icon: Icons.qr_code_scanner_rounded,
+                color: nova.cyan,
+                title: 'Scan QR code',
+                subtitle: 'Point the camera at a config QR',
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  final String? code =
+                      await Navigator.of(context).push<String>(
+                    MaterialPageRoute<String>(
+                        builder: (_) => const QrScanScreen()),
+                  );
+                  if (code != null &&
+                      code.trim().isNotEmpty &&
+                      context.mounted) {
+                    await showAddServerDialog(context, prefill: code.trim());
+                  }
+                },
+              ),
+            _AddOption(
+              icon: Icons.content_paste_rounded,
+              color: nova.violet,
+              title: 'Paste from clipboard',
+              subtitle: 'Import a link or subscription you copied',
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                final ClipboardData? data =
+                    await Clipboard.getData(Clipboard.kTextPlain);
+                final String text = (data?.text ?? '').trim();
+                if (!context.mounted) return;
+                if (text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Clipboard is empty')),
+                  );
+                  return;
+                }
+                await showAddServerDialog(context, prefill: text);
+              },
+            ),
+            _AddOption(
+              icon: Icons.edit_rounded,
+              color: nova.indigo,
+              title: 'Enter manually',
+              subtitle: 'Paste or type a link or subscription URL',
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await showAddServerDialog(context);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _AddOption extends StatelessWidget {
+  const _AddOption({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return ListTile(
+      leading: NovaIconChip(icon: icon, color: color, size: 38, radius: 11),
+      title: Text(title,
+          style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle,
+          style: text.bodySmall?.copyWith(color: nova.muted)),
+      onTap: onTap,
+    );
+  }
+}
+
+/// Full-screen camera QR scanner; pops the first decoded string back to the
+/// caller, which feeds it into the add-config dialog.
+class QrScanScreen extends StatefulWidget {
+  const QrScanScreen({super.key});
+
+  @override
+  State<QrScanScreen> createState() => _QrScanScreenState();
+}
+
+class _QrScanScreenState extends State<QrScanScreen> {
+  final MobileScannerController _controller = MobileScannerController();
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    for (final Barcode b in capture.barcodes) {
+      final String? v = b.rawValue;
+      if (v != null && v.trim().isNotEmpty) {
+        _handled = true;
+        Navigator.of(context).pop(v.trim());
+        return;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Scan QR code'),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.flash_on),
+            onPressed: () => _controller.toggleTorch(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            onPressed: () => _controller.switchCamera(),
+          ),
+        ],
+      ),
+      body: MobileScanner(controller: _controller, onDetect: _onDetect),
+    );
+  }
 }

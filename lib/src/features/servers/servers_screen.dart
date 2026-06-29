@@ -28,7 +28,7 @@ class ServersScreen extends StatelessWidget {
                   NovaButton(
                     label: s.add,
                     icon: Icons.add,
-                    onPressed: () => showAddServerDialog(context),
+                    onPressed: () => showAddConfigSheet(context),
                   ),
                 ],
               ),
