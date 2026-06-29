@@ -26,3 +26,4 @@ Thumbs.db
 **/windows/flutter/ephemeral/
 **/linux/flutter/ephemeral/
 **/macos/Flutter/ephemeral/
+ios/Frameworks/Libbox.xcframework
