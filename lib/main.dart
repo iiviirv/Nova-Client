@@ -8,6 +8,7 @@ import 'src/core/proxy/desktop_proxy_controller.dart';
 import 'src/core/proxy/mock_proxy_controller.dart';
 import 'src/core/proxy/proxy_controller.dart';
 import 'src/core/proxy/singbox_proxy_controller.dart';
+import 'src/features/cloudflare/cloudflare_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
 import 'src/theme/theme_controller.dart';
@@ -20,6 +21,7 @@ Future<void> main() async {
   final ThemeController theme = ThemeController();
   final ProfilesController profiles = ProfilesController();
   final RadarController radar = RadarController();
+  final CloudflareController cloudflare = CloudflareController();
 
   // The data path is a modified sing-box core, bound per platform. Android ships
   // the VpnService + libbox host; desktop (macOS/Windows/Linux) runs the bundled
@@ -38,6 +40,7 @@ Future<void> main() async {
     proxy: proxy,
     profiles: profiles,
     radar: radar,
+    cloudflare: cloudflare,
   ));
 
   // Hydrate persisted preferences without blocking first paint.
@@ -45,6 +48,7 @@ Future<void> main() async {
     theme.attachPrefs(prefs);
     profiles.attachPrefs(prefs);
     radar.attachPrefs(prefs);
+    cloudflare.attachPrefs(prefs);
 
     // If a subscription is active, bind it to the Radar in the background so
     // scans export ready-to-import nodes without the user lifting a finger.

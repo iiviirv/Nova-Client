@@ -8,6 +8,7 @@ import '../../widgets/nova_button.dart';
 import '../../widgets/nova_card.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
+import '../cloudflare/cloudflare_screen.dart';
 import 'profiles_controller.dart';
 
 /// Manages connection profiles — single links and Nova subscriptions. Selecting
@@ -43,6 +44,30 @@ class ProfilesScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: NovaSpace.lg),
+                NovaCard(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.cloud_outlined, color: context.nova.cyan),
+                      const SizedBox(width: NovaSpace.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text('Connect Cloudflare',
+                                style: Theme.of(context).textTheme.titleSmall),
+                            Text('Deploy your own panel or import your configs',
+                                style: TextStyle(color: context.nova.muted, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: context.nova.muted),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: NovaSpace.md),
                 for (final p in profiles.profiles)
                   Padding(
                     padding: const EdgeInsets.only(bottom: NovaSpace.md),

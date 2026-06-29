@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/proxy/proxy_controller.dart';
+import 'features/cloudflare/cloudflare_controller.dart';
 import 'features/profiles/profiles_controller.dart';
 import 'features/radar/radar_controller.dart';
 import 'l10n/nova_strings.dart';
@@ -20,12 +21,14 @@ class NovaApp extends StatelessWidget {
     required this.proxy,
     required this.profiles,
     required this.radar,
+    required this.cloudflare,
   });
 
   final ThemeController theme;
   final ProxyController proxy;
   final ProfilesController profiles;
   final RadarController radar;
+  final CloudflareController cloudflare;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +37,7 @@ class NovaApp extends StatelessWidget {
       proxy: proxy,
       profiles: profiles,
       radar: radar,
+      cloudflare: cloudflare,
       child: ListenableBuilder(
         listenable: theme,
         builder: (context, _) {
