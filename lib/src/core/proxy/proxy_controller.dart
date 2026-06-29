@@ -75,6 +75,18 @@ abstract class ProxyController extends ChangeNotifier {
   SingboxRouteOptions get routeOptions =>
       routeOptionsProvider?.call() ?? const SingboxRouteOptions();
 
+  /// A `HttpClient.findProxy`-style directive for reaching the exit through the
+  /// tunnel, or null when no explicit proxying is needed.
+  ///
+  /// On Android/iOS the data path is a system-wide TUN, so the app's own
+  /// `dart:io` requests are already captured and this stays null. On desktop the
+  /// core is a local `mixed` inbound that the OS proxy points at, but Dart's
+  /// `HttpClient` does not consult the OS proxy, so conn-info (ping/geo) would
+  /// otherwise leak out the real interface and report the machine's own IP.
+  /// Desktop returns `PROXY 127.0.0.1:<port>` while connected so those probes go
+  /// through the exit like every other platform.
+  String? get proxyUri => null;
+
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);
 

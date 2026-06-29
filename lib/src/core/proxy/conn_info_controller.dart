@@ -40,6 +40,10 @@ class ConnInfo {
 class ConnInfoController extends ChangeNotifier {
   ConnInfoController(this._proxy) {
     _proxy.addListener(_onProxyChanged);
+    // On desktop the proxy is a local inbound that dart:io won't use on its own,
+    // so route these probes through it when the controller asks. On TUN
+    // platforms proxyUri is null and this resolves to DIRECT (already tunneled).
+    _client.findProxy = (_) => _proxy.proxyUri ?? 'DIRECT';
   }
 
   final ProxyController _proxy;

@@ -52,6 +52,12 @@ class DesktopProxyController extends ProxyController {
   @override
   String? get lastError => _lastError;
 
+  /// The local `mixed` inbound doubles as an HTTP proxy, so conn-info probes can
+  /// reach the exit through it. Only advertised while connected.
+  @override
+  String? get proxyUri =>
+      _state.isActive ? 'PROXY 127.0.0.1:$socksPort' : null;
+
   Process? _process;
   Timer? _trafficTimer;
   int _lastUp = 0;
@@ -261,10 +267,15 @@ class DesktopProxyController extends ProxyController {
     try {
       final r = await Process.run('networksetup', <String>['-listallnetworkservices']);
       final List<String> lines = (r.stdout as String).split('\n');
+      // Every enabled service (a leading '*' marks a disabled one). Narrowing to
+      // literal "Wi-Fi"/"Ethernet" used to silently skip machines on USB-C
+      // ethernet, Thunderbolt bridge, or localized service names, leaving the
+      // system proxy unset. Skip the header line networksetup prints first.
       return lines
-          .where((String l) => l.isNotEmpty && !l.startsWith('*') && !l.contains('asterisk'))
+          .where((String l) =>
+              l.isNotEmpty && !l.startsWith('*') && !l.contains('asterisk'))
           .map((String l) => l.trim())
-          .where((String l) => l == 'Wi-Fi' || l == 'Ethernet' || l.contains('Ethernet'))
+          .where((String l) => l.isNotEmpty)
           .toList();
     } catch (_) {
       return <String>['Wi-Fi'];
