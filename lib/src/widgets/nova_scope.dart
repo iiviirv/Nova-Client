@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../core/proxy/proxy_controller.dart';
+import '../features/cloudflare/cloudflare_controller.dart';
 import '../features/profiles/profiles_controller.dart';
 import '../features/radar/radar_controller.dart';
 import '../theme/theme_controller.dart';
@@ -19,6 +20,7 @@ class NovaScope extends InheritedWidget {
     required this.proxy,
     required this.profiles,
     required this.radar,
+    required this.cloudflare,
     required super.child,
   });
 
@@ -26,6 +28,7 @@ class NovaScope extends InheritedWidget {
   final ProxyController proxy;
   final ProfilesController profiles;
   final RadarController radar;
+  final CloudflareController cloudflare;
 
   static NovaScope of(BuildContext context) {
     final NovaScope? scope =
@@ -39,5 +42,6 @@ class NovaScope extends InheritedWidget {
       theme != oldWidget.theme ||
       proxy != oldWidget.proxy ||
       profiles != oldWidget.profiles ||
-      radar != oldWidget.radar;
+      radar != oldWidget.radar ||
+      cloudflare != oldWidget.cloudflare;
 }
