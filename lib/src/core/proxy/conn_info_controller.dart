@@ -83,43 +83,57 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   Future<void> _refresh() async {
-    final (bool reachable, int? ping) = await _probe();
+    final (bool reachable, int? probePing) = await _probe();
     final ConnInfo? geo = reachable ? await _fetchGeo() : null;
     _loading = false;
+    // Prefer the dedicated probe's round-trip; otherwise fall back to the geo
+    // request's round-trip so the ping never reads blank while a country is
+    // clearly resolving. A provider that rate-limits the probe endpoint but
+    // serves geo would otherwise leave PING empty for the whole session.
+    final int? ping = probePing ?? geo?.pingMs ?? _info.pingMs;
     _info = ConnInfo(
       reachable: reachable,
       ip: geo?.ip ?? _info.ip,
       countryCode: geo?.countryCode ?? _info.countryCode,
       countryName: geo?.countryName ?? _info.countryName,
-      pingMs: ping ?? _info.pingMs,
+      pingMs: ping,
     );
     notifyListeners();
   }
 
   /// A tiny `generate_204` request through the tunnel: its completion is the
-  /// reachability signal, and its round-trip doubles as a coarse ping. Uses a
-  /// non-Cloudflare host on purpose (a Nova worker can't relay to Cloudflare's
-  /// own endpoints without hitting loop protection, which is why pinging
-  /// 1.1.1.1 used to always fail).
+  /// reachability signal, and its round-trip doubles as a coarse ping. Tries a
+  /// couple of non-Cloudflare 204 endpoints in turn (a Nova worker can't relay
+  /// to Cloudflare's own endpoints without hitting loop protection, which is
+  /// why pinging 1.1.1.1 used to always fail) so one blocked host doesn't drop
+  /// the reading entirely.
   Future<(bool, int?)> _probe() async {
-    try {
-      final Stopwatch sw = Stopwatch()..start();
-      final HttpClientRequest req = await _client
-          .getUrl(Uri.parse('https://www.gstatic.com/generate_204'));
-      req.followRedirects = false;
-      final HttpClientResponse res = await req.close();
-      await res.drain<void>();
-      sw.stop();
-      final bool ok = res.statusCode >= 200 && res.statusCode < 400;
-      return (ok, ok ? sw.elapsedMilliseconds : null);
-    } catch (_) {
-      return (false, null);
+    const List<String> urls = <String>[
+      'https://www.gstatic.com/generate_204',
+      'https://connectivitycheck.gstatic.com/generate_204',
+      'https://www.google.com/generate_204',
+    ];
+    for (final String url in urls) {
+      try {
+        final Stopwatch sw = Stopwatch()..start();
+        final HttpClientRequest req = await _client.getUrl(Uri.parse(url));
+        req.followRedirects = false;
+        final HttpClientResponse res = await req.close();
+        await res.drain<void>();
+        sw.stop();
+        final bool ok = res.statusCode >= 200 && res.statusCode < 400;
+        if (ok) return (true, sw.elapsedMilliseconds);
+      } catch (_) {
+        // Try the next endpoint.
+      }
     }
+    return (false, null);
   }
 
   /// Best-effort exit IP + country over HTTPS, trying providers in turn. ipinfo
   /// is last because it rate-limits shared exit IPs hardest; ip-api is avoided
-  /// (cleartext, blocked on a modern SDK).
+  /// (cleartext, blocked on a modern SDK). The successful request's round-trip
+  /// is returned as [ConnInfo.pingMs] so it can back-fill a coarse ping.
   Future<ConnInfo?> _fetchGeo() async {
     const List<String> urls = <String>[
       'https://ipwho.is/',
@@ -128,6 +142,7 @@ class ConnInfoController extends ChangeNotifier {
     ];
     for (final String url in urls) {
       try {
+        final Stopwatch sw = Stopwatch()..start();
         final HttpClientRequest req = await _client.getUrl(Uri.parse(url));
         final HttpClientResponse res = await req.close();
         if (res.statusCode != 200) {
@@ -135,6 +150,7 @@ class ConnInfoController extends ChangeNotifier {
           continue;
         }
         final String body = await res.transform(utf8.decoder).join();
+        sw.stop();
         final Map<String, dynamic> j = jsonDecode(body) as Map<String, dynamic>;
         final String? ip = j['ip'] as String?;
         if (ip == null || ip.isEmpty) continue;
@@ -147,6 +163,7 @@ class ConnInfoController extends ChangeNotifier {
           ip: ip,
           countryCode: cc?.toUpperCase(),
           countryName: name,
+          pingMs: sw.elapsedMilliseconds,
         );
       } catch (_) {
         // Try the next provider.

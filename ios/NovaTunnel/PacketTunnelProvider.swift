@@ -15,6 +15,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   static let appGroup = "group.online.novaproxy.novaClient"
 
   private var boxService: LibboxBoxService?
+  private var commandServer: LibboxCommandServer?
   private var pathMonitor: NWPathMonitor?
 
   override func startTunnel(options _: [String: NSObject]?) async throws {
@@ -39,6 +40,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       throw err ?? NSError(domain: "Nova", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create service"])
     }
     boxService = service
+
+    // Stand up the libbox command server on the shared App Group socket so the
+    // main app can attach a status client and read live traffic stats. Failure
+    // here must not block the tunnel itself, so it is best-effort.
+    let server = LibboxNewCommandServer(commandServerHandler, 100)
+    if let server {
+      try? server.start()
+      server.setService(service)
+      commandServer = server
+    }
+
     try service.start()
   }
 
@@ -47,7 +59,32 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     pathMonitor = nil
     try? boxService?.close()
     boxService = nil
+    try? commandServer?.close()
+    commandServer = nil
   }
+
+  private lazy var commandServerHandler = CommandServerHandler(provider: self)
+}
+
+/// Minimal command-server handler. The traffic/status stream the app consumes
+/// needs a running server; the system-proxy and reload hooks are not used on
+/// the iOS packet-tunnel path, so they answer with safe defaults.
+private final class CommandServerHandler: NSObject, LibboxCommandServerHandlerProtocol {
+  private weak var provider: PacketTunnelProvider?
+  init(provider: PacketTunnelProvider) { self.provider = provider }
+
+  func getSystemProxyStatus() -> LibboxSystemProxyStatus? {
+    let status = LibboxSystemProxyStatus()
+    status.available = false
+    status.enabled = false
+    return status
+  }
+
+  func postServiceClose() {}
+
+  func serviceReload() throws {}
+
+  func setSystemProxyEnabled(_ isEnabled: Bool) throws {}
 }
 
 // MARK: - LibboxPlatformInterface
