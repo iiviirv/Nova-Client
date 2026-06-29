@@ -38,6 +38,7 @@ class SettingsController extends ChangeNotifier {
   static const String _kBypassIran = 'nova.route.bypassIran';
   static const String _kBypassLan = 'nova.route.bypassLan';
   static const String _kDns = 'nova.dns';
+  static const String _kTunMode = 'nova.desktop.tun';
 
   SharedPreferences? _prefs;
 
@@ -55,6 +56,12 @@ class SettingsController extends ChangeNotifier {
 
   String _dns = '';
   String get dns => _dns;
+
+  /// Desktop only: route the whole machine through a TUN device (needs one
+  /// admin/UAC approval) instead of just setting the OS proxy. Off by default so
+  /// the unprivileged path stays the no-friction default.
+  bool _tunMode = false;
+  bool get tunMode => _tunMode;
 
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
@@ -79,6 +86,7 @@ class SettingsController extends ChangeNotifier {
     _bypassIran = p.getBool(_kBypassIran) ?? true;
     _bypassLan = p.getBool(_kBypassLan) ?? true;
     _dns = p.getString(_kDns) ?? '';
+    _tunMode = p.getBool(_kTunMode) ?? false;
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -120,5 +128,12 @@ class SettingsController extends ChangeNotifier {
     _dns = server;
     notifyListeners();
     await _prefs?.setString(_kDns, server);
+  }
+
+  Future<void> setTunMode(bool v) async {
+    if (v == _tunMode) return;
+    _tunMode = v;
+    notifyListeners();
+    await _prefs?.setBool(_kTunMode, v);
   }
 }

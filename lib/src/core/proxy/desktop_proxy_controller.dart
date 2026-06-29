@@ -53,16 +53,26 @@ class DesktopProxyController extends ProxyController {
   String? get lastError => _lastError;
 
   /// The local `mixed` inbound doubles as an HTTP proxy, so conn-info probes can
-  /// reach the exit through it. Only advertised while connected.
+  /// reach the exit through it. In TUN mode everything is already tunneled (like
+  /// mobile), so no explicit proxy is needed. Only advertised while connected.
   @override
-  String? get proxyUri =>
-      _state.isActive ? 'PROXY 127.0.0.1:$socksPort' : null;
+  String? get proxyUri => (_state.isActive && !tunMode)
+      ? 'PROXY 127.0.0.1:$socksPort'
+      : null;
 
   Process? _process;
+  Process? _elevated;
+  File? _runFlag;
   Timer? _trafficTimer;
   int _lastUp = 0;
   int _lastDown = 0;
   bool _systemProxyOn = false;
+
+  /// Supplies whether to run a whole-device TUN (needs one admin/UAC approval)
+  /// instead of a local inbound + system proxy. Wired from settings at startup;
+  /// defaults to the unprivileged system-proxy path.
+  bool Function()? tunModeProvider;
+  bool get tunMode => tunModeProvider?.call() ?? false;
 
   @override
   void selectProfile(ProxyProfile? profile) {
@@ -86,17 +96,28 @@ class DesktopProxyController extends ProxyController {
       final File cfgFile = File('${dir.path}/nova-singbox.json');
       await cfgFile.writeAsString(config);
 
-      _process = await Process.start(binary, <String>['run', '-c', cfgFile.path]);
-      // Surface fatal core output for diagnostics.
-      _process!.stderr.transform(utf8.decoder).listen((String line) {
-        if (line.trim().isNotEmpty) debugPrint('[sing-box] $line');
-      });
-      unawaited(_process!.exitCode.then(_onProcessExit));
+      if (tunMode) {
+        // Whole-device TUN: sing-box creates the utun/wintun device and routes
+        // everything, so it must run elevated and no system proxy is set.
+        await _startElevatedTun(binary, cfgFile);
+        if (!await _waitForCore()) {
+          throw 'The tunnel did not come up. Admin approval is required for '
+              'full-device mode.';
+        }
+      } else {
+        _process =
+            await Process.start(binary, <String>['run', '-c', cfgFile.path]);
+        // Surface fatal core output for diagnostics.
+        _process!.stderr.transform(utf8.decoder).listen((String line) {
+          if (line.trim().isNotEmpty) debugPrint('[sing-box] $line');
+        });
+        unawaited(_process!.exitCode.then(_onProcessExit));
 
-      if (!await _waitForCore()) {
-        throw 'The core did not come up in time';
+        if (!await _waitForCore()) {
+          throw 'The core did not come up in time';
+        }
+        await _setSystemProxy(true);
       }
-      await _setSystemProxy(true);
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
     } catch (e) {
@@ -134,14 +155,20 @@ class DesktopProxyController extends ProxyController {
           ? SingboxConfig.buildMap(nodes.first, options: opts)
           : SingboxConfig.buildMultiMap(nodes, options: opts);
     }
-    cfg['inbounds'] = <Map<String, dynamic>>[
-      <String, dynamic>{
-        'type': 'mixed',
-        'tag': 'in',
-        'listen': '127.0.0.1',
-        'listen_port': socksPort,
-      },
-    ];
+    // System-proxy mode swaps the builder's TUN inbound for a local `mixed`
+    // (SOCKS+HTTP) inbound so the core runs unprivileged. TUN mode keeps the
+    // builder's `tun` inbound (auto_route) untouched so sing-box routes the
+    // whole device once it is running elevated.
+    if (!tunMode) {
+      cfg['inbounds'] = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'mixed',
+          'tag': 'in',
+          'listen': '127.0.0.1',
+          'listen_port': socksPort,
+        },
+      ];
+    }
     final Map<String, dynamic> experimental =
         (cfg['experimental'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     experimental['clash_api'] = <String, dynamic>{
@@ -228,6 +255,66 @@ class DesktopProxyController extends ProxyController {
     } catch (_) {}
   }
 
+  /// Launch the core elevated so its `tun` inbound can create the system TUN
+  /// device and route the whole machine.
+  ///
+  /// Both platforms use the same single-prompt trick: the elevated shell starts
+  /// the core, then spins watching a plain "run flag" file the app owns. To stop
+  /// (in [_cleanup]) the app just deletes that flag — the still-elevated loop
+  /// then kills the core and exits, so tearing down needs no second password.
+  Future<void> _startElevatedTun(String binary, File cfgFile) async {
+    final Directory dir = await getApplicationSupportDirectory();
+    final File flag = File('${dir.path}/nova-tun.run');
+    await flag.writeAsString('1');
+    _runFlag = flag;
+    final String log = '${dir.path}/nova-tun.log';
+
+    if (Platform.isWindows) {
+      // A hidden elevated PowerShell wrapper: start the core, wait on the flag,
+      // then stop it. `-Verb RunAs` raises the single UAC prompt.
+      final File wrapper = File('${dir.path}/nova-tun.ps1');
+      await wrapper.writeAsString(
+        "\$p = Start-Process -FilePath '$binary' "
+        "-ArgumentList @('run','-c','${cfgFile.path}') "
+        "-WindowStyle Hidden -PassThru\n"
+        "while (Test-Path '${flag.path}') { Start-Sleep -Seconds 1 }\n"
+        "try { Stop-Process -Id \$p.Id -Force } catch {}\n",
+      );
+      _elevated = await Process.start('powershell', <String>[
+        '-NoProfile',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        "Start-Process powershell -Verb RunAs -WindowStyle Hidden "
+            "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"
+            "'${wrapper.path}'",
+      ]);
+      return;
+    }
+
+    // macOS / Linux: run via an admin AppleScript (macOS) so the core gets root.
+    final String cmd =
+        '${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
+        'SB=\$!; while [ -e ${_shq(flag.path)} ]; do sleep 1; done; '
+        'kill \$SB 2>/dev/null';
+    if (Platform.isMacOS) {
+      final String appleScript =
+          'do shell script "${_asEsc(cmd)}" with administrator privileges';
+      _elevated = await Process.start('osascript', <String>['-e', appleScript]);
+    } else {
+      // Linux: best-effort via pkexec (graphical sudo).
+      _elevated = await Process.start('pkexec', <String>['sh', '-c', cmd]);
+    }
+  }
+
+  /// Shell double-quoting for a path (handles spaces; app-support paths carry no
+  /// quotes/backslashes on these platforms).
+  String _shq(String p) => '"${p.replaceAll('"', r'\"')}"';
+
+  /// Escape a shell command for embedding inside an AppleScript string literal.
+  String _asEsc(String s) =>
+      s.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+
   /// Point the OS at our local proxy (or clear it). macOS/Windows for now.
   Future<void> _setSystemProxy(bool on) async {
     if (on && !manageSystemProxy) return;
@@ -296,6 +383,18 @@ class DesktopProxyController extends ProxyController {
     if (_systemProxyOn) {
       await _setSystemProxy(false);
     }
+    // Dropping the run flag lets the elevated watcher kill the core and exit, so
+    // no second admin prompt is needed to disconnect.
+    if (_runFlag != null) {
+      try {
+        if (_runFlag!.existsSync()) _runFlag!.deleteSync();
+      } catch (_) {}
+      _runFlag = null;
+      // Give the watcher a moment to tear the core down before we return.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    }
+    _elevated?.kill();
+    _elevated = null;
     _process?.kill();
     _process = null;
     _traffic = TrafficStats.zero;

@@ -45,6 +45,11 @@ Future<void> main() async {
   // The host builds each config from the user's live routing/DNS choices.
   proxy.routeOptionsProvider = () => settings.routeOptions;
 
+  // Desktop can run a whole-device TUN (elevated) instead of a system proxy.
+  if (proxy is DesktopProxyController) {
+    proxy.tunModeProvider = () => settings.tunMode;
+  }
+
   runApp(NovaApp(
     theme: theme,
     proxy: proxy,
