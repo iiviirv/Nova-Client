@@ -2,9 +2,19 @@ name: Build Windows
 
 # Builds the Nova Client Windows desktop app (bundling the committed
 # sing-box-windows-amd64 core) and uploads a ready-to-run Nova-Windows.zip as a
-# workflow artifact. Run it manually from the Actions tab.
+# workflow artifact. Runs on push to the desktop branch, and can also be
+# triggered manually.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/macos-desktop-core
+    paths:
+      - 'lib/**'
+      - 'windows/**'
+      - 'pubspec.yaml'
+      - 'assets/**'
+      - '.github/workflows/build-windows.yml'
 
 jobs:
   build-windows:
