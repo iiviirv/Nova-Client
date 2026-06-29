@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 import '../../core/proxy/singbox/singbox_config.dart';
@@ -8,6 +10,10 @@ import '../../widgets/nova_card.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../settings/settings_controller.dart';
+
+/// Whether the full-device TUN option applies (it is a desktop-only data path).
+final bool _isDesktop =
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 /// Routing mode, rule toggles, and DNS resolver. These compile into the
 /// sing-box config the core runs, so the choices here actually change how
@@ -93,6 +99,21 @@ class RoutingScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (_isDesktop) ...<Widget>[
+                  const SizedBox(height: NovaSpace.lg),
+                  NovaCard(
+                    padding: EdgeInsets.zero,
+                    child: _RuleSwitch(
+                      icon: Icons.devices_rounded,
+                      title: 'Full-device tunnel (TUN)',
+                      subtitle:
+                          'Route every app, not just proxy-aware ones. Needs '
+                          'one admin approval when you connect.',
+                      value: settings.tunMode,
+                      onChanged: settings.setTunMode,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: NovaSpace.lg),
                 NovaCard(
                   child: Column(
