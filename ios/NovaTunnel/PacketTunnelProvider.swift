@@ -60,11 +60,9 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
     settings.mtu = NSNumber(value: options.getMTU())
 
-    // DNS
-    if let dnsIter = try? options.getDNSServerAddress() {
-      var servers: [String] = []
-      while dnsIter.hasNext() { servers.append(dnsIter.next()) }
-      if !servers.isEmpty { settings.dnsSettings = NEDNSSettings(servers: servers) }
+    // DNS (a single boxed server address)
+    if let dnsBox = try? options.getDNSServerAddress(), !dnsBox.value.isEmpty {
+      settings.dnsSettings = NEDNSSettings(servers: [dnsBox.value])
     }
 
     // IPv4 addresses + default route.
@@ -108,8 +106,8 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   func useProcFS() -> Bool { false }
   func underNetworkExtension() -> Bool { true }
   func includeAllNetworks() -> Bool { false }
-  func usePlatformAutoDetectInterfaceControl() -> Bool { true }
-  func autoDetectInterfaceControl(_: Int32) throws {}
+  func usePlatformAutoDetectControl() -> Bool { true }
+  func autoDetectControl(_: Int32) throws {}
   func clearDNSCache() {}
 
   func startDefaultInterfaceMonitor(_ listener: LibboxInterfaceUpdateListenerProtocol?) throws {
@@ -141,11 +139,11 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
   }
 
-  func packageName(byUid _: Int32) throws -> String { "" }
+  func packageName(byUid _: Int32, error _: NSErrorPointer) -> String { "" }
   func uid(byPackageName _: String?, ret0_: UnsafeMutablePointer<Int32>?) throws {
     throw NSError(domain: "Nova", code: 7, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
   }
 
   func readWIFIState() -> LibboxWIFIState? { nil }
-  func sendNotification(_: LibboxNotification?) throws {}
+  func send(_: LibboxNotification?) throws {}
 }
