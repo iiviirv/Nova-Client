@@ -1,5 +1,6 @@
 import Flutter
 import Foundation
+import Libbox
 import NetworkExtension
 
 /// iOS implementation of the `nova.proxy/control` MethodChannel + `nova.proxy/events`
@@ -13,6 +14,8 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
 
   private var eventSink: FlutterEventSink?
   private var manager: NETunnelProviderManager?
+  private var statusClient: LibboxCommandClient?
+  private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
     let host = NovaProxyHost()
@@ -92,8 +95,75 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   @objc private func statusChanged() {
     let status = manager?.connection.status ?? .invalid
     emit(["type": "state", "value": stateName(status)])
-    // Live traffic reporting from the extension can be added via the App Group
-    // or a libbox command client; state alone is enough to drive the UI for now.
+    // Attach/detach the libbox status client so the dashboard gets live
+    // download/upload throughput, not a frozen zero.
+    switch status {
+    case .connected:
+      startStatusClient()
+    default:
+      stopStatusClient()
+    }
+  }
+
+  // MARK: - Live traffic stats
+
+  /// libbox's setup must run once in this process before a command client can
+  /// find the extension's command socket. It points at the same shared App
+  /// Group paths the extension uses.
+  private func ensureLibboxSetup() {
+    if libboxReady { return }
+    guard let container = FileManager.default
+      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else { return }
+    let setup = LibboxSetupOptions()
+    setup.basePath = container.path
+    setup.workingPath = container.appendingPathComponent("work").path
+    setup.tempPath = container.appendingPathComponent("tmp").path
+    var err: NSError?
+    LibboxSetup(setup, &err)
+    libboxReady = (err == nil)
+  }
+
+  private func startStatusClient() {
+    if statusClient != nil { return }
+    ensureLibboxSetup()
+    let options = LibboxCommandClientOptions()
+    options.command = LibboxCommandStatus
+    options.statusInterval = Int64(NSEC_PER_SEC) // one status push per second
+    guard let client = LibboxNewCommandClient(StatusHandler(host: self), options) else { return }
+    statusClient = client
+    // The extension's server may take a beat to bind after the tunnel reports
+    // connected; retry a few times before giving up.
+    connectStatusClient(client, attempt: 0)
+  }
+
+  private func connectStatusClient(_ client: LibboxCommandClient, attempt: Int) {
+    DispatchQueue.global(qos: .utility).async {
+      do {
+        try client.connect()
+      } catch {
+        guard self.statusClient === client, attempt < 5 else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.6) {
+          self.connectStatusClient(client, attempt: attempt + 1)
+        }
+      }
+    }
+  }
+
+  private func stopStatusClient() {
+    guard let client = statusClient else { return }
+    statusClient = nil
+    try? client.disconnect()
+    emit(["type": "traffic", "up": 0, "down": 0, "upTotal": 0, "downTotal": 0])
+  }
+
+  fileprivate func onStatus(_ message: LibboxStatusMessage) {
+    emit([
+      "type": "traffic",
+      "up": message.uplink,
+      "down": message.downlink,
+      "upTotal": message.uplinkTotal,
+      "downTotal": message.downlinkTotal,
+    ])
   }
 
   private func stateName(_ s: NEVPNStatus) -> String {
@@ -119,4 +189,25 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     eventSink = nil
     return nil
   }
+}
+
+/// Receives the libbox status stream and forwards only the traffic numbers to
+/// the host. Every other callback is a required-but-unused protocol stub.
+private final class StatusHandler: NSObject, LibboxCommandClientHandlerProtocol {
+  private weak var host: NovaProxyHost?
+  init(host: NovaProxyHost) { self.host = host }
+
+  func writeStatus(_ message: LibboxStatusMessage?) {
+    guard let message else { return }
+    host?.onStatus(message)
+  }
+
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: LibboxStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ message: LibboxConnections?) {}
+  func writeGroups(_ message: LibboxOutboundGroupIteratorProtocol?) {}
+  func writeLogs(_ messageList: LibboxStringIteratorProtocol?) {}
 }
