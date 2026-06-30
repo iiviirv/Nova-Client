@@ -180,12 +180,16 @@ class SingboxConfig {
         'tag': 'tun-in',
         'interface_name': 'nova-tun',
         'inet4_address': '172.19.0.1/30',
-        // A large MTU keeps per-packet overhead low (throughput); 9000 is the
-        // sing-box default and works inside the iOS extension too.
-        'mtu': 9000,
+        // iOS (lean) uses a normal MTU + the gvisor stack. The system stack
+        // forwards raw IP packets, so on the iOS extension large download
+        // packets fragment and get dropped — bulk transfers crawl to ~0 while
+        // small requests still work. gvisor terminates TCP in userspace (no
+        // fragmentation), which is the standard for the iOS Network Extension.
+        // Desktop/Android keep the faster system stack + jumbo MTU.
+        'mtu': o.lean ? 1500 : 9000,
         'auto_route': true,
         'strict_route': true,
-        'stack': 'system',
+        'stack': o.lean ? 'gvisor' : 'system',
         'sniff': true,
         'sniff_override_destination': false,
       };
