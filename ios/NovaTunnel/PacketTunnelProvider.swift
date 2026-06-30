@@ -109,18 +109,41 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     }
     if !v4addr.isEmpty {
       let v4 = NEIPv4Settings(addresses: v4addr, subnetMasks: v4mask)
-      v4.includedRoutes = [NEIPv4Route.default()]
+      // Included routes: what sing-box wants tunneled (default route if none).
+      var inc: [NEIPv4Route] = []
+      if let it = options.getInet4RouteAddress() {
+        while it.hasNext() { let p = it.next()!; inc.append(NEIPv4Route(destinationAddress: p.address(), subnetMask: p.mask())) }
+      }
+      v4.includedRoutes = inc.isEmpty ? [NEIPv4Route.default()] : inc
+      // Excluded routes: sing-box lists the proxy server IPs (and LAN) here so
+      // the core's own outbound connection to them goes out the real interface
+      // instead of looping back through the tunnel. Without this the upload
+      // SYN escapes but the return path loops — connected, upload, zero download.
+      var exc: [NEIPv4Route] = []
+      if let it = options.getInet4RouteExcludeAddress() {
+        while it.hasNext() { let p = it.next()!; exc.append(NEIPv4Route(destinationAddress: p.address(), subnetMask: p.mask())) }
+      }
+      if !exc.isEmpty { v4.excludedRoutes = exc }
       settings.ipv4Settings = v4
     }
 
-    // IPv6 addresses + default route.
+    // IPv6 addresses + routes.
     var v6addr: [String] = []; var v6prefix: [NSNumber] = []
     if let it = options.getInet6Address() {
       while it.hasNext() { let p = it.next()!; v6addr.append(p.address()); v6prefix.append(NSNumber(value: p.prefix())) }
     }
     if !v6addr.isEmpty {
       let v6 = NEIPv6Settings(addresses: v6addr, networkPrefixLengths: v6prefix)
-      v6.includedRoutes = [NEIPv6Route.default()]
+      var inc6: [NEIPv6Route] = []
+      if let it = options.getInet6RouteAddress() {
+        while it.hasNext() { let p = it.next()!; inc6.append(NEIPv6Route(destinationAddress: p.address(), networkPrefixLength: NSNumber(value: p.prefix()))) }
+      }
+      v6.includedRoutes = inc6.isEmpty ? [NEIPv6Route.default()] : inc6
+      var exc6: [NEIPv6Route] = []
+      if let it = options.getInet6RouteExcludeAddress() {
+        while it.hasNext() { let p = it.next()!; exc6.append(NEIPv6Route(destinationAddress: p.address(), networkPrefixLength: NSNumber(value: p.prefix()))) }
+      }
+      if !exc6.isEmpty { v6.excludedRoutes = exc6 }
       settings.ipv6Settings = v6
     }
 
