@@ -227,6 +227,11 @@ class SingboxProxyController extends ProxyController {
           final int rb = rank['${b.server}:${b.port}'] ?? 1 << 30;
           return ra.compareTo(rb);
         });
+    } else if (nodes.length > 1) {
+      // First connect with no measured nodes yet: quickly ping-rank a sample so
+      // Auto doesn't land on a dead/slow exit (which shows up as "connected but
+      // no internet / no country"). Best-effort and time-boxed.
+      nodes = await _rankByPing(nodes);
     }
     // iOS runs the core inside a Network Extension with a hard ~50 MB memory
     // cap, so build a lean config there (fewer nodes, normal MTU, no rule-sets)
@@ -235,6 +240,39 @@ class SingboxProxyController extends ProxyController {
     return nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
         : SingboxConfig.buildMulti(nodes, options: opts);
+  }
+
+  /// TCP-pings a sample of nodes (direct, since this runs before the tunnel is
+  /// up) and returns them ordered fastest-first, with unreachable ones last. So
+  /// the urltest's pool — the first N — is built from good exits.
+  Future<List<ProxyNode>> _rankByPing(List<ProxyNode> nodes) async {
+    // Bound the work: dedupe by server:port and only probe a sample.
+    final Set<String> seen = <String>{};
+    final List<ProxyNode> sample = <ProxyNode>[];
+    for (final ProxyNode n in nodes) {
+      if (seen.add('${n.server}:${n.port}')) sample.add(n);
+      if (sample.length >= 30) break;
+    }
+    final Map<ProxyNode, int> ping = <ProxyNode, int>{};
+    await Future.wait(sample.map((ProxyNode n) async {
+      final Stopwatch sw = Stopwatch()..start();
+      try {
+        final Socket s = await Socket.connect(n.server, n.port,
+            timeout: const Duration(milliseconds: 1500));
+        sw.stop();
+        s.destroy();
+        ping[n] = sw.elapsedMilliseconds;
+      } catch (_) {
+        ping[n] = 1 << 30; // unreachable -> sort last
+      }
+    }));
+    final List<ProxyNode> ranked = <ProxyNode>[...sample]
+      ..sort((ProxyNode a, ProxyNode b) =>
+          (ping[a] ?? 1 << 30).compareTo(ping[b] ?? 1 << 30));
+    // Append any nodes we didn't sample so the pool can still grow if needed.
+    final Set<ProxyNode> inRanked = ranked.toSet();
+    ranked.addAll(nodes.where((ProxyNode n) => !inRanked.contains(n)));
+    return ranked;
   }
 
   @override
