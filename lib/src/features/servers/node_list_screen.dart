@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
 
   List<ProxyNode> _nodes = <ProxyNode>[];
   final Map<String, int> _ping = <String, int>{}; // key -> ms (-1 = unreachable)
+  final Map<String, String> _cc = <String, String>{}; // key -> ISO country code
+  final Map<String, String> _ccByIp = <String, String>{}; // ip -> cc cache
+  final HttpClient _http = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 5);
   bool _loading = true;
   String? _error;
 
@@ -40,6 +45,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _http.close(force: true);
+    super.dispose();
   }
 
   ProxyProfile? get _profile {
@@ -125,6 +136,26 @@ class _NodeListScreenState extends State<NodeListScreen> {
     } catch (_) {
       _ping[_key(n)] = -1;
     }
+    await _geoOne(n);
+  }
+
+  /// Geo-locate a node's host so the row can show a country flag. Cached per IP
+  /// (many nodes share Cloudflare IPs), best-effort over HTTPS.
+  Future<void> _geoOne(ProxyNode n) async {
+    final String host = n.server;
+    if (_ccByIp.containsKey(host)) {
+      _cc[_key(n)] = _ccByIp[host]!;
+      return;
+    }
+    try {
+      final req = await _http.getUrl(Uri.parse('https://ipwho.is/$host'));
+      final resp = await req.close().timeout(const Duration(seconds: 5));
+      final body = await resp.transform(utf8.decoder).join();
+      final j = jsonDecode(body) as Map<String, dynamic>;
+      final cc = (j['country_code'] as String?)?.toUpperCase() ?? '';
+      _ccByIp[host] = cc;
+      if (cc.isNotEmpty) _cc[_key(n)] = cc;
+    } catch (_) {/* leave flag blank */}
   }
 
   Future<void> _pin(String? key) async {
@@ -188,6 +219,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
                       _NodeRow(
                         node: n,
                         ms: _ping[_key(n)],
+                        countryCode: _cc[_key(n)],
                         selected: pinned == _key(n),
                         onTap: () => _pin(_key(n)),
                       ),
@@ -216,26 +248,46 @@ class _AutoRow extends StatelessWidget {
   }
 }
 
+/// ISO 3166 alpha-2 country code → flag emoji (regional indicator symbols).
+String _flagEmoji(String cc) {
+  if (cc.length != 2) return '🏳️';
+  const int base = 0x1F1E6;
+  final int a = cc.codeUnitAt(0) - 0x41;
+  final int b = cc.codeUnitAt(1) - 0x41;
+  if (a < 0 || a > 25 || b < 0 || b > 25) return '🏳️';
+  return String.fromCharCodes(<int>[base + a, base + b]);
+}
+
 class _NodeRow extends StatelessWidget {
   const _NodeRow({
     required this.node,
     required this.ms,
+    required this.countryCode,
     required this.selected,
     required this.onTap,
   });
 
   final ProxyNode node;
   final int? ms;
+  final String? countryCode;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final String name = node.tag.isNotEmpty ? node.tag : node.server;
+    final String? cc = countryCode;
     return ListTile(
+      leading: cc != null && cc.isNotEmpty
+          ? Text(_flagEmoji(cc), style: const TextStyle(fontSize: 26))
+          : const SizedBox(width: 26),
       title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('${node.server}:${node.port}',
-          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+          cc != null && cc.isNotEmpty
+              ? '$cc · ${node.server}:${node.port}'
+              : '${node.server}:${node.port}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
