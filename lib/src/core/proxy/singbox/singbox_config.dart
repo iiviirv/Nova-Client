@@ -114,9 +114,10 @@ class SingboxConfig {
     List<ProxyNode> nodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
-    // The lean (iOS) path keeps far fewer live dialers so the extension stays
-    // well under its memory cap; roomier hosts use the full node budget.
-    final int cap = options.lean ? 8 : kMaxAutoNodes;
+    // The lean (iOS) path trims the node pool a little to stay under the
+    // extension's memory cap, but keeps enough for the urltest to find a fast
+    // exit; roomier hosts use the full budget.
+    final int cap = options.lean ? 16 : kMaxAutoNodes;
     final List<ProxyNode> picked = _dedupe(nodes).take(cap).toList();
     if (picked.length <= 1) {
       return buildMap(
@@ -179,9 +180,9 @@ class SingboxConfig {
         'tag': 'tun-in',
         'interface_name': 'nova-tun',
         'inet4_address': '172.19.0.1/30',
-        // A normal MTU on the lean (iOS) path keeps the extension's packet
-        // buffers small; desktop/Android use the larger 9000 for throughput.
-        'mtu': o.lean ? 1500 : 9000,
+        // A large MTU keeps per-packet overhead low (throughput); 9000 is the
+        // sing-box default and works inside the iOS extension too.
+        'mtu': 9000,
         'auto_route': true,
         'strict_route': true,
         'stack': 'system',
