@@ -183,16 +183,29 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   func clearDNSCache() {}
 
   func startDefaultInterfaceMonitor(_ listener: LibboxInterfaceUpdateListenerProtocol?) throws {
+    guard let listener else { return }
     let monitor = NWPathMonitor()
     pathMonitor = monitor
+    // Block until the first path update is delivered, so sing-box knows the real
+    // default interface BEFORE it dials any outbound. Returning early let it bind
+    // outbounds to the tunnel itself -> loop -> connected but zero download.
+    let semaphore = DispatchSemaphore(value: 0)
     monitor.pathUpdateHandler = { path in
-      let iface = path.availableInterfaces.first
-      let name = iface?.name ?? ""
-      let index = Int32(iface?.index ?? 0)
-      listener?.updateDefaultInterface(name, interfaceIndex: index,
-                                       isExpensive: path.isExpensive, isConstrained: path.isConstrained)
+      self.report(listener, path)
+      semaphore.signal()
+      monitor.pathUpdateHandler = { path in self.report(listener, path) }
     }
-    monitor.start(queue: DispatchQueue(label: "nova.path"))
+    monitor.start(queue: DispatchQueue.global())
+    semaphore.wait()
+  }
+
+  private func report(_ listener: LibboxInterfaceUpdateListenerProtocol, _ path: Network.NWPath) {
+    guard path.status != .unsatisfied, let iface = path.availableInterfaces.first else {
+      listener.updateDefaultInterface("", interfaceIndex: -1, isExpensive: false, isConstrained: false)
+      return
+    }
+    listener.updateDefaultInterface(iface.name, interfaceIndex: Int32(iface.index),
+                                    isExpensive: path.isExpensive, isConstrained: path.isConstrained)
   }
 
   func closeDefaultInterfaceMonitor(_: LibboxInterfaceUpdateListenerProtocol?) throws {
@@ -200,9 +213,27 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     pathMonitor = nil
   }
 
-  // Not applicable on iOS NE; the interface monitor above provides routing.
+  // sing-box enumerates interfaces here to bind outbound sockets to the physical
+  // one. Throwing (as before) left it unable to bind -> traffic looped -> zero
+  // download. Return the live interfaces from the path monitor.
   func getInterfaces() throws -> LibboxNetworkInterfaceIteratorProtocol {
-    throw NSError(domain: "Nova", code: 5, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
+    guard let path = pathMonitor?.currentPath, path.status != .unsatisfied else {
+      return InterfaceArray([])
+    }
+    var out: [LibboxNetworkInterface] = []
+    for it in path.availableInterfaces {
+      let n = LibboxNetworkInterface()
+      n.name = it.name
+      n.index = Int32(it.index)
+      switch it.type {
+      case .wifi: n.type = LibboxInterfaceTypeWIFI
+      case .cellular: n.type = LibboxInterfaceTypeCellular
+      case .wiredEthernet: n.type = LibboxInterfaceTypeEthernet
+      default: n.type = LibboxInterfaceTypeOther
+      }
+      out.append(n)
+    }
+    return InterfaceArray(out)
   }
 
   func findConnectionOwner(_: Int32, sourceAddress _: String?, sourcePort _: Int32,
@@ -218,4 +249,17 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
 
   func readWIFIState() -> LibboxWIFIState? { nil }
   func send(_: LibboxNotification?) throws {}
+}
+
+/// Bridges a Swift array of interfaces to libbox's iterator protocol so the core
+/// can enumerate the device's network interfaces.
+private final class InterfaceArray: NSObject, LibboxNetworkInterfaceIteratorProtocol {
+  private var iterator: IndexingIterator<[LibboxNetworkInterface]>
+  private var current: LibboxNetworkInterface?
+  init(_ array: [LibboxNetworkInterface]) { iterator = array.makeIterator() }
+  func hasNext() -> Bool {
+    current = iterator.next()
+    return current != nil
+  }
+  func next() -> LibboxNetworkInterface? { current }
 }
