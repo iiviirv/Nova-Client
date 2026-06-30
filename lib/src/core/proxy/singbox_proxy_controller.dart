@@ -47,6 +47,12 @@ class SingboxProxyController extends ProxyController {
   final EventChannel _events;
   StreamSubscription<dynamic>? _eventSub;
 
+  /// If the tunnel never reports "connected" within this window the start has
+  /// effectively hung (e.g. the core stuck initialising), so surface a real
+  /// error instead of an endless "Connecting…".
+  static const Duration _connectTimeout = Duration(seconds: 30);
+  Timer? _watchdog;
+
   ProxyConnectionState _state = ProxyConnectionState.disconnected;
   @override
   ProxyConnectionState get state => _state;
@@ -82,6 +88,11 @@ class SingboxProxyController extends ProxyController {
           (s) => s.name == event['value'],
           orElse: () => _state,
         );
+        // Any settled state clears the connect watchdog.
+        if (_state != ProxyConnectionState.connecting) {
+          _watchdog?.cancel();
+          _watchdog = null;
+        }
         notifyListeners();
       case 'traffic':
         _traffic = TrafficStats(
@@ -136,6 +147,7 @@ class SingboxProxyController extends ProxyController {
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
       });
+      _armWatchdog();
     } catch (e) {
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
@@ -143,8 +155,22 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
+  void _armWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer(_connectTimeout, () {
+      if (_state == ProxyConnectionState.connecting) {
+        _lastError = 'The tunnel did not come up in time. The server may be '
+            'unreachable — try another config or scan a clean IP in Radar.';
+        _state = ProxyConnectionState.error;
+        notifyListeners();
+      }
+    });
+  }
+
   @override
   Future<void> disconnect() async {
+    _watchdog?.cancel();
+    _watchdog = null;
     _state = ProxyConnectionState.disconnecting;
     notifyListeners();
     try {
@@ -184,6 +210,7 @@ class SingboxProxyController extends ProxyController {
 
   @override
   void dispose() {
+    _watchdog?.cancel();
     _eventSub?.cancel();
     super.dispose();
   }

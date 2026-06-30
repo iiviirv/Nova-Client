@@ -58,7 +58,11 @@ class SingboxConfig {
   }) {
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
-      'dns': _dns(options, directDomains: _directDomains(<ProxyNode>[node])),
+      'dns': _dns(options,
+          directDomains: <String>{
+            ..._directDomains(<ProxyNode>[node]),
+            ..._ruleSetHosts,
+          }),
       'inbounds': <Map<String, dynamic>>[_tunInbound()],
       'outbounds': <Map<String, dynamic>>[
         _outbound(node),
@@ -110,7 +114,11 @@ class SingboxConfig {
     }
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
-      'dns': _dns(options, directDomains: _directDomains(picked)),
+      'dns': _dns(options,
+          directDomains: <String>{
+            ..._directDomains(picked),
+            ..._ruleSetHosts,
+          }),
       'inbounds': <Map<String, dynamic>>[_tunInbound()],
       'outbounds': <Map<String, dynamic>>[
         // Auto-pick the lowest-latency node and keep checking, without tearing
@@ -296,16 +304,21 @@ class SingboxConfig {
     };
   }
 
+  /// The hosts the remote rule-sets are fetched from. They resolve via the
+  /// direct DNS (see [_dns]) so the download never waits on the proxy.
+  static const List<String> _ruleSetHosts = <String>['raw.githubusercontent.com'];
+
   static Map<String, dynamic> _remoteRuleSet(String tag, String url) =>
       <String, dynamic>{
         'type': 'remote',
         'tag': tag,
         'format': 'binary',
         'url': url,
-        // Pull rule-sets through the tunnel, not `direct`: the hosts
-        // (githubusercontent) are blocked on some ISPs, and the proxy exit
-        // (Cloudflare) reaches them reliably once it is up.
-        'download_detour': 'proxy',
+        // Download directly, not through `proxy`. On the iOS/Android TUN path
+        // the proxy isn't ready while the core is still starting, so a proxied
+        // rule-set fetch deadlocks service start and the tunnel hangs on
+        // "Connecting". Direct + direct-DNS resolution is self-contained.
+        'download_detour': 'direct',
       };
 
   /// The server/SNI/WS-host domains the proxy outbounds dial. These must resolve
