@@ -19,8 +19,9 @@ Future<void> main(List<String> args) async {
     subscriptionUrl: url,
   );
   final nodes = await resolveProfileNodes(profile);
-  // Default options == the app's defaults (rule mode, blockAds, bypassIran...).
-  const opts = SingboxRouteOptions();
+  // Pass "lean" as a 2nd arg to emit the iOS Network-Extension config.
+  final bool lean = args.contains('lean');
+  final opts = SingboxRouteOptions(lean: lean);
   final String cfg = nodes.length == 1
       ? SingboxConfig.build(nodes.first, options: opts)
       : SingboxConfig.buildMulti(nodes, options: opts);

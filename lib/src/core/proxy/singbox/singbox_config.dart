@@ -12,6 +12,7 @@ class SingboxRouteOptions {
     this.bypassIran = true,
     this.bypassLan = true,
     this.dns = '',
+    this.lean = false,
   });
 
   final SingboxMode mode;
@@ -19,10 +20,25 @@ class SingboxRouteOptions {
   final bool bypassIran;
   final bool bypassLan;
 
+  /// Memory-lean profile for the iOS Network Extension (hard ~50 MB cap):
+  /// fewer auto-select nodes, a normal MTU, and no downloaded rule-sets, so the
+  /// extension isn't OOM-killed a few seconds into the connection. Desktop and
+  /// Android (roomier memory) leave this off and get the full config.
+  final bool lean;
+
   /// The upstream resolver IP the remote DNS server points at (DoH). Empty
   /// means Nova's default (Cloudflare 1.1.1.1). Matches the native app's DNS
   /// picker: '' / 1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 94.140.14.14.
   final String dns;
+
+  SingboxRouteOptions copyWith({bool? lean}) => SingboxRouteOptions(
+        mode: mode,
+        blockAds: blockAds,
+        bypassIran: bypassIran,
+        bypassLan: bypassLan,
+        dns: dns,
+        lean: lean ?? this.lean,
+      );
 }
 
 /// Builds a sing-box configuration document from a [ProxyNode].
@@ -63,7 +79,7 @@ class SingboxConfig {
             ..._directDomains(<ProxyNode>[node]),
             ..._ruleSetHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_tunInbound()],
+      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
         _outbound(node),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
@@ -98,7 +114,10 @@ class SingboxConfig {
     List<ProxyNode> nodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
-    final List<ProxyNode> picked = _dedupe(nodes).take(kMaxAutoNodes).toList();
+    // The lean (iOS) path keeps far fewer live dialers so the extension stays
+    // well under its memory cap; roomier hosts use the full node budget.
+    final int cap = options.lean ? 8 : kMaxAutoNodes;
+    final List<ProxyNode> picked = _dedupe(nodes).take(cap).toList();
     if (picked.length <= 1) {
       return buildMap(
         picked.isEmpty ? nodes.first : picked.first,
@@ -119,7 +138,7 @@ class SingboxConfig {
             ..._directDomains(picked),
             ..._ruleSetHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_tunInbound()],
+      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
         // Auto-pick the lowest-latency node and keep checking, without tearing
         // down live connections when it switches (smoother downloads).
@@ -154,12 +173,15 @@ class SingboxConfig {
     return out;
   }
 
-  static Map<String, dynamic> _tunInbound() => <String, dynamic>{
+  static Map<String, dynamic> _tunInbound(SingboxRouteOptions o) =>
+      <String, dynamic>{
         'type': 'tun',
         'tag': 'tun-in',
         'interface_name': 'nova-tun',
         'inet4_address': '172.19.0.1/30',
-        'mtu': 9000,
+        // A normal MTU on the lean (iOS) path keeps the extension's packet
+        // buffers small; desktop/Android use the larger 9000 for throughput.
+        'mtu': o.lean ? 1500 : 9000,
         'auto_route': true,
         'strict_route': true,
         'stack': 'system',
@@ -197,10 +219,11 @@ class SingboxConfig {
         if (direct.isNotEmpty)
           <String, dynamic>{'domain': direct, 'server': 'local'},
         // Only reference rule-sets that _route() actually defines, otherwise
-        // sing-box rejects the config for an undefined rule_set reference.
-        if (o.blockAds && o.mode != SingboxMode.direct)
+        // sing-box rejects the config for an undefined rule_set reference. The
+        // lean (iOS) path defines no rule-sets, so it references none here.
+        if (!o.lean && o.blockAds && o.mode != SingboxMode.direct)
           <String, dynamic>{'rule_set': 'geosite-ads', 'server': 'block'},
-        if (o.bypassIran && o.mode == SingboxMode.rule)
+        if (!o.lean && o.bypassIran && o.mode == SingboxMode.rule)
           <String, dynamic>{'rule_set': 'geosite-ir', 'server': 'local'},
       ],
       'final': o.mode == SingboxMode.direct ? 'local' : 'remote',
@@ -266,6 +289,20 @@ class SingboxConfig {
       <String, dynamic>{'protocol': 'dns', 'outbound': 'dns-out'},
     ];
     final List<Map<String, dynamic>> ruleSets = <Map<String, dynamic>>[];
+
+    // Lean (iOS) path: no downloaded geosite/geoip rule-sets. They cost several
+    // MB of resident memory and a startup fetch the tiny extension can't afford;
+    // LAN still bypasses, everything else goes through the proxy.
+    if (o.lean) {
+      if (o.bypassLan && o.mode != SingboxMode.direct) {
+        rules.add(<String, dynamic>{'ip_is_private': true, 'outbound': 'direct'});
+      }
+      return <String, dynamic>{
+        'rules': rules,
+        'final': o.mode == SingboxMode.direct ? 'direct' : 'proxy',
+        'auto_detect_interface': true,
+      };
+    }
 
     if (o.mode == SingboxMode.rule) {
       if (o.bypassLan) {

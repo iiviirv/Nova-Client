@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 
@@ -202,7 +203,10 @@ class SingboxProxyController extends ProxyController {
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }
-    final SingboxRouteOptions opts = routeOptions;
+    // iOS runs the core inside a Network Extension with a hard ~50 MB memory
+    // cap, so build a lean config there (fewer nodes, normal MTU, no rule-sets)
+    // to keep the extension from being OOM-killed mid-connection.
+    final SingboxRouteOptions opts = routeOptions.copyWith(lean: Platform.isIOS);
     return nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
         : SingboxConfig.buildMulti(nodes, options: opts);
