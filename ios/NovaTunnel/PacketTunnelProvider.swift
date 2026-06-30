@@ -151,7 +151,11 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   func useProcFS() -> Bool { false }
   func underNetworkExtension() -> Bool { true }
   func includeAllNetworks() -> Bool { false }
-  func usePlatformAutoDetectControl() -> Bool { true }
+  // Let sing-box bind outbound sockets to the real default interface itself
+  // (via startDefaultInterfaceMonitor below). Returning true here with an empty
+  // autoDetectControl left the proxy's sockets unbound, so requests went out
+  // but nothing came back ("connected, upload only, no download").
+  func usePlatformAutoDetectControl() -> Bool { false }
   func autoDetectControl(_: Int32) throws {}
   func clearDNSCache() {}
 
