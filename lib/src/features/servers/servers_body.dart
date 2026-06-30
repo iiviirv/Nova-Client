@@ -15,6 +15,7 @@ import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
+import 'node_list_screen.dart';
 
 /// The scrollable Servers content — search, protocol filters, and the list of
 /// configs styled as native server rows (flag/icon, name, protocol badge,
@@ -76,7 +77,18 @@ class _ServersBodyState extends State<ServersBody> {
               child: _ServerRow(
                 profile: p,
                 active: p.id == profiles.activeId,
-                onSelect: () => profiles.setActive(p.id),
+                onSelect: () {
+                  profiles.setActive(p.id);
+                  // Subscriptions open the node picker so the user can switch
+                  // to a specific (better) exit; single links just activate.
+                  if (p.isSubscription) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => NodeListScreen(profileId: p.id),
+                      ),
+                    );
+                  }
+                },
                 onDelete: () => profiles.remove(p.id),
               ),
             ),

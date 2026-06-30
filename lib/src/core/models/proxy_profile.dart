@@ -5,6 +5,10 @@ import 'dart:convert';
 /// local-config kinds Karing-style clients import.
 enum ProxyKind { vless, trojan, shadowsocks, subscription, singboxConfig }
 
+/// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
+/// from "clear it to null" (back to auto-select).
+const Object _unset = Object();
+
 extension ProxyKindLabel on ProxyKind {
   String get label => switch (this) {
         ProxyKind.vless => 'VLESS',
@@ -27,6 +31,7 @@ class ProxyProfile {
     this.nodeCount = 1,
     this.lastLatencyMs,
     this.updatedAt,
+    this.pinnedNode,
   });
 
   final String id;
@@ -47,6 +52,10 @@ class ProxyProfile {
 
   final DateTime? updatedAt;
 
+  /// For a subscription, the `server:port` of a manually pinned exit node, or
+  /// null to let the core auto-pick the fastest (urltest).
+  final String? pinnedNode;
+
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
@@ -55,6 +64,7 @@ class ProxyProfile {
     int? nodeCount,
     int? lastLatencyMs,
     DateTime? updatedAt,
+    Object? pinnedNode = _unset,
   }) {
     return ProxyProfile(
       id: id,
@@ -65,6 +75,8 @@ class ProxyProfile {
       nodeCount: nodeCount ?? this.nodeCount,
       lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
       updatedAt: updatedAt ?? this.updatedAt,
+      pinnedNode:
+          pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
     );
   }
 
@@ -77,6 +89,7 @@ class ProxyProfile {
         'nodeCount': nodeCount,
         'lastLatencyMs': lastLatencyMs,
         'updatedAt': updatedAt?.toIso8601String(),
+        'pinnedNode': pinnedNode,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -93,6 +106,7 @@ class ProxyProfile {
         updatedAt: json['updatedAt'] != null
             ? DateTime.tryParse(json['updatedAt'] as String)
             : null,
+        pinnedNode: json['pinnedNode'] as String?,
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>

@@ -199,9 +199,21 @@ class SingboxProxyController extends ProxyController {
     // actually connect instead of failing as an "invalid profile link". A
     // subscription returns its whole node list so the core auto-picks the
     // fastest via a urltest; a single link is just the one node.
-    final List<ProxyNode> nodes = await resolveProfileNodes(profile);
+    List<ProxyNode> nodes = await resolveProfileNodes(profile);
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
+    }
+    // Honour a manually pinned exit node: route through just that one instead of
+    // letting the urltest auto-pick. Falls back to auto if it's no longer in the
+    // subscription.
+    final String? pin = profile.pinnedNode;
+    if (pin != null) {
+      for (final ProxyNode n in nodes) {
+        if ('${n.server}:${n.port}' == pin) {
+          nodes = <ProxyNode>[n];
+          break;
+        }
+      }
     }
     // iOS runs the core inside a Network Extension with a hard ~50 MB memory
     // cap, so build a lean config there (fewer nodes, normal MTU, no rule-sets)
