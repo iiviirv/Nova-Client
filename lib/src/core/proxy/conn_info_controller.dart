@@ -40,10 +40,22 @@ class ConnInfo {
 class ConnInfoController extends ChangeNotifier {
   ConnInfoController(this._proxy) {
     _proxy.addListener(_onProxyChanged);
+    _client = _makeClient();
+  }
+
+  /// A fresh client whose connections are made *after* the tunnel is up. We
+  /// rebuild it on each connect so the probe never reuses a keep-alive socket
+  /// opened before the tunnel existed — that stale socket is exactly why the
+  /// country/ping used to stay blank until a reconnect.
+  HttpClient _makeClient() {
+    final HttpClient c = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 6)
+      ..idleTimeout = const Duration(seconds: 3);
     // On desktop the proxy is a local inbound that dart:io won't use on its own,
-    // so route these probes through it when the controller asks. On TUN
-    // platforms proxyUri is null and this resolves to DIRECT (already tunneled).
-    _client.findProxy = (_) => _proxy.proxyUri ?? 'DIRECT';
+    // so route these probes through it. On TUN platforms proxyUri is null and
+    // this resolves to DIRECT (already tunneled).
+    c.findProxy = (_) => _proxy.proxyUri ?? 'DIRECT';
+    return c;
   }
 
   final ProxyController _proxy;
@@ -56,8 +68,7 @@ class ConnInfoController extends ChangeNotifier {
 
   Timer? _timer;
   bool _wasActive = false;
-  final HttpClient _client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 6);
+  late HttpClient _client;
 
   void _onProxyChanged() {
     final bool active = _proxy.state.isActive;
@@ -73,9 +84,25 @@ class ConnInfoController extends ChangeNotifier {
     _info = ConnInfo.empty;
     _loading = true;
     notifyListeners();
+    // Fresh client so probes use sockets opened through the new tunnel.
+    _client.close(force: true);
+    _client = _makeClient();
+    // The tunnel needs a moment to actually route (urltest picks a node, DNS
+    // warms up). Probe right away, then a few quick retries until it's reachable
+    // — without this the first reading stayed blank until a manual reconnect.
     _refresh();
+    _scheduleWarmup();
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 6), (_) => _refresh());
+  }
+
+  void _scheduleWarmup() {
+    const List<int> delays = <int>[1500, 3000, 5000, 8000];
+    for (final int ms in delays) {
+      Timer(Duration(milliseconds: ms), () {
+        if (_wasActive && !_info.reachable) _refresh();
+      });
+    }
   }
 
   void _stop() {
