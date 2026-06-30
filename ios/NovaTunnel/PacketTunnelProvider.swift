@@ -131,9 +131,17 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     sem.wait()
     if let applyError { throw applyError }
 
-    // The TUN file descriptor for libbox is the packet flow's underlying socket.
-    if let fd = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
+    // The TUN file descriptor for libbox. The private `socket.fileDescriptor`
+    // KVC path works on older iOS but returns nil on newer releases (e.g.
+    // iOS 18+/26), so fall back to libbox's own tunnel-fd lookup — without this
+    // the tunnel fails to come up a few seconds in ("No tun fd").
+    if let fd = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32, fd != -1 {
       ret0_.pointee = fd
+      return
+    }
+    let loopFd = LibboxGetTunnelFileDescriptor()
+    if loopFd != -1 {
+      ret0_.pointee = loopFd
     } else {
       throw NSError(domain: "Nova", code: 4, userInfo: [NSLocalizedDescriptionKey: "No tun fd"])
     }
