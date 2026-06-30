@@ -67,15 +67,30 @@ void main() {
         reason: 'the proxy server domain must resolve directly');
   });
 
-  test('rule-sets download through the proxy, not direct', () {
+  test('rule-sets download directly so TUN startup never deadlocks', () {
+    // On the iOS TUN path the proxy is not yet reachable while the core is
+    // still starting, so a rule_set that downloads through the proxy blocks
+    // service.start() forever ("Connecting…" hangs). Downloading them direct
+    // breaks that deadlock; the host they fetch from must resolve via local
+    // DNS (see the direct-DNS rule) so the fetch itself doesn't need the proxy.
     final cfg = SingboxConfig.buildMap(node,
         options: const SingboxRouteOptions(bypassIran: true));
     final List<dynamic> sets =
         (cfg['route'] as Map)['rule_set'] as List<dynamic>;
     expect(sets, isNotEmpty);
     for (final dynamic rs in sets) {
-      expect((rs as Map)['download_detour'], 'proxy');
+      expect((rs as Map)['download_detour'], 'direct');
     }
+
+    final List<dynamic> dnsRules = (cfg['dns'] as Map)['rules'] as List<dynamic>;
+    final Map<String, dynamic> directRule = dnsRules.firstWhere(
+      (dynamic r) => (r as Map)['server'] == 'local' && r.containsKey('domain'),
+      orElse: () => <String, dynamic>{},
+    ) as Map<String, dynamic>;
+    final List<dynamic> directDomains =
+        (directRule['domain'] as List<dynamic>? ?? <dynamic>[]);
+    expect(directDomains, contains('raw.githubusercontent.com'),
+        reason: 'the rule_set host must resolve without the proxy');
   });
 
   test('DNS choice changes the remote resolver', () {
