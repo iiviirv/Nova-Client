@@ -187,6 +187,14 @@ bool _isHttpUrl(String raw) {
 ///
 /// Real Nova nodes carry a uuid; the free-notice banner is dropped when any
 /// real node exists so it never wastes a slot in the auto-selector.
+/// Session cache of resolved subscription nodes, keyed by the payload URL. Keeps
+/// re-opening the node list (or reconnecting) from re-fetching the subscription
+/// — which is slow when it has to go through the tunnel. Cleared on app restart;
+/// [clearSubscriptionCache] drops it for a manual refresh.
+final Map<String, List<ProxyNode>> _nodeCache = <String, List<ProxyNode>>{};
+
+void clearSubscriptionCache() => _nodeCache.clear();
+
 Future<List<ProxyNode>> resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
@@ -194,12 +202,16 @@ Future<List<ProxyNode>> resolveProfileNodes(
   final String raw = _profilePayload(profile);
   if (raw.isEmpty) return const <ProxyNode>[];
   if (_isHttpUrl(raw)) {
+    // Only the real network path is cached (tests pass a custom fetch).
+    if (fetch == null && _nodeCache[raw] != null) return _nodeCache[raw]!;
     final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
     if (core == null) return const <ProxyNode>[];
     final List<ProxyNode> real = core.nodes
         .where((ProxyNode n) => (n.uuid ?? '').isNotEmpty)
         .toList();
-    return real.isNotEmpty ? real : core.nodes;
+    final List<ProxyNode> out = real.isNotEmpty ? real : core.nodes;
+    if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
+    return out;
   }
   final ProxyNode? node = parseShareLink(raw);
   return node == null ? const <ProxyNode>[] : <ProxyNode>[node];

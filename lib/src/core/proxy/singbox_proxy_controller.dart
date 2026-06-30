@@ -214,6 +214,19 @@ class SingboxProxyController extends ProxyController {
           break;
         }
       }
+    } else if (profile.fastNodes.isNotEmpty) {
+      // Auto-select: front-load the nodes the picker measured as fastest so the
+      // urltest pool (which takes the first N) is built from good exits, not the
+      // subscription's arbitrary first few.
+      final Map<String, int> rank = <String, int>{
+        for (int i = 0; i < profile.fastNodes.length; i++)
+          profile.fastNodes[i]: i,
+      };
+      nodes = <ProxyNode>[...nodes]..sort((ProxyNode a, ProxyNode b) {
+          final int ra = rank['${a.server}:${a.port}'] ?? 1 << 30;
+          final int rb = rank['${b.server}:${b.port}'] ?? 1 << 30;
+          return ra.compareTo(rb);
+        });
     }
     // iOS runs the core inside a Network Extension with a hard ~50 MB memory
     // cap, so build a lean config there (fewer nodes, normal MTU, no rule-sets)

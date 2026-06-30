@@ -95,6 +95,23 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (!mounted) return;
       setState(() {});
     }
+    _saveFastNodes();
+  }
+
+  /// Persist the fastest reachable nodes so Auto-select builds its urltest pool
+  /// from these instead of the subscription's arbitrary first few.
+  void _saveFastNodes() {
+    final profile = _profile;
+    if (profile == null) return;
+    final reachable = _nodes
+        .map(_key)
+        .where((k) => (_ping[k] ?? -1) >= 0)
+        .toList()
+      ..sort((a, b) => _ping[a]!.compareTo(_ping[b]!));
+    if (reachable.isEmpty) return;
+    NovaScope.of(context)
+        .profiles
+        .update(profile.copyWith(fastNodes: reachable.take(24).toList()));
   }
 
   Future<void> _pingOne(ProxyNode n) async {
@@ -145,12 +162,13 @@ class _NodeListScreenState extends State<NodeListScreen> {
         actions: <Widget>[
           if (!_loading)
             IconButton(
-              tooltip: 'Re-test',
+              tooltip: 'Refresh',
               icon: const Icon(Icons.refresh),
               onPressed: () {
+                clearSubscriptionCache();
                 _ping.clear();
-                setState(() {});
-                _pingAll();
+                setState(() => _loading = true);
+                _load();
               },
             ),
         ],

@@ -32,6 +32,7 @@ class ProxyProfile {
     this.lastLatencyMs,
     this.updatedAt,
     this.pinnedNode,
+    this.fastNodes = const <String>[],
   });
 
   final String id;
@@ -56,6 +57,12 @@ class ProxyProfile {
   /// null to let the core auto-pick the fastest (urltest).
   final String? pinnedNode;
 
+  /// `server:port` keys of the fastest measured nodes (from the node picker's
+  /// latency test), best first. Auto-select builds its urltest pool from these
+  /// so "fastest" actually uses good nodes instead of the subscription's first
+  /// few. Empty until the user opens the node list.
+  final List<String> fastNodes;
+
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
@@ -65,6 +72,7 @@ class ProxyProfile {
     int? lastLatencyMs,
     DateTime? updatedAt,
     Object? pinnedNode = _unset,
+    List<String>? fastNodes,
   }) {
     return ProxyProfile(
       id: id,
@@ -77,6 +85,7 @@ class ProxyProfile {
       updatedAt: updatedAt ?? this.updatedAt,
       pinnedNode:
           pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
+      fastNodes: fastNodes ?? this.fastNodes,
     );
   }
 
@@ -90,6 +99,7 @@ class ProxyProfile {
         'lastLatencyMs': lastLatencyMs,
         'updatedAt': updatedAt?.toIso8601String(),
         'pinnedNode': pinnedNode,
+        'fastNodes': fastNodes,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -107,6 +117,10 @@ class ProxyProfile {
             ? DateTime.tryParse(json['updatedAt'] as String)
             : null,
         pinnedNode: json['pinnedNode'] as String?,
+        fastNodes: (json['fastNodes'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            const <String>[],
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>
