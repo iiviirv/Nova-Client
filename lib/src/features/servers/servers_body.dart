@@ -12,7 +12,9 @@ import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_pill.dart';
+import '../../core/proxy/subscription.dart';
 import '../../widgets/nova_scope.dart';
+import '../profiles/profiles_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
 import 'node_list_screen.dart';
@@ -77,18 +79,16 @@ class _ServersBodyState extends State<ServersBody> {
               child: _ServerRow(
                 profile: p,
                 active: p.id == profiles.activeId,
-                onSelect: () {
+                onSelect: () => _select(context, p),
+                onExtract: () {
                   profiles.setActive(p.id);
-                  // Subscriptions open the node picker so the user can switch
-                  // to a specific (better) exit; single links just activate.
-                  if (p.isSubscription) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => NodeListScreen(profileId: p.id),
-                      ),
-                    );
-                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => NodeListScreen(profileId: p.id),
+                    ),
+                  );
                 },
+                onEdit: () => _editProfile(context, profiles, p),
                 onDelete: () => profiles.remove(p.id),
               ),
             ),
@@ -106,6 +106,65 @@ class _ServersBodyState extends State<ServersBody> {
         );
       },
     );
+  }
+
+  /// Make [p] the active config used for the next connect.
+  void _select(BuildContext context, ProxyProfile p) {
+    final scope = NovaScope.of(context);
+    scope.profiles.setActive(p.id);
+    scope.proxy.selectProfile(p);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Using ${p.name}'), duration: const Duration(seconds: 1)),
+    );
+  }
+
+  /// Edit a profile's name and URL/link in place.
+  Future<void> _editProfile(
+      BuildContext context, ProfilesController profiles, ProxyProfile p) async {
+    final TextEditingController nameC = TextEditingController(text: p.name);
+    final bool isSub = p.isSubscription;
+    final TextEditingController urlC = TextEditingController(
+        text: isSub ? (p.subscriptionUrl ?? '') : p.uri);
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Edit'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              controller: nameC,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: urlC,
+              maxLines: 2,
+              decoration: InputDecoration(
+                  labelText: isSub ? 'Subscription URL' : 'Link'),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final String name = nameC.text.trim();
+    final String url = urlC.text.trim();
+    profiles.update(p.copyWith(
+      name: name.isEmpty ? p.name : name,
+      subscriptionUrl: isSub ? url : null,
+      uri: isSub ? p.uri : url,
+    ));
+    // The source may have changed; drop cached nodes so the next resolve refetches.
+    clearSubscriptionCache();
   }
 }
 
@@ -180,12 +239,16 @@ class _ServerRow extends StatelessWidget {
     required this.active,
     required this.onSelect,
     required this.onDelete,
+    required this.onEdit,
+    required this.onExtract,
   });
 
   final ProxyProfile profile;
   final bool active;
   final VoidCallback onSelect;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
+  final VoidCallback onExtract;
 
   @override
   Widget build(BuildContext context) {
@@ -251,13 +314,62 @@ class _ServerRow extends StatelessWidget {
               const SizedBox(width: 10),
             ],
             if (active)
-              Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22)
-            else
-              GestureDetector(
-                onTap: onDelete,
-                child: Icon(Icons.delete_outline_rounded,
-                    color: nova.muted, size: 20),
-              ),
+              Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded, color: nova.muted, size: 20),
+              tooltip: 'Actions',
+              onSelected: (String v) {
+                switch (v) {
+                  case 'select':
+                    onSelect();
+                  case 'extract':
+                    onExtract();
+                  case 'edit':
+                    onEdit();
+                  case 'delete':
+                    onDelete();
+                }
+              },
+              itemBuilder: (_) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'select',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.check_circle_outline_rounded),
+                    title: Text('Select'),
+                  ),
+                ),
+                if (profile.isSubscription)
+                  const PopupMenuItem<String>(
+                    value: 'extract',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.list_alt_rounded),
+                      title: Text('Extract configs'),
+                    ),
+                  ),
+                const PopupMenuItem<String>(
+                  value: 'edit',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.edit_outlined),
+                    title: Text('Edit'),
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.delete_outline_rounded, color: nova.danger),
+                    title: Text('Delete', style: TextStyle(color: nova.danger)),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
