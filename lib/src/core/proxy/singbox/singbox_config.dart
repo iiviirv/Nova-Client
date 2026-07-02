@@ -78,6 +78,7 @@ class SingboxConfig {
           directDomains: <String>{
             ..._directDomains(<ProxyNode>[node]),
             ..._ruleSetHosts,
+            ..._directHosts,
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
@@ -138,6 +139,7 @@ class SingboxConfig {
           directDomains: <String>{
             ..._directDomains(picked),
             ..._ruleSetHosts,
+            ..._directHosts,
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
@@ -292,6 +294,15 @@ class SingboxConfig {
   static Map<String, dynamic> _route(SingboxRouteOptions o) {
     final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[
       <String, dynamic>{'protocol': 'dns', 'outbound': 'dns-out'},
+      // Nova's own Cloudflare management calls (panel deploy, KV, etc.) must go
+      // direct: routing them through the proxy fails because Cloudflare loop-
+      // protects requests coming back through a CF-worker exit ("Failed host
+      // lookup: api.cloudflare.com" during deploy).
+      <String, dynamic>{'domain': _directHosts, 'outbound': 'direct'},
+      // vless-over-WS/TLS exits carry TCP only, so QUIC (HTTP/3 over UDP) can't
+      // be relayed and just times out — Instagram/YouTube break while TCP apps
+      // like Telegram work. Block QUIC so those apps fall back to TCP.
+      <String, dynamic>{'protocol': 'quic', 'outbound': 'block'},
     ];
     final List<Map<String, dynamic>> ruleSets = <Map<String, dynamic>>[];
 
@@ -349,6 +360,14 @@ class SingboxConfig {
   /// The hosts the remote rule-sets are fetched from. They resolve via the
   /// direct DNS (see [_dns]) so the download never waits on the proxy.
   static const List<String> _ruleSetHosts = <String>['raw.githubusercontent.com'];
+
+  /// Nova's own Cloudflare management endpoints. Resolved via direct DNS and
+  /// routed direct (see [_route]) so panel deploy / KV calls work while the
+  /// tunnel is up instead of failing a host lookup.
+  static const List<String> _directHosts = <String>[
+    'api.cloudflare.com',
+    'dash.cloudflare.com',
+  ];
 
   static Map<String, dynamic> _remoteRuleSet(String tag, String url) =>
       <String, dynamic>{

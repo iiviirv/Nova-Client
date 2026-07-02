@@ -83,8 +83,34 @@ class _RootGate extends StatefulWidget {
   State<_RootGate> createState() => _RootGateState();
 }
 
-class _RootGateState extends State<_RootGate> {
+class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
   String? _startAction;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Sync the real tunnel state once the tree is up (covers cold launch while
+    // the VPN is already running).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) NovaScope.of(context).proxy.syncStatus();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // On return to foreground, re-read the tunnel state so a still-connected
+    // VPN isn't shown as off.
+    if (state == AppLifecycleState.resumed && mounted) {
+      NovaScope.of(context).proxy.syncStatus();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
