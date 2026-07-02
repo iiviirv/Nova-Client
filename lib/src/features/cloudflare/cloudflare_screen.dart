@@ -24,7 +24,26 @@ class CloudflareScreen extends StatelessWidget {
     final ProfilesController profiles = NovaScope.of(context).profiles;
     final nova = context.nova;
     return Scaffold(
-      appBar: AppBar(title: const Text('Connect Cloudflare')),
+      appBar: AppBar(
+        title: const Text('Connect Cloudflare'),
+        actions: <Widget>[
+          ListenableBuilder(
+            listenable: cf,
+            builder: (context, _) => IconButton(
+              tooltip: 'Refresh workers',
+              icon: cf.phase == CfPhase.loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh),
+              onPressed: (cf.phase == CfPhase.loading || !cf.isReady)
+                  ? null
+                  : () => cf.refresh(),
+            ),
+          ),
+        ],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
@@ -161,24 +180,52 @@ class CloudflareScreen extends StatelessWidget {
             ),
             if (busy)
               const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            else
-              PopupMenuButton<String>(
-                onSelected: (String v) async {
-                  if (v == 'import') {
-                    await _importFromWorker(context, cf, profiles, w);
-                  } else if (v == 'delete') {
-                    await cf.deleteWorker(w);
-                  }
-                },
-                itemBuilder: (_) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(value: 'import', child: Text('Import configs')),
-                  const PopupMenuItem<String>(value: 'delete', child: Text('Delete')),
-                ],
+            else ...<Widget>[
+              IconButton(
+                tooltip: 'Import configs',
+                icon: Icon(Icons.download_rounded, color: nova.cyan),
+                onPressed: () => _importFromWorker(context, cf, profiles, w),
               ),
+              IconButton(
+                tooltip: 'Remove worker',
+                icon: Icon(Icons.delete_outline_rounded, color: nova.danger),
+                onPressed: () => _confirmDelete(context, cf, w),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(
+      BuildContext context, CloudflareController cf, CfWorker w) async {
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text('Remove ${w.name}?'),
+            content: const Text(
+                'This deletes the worker from your Cloudflare account. Configs '
+                'already imported into Nova are kept. This cannot be undone.'),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: Text('Remove',
+                      style: TextStyle(color: context.nova.danger))),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+    final bool deleted = await cf.deleteWorker(w);
+    if (context.mounted && deleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Removed ${w.name}')),
+      );
+    }
   }
 
   Future<void> _importFromWorker(
