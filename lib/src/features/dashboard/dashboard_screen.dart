@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/conn_info_controller.dart';
 import '../../core/proxy/proxy_controller.dart';
+import '../../core/proxy/subscription.dart';
 import '../../core/util/format.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -617,12 +618,23 @@ class _ConfigCard extends StatelessWidget {
               _ConfigMetric(
                 icon: Icons.data_usage_rounded,
                 label: 'Data',
-                value: '∞',
+                value: () {
+                  final SubInfo? s = subInfoFor(active.subscriptionUrl);
+                  if (s == null) return '∞';
+                  return s.total > 0
+                      ? '${Fmt.bytes(s.used)} / ${Fmt.bytes(s.total)}'
+                      : Fmt.bytes(s.used);
+                }(),
               ),
               _ConfigMetric(
                 icon: Icons.calendar_month_rounded,
                 label: 'Expiry',
-                value: '—',
+                value: () {
+                  final DateTime? e = subInfoFor(active.subscriptionUrl)?.expire;
+                  if (e == null) return '—';
+                  return '${e.year}-${e.month.toString().padLeft(2, '0')}-'
+                      '${e.day.toString().padLeft(2, '0')}';
+                }(),
               ),
             ],
           ),

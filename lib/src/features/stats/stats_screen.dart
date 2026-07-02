@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 
 import '../../core/proxy/proxy_controller.dart';
+import '../../core/proxy/subscription.dart';
 import '../../core/util/format.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
@@ -91,6 +92,37 @@ class _StatsScreenState extends State<StatsScreen> {
     return list.sublist(list.length - n);
   }
 
+  /// Plan usage + expiry, read from the active subscription's
+  /// `subscription-userinfo` header. Empty when there's no such data.
+  List<Widget> _planCards(BuildContext context, NovaScope scope) {
+    final SubInfo? sub = subInfoFor(scope.profiles.active?.subscriptionUrl);
+    if (sub == null) return const <Widget>[];
+    String date(DateTime e) => '${e.year}-${e.month.toString().padLeft(2, '0')}'
+        '-${e.day.toString().padLeft(2, '0')}';
+    return <Widget>[
+      const SizedBox(height: 12),
+      _StatCard(
+        icon: Icons.pie_chart_rounded,
+        label: 'Plan usage',
+        value: sub.total > 0
+            ? '${Fmt.bytes(sub.used)} / ${Fmt.bytes(sub.total)}'
+            : Fmt.bytes(sub.used),
+        color: context.nova.cyan,
+        wide: true,
+      ),
+      if (sub.expire != null) ...<Widget>[
+        const SizedBox(height: 12),
+        _StatCard(
+          icon: Icons.event_rounded,
+          label: 'Expires',
+          value: date(sub.expire!),
+          color: context.nova.violet,
+          wide: true,
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = NovaScope.of(context);
@@ -155,6 +187,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   color: context.nova.indigo,
                   wide: true,
                 ),
+                ..._planCards(context, scope),
                 const SizedBox(height: 12),
                 _LiveSection(proxy: proxy, active: active),
               ],
