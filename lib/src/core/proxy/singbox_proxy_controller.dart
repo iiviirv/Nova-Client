@@ -116,6 +116,31 @@ class SingboxProxyController extends ProxyController {
     notifyListeners();
   }
 
+  /// Re-reads the real tunnel state from the platform. Called on app resume so
+  /// the UI reflects a tunnel that's still running (the event stream only fires
+  /// on *changes*, so a relaunched app would otherwise show "disconnected").
+  @override
+  Future<void> syncStatus() async {
+    try {
+      final String? name = await _control.invokeMethod<String>('status');
+      if (name == null) return;
+      final ProxyConnectionState s = ProxyConnectionState.values.firstWhere(
+        (ProxyConnectionState s) => s.name == name,
+        orElse: () => _state,
+      );
+      if (s != _state) {
+        _state = s;
+        if (s != ProxyConnectionState.connecting) {
+          _watchdog?.cancel();
+          _watchdog = null;
+        }
+        notifyListeners();
+      }
+    } catch (_) {
+      // Best-effort; leave the current state untouched on failure.
+    }
+  }
+
   @override
   Future<void> connect() async {
     final ProxyProfile? profile = _active;

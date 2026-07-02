@@ -44,7 +44,15 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       manager?.connection.stopVPNTunnel()
       result(nil)
     case "status":
-      result(stateName(manager?.connection.status ?? .invalid))
+      // Load the existing tunnel manager if we don't have it yet (e.g. the app
+      // was relaunched while the VPN kept running), so we report the REAL status
+      // instead of "disconnected".
+      loadManagerIfNeeded { [weak self] in
+        guard let self else { result("disconnected"); return }
+        let status = self.manager?.connection.status ?? .invalid
+        if status == .connected { self.startStatusClient() }
+        result(self.stateName(status))
+      }
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -87,6 +95,17 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
           }
         }
       }
+    }
+  }
+
+  /// Loads the already-configured tunnel manager into `self.manager` if we don't
+  /// have a reference yet, so status queries after an app relaunch see the live
+  /// connection instead of nil.
+  private func loadManagerIfNeeded(_ completion: @escaping () -> Void) {
+    if manager != nil { completion(); return }
+    NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+      self?.manager = managers?.first
+      completion()
     }
   }
 

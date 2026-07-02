@@ -90,6 +90,10 @@ abstract class ProxyController extends ChangeNotifier {
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);
 
+  /// Re-reads the real tunnel state from the platform (call on app resume so a
+  /// still-running tunnel isn't shown as off). Default is a no-op.
+  Future<void> syncStatus() async {}
+
   /// Starts the tunnel for [activeProfile].
   Future<void> connect();
 
