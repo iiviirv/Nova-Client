@@ -11,6 +11,7 @@ import '../profiles/profiles_controller.dart';
 import 'cloudflare_controller.dart';
 import 'deploy_screen.dart';
 import 'nova_cloudflare.dart';
+import 'panel_admin_screen.dart';
 
 /// "Connect Cloudflare" hub: sign in to a Cloudflare account, see the Workers /
 /// KV / D1 on it, deploy a new Nova panel, and pull a worker's configs into the
@@ -182,6 +183,11 @@ class CloudflareScreen extends StatelessWidget {
               const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
             else ...<Widget>[
               IconButton(
+                tooltip: 'Manage panel',
+                icon: Icon(Icons.tune_rounded, color: nova.violet),
+                onPressed: () => _managePanel(context, w),
+              ),
+              IconButton(
                 tooltip: 'Import configs',
                 icon: Icon(Icons.download_rounded, color: nova.cyan),
                 onPressed: () => _importFromWorker(context, cf, profiles, w),
@@ -193,6 +199,26 @@ class CloudflareScreen extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _managePanel(BuildContext context, CfWorker w) async {
+    if (w.url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This worker has no panel URL.')),
+      );
+      return;
+    }
+    final String? password = await _askPassword(context, w.name);
+    if (password == null || password.isEmpty || !context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PanelAdminScreen(
+          workerUrl: w.url,
+          password: password,
+          title: w.name,
         ),
       ),
     );
@@ -262,7 +288,7 @@ class CloudflareScreen extends StatelessWidget {
         ),
         actions: <Widget>[
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(c.text), child: const Text('Import')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(c.text), child: const Text('Continue')),
         ],
       ),
     );
