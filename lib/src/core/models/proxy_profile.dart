@@ -68,6 +68,7 @@ class ProxyProfile {
   ProxyProfile copyWith({
     String? name,
     String? uri,
+    String? subscriptionUrl,
     int? nodeCount,
     int? lastLatencyMs,
     DateTime? updatedAt,
@@ -79,7 +80,7 @@ class ProxyProfile {
       name: name ?? this.name,
       kind: kind,
       uri: uri ?? this.uri,
-      subscriptionUrl: subscriptionUrl,
+      subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       nodeCount: nodeCount ?? this.nodeCount,
       lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
       updatedAt: updatedAt ?? this.updatedAt,
