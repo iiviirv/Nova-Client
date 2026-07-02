@@ -19,6 +19,55 @@ import 'singbox/share_link.dart';
 /// the network.
 typedef SubscriptionFetcher = Future<String> Function(Uri url);
 
+/// Plan usage/expiry parsed from a subscription's `subscription-userinfo`
+/// response header (the de-facto standard: `upload=..; download=..; total=..;
+/// expire=..`, bytes and a unix-seconds expiry). Powers the dashboard EXPIRY
+/// field and the Stats usage readout.
+class SubInfo {
+  const SubInfo({
+    this.upload = 0,
+    this.download = 0,
+    this.total = 0,
+    this.expire,
+  });
+
+  final int upload;
+  final int download;
+  final int total; // 0 = unlimited
+  final DateTime? expire;
+
+  int get used => upload + download;
+  int get remaining => total > 0 ? (total - used).clamp(0, total) : 0;
+
+  static SubInfo? parse(String? header) {
+    if (header == null || header.trim().isEmpty) return null;
+    final Map<String, String> kv = <String, String>{};
+    for (final String part in header.split(';')) {
+      final int eq = part.indexOf('=');
+      if (eq > 0) {
+        kv[part.substring(0, eq).trim().toLowerCase()] =
+            part.substring(eq + 1).trim();
+      }
+    }
+    if (kv.isEmpty) return null;
+    int n(String k) => int.tryParse(kv[k] ?? '') ?? 0;
+    final int exp = n('expire');
+    return SubInfo(
+      upload: n('upload'),
+      download: n('download'),
+      total: n('total'),
+      expire: exp > 0 ? DateTime.fromMillisecondsSinceEpoch(exp * 1000) : null,
+    );
+  }
+}
+
+/// Session cache of the last parsed [SubInfo] per subscription URL.
+final Map<String, SubInfo> _subInfoCache = <String, SubInfo>{};
+
+/// The most recently seen plan usage/expiry for [subscriptionUrl], if any.
+SubInfo? subInfoFor(String? subscriptionUrl) =>
+    subscriptionUrl == null ? null : _subInfoCache[subscriptionUrl];
+
 /// The core configuration derived from a subscription: every node plus the
 /// template used to stamp Radar-found clean IPs into real, connectable nodes.
 class NovaCoreConfig {
@@ -229,6 +278,9 @@ Future<String> _httpFetch(Uri url) async {
     if (resp.statusCode != HttpStatus.ok) {
       throw HttpException('Subscription HTTP ${resp.statusCode}', uri: url);
     }
+    final SubInfo? info =
+        SubInfo.parse(resp.headers.value('subscription-userinfo'));
+    if (info != null) _subInfoCache[url.toString()] = info;
     return await resp.transform(utf8.decoder).join();
   } finally {
     client.close(force: true);
