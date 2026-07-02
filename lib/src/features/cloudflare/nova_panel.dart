@@ -146,7 +146,73 @@ class NovaPanel {
     }
   }
 
+  // --- panel admin: config / network settings / custom IPs ----------------
+
+  /// Save the panel config (HOST/UUID are read-only server-side; the editable
+  /// bits are tlsFragment / skipCertVerify / enable0RTT / randomPath).
+  Future<Map<String, dynamic>> saveConfig(
+          PanelSession s, Map<String, dynamic> config) =>
+      _postJson(s, '/admin/config.json', config);
+
+  /// The worker's routing/DNS/WARP/limits document (the bulk of the panel's
+  /// "settings"). Read + save the whole JSON so unknown keys are preserved.
+  Future<Map<String, dynamic>> getNetworkSettings(PanelSession s) =>
+      _getJson(s, '/admin/network-settings.json');
+
+  Future<Map<String, dynamic>> saveNetworkSettings(
+          PanelSession s, Map<String, dynamic> settings) =>
+      _postJson(s, '/admin/network-settings.json', settings);
+
+  /// The worker's custom clean-IP list (ADD.txt), raw newline-separated text.
+  Future<String> getIPs(PanelSession s) => _getText(s, '/admin/ADD.txt');
+
+  Future<Map<String, dynamic>> saveIPs(PanelSession s, String text) =>
+      _postText(s, '/admin/ADD.txt', text);
+
+  /// Usage data (per-day/route buckets) for the panel's usage graphs.
+  Future<Map<String, dynamic>> usageData(PanelSession s) =>
+      _getJson(s, '/admin/usage-data');
+
   // --- helpers -------------------------------------------------------------
+
+  Future<Map<String, dynamic>> _postJson(
+      PanelSession s, String path, Map<String, dynamic> body) async {
+    final http.Response r = await _client.post(
+      Uri.parse('${s.workerUrl}$path'),
+      headers: <String, String>{
+        ..._baseHeaders,
+        'Cookie': s.authCookie,
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _handleWrite(r);
+  }
+
+  Future<Map<String, dynamic>> _postText(
+      PanelSession s, String path, String body) async {
+    final http.Response r = await _client.post(
+      Uri.parse('${s.workerUrl}$path'),
+      headers: <String, String>{
+        ..._baseHeaders,
+        'Cookie': s.authCookie,
+        'Content-Type': 'text/plain',
+      },
+      body: body,
+    );
+    return _handleWrite(r);
+  }
+
+  Map<String, dynamic> _handleWrite(http.Response r) {
+    if (r.statusCode == 401 || r.statusCode == 403) {
+      throw PanelException('Session expired, please sign in again');
+    }
+    if (r.statusCode < 200 || r.statusCode >= 300) {
+      final String err = _tryJson(r.body)['error'] as String? ?? '';
+      throw PanelException(err.isNotEmpty ? err : 'Save failed (${r.statusCode})');
+    }
+    return _tryJson(r.body);
+  }
 
   Future<Map<String, dynamic>> _getJson(PanelSession s, String path) async {
     final String body = await _getText(s, path);
