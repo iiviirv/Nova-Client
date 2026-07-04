@@ -114,8 +114,18 @@ class CloudflareController extends ChangeNotifier {
       _session = s;
       await _loadWorkers(s);
     } catch (e) {
-      _set(phase: CfPhase.disconnected, error: e.toString());
+      // A user cancel is not an error — reset quietly to the sign-in screen.
+      final bool cancelled = e.toString().toLowerCase().contains('cancel');
+      _set(phase: CfPhase.disconnected, error: cancelled ? '' : e.toString());
     }
+  }
+
+  /// Aborts an in-flight [connect] when the user backs out of the sign-in sheet,
+  /// so the screen returns to its "Connect Cloudflare" state instead of sitting
+  /// on "Opening your browser…" until the redirect times out.
+  void cancelConnect() {
+    _cf?.cancelConnect();
+    _set(phase: CfPhase.disconnected, error: '');
   }
 
   void disconnect() {

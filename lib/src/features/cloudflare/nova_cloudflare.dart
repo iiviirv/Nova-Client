@@ -63,10 +63,11 @@ class NovaCloudflare {
   static const List<String> _scopes = <String>[
     'account:read', 'user:read', 'workers:write', 'workers_kv:write',
     'workers_scripts:write', 'd1:write', 'pages:write', 'pages:read', 'zone:read',
-    // Read-only Workers analytics, so the app can show request usage vs. the
-    // free-plan daily limit. Users who signed in before this scope was added
-    // simply see "usage unavailable" until they reconnect.
-    'account_analytics:read',
+    // NOTE: `account_analytics:read` was requested here (to show request usage vs
+    // the free-plan limit) but Cloudflare's OAuth client rejects it outright
+    // ("scope is invalid... not allowed to request scope account_analytics:read"),
+    // which failed the ENTIRE sign-in. Removed. The usage read-out just shows
+    // "unavailable"; the app already handles a null value.
   ];
 
   /// The Cloudflare free plan's Workers request allowance per day.
@@ -74,7 +75,22 @@ class NovaCloudflare {
 
   final Random _rng = Random.secure();
 
+  // The loopback listeners for the in-flight OAuth redirect, kept so a cancel
+  // (user dismissed the sign-in sheet) can close them and unwind connect().
+  HttpServer? _authServer4;
+  HttpServer? _authServer6;
+
   // --- OAuth ---------------------------------------------------------------
+
+  /// Aborts an in-flight [connect]. Closing the loopback listeners makes the
+  /// pending `server.first` complete, so connect() returns instead of hanging
+  /// on a redirect that will never arrive.
+  void cancelConnect() {
+    _authServer4?.close(force: true);
+    _authServer6?.close(force: true);
+    _authServer4 = null;
+    _authServer6 = null;
+  }
 
   /// Build the authorization URL for [verifier] (returns the URL + state so the
   /// caller can open it and validate the redirect).
@@ -98,10 +114,34 @@ class NovaCloudflare {
   Future<CfSession> connect({required FutureOr<void> Function(String url) openUrl}) async {
     final String verifier = _b64url(_randomBytes(33));
     final ({String url, String state}) auth = authorizeUrl(verifier);
-    final HttpServer server = await HttpServer.bind(InternetAddress.loopbackIPv4, _redirectPort);
+    // Listen on BOTH loopback stacks. The redirect URI is
+    // http://localhost:8976/... and iOS resolves "localhost" to IPv6 (::1)
+    // first; binding only 127.0.0.1 left the in-app browser stuck "loading
+    // localhost" because nothing answered on ::1. Two sockets on the same port
+    // (different addresses) is allowed; we take whichever receives the redirect.
+    final HttpServer server4 =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, _redirectPort);
+    HttpServer? server6;
+    try {
+      server6 =
+          await HttpServer.bind(InternetAddress.loopbackIPv6, _redirectPort);
+    } catch (_) {
+      // IPv6 loopback unavailable on this device; IPv4 alone is fine.
+    }
+    _authServer4 = server4;
+    _authServer6 = server6;
     try {
       await openUrl(auth.url);
-      final HttpRequest req = await server.first.timeout(const Duration(minutes: 5));
+      // `.first` on a server closed before any request arrives (a cancel)
+      // throws StateError, so surface that as a clean "cancelled" instead of a
+      // raw error. `firstOrNull`-style guard via onError.
+      final HttpRequest? req = await Future.any<HttpRequest?>(<Future<HttpRequest?>>[
+        server4.first,
+        if (server6 != null) server6.first,
+      ]).timeout(const Duration(minutes: 5)).catchError((_) => null);
+      if (req == null) {
+        throw CloudflareException('Sign-in was cancelled');
+      }
       final Map<String, String> params = req.uri.queryParameters;
       final bool ok = params['error'] == null && params['code'] != null;
       req.response
@@ -120,7 +160,10 @@ class NovaCloudflare {
       _persist(tokens, acct.id, acct.name, sub);
       return CfSession(token: tokens.access, accountId: acct.id, accountName: acct.name, subdomain: sub);
     } finally {
-      await server.close(force: true);
+      await server4.close(force: true);
+      await server6?.close(force: true);
+      _authServer4 = null;
+      _authServer6 = null;
     }
   }
 

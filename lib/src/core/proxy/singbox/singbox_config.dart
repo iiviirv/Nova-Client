@@ -338,6 +338,17 @@ class SingboxConfig {
       'server_name': n.sni ?? n.server,
       if (n.allowInsecure) 'insecure': true,
       if (n.alpn.isNotEmpty) 'alpn': n.alpn,
+      // TLS ClientHello fragmentation (sing-box 1.12+ outbound TLS option, keys
+      // `fragment`/`fragment_fallback_delay` — the `tls_fragment` spelling is the
+      // route-rule form, not this one). Splits the handshake so Iran's DPI can't
+      // match the SNI in a single plaintext packet — the other half of the
+      // anti-DPI story alongside the uTLS fingerprint, and the trick Xray-based
+      // clients rely on. Not applied to Reality: its handshake already looks like
+      // a real TLS session, so fragmenting it would only add latency.
+      if (!n.isReality) ...<String, dynamic>{
+        'fragment': true,
+        'fragment_fallback_delay': '500ms',
+      },
       if (n.isReality)
         'reality': <String, dynamic>{
           'enabled': true,
