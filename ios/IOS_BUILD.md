@@ -35,14 +35,29 @@ These steps create the extension target and wire the provided files into it.
 5. **Run on a real device** (the simulator's NE support is limited).
 
 ## Rebuild the core
+Current core: **sing-box v1.12.25** (upgraded from v1.11.15 on 2026-07-04 to get
+TLS fragmentation, added upstream in 1.12.0).
 ```sh
-git clone --depth 1 -b v1.11.15 https://github.com/sagernet/sing-box.git
+git clone --depth 1 -b v1.12.25 https://github.com/sagernet/sing-box.git
 cd sing-box
-go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.4
-go install github.com/sagernet/gomobile/cmd/gobind@v0.1.4
+go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.8   # 1.12.x wants 0.1.8
+go install github.com/sagernet/gomobile/cmd/gobind@v0.1.8
 PATH="$PATH:$(go env GOPATH)/bin" go run ./cmd/internal/build_libbox -target apple -platform ios
 cp -R Libbox.xcframework /path/to/nova-app/ios/Frameworks/
 ```
+
+### Post-upgrade wiring the 1.12 core requires (already applied)
+- **Link `libresolv`**: the 1.12 core calls the system resolver (`res_9_ninit`
+  etc.). Both the Runner and NovaTunnel targets link Libbox, so BOTH need
+  `OTHER_LDFLAGS = -lresolv` (set in `project.pbxproj`), else the app fails to
+  link with `Undefined symbol: _res_9_ninit/_nsearch/_nclose`.
+- **Two new `LibboxPlatformInterface` methods** in `PacketTunnelProvider.swift`:
+  `localDNSTransport() -> LibboxLocalDNSTransportProtocol?` and
+  `systemCertificates() -> LibboxStringIteratorProtocol?`, both return `nil`
+  (use defaults). Note the `...Protocol` suffix on gomobile `id<...>` types.
+- **TLS fragmentation** is emitted in `singbox_config.dart _tls()` as the outbound
+  TLS keys `fragment` / `fragment_fallback_delay` (NOT `tls_fragment`, which is
+  the route-rule spelling). Skipped for Reality nodes.
 
 ## Honest status
 - The Swift was written against this exact `Libbox.xcframework` API but **not yet

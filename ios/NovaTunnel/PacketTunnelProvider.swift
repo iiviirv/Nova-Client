@@ -201,6 +201,12 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   }
 
   func writeLog(_ message: String?) { if let message { NSLog("[sing-box] %@", message) } }
+  // Added in sing-box 1.12's LibboxPlatformInterface. We provide neither a
+  // custom local DNS transport nor a platform certificate list, so sing-box uses
+  // its own DNS handling (our config's remote/local servers) and the bundled
+  // system trust store. Returning nil is the "use defaults" contract.
+  func localDNSTransport() -> LibboxLocalDNSTransportProtocol? { nil }
+  func systemCertificates() -> LibboxStringIteratorProtocol? { nil }
   func useProcFS() -> Bool { false }
   func underNetworkExtension() -> Bool { true }
   func includeAllNetworks() -> Bool { false }

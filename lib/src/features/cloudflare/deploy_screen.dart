@@ -113,6 +113,13 @@ class _DeployScreenState extends State<DeployScreen> {
               await closeInAppWebView();
             },
           ),
+          if (connecting)
+            Center(
+              child: TextButton(
+                onPressed: cf.cancelConnect,
+                child: const Text('Cancel'),
+              ),
+            ),
         ],
       ),
     );

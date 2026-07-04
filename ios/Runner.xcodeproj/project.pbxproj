@@ -461,6 +461,10 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -537,6 +541,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -609,6 +617,10 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -634,6 +646,10 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -769,6 +785,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -792,6 +812,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -61,7 +61,7 @@ class CloudflareScreen extends StatelessWidget {
                     ),
                   switch (cf.phase) {
                     CfPhase.connected => _connected(context, cf, profiles, nova),
-                    CfPhase.connecting => _busy(context, 'Opening your browser to sign in...'),
+                    CfPhase.connecting => _connecting(context, cf),
                     CfPhase.loading => _busy(context, 'Loading...'),
                     _ => _disconnected(context, cf, nova),
                   },
@@ -73,6 +73,24 @@ class CloudflareScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// The sign-in-in-progress card, with a Cancel so backing out of the browser
+  /// sheet returns to the connect screen instead of hanging until the redirect
+  /// times out.
+  Widget _connecting(BuildContext context, CloudflareController cf) => NovaCard(
+        child: Column(children: <Widget>[
+          const SizedBox(height: NovaSpace.md),
+          const CircularProgressIndicator(),
+          const SizedBox(height: NovaSpace.lg),
+          const Text('Opening your browser to sign in...'),
+          const SizedBox(height: NovaSpace.sm),
+          TextButton(
+            onPressed: cf.cancelConnect,
+            child: const Text('Cancel'),
+          ),
+          const SizedBox(height: NovaSpace.md),
+        ]),
+      );
 
   Widget _busy(BuildContext context, String label) => NovaCard(
         child: Column(children: <Widget>[

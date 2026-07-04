@@ -112,6 +112,23 @@ void main() {
       // uTLS is present and defaults to chrome even though the link had no fp.
       expect((tls['utls'] as Map)['enabled'], isTrue);
       expect((tls['utls'] as Map)['fingerprint'], 'chrome');
+      // TLS ClientHello fragmentation is on for a plain TLS worker node.
+      expect(tls['fragment'], isTrue);
+      expect(tls['fragment_fallback_delay'], '500ms');
+    });
+
+    test('Reality nodes are NOT fragmented (handshake already covert)', () {
+      final node = parseShareLink(
+        'vless://11111111-2222-3333-4444-555555555555@realsvr.example.com:443'
+        '?security=reality&pbk=PUBKEY123&sid=ab12&sni=www.microsoft.com'
+        '&flow=xtls-rprx-vision&type=tcp#Reality',
+      );
+      final proxy = (SingboxConfig.buildMap(node!)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      final tls = proxy['tls'] as Map;
+      expect(tls.containsKey('fragment'), isFalse);
+      expect(tls.containsKey('reality'), isTrue);
     });
   });
 
