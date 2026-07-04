@@ -161,15 +161,23 @@ class ConnInfoController extends ChangeNotifier {
     return (false, null);
   }
 
-  /// Best-effort exit IP + country over HTTPS, trying providers in turn. ipinfo
-  /// is last because it rate-limits shared exit IPs hardest; ip-api is avoided
-  /// (cleartext, blocked on a modern SDK). The successful request's round-trip
-  /// is returned as [ConnInfo.pingMs] so it can back-fill a coarse ping.
+  /// Best-effort exit IP + country over HTTPS, trying providers in turn. The
+  /// **non-Cloudflare** providers come first on purpose: the two popular ones
+  /// (ipwho.is, api.ip.sb) sit behind Cloudflare, and a Nova worker exit can't
+  /// relay to Cloudflare's own hosts (loop protection), so through the tunnel
+  /// they simply fail and the country stayed blank. ifconfig.co / ipinfo /
+  /// freeipapi are off-Cloudflare and resolve the real exit; the Cloudflare ones
+  /// stay as a fallback for non-worker exits. The successful request's
+  /// round-trip back-fills a coarse ping. Field names differ per provider, so
+  /// the parse is tolerant. (ip-api is skipped: cleartext, blocked on a modern
+  /// SDK.)
   Future<ConnInfo?> _fetchGeo() async {
     const List<String> urls = <String>[
+      'https://ifconfig.co/json',
+      'https://ipinfo.io/json',
+      'https://freeipapi.com/api/json',
       'https://ipwho.is/',
       'https://api.ip.sb/geoip',
-      'https://ipinfo.io/json',
     ];
     for (final String url in urls) {
       try {
@@ -183,24 +191,41 @@ class ConnInfoController extends ChangeNotifier {
         final String body = await res.transform(utf8.decoder).join();
         sw.stop();
         final Map<String, dynamic> j = jsonDecode(body) as Map<String, dynamic>;
-        final String? ip = j['ip'] as String?;
-        if (ip == null || ip.isEmpty) continue;
-        // ipwho.is / api.ip.sb expose "country_code"; ipinfo's "country" is the
-        // ISO code. "country" (full name) is only present on ipwho.is/ip-api.
-        final String? cc = (j['country_code'] ?? j['country']) as String?;
-        final String? name =
-            j['country'] is String && (cc != j['country']) ? j['country'] as String? : null;
-        return ConnInfo(
-          ip: ip,
-          countryCode: cc?.toUpperCase(),
-          countryName: name,
-          pingMs: sw.elapsedMilliseconds,
-        );
+        final ConnInfo? parsed = _parseGeo(j, sw.elapsedMilliseconds);
+        if (parsed != null) return parsed;
       } catch (_) {
         // Try the next provider.
       }
     }
     return null;
+  }
+
+  /// Extracts ip / ISO country code / country name from any of the supported
+  /// providers, whose JSON keys differ:
+  ///   ifconfig.co → ip, country_iso, country
+  ///   ipinfo.io   → ip, country (already the ISO code)
+  ///   freeipapi   → ipAddress, countryCode, countryName
+  ///   ipwho.is / api.ip.sb → ip, country_code, country
+  ConnInfo? _parseGeo(Map<String, dynamic> j, int pingMs) {
+    final String? ip = (j['ip'] ?? j['ipAddress']) as String?;
+    if (ip == null || ip.isEmpty) return null;
+    final String? country = j['country'] is String ? j['country'] as String : null;
+    // Prefer an explicit ISO field; otherwise a 2-letter "country" is the code.
+    String? cc = (j['country_code'] ??
+            j['country_iso'] ??
+            j['countryCode']) as String?;
+    if ((cc == null || cc.isEmpty) && country != null && country.length == 2) {
+      cc = country;
+    }
+    // A full country name, when the provider gives one distinct from the code.
+    final String? name = (j['country_name'] ?? j['countryName']) as String? ??
+        (country != null && country.length > 2 ? country : null);
+    return ConnInfo(
+      ip: ip,
+      countryCode: cc?.toUpperCase(),
+      countryName: name,
+      pingMs: pingMs,
+    );
   }
 
   @override

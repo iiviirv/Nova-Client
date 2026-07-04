@@ -65,6 +65,151 @@ void main() {
     });
   });
 
+  group('parseShareLink — VLESS Reality', () {
+    test('captures reality pbk/sid and defaults uTLS fingerprint', () {
+      final node = parseShareLink(
+        'vless://11111111-2222-3333-4444-555555555555@realsvr.example.com:443'
+        '?security=reality&pbk=PUBKEY123&sid=ab12&sni=www.microsoft.com'
+        '&flow=xtls-rprx-vision&type=tcp#Reality',
+      );
+      expect(node, isNotNull);
+      expect(node!.protocol, NodeProtocol.vless);
+      expect(node.isReality, isTrue);
+      expect(node.realityPublicKey, 'PUBKEY123');
+      expect(node.realityShortId, 'ab12');
+      expect(node.tls, isTrue);
+      expect(node.flow, 'xtls-rprx-vision');
+      // Reality mandates uTLS; parser defaults fp to chrome when omitted.
+      expect(node.fingerprint, 'chrome');
+
+      final proxy = (SingboxConfig.buildMap(node)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      final tls = proxy['tls'] as Map;
+      final reality = tls['reality'] as Map;
+      expect(reality['enabled'], isTrue);
+      expect(reality['public_key'], 'PUBKEY123');
+      expect(reality['short_id'], 'ab12');
+      expect((tls['utls'] as Map)['fingerprint'], 'chrome');
+    });
+  });
+
+  group('uTLS default (anti-DPI)', () {
+    test('a TLS node without an fp still forges a Chrome uTLS handshake', () {
+      // A plain worker VLESS link with security=tls but NO fp param.
+      final node = parseShareLink(
+        'vless://11111111-2222-3333-4444-555555555555@edge.workers.dev:443'
+        '?security=tls&type=ws&path=%2Fnova&host=edge.workers.dev'
+        '&sni=edge.workers.dev#Nova',
+      );
+      expect(node, isNotNull);
+      expect(node!.tls, isTrue);
+
+      final proxy = (SingboxConfig.buildMap(node)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      final tls = proxy['tls'] as Map;
+      // uTLS is present and defaults to chrome even though the link had no fp.
+      expect((tls['utls'] as Map)['enabled'], isTrue);
+      expect((tls['utls'] as Map)['fingerprint'], 'chrome');
+    });
+  });
+
+  group('parseShareLink — VMess', () {
+    test('parses a base64 vmess link', () {
+      // {"v":"2","ps":"VM","add":"vm.example.com","port":"443","id":"uuid-1",
+      //  "aid":"0","scy":"auto","net":"ws","path":"/vm","host":"cdn.x","tls":"tls"}
+      const b64 =
+          'eyJ2IjoiMiIsInBzIjoiVk0iLCJhZGQiOiJ2bS5leGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InV1aWQtMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJwYXRoIjoiL3ZtIiwiaG9zdCI6ImNkbi54IiwidGxzIjoidGxzIn0=';
+      final node = parseShareLink('vmess://$b64');
+      expect(node, isNotNull);
+      expect(node!.protocol, NodeProtocol.vmess);
+      expect(node.server, 'vm.example.com');
+      expect(node.port, 443);
+      expect(node.uuid, 'uuid-1');
+      expect(node.vmessAlterId, 0);
+      expect(node.network, 'ws');
+      expect(node.wsPath, '/vm');
+      expect(node.tls, isTrue);
+
+      final proxy = (SingboxConfig.buildMap(node)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      expect(proxy['type'], 'vmess');
+      expect(proxy['uuid'], 'uuid-1');
+      expect(proxy['security'], 'auto');
+      expect((proxy['transport'] as Map)['type'], 'ws');
+    });
+  });
+
+  group('parseShareLink — Hysteria2 / TUIC (UDP-native)', () {
+    test('parses hysteria2 with salamander obfs', () {
+      final node = parseShareLink(
+        'hysteria2://p4ss@hy.example.com:443?sni=hy.example.com'
+        '&obfs=salamander&obfs-password=xyz#HY',
+      );
+      expect(node, isNotNull);
+      expect(node!.protocol, NodeProtocol.hysteria2);
+      expect(node.password, 'p4ss');
+      expect(node.tls, isTrue);
+      expect(node.obfsType, 'salamander');
+      expect(node.protocol.isUdpNative, isTrue);
+
+      final proxy = (SingboxConfig.buildMap(node)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      expect(proxy['type'], 'hysteria2');
+      expect(proxy['password'], 'p4ss');
+      expect((proxy['obfs'] as Map)['type'], 'salamander');
+      expect((proxy['obfs'] as Map)['password'], 'xyz');
+      // QUIC-native: no ws/grpc transport.
+      expect(proxy.containsKey('transport'), isFalse);
+    });
+
+    test('parses tuic with uuid:password', () {
+      final node = parseShareLink(
+        'tuic://uuid-9:secret@tu.example.com:443?sni=tu.example.com'
+        '&congestion_control=bbr&udp_relay_mode=native&alpn=h3#TU',
+      );
+      expect(node, isNotNull);
+      expect(node!.protocol, NodeProtocol.tuic);
+      expect(node.uuid, 'uuid-9');
+      expect(node.password, 'secret');
+      expect(node.congestionControl, 'bbr');
+      expect(node.udpRelayMode, 'native');
+
+      final proxy = (SingboxConfig.buildMap(node)['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      expect(proxy['type'], 'tuic');
+      expect(proxy['uuid'], 'uuid-9');
+      expect(proxy['congestion_control'], 'bbr');
+      expect((proxy['tls'] as Map)['alpn'], contains('h3'));
+    });
+
+    test('QUIC is NOT blocked when the exit is UDP-native', () {
+      final hy = parseShareLink('hysteria2://p@hy.example.com:443?sni=h#HY')!;
+      final rules =
+          ((SingboxConfig.buildMap(hy)['route'] as Map)['rules'] as List)
+              .cast<Map>();
+      final blocksQuic = rules.any(
+          (r) => r['protocol'] == 'quic' && r['outbound'] == 'block');
+      expect(blocksQuic, isFalse);
+    });
+
+    test('QUIC IS blocked for a TCP-only worker (VLESS) exit', () {
+      final vless = parseShareLink(
+        'vless://id@nova.example.com:443?security=tls&type=ws&path=/p#N',
+      )!;
+      final rules =
+          ((SingboxConfig.buildMap(vless)['route'] as Map)['rules'] as List)
+              .cast<Map>();
+      final blocksQuic = rules.any(
+          (r) => r['protocol'] == 'quic' && r['outbound'] == 'block');
+      expect(blocksQuic, isTrue);
+    });
+  });
+
   group('parseShareLink — invalid', () {
     test('returns null for unsupported / malformed input', () {
       expect(parseShareLink(''), isNull);
@@ -130,6 +275,68 @@ void main() {
       final json = SingboxConfig.build(vlessNode());
       expect(json, contains('"type": "tun"'));
       expect(json, contains('"tag": "proxy"'));
+    });
+
+    test('remote DNS defaults to Google (8.8.8.8), not Cloudflare', () {
+      // The worker exit can\'t relay to Cloudflare\'s own 1.1.1.1 (loop
+      // protection), so DoH must default to an off-Cloudflare resolver.
+      for (final cfg in <Map<String, dynamic>>[
+        SingboxConfig.buildMap(vlessNode()),
+        SingboxConfig.buildMap(vlessNode(),
+            options: const SingboxRouteOptions(lean: true)),
+      ]) {
+        final servers = ((cfg['dns'] as Map)['servers'] as List).cast<Map>();
+        final remote = servers.firstWhere((s) => s['tag'] == 'remote');
+        expect(remote['address'], contains('8.8.8.8'));
+        expect(remote['address'], isNot(contains('1.1.1.1')));
+        // fake-ip stays reverted for now.
+        expect((cfg['dns'] as Map).containsKey('fakeip'), isFalse);
+      }
+    });
+
+    test('lean path uses bundled LOCAL geosite rule-sets (no geoip, no remote)',
+        () {
+      final cfg = SingboxConfig.buildMap(
+        vlessNode(),
+        options: const SingboxRouteOptions(lean: true),
+      );
+      final route = cfg['route'] as Map;
+      final ruleSets = (route['rule_set'] as List).cast<Map>();
+      // All lean rule-sets are local (bundled), never remote downloads.
+      expect(ruleSets, isNotEmpty);
+      expect(ruleSets.every((r) => r['type'] == 'local'), isTrue);
+      final tags = ruleSets.map((r) => r['tag']).toSet();
+      expect(tags, containsAll(<String>['geosite-ir', 'geosite-ads']));
+      // geoip can't match fake IPs, so it must not appear on the lean path.
+      expect(tags.any((t) => (t as String).startsWith('geoip')), isFalse);
+      // Paths carry the base-token the iOS host resolves to the container path.
+      expect(
+          ruleSets.every(
+              (r) => (r['path'] as String).contains(SingboxConfig.ruleSetBaseToken)),
+          isTrue);
+    });
+
+    test('no platform HTTP proxy (append_http_proxy reverted)', () {
+      // Disabled again after build 29; the TUN must carry no platform block.
+      final lean = (SingboxConfig.buildMap(
+                vlessNode(),
+                options: const SingboxRouteOptions(lean: true),
+              )['inbounds'] as List)
+          .cast<Map>()
+          .first;
+      expect(lean.containsKey('platform'), isFalse);
+    });
+
+    test('lean DNS resolves the proxy server domain directly (no loopback)', () {
+      final dns = SingboxConfig.buildMap(
+        vlessNode(),
+        options: const SingboxRouteOptions(lean: true),
+      )['dns'] as Map;
+      final rules = (dns['rules'] as List).cast<Map>();
+      // The proxy's own server domain resolves via the direct (local) server so
+      // bringing the tunnel up doesn't depend on a resolver reached through it.
+      expect(
+          rules.any((r) => r['server'] == 'local' && r['domain'] != null), isTrue);
     });
   });
 }

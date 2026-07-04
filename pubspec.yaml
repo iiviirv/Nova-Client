@@ -4,7 +4,7 @@ description: >-
   fork) with the Nova Radar Cloudflare clean-IP scanner built in. Follows the
   Nova Proxy design language.
 publish_to: "none"
-version: 0.2.0+28
+version: 0.2.0+37
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -51,26 +51,24 @@ flutter:
   assets:
     - assets/brand/
     - assets/bin/
+    # Bundled sing-box rule-sets (binary .srs) shipped to the iOS Network
+    # Extension for offline Iran-direct routing + ad blocking (no startup fetch).
+    - assets/rulesets/
 
-  # The Nova design language uses Inter (Latin) and Vazirmatn (Farsi). The app
-  # falls back to system fonts when these files are absent, so shipping them is
-  # optional. To embed the exact brand fonts, drop the .ttf files under
-  # assets/fonts/ and uncomment:
-  #
-  # fonts:
-  #   - family: Inter
-  #     fonts:
-  #       - asset: assets/fonts/Inter-Regular.ttf
-  #       - asset: assets/fonts/Inter-Medium.ttf
-  #         weight: 500
-  #       - asset: assets/fonts/Inter-SemiBold.ttf
-  #         weight: 600
-  #       - asset: assets/fonts/Inter-Bold.ttf
-  #         weight: 700
-  #       - asset: assets/fonts/Inter-ExtraBold.ttf
-  #         weight: 800
-  #   - family: Vazirmatn
-  #     fonts:
-  #       - asset: assets/fonts/Vazirmatn-Regular.ttf
-  #       - asset: assets/fonts/Vazirmatn-Bold.ttf
-  #         weight: 700
+  # Farsi/Arabic script renders in Vazirmatn (bundled below). Latin UI uses Inter
+  # when its files are present under assets/fonts/, otherwise the system sans
+  # fallback declared in NovaTypography. To also embed Inter, drop the Inter
+  # .ttf files under assets/fonts/ and add an "Inter" family block mirroring the
+  # Vazirmatn one.
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+        - asset: assets/fonts/Vazirmatn-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Vazirmatn-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Vazirmatn-ExtraBold.ttf
+          weight: 800

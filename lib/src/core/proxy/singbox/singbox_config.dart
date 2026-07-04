@@ -87,7 +87,7 @@ class SingboxConfig {
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         <String, dynamic>{'type': 'dns', 'tag': 'dns-out'},
       ],
-      'route': _route(options),
+      'route': _route(options, blockQuic: !node.protocol.isUdpNative),
     };
   }
 
@@ -143,16 +143,30 @@ class SingboxConfig {
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
-        // Auto-pick the lowest-latency node and keep checking, without tearing
-        // down live connections when it switches (smoother downloads).
+        // Auto-pick a fast node, then STICK to it. A low tolerance made the core
+        // hop between IPs the moment another node measured a few ms faster, which
+        // the user feels as constant disconnect/reconnect. With a wide tolerance
+        // the core only abandons the current node once it degrades badly (e.g.
+        // the picked node drifts from ~180ms up toward ~480ms), not on every
+        // minor jitter. A longer interval and no connection interruption keep
+        // downloads and long-lived sockets alive across a switch.
         <String, dynamic>{
           'type': 'urltest',
           'tag': 'proxy',
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '2m0s',
-          'tolerance': 50,
+          // Re-test only every 10 min so Auto isn't constantly re-shuffling.
+          'interval': '10m0s',
+          // 800ms band: since every node exits through the same Cloudflare
+          // worker their latencies are close, so a small tolerance would let the
+          // pick hop on trivial jitter — which the user feels as the connection
+          // dropping. This wide band means Auto keeps the node it chose and only
+          // abandons it once that node is genuinely failing (climbs ~800ms above
+          // the alternatives), not on noise.
+          'tolerance': 800,
           'idle_timeout': '30m0s',
+          // Never tear down live connections when the pick changes: an in-flight
+          // download or stream stays on its node instead of being cut.
           'interrupt_exist_connections': false,
         },
         ...nodeOutbounds,
@@ -160,7 +174,10 @@ class SingboxConfig {
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         <String, dynamic>{'type': 'dns', 'tag': 'dns-out'},
       ],
-      'route': _route(options),
+      // If any exit in the pool is UDP-native (Hysteria2/TUIC), let QUIC flow;
+      // otherwise (an all-worker pool) keep blocking it so apps fall back to TCP.
+      'route': _route(options,
+          blockQuic: !picked.any((ProxyNode n) => n.protocol.isUdpNative)),
     };
   }
 
@@ -182,28 +199,50 @@ class SingboxConfig {
         'tag': 'tun-in',
         'interface_name': 'nova-tun',
         'inet4_address': '172.19.0.1/30',
-        // iOS (lean) uses a normal MTU + the gvisor stack. The system stack
-        // forwards raw IP packets, so on the iOS extension large download
-        // packets fragment and get dropped — bulk transfers crawl to ~0 while
-        // small requests still work. gvisor terminates TCP in userspace (no
-        // fragmentation), which is the standard for the iOS Network Extension.
-        // Desktop/Android keep the faster system stack + jumbo MTU.
-        'mtu': o.lean ? 1500 : 9000,
+        // iOS (lean) uses the gvisor stack: the system stack forwards raw IP
+        // packets, so on the iOS extension large download packets fragment and
+        // get dropped (bulk transfers crawl to ~0 while small requests still
+        // work). gvisor terminates TCP in userspace (no fragmentation) and is
+        // the standard for the iOS Network Extension. We keep it rather than
+        // sing-box's `mixed` stack, which reintroduces that fragmentation risk.
+        //
+        // MTU: 4064 on iOS (matching Karing, which runs the same core in the
+        // same ~50MB NE) instead of 1500. With gvisor a larger TUN MTU means
+        // fewer packets/syscalls per byte, so bulk throughput improves without
+        // the fragmentation drops the system stack would hit. Desktop/Android
+        // keep the faster system stack + jumbo MTU.
+        'mtu': o.lean ? 4064 : 9000,
         'auto_route': true,
         'strict_route': true,
         'stack': o.lean ? 'gvisor' : 'system',
         'sniff': true,
         'sniff_override_destination': false,
+        // NOTE: platform.http_proxy (advertising a system HTTP proxy via
+        // NEProxySettings) was tried in build 29 and is disabled again — it is a
+        // prime suspect for build 29's broken browsing (all HTTP/HTTPS was routed
+        // to the proxy port; if that listener misbehaves, browsers fail while
+        // Telegram, which ignores the system proxy, keeps working). The native
+        // openTun handler stays (dormant: isHTTPProxyEnabled() is now false) so
+        // re-enabling is a one-line config change once the base path is verified.
       };
 
   static Map<String, dynamic> _dns(
     SingboxRouteOptions o, {
     Iterable<String> directDomains = const <String>[],
   }) {
-    // The chosen resolver (IP-based DoH, so it needs no bootstrap resolver),
-    // routed through the proxy. Empty = Nova default (Cloudflare).
-    final String remote = o.dns.isEmpty ? '1.1.1.1' : o.dns;
+    // The resolver for proxied (remote) DNS, over DoH so Iran's DNS tampering
+    // can't touch it, reached THROUGH the proxy. IP-based, so it needs no
+    // bootstrap resolver.
+    //
+    // Default is Google (8.8.8.8), NOT Cloudflare (1.1.1.1): the Nova exit is a
+    // Cloudflare Worker, and a Worker cannot relay to Cloudflare's own endpoints
+    // (loop protection), so a DoH query to 1.1.1.1 through the worker silently
+    // fails. With no DNS, only apps that dial hardcoded IPs (Telegram) work
+    // while browsers/Instagram can't resolve anything — the exact "only Telegram
+    // opens" report. 8.8.8.8 is off-Cloudflare, so the worker can reach it.
+    final String remote = o.dns.isEmpty ? '8.8.8.8' : o.dns;
     final List<String> direct = directDomains.toList();
+
     return <String, dynamic>{
       'servers': <Map<String, dynamic>>[
         <String, dynamic>{
@@ -225,12 +264,12 @@ class SingboxConfig {
         // with "DNS query loopback in transport[remote]" and nothing connects.
         if (direct.isNotEmpty)
           <String, dynamic>{'domain': direct, 'server': 'local'},
-        // Only reference rule-sets that _route() actually defines, otherwise
-        // sing-box rejects the config for an undefined rule_set reference. The
-        // lean (iOS) path defines no rule-sets, so it references none here.
-        if (!o.lean && o.blockAds && o.mode != SingboxMode.direct)
+        // These reference rule-sets that _route() defines (remote on the full
+        // path, bundled-local on the lean/iOS path), so both can resolve Iran
+        // domains for real and drop ads.
+        if (o.blockAds && o.mode != SingboxMode.direct)
           <String, dynamic>{'rule_set': 'geosite-ads', 'server': 'block'},
-        if (!o.lean && o.bypassIran && o.mode == SingboxMode.rule)
+        if (o.bypassIran && o.mode == SingboxMode.rule)
           <String, dynamic>{'rule_set': 'geosite-ir', 'server': 'local'},
       ],
       'final': o.mode == SingboxMode.direct ? 'local' : 'remote',
@@ -254,21 +293,59 @@ class SingboxConfig {
       case NodeProtocol.shadowsocks:
         o['method'] = n.method;
         o['password'] = n.password;
+      case NodeProtocol.vmess:
+        o['uuid'] = n.uuid;
+        o['alter_id'] = n.vmessAlterId;
+        o['security'] = n.vmessSecurity ?? 'auto';
+      case NodeProtocol.hysteria2:
+        if (n.password != null) o['password'] = n.password;
+        if (n.obfsType != null && n.obfsType!.isNotEmpty) {
+          o['obfs'] = <String, dynamic>{
+            'type': n.obfsType,
+            'password': n.obfsPassword ?? '',
+          };
+        }
+      case NodeProtocol.tuic:
+        o['uuid'] = n.uuid;
+        o['password'] = n.password ?? '';
+        o['congestion_control'] = n.congestionControl ?? 'bbr';
+        o['udp_relay_mode'] = n.udpRelayMode ?? 'native';
     }
     if (n.tls) o['tls'] = _tls(n);
-    final Map<String, dynamic>? transport = _transport(n);
-    if (transport != null) o['transport'] = transport;
+    // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
+    if (!n.protocol.isUdpNative) {
+      final Map<String, dynamic>? transport = _transport(n);
+      if (transport != null) o['transport'] = transport;
+    }
     return o;
   }
 
   static Map<String, dynamic> _tls(ProxyNode n) {
+    // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
+    // Chrome when the link didn't pin a fingerprint. Without this, a plain
+    // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
+    // can flag as "not a browser"; a Chrome uTLS handshake blends in with normal
+    // HTTPS. (This is the client-side half of what Xray-based clients lean on;
+    // the other half, ClientHello fragmentation, isn't in this sing-box build.)
+    // Reality already mandates uTLS, so this just makes every other TLS node
+    // match that behaviour.
+    final String fingerprint =
+        (n.fingerprint != null && n.fingerprint!.isNotEmpty)
+            ? n.fingerprint!
+            : 'chrome';
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,
       if (n.allowInsecure) 'insecure': true,
       if (n.alpn.isNotEmpty) 'alpn': n.alpn,
-      if (n.fingerprint != null && n.fingerprint!.isNotEmpty)
-        'utls': <String, dynamic>{'enabled': true, 'fingerprint': n.fingerprint},
+      if (n.isReality)
+        'reality': <String, dynamic>{
+          'enabled': true,
+          'public_key': n.realityPublicKey,
+          if (n.realityShortId != null && n.realityShortId!.isNotEmpty)
+            'short_id': n.realityShortId,
+        },
+      'utls': <String, dynamic>{'enabled': true, 'fingerprint': fingerprint},
     };
   }
 
@@ -291,7 +368,7 @@ class SingboxConfig {
     }
   }
 
-  static Map<String, dynamic> _route(SingboxRouteOptions o) {
+  static Map<String, dynamic> _route(SingboxRouteOptions o, {bool blockQuic = true}) {
     final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[
       <String, dynamic>{'protocol': 'dns', 'outbound': 'dns-out'},
       // Nova's own Cloudflare management calls (panel deploy, KV, etc.) must go
@@ -299,22 +376,37 @@ class SingboxConfig {
       // protects requests coming back through a CF-worker exit ("Failed host
       // lookup: api.cloudflare.com" during deploy).
       <String, dynamic>{'domain': _directHosts, 'outbound': 'direct'},
-      // vless-over-WS/TLS exits carry TCP only, so QUIC (HTTP/3 over UDP) can't
-      // be relayed and just times out — Instagram/YouTube break while TCP apps
-      // like Telegram work. Block QUIC so those apps fall back to TCP.
-      <String, dynamic>{'protocol': 'quic', 'outbound': 'block'},
+      // vless-over-WS/TLS (the Cloudflare Worker exit) carries TCP only, so QUIC
+      // (HTTP/3 over UDP) can't be relayed and just times out — Instagram/
+      // YouTube break while TCP apps like Telegram work. Block QUIC so those
+      // apps fall back to TCP. But a real Hysteria2/TUIC exit carries UDP end to
+      // end, so QUIC must pass through there (that's the whole speed win) — the
+      // caller sets [blockQuic] false when any exit is UDP-native.
+      if (blockQuic) <String, dynamic>{'protocol': 'quic', 'outbound': 'block'},
     ];
     final List<Map<String, dynamic>> ruleSets = <Map<String, dynamic>>[];
 
-    // Lean (iOS) path: no downloaded geosite/geoip rule-sets. They cost several
-    // MB of resident memory and a startup fetch the tiny extension can't afford;
-    // LAN still bypasses, everything else goes through the proxy.
+    // Lean (iOS) path: use BUNDLED (local) geosite rule-sets instead of the
+    // remote ones the full path downloads — no startup fetch, and small enough
+    // for the extension's memory budget. Domain-based only (geoip is skipped:
+    // it can't match the fake IPs the lean DNS issues). Iran domains go direct
+    // (faster, and off the worker), ads are blocked, everything else proxied.
     if (o.lean) {
+      final List<Map<String, dynamic>> leanRuleSets = <Map<String, dynamic>>[];
       if (o.bypassLan && o.mode != SingboxMode.direct) {
         rules.add(<String, dynamic>{'ip_is_private': true, 'outbound': 'direct'});
       }
+      if (o.blockAds && o.mode != SingboxMode.direct) {
+        rules.add(<String, dynamic>{'rule_set': 'geosite-ads', 'outbound': 'block'});
+        leanRuleSets.add(_localRuleSet('geosite-ads', kGeositeAdsFile));
+      }
+      if (o.bypassIran && o.mode == SingboxMode.rule) {
+        rules.add(<String, dynamic>{'rule_set': 'geosite-ir', 'outbound': 'direct'});
+        leanRuleSets.add(_localRuleSet('geosite-ir', kGeositeIrFile));
+      }
       return <String, dynamic>{
         'rules': rules,
+        if (leanRuleSets.isNotEmpty) 'rule_set': leanRuleSets,
         'final': o.mode == SingboxMode.direct ? 'direct' : 'proxy',
         'auto_detect_interface': true,
       };
@@ -368,6 +460,31 @@ class SingboxConfig {
     'api.cloudflare.com',
     'dash.cloudflare.com',
   ];
+
+  /// Placeholder in local rule-set paths, swapped for the real App Group
+  /// container path by the iOS host (NovaProxyHost) before the config is written,
+  /// so the extension reads the bundled `.srs` files from a valid absolute path.
+  static const String ruleSetBaseToken = '__NOVA_BASE__';
+
+  static const String kGeositeIrFile = 'geosite-ir.srs';
+  static const String kGeositeAdsFile = 'geosite-ads.srs';
+
+  /// Bundled asset path -> filename the host writes into the container. The iOS
+  /// proxy controller ships exactly these on the lean path so the local
+  /// rule-sets below resolve. Domain-based (geosite) only: geoip can't match the
+  /// fake IPs the lean DNS hands out, so a geoip rule-set would never fire.
+  static const Map<String, String> leanRuleSetAssets = <String, String>{
+    'assets/rulesets/geosite-ir.srs': kGeositeIrFile,
+    'assets/rulesets/geosite-ads.srs': kGeositeAdsFile,
+  };
+
+  static Map<String, dynamic> _localRuleSet(String tag, String fileName) =>
+      <String, dynamic>{
+        'type': 'local',
+        'tag': tag,
+        'format': 'binary',
+        'path': '$ruleSetBaseToken/$fileName',
+      };
 
   static Map<String, dynamic> _remoteRuleSet(String tag, String url) =>
       <String, dynamic>{

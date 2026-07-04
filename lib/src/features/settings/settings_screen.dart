@@ -14,6 +14,11 @@ import '../cloudflare/cloudflare_screen.dart';
 import '../radar/radar_screen.dart';
 import '../routing/routing_screen.dart';
 
+/// Shown in the Settings "About" footer so a tester can confirm exactly which
+/// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
+const String kNovaVersion = '0.2.0';
+const String kNovaBuild = '37';
+
 /// App settings — grouped cards (General · Appearance · Community · About) in
 /// the native Android style, with colored leading icon chips and chevrons.
 class SettingsScreen extends StatelessWidget {
@@ -39,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
                     style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 16),
 
-                _SectionLabel('General'),
+                _SectionLabel(s.setGeneral),
                 NovaCard(
                   padding: EdgeInsets.zero,
                   child: Column(
@@ -47,24 +52,24 @@ class SettingsScreen extends StatelessWidget {
                       _NavRow(
                         icon: Icons.alt_route_rounded,
                         color: nova.violet,
-                        title: 'Routing & DNS',
-                        subtitle: 'Mode, GeoIP rules, ad blocking, DNS',
+                        title: s.setRouting,
+                        subtitle: s.setRoutingSub,
                         onTap: () => _push(context, const RoutingScreen()),
                       ),
                       _div(nova.border),
                       _NavRow(
                         icon: Icons.radar_rounded,
                         color: nova.cyan,
-                        title: 'Radar',
-                        subtitle: 'Scan for clean Cloudflare IPs',
+                        title: s.navRadar,
+                        subtitle: s.setRadarSub,
                         onTap: () => _push(context, const RadarScreen()),
                       ),
                       _div(nova.border),
                       _NavRow(
                         icon: Icons.cloud_rounded,
                         color: nova.indigo,
-                        title: 'Cloudflare',
-                        subtitle: 'Deploy or sign in to your panel',
+                        title: s.setCloudflare,
+                        subtitle: s.setCloudflareSub,
                         onTap: () => _push(context, const CloudflareScreen()),
                       ),
                     ],
@@ -72,7 +77,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                _SectionLabel('Appearance'),
+                _SectionLabel(s.setAppearance),
                 NovaCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,20 +89,20 @@ class SettingsScreen extends StatelessWidget {
                           runSpacing: 8,
                           children: <Widget>[
                             NovaPill(
-                              label: 'System',
+                              label: s.modeSystem,
                               icon: Icons.brightness_auto,
                               selected: theme.themeMode == ThemeMode.system,
                               onTap: () =>
                                   theme.setThemeMode(ThemeMode.system),
                             ),
                             NovaPill(
-                              label: 'Dark',
+                              label: s.modeDark,
                               icon: Icons.dark_mode,
                               selected: theme.themeMode == ThemeMode.dark,
                               onTap: () => theme.setThemeMode(ThemeMode.dark),
                             ),
                             NovaPill(
-                              label: 'Light',
+                              label: s.modeLight,
                               icon: Icons.light_mode,
                               selected: theme.themeMode == ThemeMode.light,
                               onTap: () => theme.setThemeMode(ThemeMode.light),
@@ -131,7 +136,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                _SectionLabel('Community'),
+                _SectionLabel(s.setCommunity),
                 NovaCard(
                   padding: EdgeInsets.zero,
                   child: Column(
@@ -144,13 +149,13 @@ class SettingsScreen extends StatelessWidget {
                       _div(nova.border),
                       _LinkTile(
                         icon: Icons.send,
-                        title: 'Telegram — @irnova_proxy',
+                        title: 'Telegram - @irnova_proxy',
                         url: 'https://t.me/irnova_proxy',
                       ),
                       _div(nova.border),
                       _LinkTile(
                         icon: Icons.code,
-                        title: 'GitHub — IRNova',
+                        title: 'GitHub - IRNova',
                         url: 'https://github.com/IRNova',
                       ),
                     ],
@@ -165,7 +170,7 @@ class SettingsScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text('Nova',
                           style: Theme.of(context).textTheme.titleMedium),
-                      Text('v1.0.0 · optimised Karing + Nova Radar',
+                      Text('v$kNovaVersion ($kNovaBuild) · Nova Radar',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall

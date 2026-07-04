@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
@@ -102,5 +104,48 @@ abstract class ProxyController extends ChangeNotifier {
 
   Future<void> toggle() {
     return state.isActive ? disconnect() : connect();
+  }
+
+  /// Switches a *live* tunnel to the currently-selected profile/exit without the
+  /// user having to toggle off and back on. Select the new profile (or pin a
+  /// node) first, then call this: it tears the tunnel down, waits for it to
+  /// actually reach `disconnected`, and reconnects through the new exit. If the
+  /// tunnel isn't up, it does nothing (the next manual connect uses the new
+  /// selection). The wait matters on iOS/macOS: a Network Extension's stop is
+  /// asynchronous, and calling start again while it's still stopping is dropped,
+  /// which is exactly why switching servers used to silently leave you
+  /// disconnected until you tapped connect again.
+  Future<void> reconnect() async {
+    final bool wasActive =
+        state.isActive || state == ProxyConnectionState.connecting;
+    if (!wasActive) return;
+    await disconnect();
+    await _awaitState(
+      (ProxyConnectionState s) =>
+          s == ProxyConnectionState.disconnected ||
+          s == ProxyConnectionState.error,
+      timeout: const Duration(seconds: 8),
+    );
+    await connect();
+  }
+
+  /// Completes when [test] passes for the current [state], or after [timeout].
+  /// Used by [reconnect] to sequence a stop before the next start.
+  Future<void> _awaitState(
+    bool Function(ProxyConnectionState) test, {
+    required Duration timeout,
+  }) async {
+    if (test(state)) return;
+    final Completer<void> done = Completer<void>();
+    void listener() {
+      if (test(state) && !done.isCompleted) done.complete();
+    }
+
+    addListener(listener);
+    try {
+      await done.future.timeout(timeout, onTimeout: () {});
+    } finally {
+      removeListener(listener);
+    }
   }
 }

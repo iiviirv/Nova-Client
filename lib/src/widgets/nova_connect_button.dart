@@ -47,7 +47,7 @@ class NovaConnectButton extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            color: visual.accent.withValues(alpha: 0.18),
+            color: visual.accent.withValues(alpha: 0.10),
           ),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
@@ -58,10 +58,10 @@ class NovaConnectButton extends StatelessWidget {
               gradient: visual.linear(),
               boxShadow: <BoxShadow>[
                 BoxShadow(
-                  color: visual.accent.withValues(alpha: 0.45),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                  spreadRadius: -4,
+                  color: visual.accent.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                  spreadRadius: -6,
                 ),
               ],
             ),

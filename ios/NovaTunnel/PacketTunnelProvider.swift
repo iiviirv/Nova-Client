@@ -147,6 +147,36 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
       settings.ipv6Settings = v6
     }
 
+    // System HTTP/HTTPS proxy. When the config's tun `platform.http_proxy` is
+    // enabled, sing-box runs the proxy listener and hands us its address here;
+    // we register it via NEProxySettings so apps that honour the system proxy
+    // (and skip the packet route) still get tunneled. Without this some apps get
+    // no proxy at all.
+    if options.isHTTPProxyEnabled() {
+      let proxySettings = NEProxySettings()
+      let server = NEProxyServer(
+        address: options.getHTTPProxyServer(),
+        port: Int(options.getHTTPProxyServerPort()))
+      proxySettings.httpServer = server
+      proxySettings.httpsServer = server
+      proxySettings.httpEnabled = true
+      proxySettings.httpsEnabled = true
+      // Only constrain the match list if sing-box actually names domains;
+      // leaving it nil (the default) makes the proxy apply to ALL connections,
+      // which is what we want to catch route-skipping apps.
+      var matchDomains: [String] = []
+      if let it = options.getHTTPProxyMatchDomain() {
+        while it.hasNext() { matchDomains.append(it.next()) }
+      }
+      if !matchDomains.isEmpty { proxySettings.matchDomains = matchDomains }
+      var bypassDomains: [String] = []
+      if let it = options.getHTTPProxyBypassDomain() {
+        while it.hasNext() { bypassDomains.append(it.next()) }
+      }
+      if !bypassDomains.isEmpty { proxySettings.exceptionList = bypassDomains }
+      settings.proxySettings = proxySettings
+    }
+
     // setTunnelNetworkSettings is async; bridge to sync for libbox.
     let sem = DispatchSemaphore(value: 0)
     var applyError: Error?

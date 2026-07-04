@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import '../../core/proxy/singbox/nova_naming.dart';
-import '../../core/proxy/singbox/share_link_builder.dart';
 import '../../core/proxy/subscription.dart';
 import 'models.dart';
 import 'sources.dart';
@@ -337,17 +337,83 @@ class NovaScanner {
     if (!_statsCtrl.isClosed) _statsCtrl.add(_stats());
   }
 
-  /// Builds the result entry for a clean [ip]:[port]. With an active core
-  /// config this is a full, importable `vless://` node stamped into the
-  /// subscription template and named `{flag} Nova-{id}{suffix}` exactly like
-  /// the worker; otherwise it falls back to a bare `ip:port#name`.
+  /// Builds the copyable result entry for a clean [ip]:[port] as plain
+  /// `ip:port#name` — the clean-IP format the Nova panel/sub expect. Always this
+  /// format (not a stamped `vless://`), so a scan is a paste-ready clean-IP list
+  /// whether or not a subscription is bound. The colo flag (from a bound sub)
+  /// still enriches the name.
   String _novaLink(String ip, int port) {
     final String name = novaNodeName(colo: colo, suffix: suffix, rng: _rng);
-    final template = coreConfig?.template;
-    if (template != null) {
-      return stampCleanIp(template: template, ip: ip, port: port, name: name);
-    }
     return '$ip:$port#$name';
+  }
+}
+
+/// Measures the **real delay** of a clean [ip]:[port]: a full HTTP round-trip
+/// through that specific Cloudflare edge to [host], timed to the first response
+/// byte. Unlike the scan's TCP/TLS connect latency (which can read absurdly low,
+/// e.g. 3-10ms, because it only times the handshake), this includes the request
+/// travelling to the worker and the first byte coming back, so it reports the
+/// honest number a user actually feels (typically ~100-1000ms from Iran).
+///
+/// Returns the round-trip in milliseconds, or null if the endpoint doesn't
+/// answer in time. TLS ports get a real HTTPS request (SNI = [host]); plain HTTP
+/// ports get an HTTP/1.1 request with a matching Host header.
+Future<int?> measureRealDelay(
+  String ip,
+  int port, {
+  required String host,
+  Duration timeout = const Duration(seconds: 8),
+}) async {
+  // A cdn-cgi/trace hit is served by Cloudflare's edge for any CF-fronted host
+  // (workers.dev included), so it exercises the same edge path real traffic uses
+  // without needing app credentials.
+  final String request = 'GET /cdn-cgi/trace HTTP/1.1\r\n'
+      'Host: $host\r\n'
+      'User-Agent: Nova-Radar\r\n'
+      'Accept: */*\r\n'
+      'Connection: close\r\n\r\n';
+  final Stopwatch sw = Stopwatch()..start();
+  Socket? raw;
+  try {
+    raw = await Socket.connect(ip, port, timeout: timeout);
+    Socket stream = raw;
+    if (kTlsPorts.contains(port)) {
+      stream = await SecureSocket.secure(
+        raw,
+        host: host,
+        onBadCertificate: (_) => true,
+      ).timeout(timeout);
+    }
+    final Completer<int?> done = Completer<int?>();
+    final Timer timer = Timer(timeout, () {
+      if (!done.isCompleted) done.complete(null);
+    });
+    late final StreamSubscription<List<int>> sub;
+    sub = stream.listen(
+      (List<int> data) {
+        if (data.isNotEmpty && !done.isCompleted) {
+          sw.stop();
+          done.complete(sw.elapsedMilliseconds);
+        }
+      },
+      onError: (_) {
+        if (!done.isCompleted) done.complete(null);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete(null);
+      },
+      cancelOnError: true,
+    );
+    stream.add(utf8.encode(request));
+    final int? ms = await done.future;
+    timer.cancel();
+    await sub.cancel();
+    stream.destroy();
+    return ms;
+  } catch (_) {
+    return null;
+  } finally {
+    raw?.destroy();
   }
 }
 

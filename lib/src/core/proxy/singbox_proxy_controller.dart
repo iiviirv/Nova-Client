@@ -172,6 +172,9 @@ class SingboxProxyController extends ProxyController {
     try {
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
+        // Bundled rule-set files the lean iOS config references as local
+        // rule-sets. The host writes them next to the config in the App Group.
+        if (Platform.isIOS) 'ruleSets': await _leanRuleSets(),
       });
       _armWatchdog();
     } catch (e) {
@@ -265,6 +268,24 @@ class SingboxProxyController extends ProxyController {
     return nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
         : SingboxConfig.buildMulti(nodes, options: opts);
+  }
+
+  /// Loads the bundled `.srs` rule-sets the lean iOS config references, keyed by
+  /// the filename the host writes into the App Group. Best-effort per file: a
+  /// missing asset is skipped rather than aborting the connection.
+  Future<Map<String, Uint8List>> _leanRuleSets() async {
+    final Map<String, Uint8List> out = <String, Uint8List>{};
+    for (final MapEntry<String, String> e
+        in SingboxConfig.leanRuleSetAssets.entries) {
+      try {
+        final ByteData data = await rootBundle.load(e.key);
+        out[e.value] =
+            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } catch (_) {
+        // Asset unavailable — skip; the rule-set simply won't apply.
+      }
+    }
+    return out;
   }
 
   /// TCP-pings a sample of nodes (direct, since this runs before the tunnel is

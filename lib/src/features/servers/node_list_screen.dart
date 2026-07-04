@@ -5,12 +5,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/models/proxy_profile.dart';
-import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
+import '../../theme/nova_semantics.dart';
+import '../../theme/nova_theme.dart';
 import '../../widgets/nova_scope.dart';
-
-const Color _accent = Color(0xFF7C5CFF);
 
 /// Lists the nodes of a subscription with a live TCP latency for each, and lets
 /// the user pin a specific exit (or fall back to auto-select). Pinning updates
@@ -166,14 +165,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
     scope.profiles.update(updated);
     scope.profiles.setActive(updated.id);
     scope.proxy.selectProfile(updated);
-    // If the tunnel is up, re-establish it through the new exit.
-    final st = scope.proxy.state;
-    if (st == ProxyConnectionState.connected ||
-        st == ProxyConnectionState.connecting) {
-      await scope.proxy.disconnect();
-      await scope.proxy.connect();
-    }
     if (mounted) setState(() {});
+    // Hot-swap: if the tunnel is up, restart it through the new exit in one
+    // step so the user stays connected instead of having to tap connect again.
+    await scope.proxy.reconnect();
   }
 
   @override
@@ -236,13 +231,12 @@ class _AutoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color accent = context.nova.indigo;
     return ListTile(
-      leading: const Icon(Icons.bolt, color: _accent),
+      leading: Icon(Icons.bolt, color: accent),
       title: const Text('Auto (fastest)'),
       subtitle: const Text('Let Nova pick the lowest-latency node'),
-      trailing: selected
-          ? const Icon(Icons.check_circle, color: _accent)
-          : null,
+      trailing: selected ? Icon(Icons.check_circle, color: accent) : null,
       onTap: onTap,
     );
   }
@@ -294,7 +288,7 @@ class _NodeRow extends StatelessWidget {
           _PingBadge(ms: ms),
           if (selected) ...<Widget>[
             const SizedBox(width: 10),
-            const Icon(Icons.check_circle, color: _accent, size: 20),
+            Icon(Icons.check_circle, color: context.nova.indigo, size: 20),
           ],
         ],
       ),
@@ -318,14 +312,10 @@ class _PingBadge extends StatelessWidget {
     }
     if (ms! < 0) {
       return Text('timeout',
-          style: TextStyle(color: Colors.red.shade400, fontSize: 12));
+          style: TextStyle(color: NovaSemantics.red, fontSize: 12));
     }
-    final Color c = ms! < 150
-        ? Colors.green.shade400
-        : ms! < 350
-            ? Colors.amber.shade400
-            : Colors.orange.shade400;
     return Text('$ms ms',
-        style: TextStyle(color: c, fontWeight: FontWeight.w600));
+        style: TextStyle(
+            color: NovaSemantics.ping(ms), fontWeight: FontWeight.w600));
   }
 }

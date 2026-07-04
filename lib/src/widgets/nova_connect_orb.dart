@@ -184,12 +184,13 @@ class _OrbPainter extends CustomPainter {
     // large enough to hold the Nova mark without the logo spilling past it.
     final double ringR = r - strokeW * 0.8;
 
-    // 1) Radial glow, sized to the ring.
+    // 1) Radial glow, sized to the ring. Kept deliberately restrained (an
+    // enterprise look, not a gamer neon): a soft presence, not a spotlight.
     final double glowAlpha = busy
-        ? 0.35 + 0.35 * pulse
+        ? 0.14 + 0.10 * pulse
         : connected
-            ? 0.5
-            : 0.22;
+            ? 0.20
+            : 0.10;
     final Paint glow = Paint()
       ..shader = RadialGradient(
         colors: <Color>[

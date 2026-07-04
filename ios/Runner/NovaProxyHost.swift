@@ -39,7 +39,10 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         result(FlutterError(code: "args", message: "configJson required", details: nil))
         return
       }
-      start(config: config, result: result)
+      // Optional bundled rule-set files (name -> bytes), written next to the
+      // config so the lean iOS config can reference them as local rule-sets.
+      let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
+      start(config: config, ruleSets: ruleSets, result: result)
     case "stop":
       manager?.connection.stopVPNTunnel()
       result(nil)
@@ -58,7 +61,13 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func start(config: String, result: @escaping FlutterResult) {
+  /// The token the Dart config uses in local rule-set paths; replaced with the
+  /// real App Group container path here (the app and extension share it, so an
+  /// absolute path written by the app is valid inside the extension too).
+  private static let ruleSetBaseToken = "__NOVA_BASE__"
+
+  private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
+                     result: @escaping FlutterResult) {
     // Write the config where the extension can read it (shared App Group).
     guard let container = FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else {
@@ -66,7 +75,15 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       return
     }
     do {
-      try config.write(to: container.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+      // Write any bundled rule-set files (e.g. geosite-ir.srs) into the shared
+      // container, then point the config's placeholder paths at them.
+      for (name, data) in ruleSets {
+        try data.data.write(to: container.appendingPathComponent(name), options: .atomic)
+      }
+      let resolved = config.replacingOccurrences(
+        of: Self.ruleSetBaseToken, with: container.path)
+      try resolved.write(to: container.appendingPathComponent("config.json"),
+                         atomically: true, encoding: .utf8)
     } catch {
       result(FlutterError(code: "write", message: error.localizedDescription, details: nil))
       return

@@ -27,19 +27,25 @@ class RoutingScreen extends StatelessWidget {
     final nova = context.nova;
     final SettingsController settings = NovaScope.of(context).settings;
 
-    return ListenableBuilder(
-      listenable: settings,
-      builder: (BuildContext context, _) {
-        return Center(
-          child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
-            child: ListView(
-              padding: const EdgeInsets.all(NovaSpace.xl),
-              children: <Widget>[
-                Text(s.navRouting,
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: NovaSpace.lg),
+    // A themed Scaffold is required: this is a pushed route, and without one it
+    // renders with no background (black) so the light theme never shows — the
+    // "Rules & DNS stuck in dark mode" report. The Scaffold gives it the app's
+    // real background plus a back button.
+    return Scaffold(
+      appBar: AppBar(title: Text(s.navRouting)),
+      body: ListenableBuilder(
+        listenable: settings,
+        builder: (BuildContext context, _) {
+          return Center(
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
+              child: ListView(
+                padding: const EdgeInsets.all(NovaSpace.xl),
+                children: <Widget>[
+                  Text(s.navRouting,
+                      style: Theme.of(context).textTheme.headlineMedium),
+                  const SizedBox(height: NovaSpace.lg),
                 NovaCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,11 +174,12 @@ class RoutingScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

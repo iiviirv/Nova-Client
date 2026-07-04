@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
@@ -48,7 +49,19 @@ class _DeployScreenState extends State<DeployScreen> {
               return ListView(
                 padding: const EdgeInsets.all(NovaSpace.xl),
                 children: <Widget>[
-                  if (cf.deployResult != null)
+                  if (!cf.isReady || cf.phase == CfPhase.loading)
+                    const Padding(
+                      padding: EdgeInsets.only(top: NovaSpace.xxl),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  // Deploy needs a Cloudflare session. Reaching this screen from
+                  // the empty state doesn't connect first, so gate on it here:
+                  // otherwise "Deploy" silently no-ops (the controller returns
+                  // early with no session) and looks broken.
+                  else if (cf.phase != CfPhase.connected &&
+                      cf.phase != CfPhase.working)
+                    _connectGate(context, cf, nova)
+                  else if (cf.deployResult != null)
                     _result(context, cf, nova)
                   else if (cf.deploying)
                     _deploying(context, cf, nova)
@@ -59,6 +72,48 @@ class _DeployScreenState extends State<DeployScreen> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  /// Shown when Deploy is opened without a Cloudflare session. Signs in with the
+  /// same in-app OAuth as the Cloudflare screen (external Safari suspends the app
+  /// and breaks the loopback redirect).
+  Widget _connectGate(BuildContext context, CloudflareController cf, nova) {
+    final bool connecting = cf.phase == CfPhase.connecting;
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.cloud_outlined, color: nova.cyan, size: 40),
+          const SizedBox(height: NovaSpace.md),
+          Text('Connect Cloudflare to deploy',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: NovaSpace.sm),
+          Text(
+              'Sign in to your Cloudflare account once. Nova deploys the worker '
+              'onto your own free plan, so it stays yours.',
+              style: TextStyle(color: nova.muted)),
+          if (cf.error.isNotEmpty) ...<Widget>[
+            const SizedBox(height: NovaSpace.md),
+            Text(cf.error, style: TextStyle(color: nova.danger)),
+          ],
+          const SizedBox(height: NovaSpace.lg),
+          NovaButton(
+            label: connecting ? 'Opening sign-in...' : 'Connect Cloudflare',
+            icon: Icons.login,
+            expand: true,
+            loading: connecting,
+            onPressed: () async {
+              if (cf.phase == CfPhase.connecting) return;
+              await cf.connect((String url) async {
+                await launchUrl(Uri.parse(url),
+                    mode: LaunchMode.inAppBrowserView);
+              });
+              await closeInAppWebView();
+            },
+          ),
+        ],
       ),
     );
   }
@@ -102,7 +157,7 @@ class _DeployScreenState extends State<DeployScreen> {
           const SizedBox(height: NovaSpace.md),
           const CircularProgressIndicator(),
           const SizedBox(height: NovaSpace.lg),
-          Text('Deploying ${cf.deployProgress.isEmpty ? '' : '— ${cf.deployProgress}'}',
+          Text('Deploying${cf.deployProgress.isEmpty ? '' : ': ${cf.deployProgress}'}',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: NovaSpace.sm),
           Text(_fmt(cf.deployElapsed), style: TextStyle(color: nova.muted, fontFeatures: const <FontFeature>[FontFeature.tabularFigures()])),

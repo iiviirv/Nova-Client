@@ -27,7 +27,11 @@ import '../servers/servers_body.dart';
 /// a live uptime timer, a metrics block (exit country/IP/ping + up/down speed),
 /// the active config card, and a tools row.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.resetToSummary});
+
+  /// Notified by the app shell whenever the Home tab is tapped, so the screen
+  /// returns to its Summary segment.
+  final Listenable? resetToSummary;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -35,6 +39,31 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _tab = 0; // 0 = Summary, 1 = Configs
+
+  @override
+  void initState() {
+    super.initState();
+    widget.resetToSummary?.addListener(_backToSummary);
+  }
+
+  @override
+  void didUpdateWidget(DashboardScreen old) {
+    super.didUpdateWidget(old);
+    if (old.resetToSummary != widget.resetToSummary) {
+      old.resetToSummary?.removeListener(_backToSummary);
+      widget.resetToSummary?.addListener(_backToSummary);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.resetToSummary?.removeListener(_backToSummary);
+    super.dispose();
+  }
+
+  void _backToSummary() {
+    if (mounted && _tab != 0) setState(() => _tab = 0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +154,7 @@ class _CloudflareChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     final cf = NovaScope.of(context).cloudflare;
     final bool connected = cf.phase == CfPhase.connected;
     final text = Theme.of(context).textTheme;
@@ -150,7 +180,7 @@ class _CloudflareChip extends StatelessWidget {
                   ? Text.rich(
                       TextSpan(children: <InlineSpan>[
                         TextSpan(
-                          text: 'Connected to Cloudflare  ',
+                          text: '${s.cfConnectedTo}  ',
                           style: text.labelLarge
                               ?.copyWith(color: nova.muted, fontSize: 12),
                         ),
@@ -166,7 +196,7 @@ class _CloudflareChip extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     )
                   : Text(
-                      'Connect Cloudflare',
+                      s.cfConnect,
                       style: text.labelLarge?.copyWith(
                         color: nova.muted,
                         fontWeight: FontWeight.w600,
@@ -304,7 +334,7 @@ class _StatusColumn extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text('Secure',
+            Text(s.dashSecure,
                 style: text.titleMedium?.copyWith(
                   color: NovaSemantics.connectGreen,
                   fontWeight: FontWeight.w600,
@@ -318,7 +348,7 @@ class _StatusColumn extends StatelessWidget {
         body = Text(s.connecting,
             style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800));
       case ProxyConnectionState.error:
-        body = Text(error ?? 'Error',
+        body = Text(error ?? s.dashError,
             style: text.titleMedium?.copyWith(color: nova.danger));
       case ProxyConnectionState.disconnected:
         body = Column(
@@ -355,6 +385,7 @@ class _MetricsBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     final connInfo = NovaScope.of(context).connInfo;
     final text = Theme.of(context).textTheme;
     final bool active = proxy.state.isActive;
@@ -410,7 +441,7 @@ class _MetricsBlock extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          active ? ip : 'Not connected',
+                          active ? ip : s.disconnected,
                           style: text.bodySmall?.copyWith(color: nova.muted),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -527,6 +558,7 @@ class _ConfigCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     final scope = NovaScope.of(context);
     final active = scope.profiles.active!;
     final proxy = scope.proxy;
@@ -574,8 +606,8 @@ class _ConfigCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       active.isSubscription
-                          ? '${active.nodeCount} nodes'
-                          : 'Single config',
+                          ? s.nodesCount(active.nodeCount)
+                          : s.homeSingleConfig,
                       style: text.bodySmall?.copyWith(color: nova.muted),
                     ),
                   ],
@@ -610,14 +642,14 @@ class _ConfigCard extends StatelessWidget {
             children: <Widget>[
               _ConfigMetric(
                 icon: Icons.schedule_rounded,
-                label: 'Time',
+                label: s.homeTime,
                 value: connected
                     ? Fmt.uptime(proxy.connectedSince)
                     : '—',
               ),
               _ConfigMetric(
                 icon: Icons.data_usage_rounded,
-                label: 'Data',
+                label: s.homeData,
                 value: () {
                   final SubInfo? s = subInfoFor(active.subscriptionUrl);
                   if (s == null) return '∞';
@@ -628,7 +660,7 @@ class _ConfigCard extends StatelessWidget {
               ),
               _ConfigMetric(
                 icon: Icons.calendar_month_rounded,
-                label: 'Expiry',
+                label: s.homeExpiry,
                 value: () {
                   final DateTime? e = subInfoFor(active.subscriptionUrl)?.expire;
                   if (e == null) return '—';
@@ -683,12 +715,13 @@ class _ToolsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     return Row(
       children: <Widget>[
         Expanded(
           child: _ToolCard(
             icon: Icons.radar_rounded,
-            label: 'Radar',
+            label: s.navRadar,
             color: nova.cyan,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const RadarScreen()),
@@ -699,7 +732,7 @@ class _ToolsRow extends StatelessWidget {
         Expanded(
           child: _ToolCard(
             icon: Icons.cloud_upload_rounded,
-            label: 'Deploy',
+            label: s.toolDeploy,
             color: nova.indigo,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
@@ -710,7 +743,7 @@ class _ToolsRow extends StatelessWidget {
         Expanded(
           child: _ToolCard(
             icon: Icons.dashboard_rounded,
-            label: 'Panel',
+            label: s.toolPanel,
             color: nova.violet,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),

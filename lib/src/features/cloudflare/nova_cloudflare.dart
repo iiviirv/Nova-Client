@@ -63,7 +63,14 @@ class NovaCloudflare {
   static const List<String> _scopes = <String>[
     'account:read', 'user:read', 'workers:write', 'workers_kv:write',
     'workers_scripts:write', 'd1:write', 'pages:write', 'pages:read', 'zone:read',
+    // Read-only Workers analytics, so the app can show request usage vs. the
+    // free-plan daily limit. Users who signed in before this scope was added
+    // simply see "usage unavailable" until they reconnect.
+    'account_analytics:read',
   ];
+
+  /// The Cloudflare free plan's Workers request allowance per day.
+  static const int freeRequestsPerDay = 100000;
 
   final Random _rng = Random.secure();
 
@@ -188,6 +195,58 @@ class NovaCloudflare {
       d1 = ((await _apiGet(s.token, '/accounts/${s.accountId}/d1/database?per_page=100'))['result'] as List<dynamic>?)?.length ?? 0;
     } catch (_) {}
     return (kv: kv, d1: d1);
+  }
+
+  /// Total Worker requests used so far today (UTC) across all scripts on the
+  /// account, via Cloudflare's GraphQL analytics API. Returns null when the
+  /// number can't be read (token lacks analytics scope, API unreachable, or the
+  /// account has no data yet) so the UI can fall back gracefully rather than
+  /// showing a wrong zero. Compare against [freeRequestsPerDay] for a usage bar.
+  Future<int?> workerRequestsToday(CfSession s) async {
+    final DateTime now = DateTime.now().toUtc();
+    final DateTime start = DateTime.utc(now.year, now.month, now.day);
+    const String query = 'query(\$tag: String!, \$start: Time!, \$end: Time!) {'
+        ' viewer { accounts(filter: { accountTag: \$tag }) {'
+        ' workersInvocationsAdaptive(limit: 10000,'
+        ' filter: { datetime_geq: \$start, datetime_leq: \$end }) {'
+        ' sum { requests } } } } }';
+    try {
+      final http.Response r = await _client.post(
+        Uri.parse('$_apiBase/graphql'),
+        headers: <String, String>{
+          'Authorization': 'Bearer ${s.token}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'query': query,
+          'variables': <String, dynamic>{
+            'tag': s.accountId,
+            'start': start.toIso8601String(),
+            'end': now.toIso8601String(),
+          },
+        }),
+      );
+      if (r.statusCode < 200 || r.statusCode >= 300) return null;
+      final Map<String, dynamic> j =
+          (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
+      final Map<String, dynamic>? data = j['data'] as Map<String, dynamic>?;
+      if (data == null) return null; // GraphQL errors → no usable data.
+      final List<dynamic>? accounts =
+          (data['viewer'] as Map<String, dynamic>?)?['accounts'] as List<dynamic>?;
+      if (accounts == null || accounts.isEmpty) return null;
+      final List<dynamic>? rows = (accounts.first
+          as Map<String, dynamic>)['workersInvocationsAdaptive'] as List<dynamic>?;
+      if (rows == null) return null;
+      int total = 0;
+      for (final dynamic row in rows) {
+        final Map<String, dynamic>? sum =
+            (row as Map<String, dynamic>)['sum'] as Map<String, dynamic>?;
+        total += ((sum?['requests'] as num?)?.toInt() ?? 0);
+      }
+      return total;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> deleteWorker(CfSession s, String name) async {

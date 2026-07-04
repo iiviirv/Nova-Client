@@ -56,13 +56,14 @@ class NovaSpace {
 class NovaElevation {
   const NovaElevation._();
 
-  /// `--shadow-accent: 0 10px 30px -10px rgba(99,102,241,0.7)` — primary buttons.
+  /// Primary-button lift. A restrained ambient shadow (enterprise, not neon):
+  /// the button reads as raised without a saturated colored halo around it.
   static List<BoxShadow> accent(Color indigoStrong) => <BoxShadow>[
         BoxShadow(
-          color: indigoStrong.withValues(alpha: 0.7),
-          offset: const Offset(0, 10),
-          blurRadius: 30,
-          spreadRadius: -10,
+          color: indigoStrong.withValues(alpha: 0.28),
+          offset: const Offset(0, 8),
+          blurRadius: 20,
+          spreadRadius: -12,
         ),
       ];
 
