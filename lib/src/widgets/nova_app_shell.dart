@@ -30,12 +30,23 @@ class NovaAppShell extends StatefulWidget {
 class _NovaAppShellState extends State<NovaAppShell> {
   int _index = 0;
 
-  static const List<Widget> _screens = <Widget>[
-    DashboardScreen(),
-    ServersScreen(),
-    StatsScreen(),
-    SettingsScreen(),
-  ];
+  /// Bumped every time the Home tab is tapped so the dashboard can snap back to
+  /// its Summary segment (tapping Home should always land on Summary, even if
+  /// you'd left it on Configs).
+  final ValueNotifier<int> _homeReset = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _homeReset.dispose();
+    super.dispose();
+  }
+
+  /// Handles a nav selection: switch tabs, and when Home is chosen, tell the
+  /// dashboard to return to Summary.
+  void _select(int i) {
+    if (i == 0) _homeReset.value++;
+    setState(() => _index = i);
+  }
 
   @override
   void initState() {
@@ -77,9 +88,16 @@ class _NovaAppShellState extends State<NovaAppShell> {
       _Dest(Icons.tune_outlined, Icons.tune_rounded, s.navSettings),
     ];
 
+    final List<Widget> screens = <Widget>[
+      DashboardScreen(resetToSummary: _homeReset),
+      const ServersScreen(),
+      const StatsScreen(),
+      const SettingsScreen(),
+    ];
+
     final Widget body = SafeArea(
       bottom: false,
-      child: IndexedStack(index: _index, children: _screens),
+      child: IndexedStack(index: _index, children: screens),
     );
 
     return LayoutBuilder(
@@ -92,7 +110,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
                 _NovaRail(
                   index: _index,
                   dests: <_Dest>[...leftDests, ...rightDests],
-                  onSelect: (i) => setState(() => _index = i),
+                  onSelect: _select,
                   onConnect: _toggleConnect,
                 ),
                 VerticalDivider(width: 1, color: nova.border),
@@ -107,7 +125,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
             index: _index,
             leftDests: leftDests,
             rightDests: rightDests,
-            onSelect: (i) => setState(() => _index = i),
+            onSelect: _select,
             onConnect: _toggleConnect,
           ),
         );

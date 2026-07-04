@@ -95,13 +95,16 @@ void main() {
 
   test('DNS choice changes the remote resolver', () {
     final def = SingboxConfig.buildMap(node);
-    final google = SingboxConfig.buildMap(node,
-        options: const SingboxRouteOptions(dns: '8.8.8.8'));
+    final quad9 = SingboxConfig.buildMap(node,
+        options: const SingboxRouteOptions(dns: '9.9.9.9'));
     String remote(Map<String, dynamic> c) => ((c['dns'] as Map)['servers']
             as List)
         .firstWhere((dynamic s) => (s as Map)['tag'] == 'remote')['address']
         as String;
-    expect(remote(def), contains('1.1.1.1'));
-    expect(remote(google), contains('8.8.8.8'));
+    // Default is off-Cloudflare (Google), because the CF-Worker exit can't relay
+    // to Cloudflare's own 1.1.1.1 (loop protection) so DoH there would fail.
+    expect(remote(def), contains('8.8.8.8'));
+    expect(remote(def), isNot(contains('1.1.1.1')));
+    expect(remote(quad9), contains('9.9.9.9'));
   });
 }

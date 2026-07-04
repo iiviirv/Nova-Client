@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/subscription.dart';
 import '../../core/util/format.dart';
+import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
@@ -13,6 +14,7 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
 import '../../widgets/nova_usage_bar_chart.dart';
+import '../cloudflare/cloudflare_controller.dart';
 
 /// The Stats tab — session traffic at a glance: a total card with a live
 /// throughput chart, per-direction stat cards, and a realtime live section.
@@ -95,6 +97,7 @@ class _StatsScreenState extends State<StatsScreen> {
   /// Plan usage + expiry, read from the active subscription's
   /// `subscription-userinfo` header. Empty when there's no such data.
   List<Widget> _planCards(BuildContext context, NovaScope scope) {
+    final s = NovaStrings.of(context);
     final SubInfo? sub = subInfoFor(scope.profiles.active?.subscriptionUrl);
     if (sub == null) return const <Widget>[];
     String date(DateTime e) => '${e.year}-${e.month.toString().padLeft(2, '0')}'
@@ -103,7 +106,7 @@ class _StatsScreenState extends State<StatsScreen> {
       const SizedBox(height: 12),
       _StatCard(
         icon: Icons.pie_chart_rounded,
-        label: 'Plan usage',
+        label: s.statsPlanUsage,
         value: sub.total > 0
             ? '${Fmt.bytes(sub.used)} / ${Fmt.bytes(sub.total)}'
             : Fmt.bytes(sub.used),
@@ -114,7 +117,7 @@ class _StatsScreenState extends State<StatsScreen> {
         const SizedBox(height: 12),
         _StatCard(
           icon: Icons.event_rounded,
-          label: 'Expires',
+          label: s.statsExpires,
           value: date(sub.expire!),
           color: context.nova.violet,
           wide: true,
@@ -126,8 +129,9 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     final scope = NovaScope.of(context);
+    final s = NovaStrings.of(context);
     return ListenableBuilder(
-      listenable: scope.proxy,
+      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.cloudflare]),
       builder: (context, _) {
         final proxy = scope.proxy;
         final bool active = proxy.state.isActive;
@@ -140,18 +144,18 @@ class _StatsScreenState extends State<StatsScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: <Widget>[
-                Text('Stats',
+                Text(s.navStats,
                     style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 14),
                 NovaSegmentedTabs(
                   compact: true,
                   selected: _range,
                   onChanged: (i) => setState(() => _range = i),
-                  segments: const <NovaSegment>[
-                    NovaSegment(label: 'Live'),
-                    NovaSegment(label: '1m'),
-                    NovaSegment(label: '5m'),
-                    NovaSegment(label: 'Session'),
+                  segments: <NovaSegment>[
+                    NovaSegment(label: s.statsLive),
+                    const NovaSegment(label: '1m'),
+                    const NovaSegment(label: '5m'),
+                    NovaSegment(label: s.statsSession),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -162,7 +166,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     Expanded(
                       child: _StatCard(
                         icon: Icons.arrow_downward_rounded,
-                        label: 'Download',
+                        label: s.download,
                         value: Fmt.bytes(proxy.traffic.downlinkTotal),
                         color: context.nova.cyan,
                       ),
@@ -171,7 +175,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     Expanded(
                       child: _StatCard(
                         icon: Icons.arrow_upward_rounded,
-                        label: 'Upload',
+                        label: s.upload,
                         value: Fmt.bytes(proxy.traffic.uplinkTotal),
                         color: context.nova.violet,
                       ),
@@ -181,13 +185,15 @@ class _StatsScreenState extends State<StatsScreen> {
                 const SizedBox(height: 12),
                 _StatCard(
                   icon: Icons.swap_vert_rounded,
-                  label: 'Total this session',
+                  label: s.statsTotalSession,
                   value: Fmt.bytes(proxy.traffic.downlinkTotal +
                       proxy.traffic.uplinkTotal),
                   color: context.nova.indigo,
                   wide: true,
                 ),
                 ..._planCards(context, scope),
+                const SizedBox(height: 12),
+                _WorkerUsageCard(cf: scope.cloudflare),
                 const SizedBox(height: 12),
                 _LiveSection(proxy: proxy, active: active),
               ],
@@ -213,6 +219,7 @@ class _TotalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     final text = Theme.of(context).textTheme;
     final int total =
         proxy.traffic.downlinkTotal + proxy.traffic.uplinkTotal;
@@ -227,7 +234,7 @@ class _TotalCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Text('SESSION TOTAL',
+          Text(s.statsSessionTotal,
               style: text.labelSmall
                   ?.copyWith(color: nova.muted, letterSpacing: 1.2)),
           const SizedBox(height: 6),
@@ -244,7 +251,7 @@ class _TotalCard extends StatelessWidget {
               height: 120,
               child: Center(
                 child: Text(
-                  active ? 'Measuring throughput…' : 'Not connected',
+                  active ? s.statsMeasuring : s.disconnected,
                   style: text.bodySmall?.copyWith(color: nova.muted),
                 ),
               ),
@@ -300,6 +307,96 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+/// Cloudflare Worker request usage vs the free-plan daily allowance. Shows a
+/// usage bar when connected and analytics are available; otherwise a short hint.
+class _WorkerUsageCard extends StatelessWidget {
+  const _WorkerUsageCard({required this.cf});
+  final CloudflareController cf;
+
+  /// Thousands-separated integer (e.g. 12,345) without pulling in intl.
+  static String _grouped(int n) {
+    final String s = n.toString();
+    final StringBuffer b = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
+    }
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final s = NovaStrings.of(context);
+    final text = Theme.of(context).textTheme;
+    final bool connected = cf.phase == CfPhase.connected;
+    final int? used = connected ? cf.workerRequestsToday : null;
+    final int limit = cf.workerRequestLimit;
+    final double frac =
+        (used != null && limit > 0) ? (used / limit).clamp(0.0, 1.0) : 0.0;
+    final Color bar =
+        frac < 0.7 ? nova.success : (frac < 0.9 ? nova.warning : nova.danger);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: nova.surface,
+        borderRadius: NovaRadii.toolR,
+        border: Border.all(color: nova.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              NovaIconChip(
+                  icon: Icons.cloud_rounded,
+                  color: nova.indigo,
+                  size: 36,
+                  radius: 10),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      connected && used != null
+                          ? '${_grouped(used)} / ${_grouped(limit)}'
+                          : s.statsWorkerUsage,
+                      style: text.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      !connected
+                          ? s.statsWorkerNoData
+                          : (used == null
+                              ? s.statsWorkerUsage
+                              : s.statsRequestsToday),
+                      style: text.bodySmall?.copyWith(color: nova.muted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (connected && used != null) ...<Widget>[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(NovaRadii.pill),
+              child: LinearProgressIndicator(
+                value: frac,
+                minHeight: 8,
+                color: bar,
+                backgroundColor: nova.surface2,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _LiveSection extends StatelessWidget {
   const _LiveSection({required this.proxy, required this.active});
   final ProxyController proxy;
@@ -308,13 +405,14 @@ class _LiveSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final s = NovaStrings.of(context);
     final text = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text('LIVE',
+          child: Text(s.statsLiveLabel,
               style: text.labelMedium?.copyWith(
                 color: nova.cyan,
                 letterSpacing: 1.2,
@@ -325,7 +423,7 @@ class _LiveSection extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: _LiveTile(
-                label: 'Down',
+                label: s.statsDown,
                 value: active ? Fmt.bps(proxy.traffic.downlinkBps) : '—',
                 color: NovaSemantics.connectGreen,
               ),
@@ -333,7 +431,7 @@ class _LiveSection extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: _LiveTile(
-                label: 'Up',
+                label: s.statsUp,
                 value: active ? Fmt.bps(proxy.traffic.uplinkBps) : '—',
                 color: nova.violet,
               ),

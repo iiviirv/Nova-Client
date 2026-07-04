@@ -73,6 +73,48 @@ class NovaStrings {
   String get subConnecting => t('radar.sub.connecting');
   String get subError => t('radar.sub.error');
 
+  // ---- Stats ----
+  String get statsLive => t('stats.live');
+  String get statsSession => t('stats.session');
+  String get statsTotalSession => t('stats.totalSession');
+  String get statsSessionTotal => t('stats.sessionTotal');
+  String get statsPlanUsage => t('stats.planUsage');
+  String get statsExpires => t('stats.expires');
+  String get statsMeasuring => t('stats.measuring');
+  String get statsLiveLabel => t('stats.liveLabel');
+  String get statsDown => t('stats.down');
+  String get statsUp => t('stats.up');
+  String get statsWorkerUsage => t('stats.workerUsage');
+  String get statsRequestsToday => t('stats.requestsToday');
+  String get statsWorkerNoData => t('stats.workerNoData');
+
+  // ---- Dashboard extras ----
+  String get dashSecure => t('dash.secure');
+  String get dashError => t('dash.error');
+  String get homeTime => t('home.time');
+  String get homeData => t('home.data');
+  String get homeExpiry => t('home.expiry');
+  String get homeSingleConfig => t('home.singleConfig');
+  String get cfConnectedTo => t('cf.connectedTo');
+  String get cfConnect => t('cf.connect');
+  String get toolDeploy => t('tool.deploy');
+  String get toolPanel => t('tool.panel');
+  String nodesCount(int n) =>
+      isFarsi ? '$n نود' : '$n nodes';
+
+  // ---- Settings ----
+  String get setGeneral => t('set.general');
+  String get setAppearance => t('set.appearance');
+  String get setCommunity => t('set.community');
+  String get setRouting => t('set.routing');
+  String get setRoutingSub => t('set.routingSub');
+  String get setRadarSub => t('set.radarSub');
+  String get setCloudflare => t('set.cloudflare');
+  String get setCloudflareSub => t('set.cloudflareSub');
+  String get modeSystem => t('mode.system');
+  String get modeDark => t('mode.dark');
+  String get modeLight => t('mode.light');
+
   // ---- Common ----
   String get save => t('common.save');
   String get cancel => t('common.cancel');
@@ -81,6 +123,8 @@ class NovaStrings {
   String get theme => t('common.theme');
   String get language => t('common.language');
   String get about => t('common.about');
+  String get testRealDelay => t('common.testRealDelay');
+  String get testing => t('common.testing');
 
   static const Map<String, String> _en = <String, String>{
     'nav.dashboard': 'Home',
@@ -129,6 +173,40 @@ class NovaStrings {
     'radar.sub.refresh': 'Refresh',
     'radar.sub.connecting': 'Connecting',
     'radar.sub.error': 'Could not load that subscription',
+    'stats.live': 'Live',
+    'stats.session': 'Session',
+    'stats.totalSession': 'Total this session',
+    'stats.sessionTotal': 'SESSION TOTAL',
+    'stats.planUsage': 'Plan usage',
+    'stats.expires': 'Expires',
+    'stats.measuring': 'Measuring throughput…',
+    'stats.liveLabel': 'LIVE',
+    'stats.down': 'Down',
+    'stats.up': 'Up',
+    'stats.workerUsage': 'Worker usage',
+    'stats.requestsToday': 'requests today',
+    'stats.workerNoData': 'Connect Cloudflare to see usage',
+    'dash.secure': 'Secure',
+    'dash.error': 'Error',
+    'home.time': 'Time',
+    'home.data': 'Data',
+    'home.expiry': 'Expiry',
+    'home.singleConfig': 'Single config',
+    'cf.connectedTo': 'Connected to Cloudflare',
+    'cf.connect': 'Connect Cloudflare',
+    'tool.deploy': 'Deploy',
+    'tool.panel': 'Panel',
+    'set.general': 'General',
+    'set.appearance': 'Appearance',
+    'set.community': 'Community',
+    'set.routing': 'Routing & DNS',
+    'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
+    'set.radarSub': 'Scan for clean Cloudflare IPs',
+    'set.cloudflare': 'Cloudflare',
+    'set.cloudflareSub': 'Deploy or sign in to your panel',
+    'mode.system': 'System',
+    'mode.dark': 'Dark',
+    'mode.light': 'Light',
     'common.save': 'Save',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
@@ -136,6 +214,8 @@ class NovaStrings {
     'common.theme': 'Theme',
     'common.language': 'Language',
     'common.about': 'About',
+    'common.testRealDelay': 'Test real delay',
+    'common.testing': 'Testing…',
   };
 
   static const Map<String, String> _fa = <String, String>{
@@ -185,6 +265,40 @@ class NovaStrings {
     'radar.sub.refresh': 'بازخوانی',
     'radar.sub.connecting': 'در حال اتصال',
     'radar.sub.error': 'بارگیری این اشتراک ممکن نشد',
+    'stats.live': 'زنده',
+    'stats.session': 'نشست',
+    'stats.totalSession': 'مجموع این نشست',
+    'stats.sessionTotal': 'مجموع نشست',
+    'stats.planUsage': 'مصرف پلن',
+    'stats.expires': 'انقضا',
+    'stats.measuring': 'در حال اندازه‌گیری…',
+    'stats.liveLabel': 'زنده',
+    'stats.down': 'دریافت',
+    'stats.up': 'ارسال',
+    'stats.workerUsage': 'مصرف ورکر',
+    'stats.requestsToday': 'درخواست امروز',
+    'stats.workerNoData': 'برای دیدن مصرف، کلودفلر را وصل کنید',
+    'dash.secure': 'ایمن',
+    'dash.error': 'خطا',
+    'home.time': 'زمان',
+    'home.data': 'داده',
+    'home.expiry': 'انقضا',
+    'home.singleConfig': 'پیکربندی تکی',
+    'cf.connectedTo': 'متصل به کلودفلر',
+    'cf.connect': 'اتصال به کلودفلر',
+    'tool.deploy': 'استقرار',
+    'tool.panel': 'پنل',
+    'set.general': 'عمومی',
+    'set.appearance': 'ظاهر',
+    'set.community': 'انجمن',
+    'set.routing': 'مسیریابی و DNS',
+    'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
+    'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
+    'set.cloudflare': 'کلودفلر',
+    'set.cloudflareSub': 'استقرار یا ورود به پنل شما',
+    'mode.system': 'سیستم',
+    'mode.dark': 'تیره',
+    'mode.light': 'روشن',
     'common.save': 'ذخیره',
     'common.cancel': 'لغو',
     'common.reset': 'بازنشانی',
@@ -192,6 +306,8 @@ class NovaStrings {
     'common.theme': 'پوسته',
     'common.language': 'زبان',
     'common.about': 'درباره',
+    'common.testRealDelay': 'تست تأخیر واقعی',
+    'common.testing': 'در حال تست…',
   };
 }
 

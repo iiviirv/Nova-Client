@@ -79,15 +79,9 @@ class _ServersBodyState extends State<ServersBody> {
               child: _ServerRow(
                 profile: p,
                 active: p.id == profiles.activeId,
+                onOpen: () => _open(context, p),
                 onSelect: () => _select(context, p),
-                onExtract: () {
-                  profiles.setActive(p.id);
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NodeListScreen(profileId: p.id),
-                    ),
-                  );
-                },
+                onExtract: () => _openNodes(context, p),
                 onEdit: () => _editProfile(context, profiles, p),
                 onDelete: () => profiles.remove(p.id),
               ),
@@ -105,6 +99,29 @@ class _ServersBodyState extends State<ServersBody> {
           children: children,
         );
       },
+    );
+  }
+
+  /// Row tap. A subscription opens its node/IP list (where you can see and pin
+  /// an exit); a single config just becomes the active selection.
+  void _open(BuildContext context, ProxyProfile p) {
+    if (p.isSubscription) {
+      _openNodes(context, p);
+    } else {
+      _select(context, p);
+    }
+  }
+
+  /// Opens the node list for a subscription, showing each exit's IP:port and
+  /// live latency so the user can pick one.
+  void _openNodes(BuildContext context, ProxyProfile p) {
+    final scope = NovaScope.of(context);
+    scope.profiles.setActive(p.id);
+    scope.proxy.selectProfile(p);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NodeListScreen(profileId: p.id),
+      ),
     );
   }
 
@@ -237,6 +254,7 @@ class _ServerRow extends StatelessWidget {
   const _ServerRow({
     required this.profile,
     required this.active,
+    required this.onOpen,
     required this.onSelect,
     required this.onDelete,
     required this.onEdit,
@@ -245,6 +263,7 @@ class _ServerRow extends StatelessWidget {
 
   final ProxyProfile profile;
   final bool active;
+  final VoidCallback onOpen;
   final VoidCallback onSelect;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
@@ -257,7 +276,7 @@ class _ServerRow extends StatelessWidget {
     final int? latency = profile.lastLatencyMs;
 
     return GestureDetector(
-      onTap: onSelect,
+      onTap: onOpen,
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -315,6 +334,10 @@ class _ServerRow extends StatelessWidget {
             ],
             if (active)
               Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
+            // A subscription's row opens its node/IP list; hint that with a
+            // chevron so it doesn't look like a dead-end.
+            if (profile.isSubscription)
+              Icon(Icons.chevron_right_rounded, color: nova.muted, size: 20),
             PopupMenuButton<String>(
               icon: Icon(Icons.more_vert_rounded, color: nova.muted, size: 20),
               tooltip: 'Actions',

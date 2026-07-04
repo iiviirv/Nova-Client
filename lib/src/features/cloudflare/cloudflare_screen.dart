@@ -100,9 +100,21 @@ class CloudflareScreen extends StatelessWidget {
             label: 'Connect Cloudflare',
             icon: Icons.login,
             expand: true,
-            onPressed: () => cf.connect((String url) async {
-              await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-            }),
+            onPressed: () async {
+              // Open the Cloudflare sign-in *in-app* (SFSafariViewController),
+              // NOT external Safari. The OAuth redirect comes back to a loopback
+              // server this app runs on localhost:8976; launching external
+              // Safari suspends the app, which kills that server, so the
+              // redirect is never caught and sign-in hangs forever (blocking
+              // Deploy + Panel). An in-app browser keeps the app active so the
+              // loopback catch works, and it shares Safari's login cookies.
+              await cf.connect((String url) async {
+                await launchUrl(Uri.parse(url),
+                    mode: LaunchMode.inAppBrowserView);
+              });
+              // Dismiss the sign-in sheet once the redirect has been handled.
+              await closeInAppWebView();
+            },
           ),
         ],
       ),

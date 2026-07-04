@@ -38,6 +38,17 @@ class RadarController extends ChangeNotifier {
   final List<ScanResult> _results = <ScanResult>[];
   List<ScanResult> get results => List<ScanResult>.unmodifiable(_results);
 
+  // Real-delay results keyed by "ip:port". Held here (not on the immutable
+  // ScanResult) so re-testing just updates the map without rebuilding results.
+  final Map<String, int?> _realDelays = <String, int?>{};
+  bool _testingDelays = false;
+  bool get isTestingDelays => _testingDelays;
+
+  /// The measured real delay (ms) for a result, or null if it hasn't been
+  /// tested yet or the last test failed. Use [hasRealDelay] to tell them apart.
+  int? realDelayFor(String hostPort) => _realDelays[hostPort];
+  bool hasRealDelay(String hostPort) => _realDelays.containsKey(hostPort);
+
   bool get isScanning => _scanner?.isScanning ?? false;
 
   NovaCoreConfig? _coreConfig;
@@ -164,6 +175,7 @@ class RadarController extends ChangeNotifier {
   Future<void> startScan() async {
     if (isScanning) return;
     _results.clear();
+    _realDelays.clear();
     _stats = const ScanStats(scanning: true);
     notifyListeners();
 
@@ -194,6 +206,46 @@ class RadarController extends ChangeNotifier {
   }
 
   void stopScan() => _scanner?.stop();
+
+  /// Runs a real-delay test (full HTTP round-trip through each clean IP) over
+  /// the current results, a few at a time so it stays light, and re-sorts the
+  /// list by the honest measured delay once done. Untested/failed entries keep
+  /// their connect latency for ordering. Safe to call again to re-measure.
+  Future<void> testRealDelays() async {
+    if (_testingDelays || isScanning || _results.isEmpty) return;
+    _testingDelays = true;
+    notifyListeners();
+
+    final String host = _coreConfig?.sni ?? kVlessSni;
+    final List<ScanResult> snapshot = List<ScanResult>.of(_results);
+    final Iterator<ScanResult> it = snapshot.iterator;
+    const int concurrency = 8;
+
+    Future<void> worker() async {
+      while (it.moveNext()) {
+        final ScanResult r = it.current;
+        final int? ms = await measureRealDelay(r.ip, r.port, host: host);
+        _realDelays[r.hostPort] = ms;
+        notifyListeners();
+      }
+    }
+
+    await Future.wait<void>(<Future<void>>[
+      for (int i = 0; i < concurrency; i++) worker(),
+    ]);
+
+    // Re-order fastest-first by real delay; anything untested/failed sinks to
+    // the bottom keeping its relative connect-latency order.
+    _results.sort((ScanResult a, ScanResult b) {
+      final int da = _realDelays[a.hostPort] ?? 1 << 30;
+      final int db = _realDelays[b.hostPort] ?? 1 << 30;
+      if (da != db) return da.compareTo(db);
+      return a.latencyMs.compareTo(b.latencyMs);
+    });
+
+    _testingDelays = false;
+    notifyListeners();
+  }
 
   Future<void> _teardownScanner() async {
     await _statsSub?.cancel();

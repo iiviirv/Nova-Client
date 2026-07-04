@@ -34,6 +34,10 @@ class CloudflareController extends ChangeNotifier {
   List<CfWorker> workers = <CfWorker>[];
   int kvCount = 0;
   int d1Count = 0;
+  // Worker requests used today vs the free-plan daily allowance. null = not
+  // available (not connected, token lacks analytics scope, or no data yet).
+  int? workerRequestsToday;
+  int workerRequestLimit = NovaCloudflare.freeRequestsPerDay;
   String error = '';
   String message = '';
   String busyWorker = '';
@@ -84,6 +88,10 @@ class CloudflareController extends ChangeNotifier {
       kvCount = counts.kv;
       d1Count = counts.d1;
       notifyListeners();
+      // Usage is best-effort and slower; fetch it after the screen is already
+      // usable so it never blocks showing the account.
+      workerRequestsToday = await _cf!.workerRequestsToday(s);
+      notifyListeners();
     } catch (e) {
       final String msg = e.toString();
       if (msg.contains('401') || msg.contains('403')) {
@@ -117,6 +125,7 @@ class CloudflareController extends ChangeNotifier {
     workers = <CfWorker>[];
     kvCount = 0;
     d1Count = 0;
+    workerRequestsToday = null;
     _set(phase: CfPhase.disconnected);
   }
 

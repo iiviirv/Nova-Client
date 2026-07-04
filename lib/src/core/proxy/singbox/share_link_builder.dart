@@ -18,8 +18,15 @@ String buildShareLink(ProxyNode node) {
     NodeProtocol.vless => _buildUserInfoLink(node, 'vless', node.uuid ?? ''),
     NodeProtocol.trojan =>
       _buildUserInfoLink(node, 'trojan', node.password ?? ''),
-    NodeProtocol.shadowsocks => throw UnsupportedError(
-        'Shadowsocks share-link building is not supported',
+    // Radar only ever stamps clean Cloudflare IPs into the worker's VLESS
+    // template, so these never arise here: a VMess/Hysteria2/TUIC exit is a real
+    // server, not a CF IP the scanner would find.
+    NodeProtocol.shadowsocks ||
+    NodeProtocol.vmess ||
+    NodeProtocol.hysteria2 ||
+    NodeProtocol.tuic =>
+      throw UnsupportedError(
+        'Share-link building for ${node.protocol.label} is not supported',
       ),
   };
 }
