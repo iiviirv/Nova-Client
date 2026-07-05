@@ -14,6 +14,7 @@ class SingboxRouteOptions {
     this.dns = '',
     this.lean = false,
     this.localRuleSets = false,
+    this.tlsFragment = true,
   });
 
   final SingboxMode mode;
@@ -37,12 +38,25 @@ class SingboxRouteOptions {
   /// Android (roomier memory) leave this off and get the full config.
   final bool lean;
 
+  /// Emit the outbound TLS `fragment` / `fragment_fallback_delay` keys (the
+  /// ClientHello fragmentation that splits the handshake so DPI can't match the
+  /// SNI in one packet). The mobile cores (iOS 1.12.x, Android 1.13.x) accept
+  /// these keys; the bundled DESKTOP core does NOT and FATALs on startup with
+  /// "outbounds[..].tls.fragment: json: unknown field", which the user saw as
+  /// "the core did not come up in time". Desktop turns this off (the uTLS Chrome
+  /// fingerprint still applies); every other path keeps it on.
+  final bool tlsFragment;
+
   /// The upstream resolver IP the remote DNS server points at (DoH). Empty
   /// means Nova's default (Cloudflare 1.1.1.1). Matches the native app's DNS
   /// picker: '' / 1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 94.140.14.14.
   final String dns;
 
-  SingboxRouteOptions copyWith({bool? lean, bool? localRuleSets}) =>
+  SingboxRouteOptions copyWith({
+    bool? lean,
+    bool? localRuleSets,
+    bool? tlsFragment,
+  }) =>
       SingboxRouteOptions(
         mode: mode,
         blockAds: blockAds,
@@ -51,6 +65,7 @@ class SingboxRouteOptions {
         dns: dns,
         lean: lean ?? this.lean,
         localRuleSets: localRuleSets ?? this.localRuleSets,
+        tlsFragment: tlsFragment ?? this.tlsFragment,
       );
 }
 
@@ -95,7 +110,7 @@ class SingboxConfig {
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
-        _outbound(node),
+        _outbound(node, fragment: options.tlsFragment),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
@@ -149,7 +164,8 @@ class SingboxConfig {
     for (int i = 0; i < picked.length; i++) {
       final String tag = 'node-$i';
       tags.add(tag);
-      nodeOutbounds.add(_outbound(picked[i], tag: tag));
+      nodeOutbounds
+          .add(_outbound(picked[i], tag: tag, fragment: options.tlsFragment));
     }
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
@@ -306,7 +322,11 @@ class SingboxConfig {
     };
   }
 
-  static Map<String, dynamic> _outbound(ProxyNode n, {String tag = 'proxy'}) {
+  static Map<String, dynamic> _outbound(
+    ProxyNode n, {
+    String tag = 'proxy',
+    bool fragment = true,
+  }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
       'tag': tag,
@@ -340,7 +360,7 @@ class SingboxConfig {
         o['congestion_control'] = n.congestionControl ?? 'bbr';
         o['udp_relay_mode'] = n.udpRelayMode ?? 'native';
     }
-    if (n.tls) o['tls'] = _tls(n);
+    if (n.tls) o['tls'] = _tls(n, fragment: fragment);
     // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
     if (!n.protocol.isUdpNative) {
       final Map<String, dynamic>? transport = _transport(n);
@@ -349,7 +369,7 @@ class SingboxConfig {
     return o;
   }
 
-  static Map<String, dynamic> _tls(ProxyNode n) {
+  static Map<String, dynamic> _tls(ProxyNode n, {bool fragment = true}) {
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
@@ -375,7 +395,7 @@ class SingboxConfig {
       // anti-DPI story alongside the uTLS fingerprint, and the trick Xray-based
       // clients rely on. Not applied to Reality: its handshake already looks like
       // a real TLS session, so fragmenting it would only add latency.
-      if (!n.isReality) ...<String, dynamic>{
+      if (fragment && !n.isReality) ...<String, dynamic>{
         'fragment': true,
         'fragment_fallback_delay': '500ms',
       },
