@@ -27,3 +27,6 @@ Thumbs.db
 **/linux/flutter/ephemeral/
 **/macos/Flutter/ephemeral/
 ios/Frameworks/Libbox.xcframework
+
+# Local release-staging (APKs, etc.)
+dist/
