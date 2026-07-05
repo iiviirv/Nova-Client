@@ -7,6 +7,7 @@ import '../features/servers/servers_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/stats/stats_screen.dart';
 import '../l10n/nova_strings.dart';
+import '../theme/nova_radii.dart';
 import '../theme/nova_theme.dart';
 import 'nova_connect_button.dart';
 import 'nova_logo.dart';
@@ -250,13 +251,27 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 7),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(selected ? dest.activeIcon : dest.icon, color: color, size: 24),
-            const SizedBox(height: 3),
+            // A pill highlight behind the active icon (Material-3 style) reads
+            // as a deliberate selection state rather than just a color swap.
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected
+                    ? nova.cyan.withValues(alpha: 0.14)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(NovaRadii.pill),
+              ),
+              child: Icon(selected ? dest.activeIcon : dest.icon,
+                  color: color, size: 22),
+            ),
+            const SizedBox(height: 4),
             Text(
               dest.label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
