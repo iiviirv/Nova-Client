@@ -26,7 +26,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
+  // Open as a compact, phone-style window so Nova shows its mobile layout. The
+  // wide desktop side-rail only makes sense past ~760 logical px; a narrow
+  // default keeps the familiar bottom-bar UI. Users can resize larger for the
+  // rail. (Logical px; win32_window scales by the monitor DPI.)
+  Win32Window::Size size(440, 860);
   if (!window.Create(L"nova_client", origin, size)) {
     return EXIT_FAILURE;
   }
