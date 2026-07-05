@@ -661,9 +661,7 @@ class _ConfigCard extends StatelessWidget {
     final s = NovaStrings.of(context);
     final scope = NovaScope.of(context);
     final active = scope.profiles.active!;
-    final proxy = scope.proxy;
     final text = Theme.of(context).textTheme;
-    final bool connected = proxy.state.isActive;
     final int? latency = active.lastLatencyMs;
 
     return Container(
@@ -740,13 +738,9 @@ class _ConfigCard extends StatelessWidget {
           ),
           Row(
             children: <Widget>[
-              _ConfigMetric(
-                icon: Icons.schedule_rounded,
-                label: s.homeTime,
-                value: connected
-                    ? Fmt.uptime(proxy.connectedSince)
-                    : '—',
-              ),
+              // Uptime is intentionally omitted here — the hero already shows it
+              // as the big timer, so repeating it as a "TIME" metric was
+              // redundant. This card sticks to plan info (data + expiry).
               _ConfigMetric(
                 icon: Icons.data_usage_rounded,
                 label: s.homeData,
