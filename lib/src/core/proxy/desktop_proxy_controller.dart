@@ -63,6 +63,22 @@ class DesktopProxyController extends ProxyController {
   Process? _process;
   Process? _elevated;
   File? _runFlag;
+
+  /// Rolling tail of the core's stdout+stderr (last ~40 lines) so a startup
+  /// failure can report the actual FATAL reason instead of a generic timeout.
+  final List<String> _coreTail = <String>[];
+
+  /// Full core output is teed here (app-support/nova-core.log) so a user can
+  /// send it when a connection fails.
+  IOSink? _coreLogSink;
+  File? _coreLogFile;
+
+  /// Completes when the core subprocess exits, so [_waitForCore] can bail the
+  /// moment the process dies (a config/runtime FATAL) instead of polling the
+  /// whole timeout.
+  Completer<void>? _coreExited;
+  int? _coreExitCode;
+
   Timer? _trafficTimer;
   int _lastUp = 0;
   int _lastDown = 0;
@@ -105,16 +121,41 @@ class DesktopProxyController extends ProxyController {
               'full-device mode.';
         }
       } else {
+        _coreTail.clear();
+        _coreExitCode = null;
+        _coreExited = Completer<void>();
+        await _openCoreLog(cfgFile);
+
         _process =
             await Process.start(binary, <String>['run', '-c', cfgFile.path]);
-        // Surface fatal core output for diagnostics.
-        _process!.stderr.transform(utf8.decoder).listen((String line) {
-          if (line.trim().isNotEmpty) debugPrint('[sing-box] $line');
-        });
-        unawaited(_process!.exitCode.then(_onProcessExit));
+        // Capture BOTH streams into the rolling tail and the log file, so a
+        // startup FATAL is visible in release builds (not just debugPrint).
+        _pipeCore(_process!.stdout, 'out');
+        _pipeCore(_process!.stderr, 'err');
+        unawaited(_process!.exitCode.then((int code) {
+          _coreExitCode = code;
+          if (!(_coreExited?.isCompleted ?? true)) _coreExited!.complete();
+          _onProcessExit(code);
+        }));
 
         if (!await _waitForCore()) {
-          throw 'The core did not come up in time';
+          // If the core exited, its final stderr (the FATAL reason) can still be
+          // in flight on the stream after exitCode fires; let it drain first.
+          if (_coreExitCode != null) {
+            await Future<void>.delayed(const Duration(milliseconds: 150));
+          }
+          final String reason = _coreTailText();
+          final String logPath = _coreLogFile?.path ?? '';
+          final String suffix = logPath.isEmpty ? '' : ' Log: $logPath';
+          if (_coreExitCode != null) {
+            // The process FATAL-exited before the API came up: report the exit
+            // code and the last core output (the real reason).
+            throw 'Core failed to start (exit $_coreExitCode).'
+                '${reason.isEmpty ? '' : ' $reason.'}$suffix';
+          }
+          // Still running but the Clash API never answered within the budget.
+          throw 'Core failed to start: timed out waiting for the control API.'
+              '${reason.isEmpty ? '' : ' Last output: $reason.'}$suffix';
         }
         await _setSystemProxy(true);
       }
@@ -155,7 +196,16 @@ class DesktopProxyController extends ProxyController {
       // timeout"), which is exactly what happens in Iran where the CDN
       // (raw.githubusercontent.com) is filtered, surfacing as "the core did not
       // come up in time". Shipping the .srs on disk removes that startup fetch.
-      final SingboxRouteOptions opts = routeOptions.copyWith(localRuleSets: true);
+      //
+      // tlsFragment stays ON. The OLD bundled desktop core rejected the outbound
+      // `tls.fragment` key and FATALed with "unknown field \"fragment\"" (the
+      // "core did not come up in time" report); we now ship the sing-box 1.13.13
+      // core (matching Android), which accepts it (verified: it comes up in ~1s
+      // with fragment on). Keeping fragmentation matters in Iran, without it the
+      // SNI is exposed in one packet and DPI can block the tunnel to the worker.
+      // If a future desktop core ever lacks the key, add `tlsFragment: false`.
+      final SingboxRouteOptions opts =
+          routeOptions.copyWith(localRuleSets: true);
       cfg = nodes.length == 1
           ? SingboxConfig.buildMap(nodes.first, options: opts)
           : SingboxConfig.buildMultiMap(nodes, options: opts);
@@ -265,10 +315,16 @@ class DesktopProxyController extends ProxyController {
   }
 
   /// Poll the Clash API until the core is serving (or time out).
+  ///
+  /// Budget is ~60s (80 iterations of up to ~750ms): Windows Defender can delay
+  /// the first run of a freshly-copied, unsigned exe by a noticeable amount.
+  /// Bails immediately if the subprocess exits (a config/runtime FATAL), so a
+  /// dead core is reported at once instead of after the full timeout.
   Future<bool> _waitForCore() async {
     final Uri url = Uri.parse('http://127.0.0.1:$clashPort/version');
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 80; i++) {
       if (_process == null) return false;
+      if (_coreExited?.isCompleted ?? false) return false;
       try {
         final r = await http.get(url).timeout(const Duration(milliseconds: 500));
         if (r.statusCode == 200) return true;
@@ -276,6 +332,47 @@ class DesktopProxyController extends ProxyController {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     return false;
+  }
+
+  /// Open (truncate) the tee log and record which config the core is running.
+  Future<void> _openCoreLog(File cfgFile) async {
+    try {
+      final Directory dir = await getApplicationSupportDirectory();
+      _coreLogFile = File('${dir.path}/nova-core.log');
+      _coreLogSink = _coreLogFile!.openWrite(mode: FileMode.write);
+      _coreLogSink!
+        ..writeln('[nova] core start ${DateTime.now().toIso8601String()}')
+        ..writeln('[nova] config ${cfgFile.path}');
+    } catch (_) {
+      _coreLogSink = null;
+    }
+  }
+
+  /// Tee a core output stream to the rolling tail, the log file, and debugPrint.
+  void _pipeCore(Stream<List<int>> stream, String label) {
+    stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((String raw) {
+      // sing-box colourizes levels with ANSI escapes; strip them so the message
+      // and log stay readable.
+      final String line =
+          raw.replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '').trim();
+      if (line.isEmpty) return;
+      debugPrint('[sing-box:$label] $line');
+      _coreTail.add(line);
+      if (_coreTail.length > 40) _coreTail.removeAt(0);
+      try {
+        _coreLogSink?.writeln('[$label] $line');
+      } catch (_) {}
+    });
+  }
+
+  /// The last few core lines, collapsed to one line for an error banner.
+  String _coreTailText({int lines = 3}) {
+    if (_coreTail.isEmpty) return '';
+    final int start = _coreTail.length > lines ? _coreTail.length - lines : 0;
+    return _coreTail.sublist(start).join(' | ');
   }
 
   void _startTrafficPolling() {
@@ -423,10 +520,13 @@ class DesktopProxyController extends ProxyController {
   }
 
   Future<void> _onProcessExit(int code) async {
-    if (_state == ProxyConnectionState.connected ||
-        _state == ProxyConnectionState.connecting) {
+    // A core that dies DURING startup is surfaced by connect()/_waitForCore
+    // with the FATAL reason, so only handle a core that dies after we were
+    // already connected here (avoids a second, less specific failure).
+    if (_state == ProxyConnectionState.connected) {
       await _cleanup();
-      _fail('The core stopped unexpectedly (exit $code)');
+      final String tail = _coreTailText();
+      _fail('The core stopped${tail.isEmpty ? '' : ': $tail'} (exit $code)');
     }
   }
 
@@ -450,6 +550,13 @@ class DesktopProxyController extends ProxyController {
     _elevated = null;
     _process?.kill();
     _process = null;
+    // Flush and close the tee log so the last core output (a FATAL reason) is
+    // on disk for the user to send.
+    try {
+      await _coreLogSink?.flush();
+      await _coreLogSink?.close();
+    } catch (_) {}
+    _coreLogSink = null;
     _traffic = TrafficStats.zero;
   }
 

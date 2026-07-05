@@ -117,6 +117,48 @@ void main() {
       expect(tls['fragment_fallback_delay'], '500ms');
     });
 
+    test('tlsFragment:false drops the fragment keys (desktop core rejects them)',
+        () {
+      // The bundled DESKTOP sing-box core FATALs on the outbound `tls.fragment`
+      // key ("json: unknown field \"fragment\""), which the user saw as "the
+      // core did not come up in time". Desktop builds with tlsFragment:false, so
+      // neither key may appear; the uTLS fingerprint must still be present.
+      final node = parseShareLink(
+        'vless://11111111-2222-3333-4444-555555555555@edge.workers.dev:443'
+        '?security=tls&type=ws&path=%2Fnova&host=edge.workers.dev'
+        '&sni=edge.workers.dev#Nova',
+      )!;
+      final proxy = (SingboxConfig.buildMap(
+        node,
+        options: const SingboxRouteOptions(tlsFragment: false),
+      )['outbounds'] as List)
+          .cast<Map>()
+          .firstWhere((o) => o['tag'] == 'proxy');
+      final tls = proxy['tls'] as Map;
+      expect(tls.containsKey('fragment'), isFalse);
+      expect(tls.containsKey('fragment_fallback_delay'), isFalse);
+      expect((tls['utls'] as Map)['enabled'], isTrue);
+    });
+
+    test('tlsFragment:false also drops fragment across a multi-node config', () {
+      final nodes = <ProxyNode>[
+        parseShareLink(
+          'vless://id-a@a.workers.dev:443?security=tls&type=ws&path=/p#A',
+        )!,
+        parseShareLink(
+          'vless://id-b@b.workers.dev:443?security=tls&type=ws&path=/p#B',
+        )!,
+      ];
+      final cfg = SingboxConfig.buildMultiMap(
+        nodes,
+        options: const SingboxRouteOptions(tlsFragment: false),
+      );
+      final outbounds = (cfg['outbounds'] as List).cast<Map>();
+      for (final o in outbounds.where((o) => o['tls'] != null)) {
+        expect((o['tls'] as Map).containsKey('fragment'), isFalse);
+      }
+    });
+
     test('Reality nodes are NOT fragmented (handshake already covert)', () {
       final node = parseShareLink(
         'vless://11111111-2222-3333-4444-555555555555@realsvr.example.com:443'
