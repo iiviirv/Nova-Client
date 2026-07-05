@@ -1,10 +1,10 @@
 name: nova_client
 description: >-
-  Nova Client — an optimised, Nova-branded proxy client (a streamlined Karing
+  Nova Client, an optimised, Nova-branded proxy client (a streamlined Karing
   fork) with the Nova Radar Cloudflare clean-IP scanner built in. Follows the
   Nova Proxy design language.
 publish_to: "none"
-version: 0.2.0+51
+version: 0.2.0+52
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -50,7 +50,13 @@ flutter:
 
   assets:
     - assets/brand/
-    - assets/bin/
+    # NOTE: assets/bin/ (the desktop sing-box cores, ~80 MB) is deliberately NOT
+    # a Flutter asset. Bundling it here shipped both desktop binaries inside the
+    # Android APK and iOS app that never use them (they run libbox / the Network
+    # Extension), bloating the mobile download to ~77 MB. The desktop builds get
+    # the core placed next to their executable instead (macOS: Contents/Resources
+    # via the packaging step; Windows: next to the .exe via the CI copy step),
+    # and DesktopProxyController loads it from there.
     # Bundled sing-box rule-sets (binary .srs) shipped to the iOS Network
     # Extension for offline Iran-direct routing + ad blocking (no startup fetch).
     - assets/rulesets/
