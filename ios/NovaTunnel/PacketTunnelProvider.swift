@@ -2,6 +2,10 @@ import Foundation
 import Libbox
 import Network
 import NetworkExtension
+// sing-box 1.13's libbox references UIKit (UIApplication background-task APIs)
+// that 1.12 did not. The extension's own Swift never touches UIKit, but importing
+// it here auto-links UIKit.framework so the libbox symbols resolve at link time.
+import UIKit
 
 /// The sing-box Network Extension for iOS. Reads the config the app wrote to the
 /// shared App Group, sets up the TUN from sing-box's requested options, and runs
@@ -14,7 +18,6 @@ import NetworkExtension
 class PacketTunnelProvider: NEPacketTunnelProvider {
   static let appGroup = "group.online.novaproxy.novaClient"
 
-  private var boxService: LibboxBoxService?
   private var commandServer: LibboxCommandServer?
   private var pathMonitor: NWPathMonitor?
 
@@ -35,30 +38,25 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"), encoding: .utf8)
 
+    // sing-box 1.13 folded the box service into the command server: instead of
+    // LibboxNewService(config, platform) + a separate command server, the command
+    // server now takes the PlatformInterface (self) and owns the service. We
+    // create it, start its App Group control socket (so the main app can attach a
+    // status client for live traffic), then start the service from the config,
+    // which is what dials the TUN via openTun below.
     var err: NSError?
-    guard let service = LibboxNewService(config, self, &err), err == nil else {
-      throw err ?? NSError(domain: "Nova", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create service"])
+    guard let server = LibboxNewCommandServer(commandServerHandler, self, &err), err == nil else {
+      throw err ?? NSError(domain: "Nova", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create command server"])
     }
-    boxService = service
-
-    // Stand up the libbox command server on the shared App Group socket so the
-    // main app can attach a status client and read live traffic stats. Failure
-    // here must not block the tunnel itself, so it is best-effort.
-    let server = LibboxNewCommandServer(commandServerHandler, 100)
-    if let server {
-      try? server.start()
-      server.setService(service)
-      commandServer = server
-    }
-
-    try service.start()
+    try server.start()
+    try server.startOrReloadService(config, options: nil)
+    commandServer = server
   }
 
   override func stopTunnel(with _: NEProviderStopReason) async {
     pathMonitor?.cancel()
     pathMonitor = nil
-    try? boxService?.close()
-    boxService = nil
+    try? commandServer?.closeService()
     try? commandServer?.close()
     commandServer = nil
   }
@@ -73,18 +71,23 @@ private final class CommandServerHandler: NSObject, LibboxCommandServerHandlerPr
   private weak var provider: PacketTunnelProvider?
   init(provider: PacketTunnelProvider) { self.provider = provider }
 
-  func getSystemProxyStatus() -> LibboxSystemProxyStatus? {
+  func getSystemProxyStatus() throws -> LibboxSystemProxyStatus {
     let status = LibboxSystemProxyStatus()
     status.available = false
     status.enabled = false
     return status
   }
 
-  func postServiceClose() {}
+  // 1.13 replaced postServiceClose with serviceStop; both are unused on the
+  // packet-tunnel path (the extension owns its own lifecycle).
+  func serviceStop() throws {}
 
   func serviceReload() throws {}
 
-  func setSystemProxyEnabled(_ isEnabled: Bool) throws {}
+  func setSystemProxyEnabled(_ enabled: Bool) throws {}
+
+  // Added in sing-box 1.13's command-server handler.
+  func writeDebugMessage(_ message: String?) {}
 }
 
 // MARK: - LibboxPlatformInterface
@@ -200,7 +203,6 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     }
   }
 
-  func writeLog(_ message: String?) { if let message { NSLog("[sing-box] %@", message) } }
   // Added in sing-box 1.12's LibboxPlatformInterface. We provide neither a
   // custom local DNS transport nor a platform certificate list, so sing-box uses
   // its own DNS handling (our config's remote/local servers) and the bundled
@@ -272,15 +274,11 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     return InterfaceArray(out)
   }
 
+  // 1.13 changed this to return a LibboxConnectionOwner instead of an out-param;
+  // process/owner lookup is unsupported in the iOS extension, so return nil.
   func findConnectionOwner(_: Int32, sourceAddress _: String?, sourcePort _: Int32,
-                           destinationAddress _: String?, destinationPort _: Int32,
-                           ret0_: UnsafeMutablePointer<Int32>?) throws {
+                           destinationAddress _: String?, destinationPort _: Int32) throws -> LibboxConnectionOwner {
     throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
-  }
-
-  func packageName(byUid _: Int32, error _: NSErrorPointer) -> String { "" }
-  func uid(byPackageName _: String?, ret0_: UnsafeMutablePointer<Int32>?) throws {
-    throw NSError(domain: "Nova", code: 7, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
   }
 
   func readWIFIState() -> LibboxWIFIState? { nil }
