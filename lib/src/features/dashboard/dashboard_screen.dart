@@ -261,28 +261,9 @@ class _SummaryViewState extends State<_SummaryView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const SizedBox(height: 2),
-        Row(
-          children: <Widget>[
-            NovaConnectOrb(
-              state: proxy.state,
-              size: 150,
-              onTap: hasProfile || proxy.state.isActive ? proxy.toggle : null,
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              child: SizedBox(
-                height: 150,
-                child: _StatusColumn(
-                  state: proxy.state,
-                  since: proxy.connectedSince,
-                  error: proxy.lastError,
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: proxy.state.isActive ? 14 : 18),
+        const SizedBox(height: 6),
+        _ConnectHero(proxy: proxy, hasProfile: hasProfile),
+        SizedBox(height: proxy.state.isActive ? 20 : 24),
         _MetricsBlock(proxy: proxy),
         if (hasProfile) ...<Widget>[
           const SizedBox(height: 10),
@@ -295,83 +276,92 @@ class _SummaryViewState extends State<_SummaryView> {
   }
 }
 
-class _StatusColumn extends StatelessWidget {
-  const _StatusColumn({
-    required this.state,
-    required this.since,
-    required this.error,
-  });
+/// The centered connect hero: a single status pill, the orb, and a state
+/// headline + subtitle. Centering the primary control (rather than the old
+/// orb-left / text-right split) matches the pattern top VPN clients use — the
+/// connect action is the emotional centerpiece of the screen.
+class _ConnectHero extends StatelessWidget {
+  const _ConnectHero({required this.proxy, required this.hasProfile});
 
-  final ProxyConnectionState state;
-  final DateTime? since;
-  final String? error;
+  final ProxyController proxy;
+  final bool hasProfile;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     final s = NovaStrings.of(context);
     final text = Theme.of(context).textTheme;
-    final bool connected = state.isActive;
+    final ProxyConnectionState state = proxy.state;
+    final bool connected = state == ProxyConnectionState.connected;
 
-    final Color badgeColor =
-        connected ? NovaSemantics.successGreen : nova.muted;
-    final String badgeLabel = connected ? s.connected : s.disconnected;
+    // Status pill — distinct color/label per state, not just active/inactive,
+    // so "Connecting…" and errors read correctly instead of "Not connected".
+    final (Color, String) badge = switch (state) {
+      ProxyConnectionState.connected => (NovaSemantics.successGreen, s.connected),
+      ProxyConnectionState.connecting ||
+      ProxyConnectionState.disconnecting =>
+        (NovaSemantics.amber, s.connecting),
+      ProxyConnectionState.error => (nova.danger, s.dashError),
+      ProxyConnectionState.disconnected => (nova.muted, s.disconnected),
+    };
 
-    Widget body;
+    // Headline + optional subtitle. The subtitle is dropped when it would just
+    // echo the pill (idle / connecting), so the same words never appear twice.
+    String headline;
+    String? subtitle;
+    Color subtitleColor = nova.muted;
+    bool headlineIsTimer = false;
     switch (state) {
       case ProxyConnectionState.connected:
-        body = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              Fmt.uptime(since),
-              style: text.displayMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 46,
-                height: 1.0,
-                letterSpacing: -1,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(s.dashSecure,
-                style: text.titleMedium?.copyWith(
-                  color: NovaSemantics.connectGreen,
-                  fontWeight: FontWeight.w600,
-                )),
-          ],
-        );
+        headline = Fmt.uptime(proxy.connectedSince);
+        headlineIsTimer = true;
+        subtitle = s.dashSecure;
+        subtitleColor = NovaSemantics.connectGreen;
       case ProxyConnectionState.connecting:
-        body = Text(s.connecting,
-            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800));
       case ProxyConnectionState.disconnecting:
-        body = Text(s.connecting,
-            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800));
+        headline = s.connecting;
       case ProxyConnectionState.error:
-        body = Text(error ?? s.dashError,
-            style: text.titleMedium?.copyWith(color: nova.danger));
+        headline = s.dashError;
+        subtitle = proxy.lastError;
+        subtitleColor = nova.danger;
       case ProxyConnectionState.disconnected:
-        body = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(s.tapToConnect,
-                style:
-                    text.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            Text(s.disconnected,
-                style: text.bodyMedium?.copyWith(color: nova.muted)),
-          ],
-        );
+        headline = s.tapToConnect;
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
-        NovaStatusBadge(label: badgeLabel, color: badgeColor),
-        const SizedBox(height: 16),
-        body,
+        NovaStatusBadge(label: badge.$2, color: badge.$1),
+        const SizedBox(height: 22),
+        NovaConnectOrb(
+          state: state,
+          size: 172,
+          onTap: hasProfile || connected ? proxy.toggle : null,
+        ),
+        const SizedBox(height: 22),
+        Text(
+          headline,
+          textAlign: TextAlign.center,
+          style: headlineIsTimer
+              ? text.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 44,
+                  height: 1.0,
+                  letterSpacing: -1,
+                  fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+                )
+              : text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: text.titleSmall?.copyWith(
+              color: subtitleColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -385,9 +375,7 @@ class _MetricsBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    final s = NovaStrings.of(context);
     final connInfo = NovaScope.of(context).connInfo;
-    final text = Theme.of(context).textTheme;
     final bool active = proxy.state.isActive;
 
     return ListenableBuilder(
@@ -411,68 +399,19 @@ class _MetricsBlock extends StatelessWidget {
 
         return Column(
           children: <Widget>[
-            // Country + IP / ping card.
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: nova.surface,
-                borderRadius: NovaRadii.heroR,
-                border: Border.all(color: nova.border),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            Icon(Icons.public, size: 18, color: nova.indigo),
-                            const SizedBox(width: 8),
-                            if (active && info.hasGeo) ...<Widget>[
-                              NovaCountryFlag(iso2: info.countryCode, size: 16),
-                              const SizedBox(width: 6),
-                            ],
-                            Text(country,
-                                style: text.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          active ? ip : s.disconnected,
-                          style: text.bodySmall?.copyWith(color: nova.muted),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Icon(Icons.speed_rounded, size: 16, color: nova.cyan),
-                          const SizedBox(width: 4),
-                          Text(ping,
-                              style: text.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text('PING',
-                          style: text.labelSmall?.copyWith(
-                            color: nova.muted,
-                            fontSize: 10,
-                            letterSpacing: 1.5,
-                          )),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            // Connection-detail card: a clean labeled Location / IP / Ping strip
+            // when connected, or a calm "not protected" prompt when idle (rather
+            // than repeating "Not connected" in a near-empty card).
+            if (active)
+              _ConnDetailStrip(
+                country: country,
+                countryCode: info.hasGeo ? info.countryCode : null,
+                ip: ip,
+                ping: ping,
+                pingMs: info.pingMs,
+              )
+            else
+              const _NotProtectedCard(),
             // Live throughput tiles only matter while connected — when idle
             // they would just read "—" and push the tools row below the fold.
             if (active) ...<Widget>[
@@ -502,6 +441,167 @@ class _MetricsBlock extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The live connection detail: three labeled stats (location, IP, ping) split
+/// by hairline dividers. Reads like a status panel in an enterprise console.
+class _ConnDetailStrip extends StatelessWidget {
+  const _ConnDetailStrip({
+    required this.country,
+    required this.countryCode,
+    required this.ip,
+    required this.ping,
+    required this.pingMs,
+  });
+
+  final String country;
+  final String? countryCode;
+  final String ip;
+  final String ping;
+  final int? pingMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final s = NovaStrings.of(context);
+    final Widget divider = Container(width: 1, color: nova.border);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+      decoration: BoxDecoration(
+        color: nova.surface,
+        borderRadius: NovaRadii.heroR,
+        border: Border.all(color: nova.border),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: _DetailStat(
+                label: s.dashLocation,
+                value: country,
+                leading: countryCode != null
+                    ? NovaCountryFlag(iso2: countryCode, size: 15)
+                    : null,
+              ),
+            ),
+            divider,
+            Expanded(child: _DetailStat(label: s.dashIp, value: ip)),
+            divider,
+            Expanded(
+              child: _DetailStat(
+                label: 'PING',
+                value: ping,
+                valueColor: pingMs != null ? NovaSemantics.ping(pingMs) : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailStat extends StatelessWidget {
+  const _DetailStat({
+    required this.label,
+    required this.value,
+    this.leading,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Widget? leading;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Text(
+          label.toUpperCase(),
+          style: text.labelSmall?.copyWith(
+            color: nova.muted,
+            fontSize: 10,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            if (leading != null) ...<Widget>[
+              leading!,
+              const SizedBox(width: 5),
+            ],
+            Flexible(
+              child: Text(
+                value,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: text.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: valueColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Idle connection card: a calm "you're not protected yet" prompt that nudges
+/// the user to connect, replacing a near-empty card that just said "Not
+/// connected" again.
+class _NotProtectedCard extends StatelessWidget {
+  const _NotProtectedCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final s = NovaStrings.of(context);
+    final text = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: nova.surface,
+        borderRadius: NovaRadii.heroR,
+        border: Border.all(color: nova.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          NovaIconChip(
+            icon: Icons.shield_outlined,
+            color: nova.muted,
+            size: 42,
+            radius: 12,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  s.dashNotProtected,
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  s.dashNotProtectedBody,
+                  style: text.bodySmall?.copyWith(color: nova.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

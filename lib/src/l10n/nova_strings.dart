@@ -91,6 +91,10 @@ class NovaStrings {
   // ---- Dashboard extras ----
   String get dashSecure => t('dash.secure');
   String get dashError => t('dash.error');
+  String get dashLocation => t('dash.location');
+  String get dashIp => t('dash.ip');
+  String get dashNotProtected => t('dash.notProtected');
+  String get dashNotProtectedBody => t('dash.notProtectedBody');
   String get homeTime => t('home.time');
   String get homeData => t('home.data');
   String get homeExpiry => t('home.expiry');
@@ -140,6 +144,10 @@ class NovaStrings {
     'dash.connected': 'Connected',
     'dash.disconnected': 'Not connected',
     'dash.tapToConnect': 'Tap to connect',
+    'dash.location': 'Location',
+    'dash.ip': 'IP',
+    'dash.notProtected': 'Not protected',
+    'dash.notProtectedBody': 'Connect to route your traffic through Nova.',
     'dash.download': 'Download',
     'dash.upload': 'Upload',
     'home.summary': 'Summary',
@@ -232,6 +240,10 @@ class NovaStrings {
     'dash.connected': 'متصل شد',
     'dash.disconnected': 'متصل نیست',
     'dash.tapToConnect': 'برای اتصال لمس کنید',
+    'dash.location': 'موقعیت',
+    'dash.ip': 'آی‌پی',
+    'dash.notProtected': 'محافظت‌نشده',
+    'dash.notProtectedBody': 'برای عبور ترافیک از Nova متصل شوید.',
     'dash.download': 'دانلود',
     'dash.upload': 'آپلود',
     'home.summary': 'خلاصه',
