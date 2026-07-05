@@ -17,7 +17,7 @@ import '../routing/routing_screen.dart';
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
 const String kNovaVersion = '0.2.0';
-const String kNovaBuild = '45';
+const String kNovaBuild = '46';
 
 /// App settings — grouped cards (General · Appearance · Community · About) in
 /// the native Android style, with colored leading icon chips and chevrons.
@@ -151,6 +151,12 @@ class SettingsScreen extends StatelessWidget {
                         icon: Icons.send,
                         title: 'Telegram - @irnova_proxy',
                         url: 'https://t.me/irnova_proxy',
+                      ),
+                      _div(nova.border),
+                      _LinkTile(
+                        icon: Icons.camera_alt_rounded,
+                        title: 'Instagram - @novaprooxy',
+                        url: 'https://instagram.com/novaprooxy',
                       ),
                       _div(nova.border),
                       _LinkTile(
