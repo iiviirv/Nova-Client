@@ -150,7 +150,12 @@ class DesktopProxyController extends ProxyController {
       // fastest via a urltest; a single link is just the one node.
       final List<ProxyNode> nodes = await resolveProfileNodes(profile);
       if (nodes.isEmpty) throw emptyResolveMessage(profile);
-      final SingboxRouteOptions opts = routeOptions;
+      // Desktop uses BUNDLED local rule-sets. A remote rule-set that can't be
+      // downloaded makes sing-box FATAL on startup ("initialize rule-set: i/o
+      // timeout"), which is exactly what happens in Iran where the CDN
+      // (raw.githubusercontent.com) is filtered, surfacing as "the core did not
+      // come up in time". Shipping the .srs on disk removes that startup fetch.
+      final SingboxRouteOptions opts = routeOptions.copyWith(localRuleSets: true);
       cfg = nodes.length == 1
           ? SingboxConfig.buildMap(nodes.first, options: opts)
           : SingboxConfig.buildMultiMap(nodes, options: opts);
@@ -175,7 +180,34 @@ class DesktopProxyController extends ProxyController {
       'external_controller': '127.0.0.1:$clashPort',
     };
     cfg['experimental'] = experimental;
-    return const JsonEncoder.withIndent('  ').convert(cfg);
+    // Point the config's local rule-set paths (the __NOVA_BASE__ token the
+    // builder emits) at the extracted .srs directory on disk.
+    final String base = await _extractRuleSets();
+    return const JsonEncoder.withIndent('  ')
+        .convert(cfg)
+        .replaceAll(SingboxConfig.ruleSetBaseToken, base);
+  }
+
+  /// Writes the bundled `.srs` rule-sets next to the core (once) and returns
+  /// their directory. Forward slashes so the path is valid inside the JSON on
+  /// Windows too (sing-box/Go accepts them on every platform).
+  Future<String> _extractRuleSets() async {
+    final Directory dir = await getApplicationSupportDirectory();
+    for (final String file in <String>[
+      SingboxConfig.kGeositeIrFile,
+      SingboxConfig.kGeositeAdsFile,
+    ]) {
+      final File out = File('${dir.path}/$file');
+      final ByteData data = await rootBundle.load('assets/rulesets/$file');
+      final int len = data.lengthInBytes;
+      if (!out.existsSync() || out.lengthSync() != len) {
+        await out.writeAsBytes(
+          data.buffer.asUint8List(data.offsetInBytes, len),
+          flush: true,
+        );
+      }
+    }
+    return dir.path.replaceAll(r'\', '/');
   }
 
   /// Extract the bundled core binary to a writable, executable path (cached).
