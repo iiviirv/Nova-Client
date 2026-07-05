@@ -204,7 +204,12 @@ class SingboxConfig {
         'type': 'tun',
         'tag': 'tun-in',
         'interface_name': 'nova-tun',
-        'inet4_address': '172.19.0.1/30',
+        // sing-box 1.12 removed the legacy `inet4_address`/`inet6_address`
+        // fields in favour of a single `address` list. Both cores we ship
+        // (iOS 1.12.x, Android 1.13.x) are past that cut, so the old field
+        // logged "legacy tun address fields ... removed in sing-box 1.12.0";
+        // `address` is the current, warning-free form.
+        'address': <String>['172.19.0.1/30'],
         // iOS (lean) uses the gvisor stack: the system stack forwards raw IP
         // packets, so on the iOS extension large download packets fragment and
         // get dropped (bulk transfers crawl to ~0 while small requests still

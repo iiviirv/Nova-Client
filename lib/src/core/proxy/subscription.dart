@@ -268,20 +268,41 @@ Future<List<ProxyNode>> resolveProfileNodes(
 
 /// Default transport: a plain GET with a non-browser User-Agent so the worker
 /// returns raw config text (a browser UA gets the HTML hub instead).
+///
+/// Retries once on a network error. A first attempt on a slow or throttled link
+/// (common in Iran) often times out where a second, warmed-up connection gets
+/// through. A real HTTP status (non-200) is not retried, since that won't
+/// change on a second try.
 Future<String> _httpFetch(Uri url) async {
+  for (int attempt = 0; ; attempt++) {
+    try {
+      return await _httpFetchOnce(url);
+    } on HttpException {
+      rethrow;
+    } catch (_) {
+      if (attempt >= 1) rethrow;
+    }
+  }
+}
+
+Future<String> _httpFetchOnce(Uri url) async {
   final HttpClient client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 15);
+    ..connectionTimeout = const Duration(seconds: 20);
   try {
     final HttpClientRequest req = await client.getUrl(url);
     req.headers.set(HttpHeaders.userAgentHeader, 'NovaClient');
-    final HttpClientResponse resp = await req.close();
+    final HttpClientResponse resp =
+        await req.close().timeout(const Duration(seconds: 25));
     if (resp.statusCode != HttpStatus.ok) {
       throw HttpException('Subscription HTTP ${resp.statusCode}', uri: url);
     }
     final SubInfo? info =
         SubInfo.parse(resp.headers.value('subscription-userinfo'));
     if (info != null) _subInfoCache[url.toString()] = info;
-    return await resp.transform(utf8.decoder).join();
+    return await resp
+        .transform(utf8.decoder)
+        .join()
+        .timeout(const Duration(seconds: 25));
   } finally {
     client.close(force: true);
   }
