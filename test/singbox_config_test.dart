@@ -262,9 +262,20 @@ void main() {
       expect((proxy['transport'] as Map)['type'], 'ws');
       expect((proxy['transport'] as Map)['path'], '/nova');
 
-      // direct/block/dns outbounds always present.
+      // direct/block outbounds always present. The legacy 'dns' outbound is
+      // gone (removed in sing-box 1.13); DNS is hijacked via a rule action.
       final tags = outbounds.map((o) => o['tag']).toSet();
-      expect(tags, containsAll(<String>['proxy', 'direct', 'block', 'dns-out']));
+      expect(tags, containsAll(<String>['proxy', 'direct', 'block']));
+      expect(tags, isNot(contains('dns-out')));
+      expect(outbounds.any((o) => o['type'] == 'dns'), isFalse);
+      final routeRules =
+          ((cfg['route'] as Map)['rules'] as List<dynamic>).cast<Map>();
+      expect(
+        routeRules.any((r) =>
+            r['protocol'] == 'dns' && r['action'] == 'hijack-dns'),
+        isTrue,
+        reason: 'DNS must be hijacked via a rule action, not a dns outbound',
+      );
     });
 
     test('rule mode routes final through the proxy', () {
