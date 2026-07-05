@@ -242,12 +242,25 @@ void main() {
           '?security=tls&sni=cdn.example.com&type=ws&path=%2Fnova&host=cdn.example.com#N',
         )!;
 
-    test('produces a TUN inbound', () {
+    test('produces a TUN inbound with no removed legacy fields', () {
       final cfg = SingboxConfig.buildMap(vlessNode());
       final inbounds = cfg['inbounds'] as List<dynamic>;
       expect(inbounds, hasLength(1));
-      expect((inbounds.first as Map)['type'], 'tun');
-      expect((inbounds.first as Map)['auto_route'], isTrue);
+      final tun = inbounds.first as Map;
+      expect(tun['type'], 'tun');
+      expect(tun['auto_route'], isTrue);
+      // sing-box 1.12 removed inet4_address (use the `address` list);
+      // sing-box 1.13 removed the inbound sniff fields (use a rule action).
+      expect(tun.containsKey('inet4_address'), isFalse);
+      expect(tun['address'], contains('172.19.0.1/30'));
+      expect(tun.containsKey('sniff'), isFalse,
+          reason: 'legacy inbound sniff field removed in sing-box 1.13');
+      expect(tun.containsKey('sniff_override_destination'), isFalse);
+      // Sniffing must instead be a route rule action so domain rules still match.
+      final routeRules =
+          ((cfg['route'] as Map)['rules'] as List<dynamic>).cast<Map>();
+      expect(routeRules.any((r) => r['action'] == 'sniff'), isTrue,
+          reason: 'sniffing must be a rule action on 1.13');
     });
 
     test('builds the VLESS outbound with TLS + WS transport', () {

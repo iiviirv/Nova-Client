@@ -226,10 +226,15 @@ class SingboxConfig {
         'auto_route': true,
         'strict_route': true,
         'stack': o.lean ? 'gvisor' : 'system',
-        'sniff': true,
-        'sniff_override_destination': false,
+        // Sniffing is NOT set here anymore. sing-box 1.13 removed the
+        // inbound-level `sniff`/`sniff_override_destination` fields ("legacy
+        // inbound fields ... removed in sing-box 1.13.0"), which was fatal on
+        // the Android 1.13 core (inbound[0] failed to initialize, so the tunnel
+        // never came up). Sniffing now lives in the route as a `{action: sniff}`
+        // rule (see _route); that is the supported form on 1.11+/1.12/1.13.
+        //
         // NOTE: platform.http_proxy (advertising a system HTTP proxy via
-        // NEProxySettings) was tried in build 29 and is disabled again — it is a
+        // NEProxySettings) was tried in build 29 and is disabled again, it is a
         // prime suspect for build 29's broken browsing (all HTTP/HTTPS was routed
         // to the proxy port; if that listener misbehaves, browsers fail while
         // Telegram, which ignores the system proxy, keeps working). The native
@@ -393,6 +398,12 @@ class SingboxConfig {
 
   static Map<String, dynamic> _route(SingboxRouteOptions o, {bool blockQuic = true}) {
     final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[
+      // Sniff each connection's protocol and domain (TLS SNI, HTTP Host, DNS
+      // question) so the domain-based rules below can match. This replaces the
+      // inbound-level `sniff` field that sing-box 1.13 removed; the `sniff` rule
+      // action is the supported form (valid on 1.11+). It must run first, before
+      // the DNS hijack and domain rules that depend on the sniffed name.
+      <String, dynamic>{'action': 'sniff'},
       // Hijack sniffed DNS to the DNS module. The old form routed to a 'dns'
       // outbound, which sing-box 1.13 removed; the 'hijack-dns' rule action is
       // the supported replacement (valid on 1.11+/1.12/1.13).

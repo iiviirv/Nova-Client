@@ -17,7 +17,7 @@ import '../routing/routing_screen.dart';
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
 const String kNovaVersion = '0.2.0';
-const String kNovaBuild = '49';
+const String kNovaBuild = '50';
 
 /// App settings — grouped cards (General · Appearance · Community · About) in
 /// the native Android style, with colored leading icon chips and chevrons.
