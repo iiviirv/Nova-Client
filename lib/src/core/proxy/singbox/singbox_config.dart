@@ -117,10 +117,13 @@ class SingboxConfig {
     List<ProxyNode> nodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
-    // The lean (iOS) path trims the node pool a little to stay under the
-    // extension's memory cap, but keeps enough for the urltest to find a fast
-    // exit; roomier hosts use the full budget.
-    final int cap = options.lean ? 16 : kMaxAutoNodes;
+    // The lean (iOS) path trims the node pool to stay under the extension's
+    // ~50MB memory cap. Fewer idle outbounds (each holds a periodic urltest
+    // probe) means more headroom for the throughput burst of a speed test, which
+    // is what was pushing the extension over the limit and dropping the tunnel.
+    // 12 is still plenty for the urltest to find a fast exit; roomier hosts
+    // (desktop/Android) use the full budget.
+    final int cap = options.lean ? 12 : kMaxAutoNodes;
     final List<ProxyNode> picked = _dedupe(nodes).take(cap).toList();
     if (picked.length <= 1) {
       return buildMap(

@@ -44,8 +44,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
       start(config: config, ruleSets: ruleSets, result: result)
     case "stop":
-      manager?.connection.stopVPNTunnel()
-      result(nil)
+      stopTunnel(result: result)
     case "status":
       // Load the existing tunnel manager if we don't have it yet (e.g. the app
       // was relaunched while the VPN kept running), so we report the REAL status
@@ -99,6 +98,16 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       mgr.protocolConfiguration = proto
       mgr.localizedDescription = "Nova"
       mgr.isEnabled = true
+      // Auto-reconnect. If iOS terminates the extension under memory pressure
+      // (e.g. a speed test's throughput burst pushes the ~50MB Network
+      // Extension over its limit), an on-demand "connect" rule brings the tunnel
+      // straight back instead of leaving the user stranded offline. This is only
+      // enabled while a session is active; `stopTunnel` disables it so a
+      // user-initiated Disconnect genuinely stays off and does not auto-reconnect.
+      let onDemand = NEOnDemandRuleConnect()
+      onDemand.interfaceTypeMatch = .any
+      mgr.onDemandRules = [onDemand]
+      mgr.isOnDemandEnabled = true
       mgr.saveToPreferences { error in
         if let error { result(FlutterError(code: "save", message: error.localizedDescription, details: nil)); return }
         // Reload so the saved configuration is applied before starting.
@@ -111,6 +120,22 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
             result(FlutterError(code: "start", message: error.localizedDescription, details: nil))
           }
         }
+      }
+    }
+  }
+
+  /// User-initiated Disconnect. On-demand is turned off (and saved) *before*
+  /// stopping the tunnel so iOS won't immediately auto-reconnect the way it's
+  /// designed to after an unexpected extension kill. Loads the manager first in
+  /// case the app was relaunched while the tunnel kept running.
+  private func stopTunnel(result: @escaping FlutterResult) {
+    loadManagerIfNeeded { [weak self] in
+      guard let self, let mgr = self.manager else { result(nil); return }
+      mgr.isOnDemandEnabled = false
+      mgr.onDemandRules = []
+      mgr.saveToPreferences { _ in
+        mgr.connection.stopVPNTunnel()
+        result(nil)
       }
     }
   }
