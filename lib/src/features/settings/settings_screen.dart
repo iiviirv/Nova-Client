@@ -170,7 +170,7 @@ class SettingsScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text('Nova',
                           style: Theme.of(context).textTheme.titleMedium),
-                      Text('Nova v$kNovaVersion ($kNovaBuild)',
+                      Text('v$kNovaVersion ($kNovaBuild)',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
