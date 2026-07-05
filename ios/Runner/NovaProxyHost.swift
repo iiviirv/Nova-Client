@@ -159,37 +159,50 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     libboxReady = (err == nil)
   }
 
+  /// Serializes the status-client lifecycle off the main thread. `LibboxSetup`
+  /// (in `ensureLibboxSetup`) and the client connect are the heavy calls; running
+  /// them here instead of on the platform/main thread is what stops the app from
+  /// freezing for a beat when it's cold-launched (returned to) while the tunnel
+  /// is already up. A serial queue also makes every `statusClient` mutation
+  /// thread-safe.
+  private let statusQueue = DispatchQueue(label: "online.novaproxy.novaClient.status")
+
   private func startStatusClient() {
-    if statusClient != nil { return }
-    ensureLibboxSetup()
-    let options = LibboxCommandClientOptions()
-    options.command = LibboxCommandStatus
-    options.statusInterval = Int64(NSEC_PER_SEC) // one status push per second
-    guard let client = LibboxNewCommandClient(StatusHandler(host: self), options) else { return }
-    statusClient = client
-    // The extension's server may take a beat to bind after the tunnel reports
-    // connected; retry a few times before giving up.
-    connectStatusClient(client, attempt: 0)
+    statusQueue.async { [weak self] in
+      guard let self, self.statusClient == nil else { return }
+      self.ensureLibboxSetup()
+      let options = LibboxCommandClientOptions()
+      options.command = LibboxCommandStatus
+      options.statusInterval = Int64(NSEC_PER_SEC) // one status push per second
+      guard let client = LibboxNewCommandClient(StatusHandler(host: self), options)
+      else { return }
+      self.statusClient = client
+      // The extension's server may take a beat to bind after the tunnel reports
+      // connected; retry a few times before giving up.
+      self.connectStatusClientLocked(client, attempt: 0)
+    }
   }
 
-  private func connectStatusClient(_ client: LibboxCommandClient, attempt: Int) {
-    DispatchQueue.global(qos: .utility).async {
-      do {
-        try client.connect()
-      } catch {
-        guard self.statusClient === client, attempt < 5 else { return }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.6) {
-          self.connectStatusClient(client, attempt: attempt + 1)
-        }
+  /// Runs on `statusQueue`.
+  private func connectStatusClientLocked(_ client: LibboxCommandClient, attempt: Int) {
+    do {
+      try client.connect()
+    } catch {
+      guard statusClient === client, attempt < 5 else { return }
+      statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        guard let self, self.statusClient === client else { return }
+        self.connectStatusClientLocked(client, attempt: attempt + 1)
       }
     }
   }
 
   private func stopStatusClient() {
-    guard let client = statusClient else { return }
-    statusClient = nil
-    try? client.disconnect()
-    emit(["type": "traffic", "up": 0, "down": 0, "upTotal": 0, "downTotal": 0])
+    statusQueue.async { [weak self] in
+      guard let self, let client = self.statusClient else { return }
+      self.statusClient = nil
+      try? client.disconnect()
+      self.emit(["type": "traffic", "up": 0, "down": 0, "upTotal": 0, "downTotal": 0])
+    }
   }
 
   fileprivate func onStatus(_ message: LibboxStatusMessage) {
