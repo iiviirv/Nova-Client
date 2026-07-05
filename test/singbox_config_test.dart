@@ -312,6 +312,28 @@ void main() {
       expect(tags, containsAll(<String>['geoip-ir', 'geosite-ir']));
     });
 
+    test('localRuleSets uses bundled files, never a remote download', () {
+      // Desktop path: a remote rule-set that can\'t be fetched FATALs the core
+      // ("the core did not come up in time" in Iran, where the CDN is blocked),
+      // so the full config must reference on-disk rule-sets instead.
+      final cfg = SingboxConfig.buildMap(
+        vlessNode(),
+        options: const SingboxRouteOptions(localRuleSets: true),
+      );
+      final ruleSets = ((cfg['route'] as Map)['rule_set'] as List).cast<Map>();
+      expect(ruleSets, isNotEmpty);
+      // Every rule-set must be a local file (no startup download that can FATAL).
+      expect(ruleSets.every((r) => r['type'] == 'local'), isTrue);
+      expect(ruleSets.any((r) => r['type'] == 'remote'), isFalse);
+      expect(ruleSets.any((r) => r.containsKey('url')), isFalse);
+      // Paths carry the base token the host swaps for the on-disk directory.
+      expect(
+        ruleSets.every((r) =>
+            (r['path'] as String).contains(SingboxConfig.ruleSetBaseToken)),
+        isTrue,
+      );
+    });
+
     test('build() returns valid JSON', () {
       final json = SingboxConfig.build(vlessNode());
       expect(json, contains('"type": "tun"'));

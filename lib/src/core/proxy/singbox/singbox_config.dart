@@ -13,12 +13,23 @@ class SingboxRouteOptions {
     this.bypassLan = true,
     this.dns = '',
     this.lean = false,
+    this.localRuleSets = false,
   });
 
   final SingboxMode mode;
   final bool blockAds;
   final bool bypassIran;
   final bool bypassLan;
+
+  /// Use the bundled LOCAL rule-set files instead of downloading them at
+  /// startup. sing-box FATALs when a remote rule-set can't be fetched, and the
+  /// CDN it pulls from (raw.githubusercontent.com) is filtered in Iran, so the
+  /// desktop core died with "the core did not come up in time". Desktop ships
+  /// the .srs files and points at them on disk. Only geosite-ir / geosite-ads
+  /// are bundled, so geoip-ir bypass is skipped in this mode (the geosite-ir
+  /// domain list still covers Iranian sites). The lean/iOS path already uses
+  /// local rule-sets by its own branch; this brings the full path in line.
+  final bool localRuleSets;
 
   /// Memory-lean profile for the iOS Network Extension (hard ~50 MB cap):
   /// fewer auto-select nodes, a normal MTU, and no downloaded rule-sets, so the
@@ -31,13 +42,15 @@ class SingboxRouteOptions {
   /// picker: '' / 1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 94.140.14.14.
   final String dns;
 
-  SingboxRouteOptions copyWith({bool? lean}) => SingboxRouteOptions(
+  SingboxRouteOptions copyWith({bool? lean, bool? localRuleSets}) =>
+      SingboxRouteOptions(
         mode: mode,
         blockAds: blockAds,
         bypassIran: bypassIran,
         bypassLan: bypassLan,
         dns: dns,
         lean: lean ?? this.lean,
+        localRuleSets: localRuleSets ?? this.localRuleSets,
       );
 }
 
@@ -449,30 +462,40 @@ class SingboxConfig {
       };
     }
 
+    // Adds the ad-block rule-set, local (bundled) or remote per [o.localRuleSets].
+    void addAds() {
+      rules.add(<String, dynamic>{'rule_set': 'geosite-ads', 'outbound': 'block'});
+      ruleSets.add(o.localRuleSets
+          ? _localRuleSet('geosite-ads', kGeositeAdsFile)
+          : _remoteRuleSet('geosite-ads', _adsRuleSet));
+    }
+
     if (o.mode == SingboxMode.rule) {
       if (o.bypassLan) {
         rules.add(<String, dynamic>{'ip_is_private': true, 'outbound': 'direct'});
       }
-      if (o.blockAds) {
-        rules.add(<String, dynamic>{'rule_set': 'geosite-ads', 'outbound': 'block'});
-        ruleSets.add(_remoteRuleSet('geosite-ads', _adsRuleSet));
-      }
+      if (o.blockAds) addAds();
       if (o.bypassIran) {
-        rules.add(<String, dynamic>{
-          'rule_set': <String>['geoip-ir', 'geosite-ir'],
-          'outbound': 'direct',
-        });
-        ruleSets.add(_remoteRuleSet('geoip-ir', _geoipIr));
-        ruleSets.add(_remoteRuleSet('geosite-ir', _geositeIr));
+        if (o.localRuleSets) {
+          // geoip-ir isn't bundled; bypass Iran by domain only (the geosite-ir
+          // list covers Iranian sites) so nothing has to download at startup.
+          rules.add(
+              <String, dynamic>{'rule_set': 'geosite-ir', 'outbound': 'direct'});
+          ruleSets.add(_localRuleSet('geosite-ir', kGeositeIrFile));
+        } else {
+          rules.add(<String, dynamic>{
+            'rule_set': <String>['geoip-ir', 'geosite-ir'],
+            'outbound': 'direct',
+          });
+          ruleSets.add(_remoteRuleSet('geoip-ir', _geoipIr));
+          ruleSets.add(_remoteRuleSet('geosite-ir', _geositeIr));
+        }
       }
     } else if (o.mode == SingboxMode.global) {
       if (o.bypassLan) {
         rules.add(<String, dynamic>{'ip_is_private': true, 'outbound': 'direct'});
       }
-      if (o.blockAds) {
-        rules.add(<String, dynamic>{'rule_set': 'geosite-ads', 'outbound': 'block'});
-        ruleSets.add(_remoteRuleSet('geosite-ads', _adsRuleSet));
-      }
+      if (o.blockAds) addAds();
     }
 
     final String finalOutbound =
