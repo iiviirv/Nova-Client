@@ -247,14 +247,24 @@ class _TotalCard extends StatelessWidget {
           if (active && samples.isNotEmpty)
             NovaUsageBarChart(values: samples, accent: nova.cyan, height: 120)
           else
-            SizedBox(
-              height: 120,
-              child: Center(
-                child: Text(
+            // Idle: a flat "resting" baseline (a muted row of stubs) reads as
+            // ready-and-waiting, where an empty box just read as broken.
+            Column(
+              children: <Widget>[
+                Opacity(
+                  opacity: 0.4,
+                  child: NovaUsageBarChart(
+                    values: List<double>.filled(28, 0),
+                    accent: nova.muted,
+                    height: 92,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
                   active ? s.statsMeasuring : s.disconnected,
                   style: text.bodySmall?.copyWith(color: nova.muted),
                 ),
-              ),
+              ],
             ),
         ],
       ),
