@@ -325,8 +325,9 @@ class SingboxConfig {
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
     // can flag as "not a browser"; a Chrome uTLS handshake blends in with normal
-    // HTTPS. (This is the client-side half of what Xray-based clients lean on;
-    // the other half, ClientHello fragmentation, isn't in this sing-box build.)
+    // HTTPS. This is the client-side half of what Xray-based clients lean on;
+    // the other half, ClientHello fragmentation, is applied just below (both the
+    // iOS 1.12.x and Android 1.13.x cores now support it).
     // Reality already mandates uTLS, so this just makes every other TLS node
     // match that behaviour.
     final String fingerprint =
