@@ -4,12 +4,12 @@
 
 ### Fast, free, and unrestricted internet, built for Iran.
 
-[![Latest release](https://img.shields.io/github/v/release/iiviirv/nova-app?label=latest&color=7c5cff)](https://github.com/iiviirv/nova-app/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/iiviirv/nova-app/total?color=22c55e)](https://github.com/iiviirv/nova-app/releases)
-[![Platform](https://img.shields.io/badge/platform-iOS%20%C2%B7%20Android%20%C2%B7%20macOS%20%C2%B7%20Windows-3ddc84)](https://github.com/iiviirv/nova-app/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/iiviirv/Nova-Client?label=latest&color=7c5cff)](https://github.com/iiviirv/Nova-Client/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/iiviirv/Nova-Client/total?color=22c55e)](https://github.com/iiviirv/Nova-Client/releases)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%C2%B7%20Android%20%C2%B7%20macOS%20%C2%B7%20Windows-3ddc84)](https://github.com/iiviirv/Nova-Client/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](https://github.com/SagerNet/sing-box/blob/main/LICENSE)
 
-**[⬇️ Download the latest version](https://github.com/iiviirv/nova-app/releases/latest)**
+**[⬇️ Download the latest version](https://github.com/iiviirv/Nova-Client/releases/latest)**
 
 </div>
 
@@ -25,10 +25,10 @@ Nova is designed for difficult networks. It bundles the anti-censorship tools pe
 
 | Platform | How to get it |
 | --- | --- |
-| **Android** | Download the APK from the [latest release](https://github.com/iiviirv/nova-app/releases/latest), `arm64-v8a` for most phones, or `universal` if unsure. |
-| **iPhone / iPad** | Via **TestFlight**, ask for an invite. (In Iran, install the TestFlight app and accept the invite with a non-Iranian Apple ID, Apple blocks its services in Iran.) |
-| **macOS** | Download **`Nova-macOS.zip`** from the [latest release](https://github.com/iiviirv/nova-app/releases/latest), unzip, and open `nova_client.app` (right-click → Open the first time). |
-| **Windows** | Build from source: see [WINDOWS_BUILD.md](https://github.com/iiviirv/nova-app/blob/main/WINDOWS_BUILD.md) (clone the branch, then `flutter build windows`). No admin needed at runtime. |
+| **Android** | Download the APK from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest). One `arm64` build, it covers essentially every phone from the last several years. |
+| **iPhone / iPad** | Via **TestFlight**: [join link](https://testflight.apple.com/join/bxfK3MyF). (In Iran, install the TestFlight app and accept the invite with a non-Iranian Apple ID, Apple blocks its services in Iran.) |
+| **macOS** (Apple Silicon) | Download the macOS zip from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest), unzip, and open `nova_client.app` (right-click, then Open, the first time). |
+| **Windows** (64-bit) | Download `Nova-Windows.zip` from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest), unzip anywhere, and run `nova_client.exe`. No admin needed. |
 
 The iPhone, macOS and Windows apps share one codebase; Android is a dedicated native build. All of them run the same sing-box core.
 
@@ -82,19 +82,14 @@ The iPhone, macOS and Windows apps share one codebase; Android is a dedicated na
 
 ## Getting started
 
-1. **Download and install.** Grab the APK from the [Releases page](https://github.com/iiviirv/nova-app/releases/latest). Most phones should use `arm64-v8a`; if that does not install, use `universal`. You may need to allow installing apps from your browser or file manager.
+1. **Download and install.** Grab the `arm64` APK from the [Releases page](https://github.com/iiviirv/Nova-Client/releases/latest). You may need to allow installing apps from your browser or file manager.
 2. **Add a connection.** Either paste a subscription link you already have, or open the Cloudflare section and deploy your own private worker.
 3. **Connect.** Tap the Nova logo on the home screen. Android will ask once for VPN permission; allow it.
 4. **Tune it (optional).** Open Radar to find faster IPs, or Settings to turn on TLS fragmenting, WARP, secure DNS, and per-app proxy.
 
 ## Which file should I download
 
-| File | Use it for |
-| --- | --- |
-| `arm64-v8a` | Most phones from the last several years (recommended) |
-| `armeabi-v7a` | Older 32-bit phones |
-| `x86_64` | Emulators and some tablets / Chromebooks |
-| `universal` | Works on everything, but the file is larger |
+Android ships a single **`arm64`** APK, which runs on essentially every phone from the last several years, so there is nothing to choose. For desktop, grab the macOS zip (Apple Silicon) or `Nova-Windows.zip` (64-bit Windows) from the latest release.
 
 ## Privacy
 
@@ -118,7 +113,7 @@ Nova is built on [sing-box](https://github.com/SagerNet/sing-box) and is release
 
 ### اینترنت سریع، رایگان و بدون محدودیت، ساخته‌شده برای ایران.
 
-**[⬇️ دانلود آخرین نسخه](https://github.com/iiviirv/nova-app/releases/latest)**
+**[⬇️ دانلود آخرین نسخه](https://github.com/iiviirv/Nova-Client/releases/latest)**
 
 </div>
 
@@ -132,10 +127,10 @@ Nova is built on [sing-box](https://github.com/SagerNet/sing-box) and is release
 
 | پلتفرم | روش دریافت |
 | --- | --- |
-| **اندروید** | فایل APK را از [آخرین انتشار](https://github.com/iiviirv/nova-app/releases/latest) بگیرید (برای بیشتر گوشی‌ها `arm64-v8a`). |
-| **آیفون / آیپد** | از طریق **TestFlight** (درخواست دعوت). در ایران، اپ TestFlight را نصب کرده و دعوت را با Apple ID غیرایرانی بپذیرید. |
-| **مک** | فایل **`Nova-macOS.zip`** را از [آخرین انتشار](https://github.com/iiviirv/nova-app/releases/latest) دانلود و باز کنید و `nova_client.app` را اجرا کنید. |
-| **ویندوز** | از روی منبع بسازید: [WINDOWS_BUILD.md](https://github.com/iiviirv/nova-app/blob/main/WINDOWS_BUILD.md). |
+| **اندروید** | فایل APK را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) بگیرید. یک نسخه‌ی `arm64` که تقریباً همه‌ی گوشی‌های چند سال اخیر را پوشش می‌دهد. |
+| **آیفون / آیپد** | از طریق **TestFlight**: [لینک عضویت](https://testflight.apple.com/join/bxfK3MyF). در ایران، اپ TestFlight را نصب کرده و دعوت را با Apple ID غیرایرانی بپذیرید. |
+| **مک** (Apple Silicon) | فایل زیپ مک را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) دانلود و باز کنید و `nova_client.app` را اجرا کنید (بار اول راست‌کلیک و سپس Open). |
+| **ویندوز** (۶۴ بیتی) | فایل `Nova-Windows.zip` را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) دانلود کنید، از حالت فشرده خارج کرده و `nova_client.exe` را اجرا کنید. بدون نیاز به دسترسی مدیر. |
 
 نسخه‌های آیفون، مک و ویندوز یک کدِ مشترک دارند؛ اندروید نسخه‌ی native اختصاصی است. همه از هسته‌ی sing-box استفاده می‌کنند.
 
@@ -191,19 +186,14 @@ Nova is built on [sing-box](https://github.com/SagerNet/sing-box) and is release
 
 ## شروع به کار
 
-1. **دانلود و نصب.** فایل APK را از [صفحه انتشارها](https://github.com/iiviirv/nova-app/releases/latest) بگیرید. بیشتر گوشی‌ها باید از `arm64-v8a` استفاده کنند؛ اگر نصب نشد، از `universal` استفاده کنید. ممکن است لازم باشد نصب از مرورگر یا فایل‌منیجر را اجازه دهید.
+1. **دانلود و نصب.** فایل APK نسخه‌ی `arm64` را از [صفحه انتشارها](https://github.com/iiviirv/Nova-Client/releases/latest) بگیرید. ممکن است لازم باشد نصب از مرورگر یا فایل‌منیجر را اجازه دهید.
 2. **افزودن اتصال.** یا لینک اشتراکی که دارید را بچسبانید، یا بخش کلودفلر را باز کنید و ورکر خصوصی خود را بسازید.
 3. **اتصال.** لوگوی نووا را در صفحه اصلی لمس کنید. اندروید یک‌بار اجازه وی‌پی‌ان می‌خواهد؛ آن را تأیید کنید.
 4. **تنظیم دلخواه (اختیاری).** رادار را باز کنید تا آی‌پی‌های سریع‌تر پیدا کنید، یا تنظیمات را باز کنید تا قطعه‌قطعه‌کردن TLS، WARP، DNS امن و پراکسی هر برنامه را روشن کنید.
 
 ## کدام فایل را دانلود کنم
 
-| فایل | برای چه کسی |
-| --- | --- |
-| `arm64-v8a` | بیشتر گوشی‌های چند سال اخیر (پیشنهادی) |
-| `armeabi-v7a` | گوشی‌های قدیمی‌تر ۳۲ بیتی |
-| `x86_64` | شبیه‌سازها و برخی تبلت‌ها و کروم‌بوک‌ها |
-| `universal` | روی همه کار می‌کند، اما حجم فایل بیشتر است |
+اندروید فقط یک نسخه‌ی **`arm64`** دارد که روی تقریباً همه‌ی گوشی‌های چند سال اخیر اجرا می‌شود، پس چیزی برای انتخاب نیست. برای دسکتاپ، زیپ مک (Apple Silicon) یا `Nova-Windows.zip` (ویندوز ۶۴ بیتی) را از آخرین انتشار بگیرید.
 
 ## حریم خصوصی
 
