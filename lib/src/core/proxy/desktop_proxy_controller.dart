@@ -210,24 +210,45 @@ class DesktopProxyController extends ProxyController {
     return dir.path.replaceAll(r'\', '/');
   }
 
-  /// Extract the bundled core binary to a writable, executable path (cached).
+  /// Copy the bundled core binary to a writable, executable path (cached).
+  ///
+  /// The core is shipped next to the app executable (see [_bundledBinary]), not
+  /// inside Flutter assets, so it isn't dead weight in the mobile builds. We copy
+  /// it into the app-support dir and run it from there (a stable, writable path,
+  /// and it keeps the app bundle read-only).
   Future<String> _ensureBinary() async {
-    final String asset = _assetName();
+    final File src = _bundledBinary();
+    if (!src.existsSync()) {
+      throw 'Bundled sing-box core not found at ${src.path}';
+    }
     final Directory dir = await getApplicationSupportDirectory();
     final String exe = Platform.isWindows ? 'sing-box.exe' : 'sing-box';
     final File out = File('${dir.path}/$exe');
-    final ByteData data = await rootBundle.load('assets/bin/$asset');
-    final int wantLen = data.lengthInBytes;
-    if (!out.existsSync() || out.lengthSync() != wantLen) {
-      await out.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, wantLen),
-        flush: true,
-      );
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
       if (!Platform.isWindows) {
         await Process.run('chmod', <String>['+x', out.path]);
       }
     }
     return out.path;
+  }
+
+  /// Locates the core binary shipped alongside the app executable:
+  /// macOS `Nova.app/Contents/Resources/`, Windows next to `nova_client.exe`.
+  /// Falls back to the repo `assets/bin/` path when running from source
+  /// (`flutter run`), where the executable lives in the build tree.
+  File _bundledBinary() {
+    final String name = _assetName();
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    if (Platform.isMacOS) {
+      // .../Contents/MacOS/<exe> -> .../Contents/Resources/<name>
+      final File f = File('${exeDir.parent.path}/Resources/$name');
+      if (f.existsSync()) return f;
+    } else if (Platform.isWindows) {
+      final File f = File('${exeDir.path}\\$name');
+      if (f.existsSync()) return f;
+    }
+    return File('assets/bin/$name');
   }
 
   String _assetName() {
