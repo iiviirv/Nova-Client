@@ -85,7 +85,9 @@ class SingboxConfig {
         _outbound(node),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
-        <String, dynamic>{'type': 'dns', 'tag': 'dns-out'},
+        // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
+        // core). DNS is hijacked to the DNS module via a route rule action
+        // instead (see _route), which works on both 1.12 (iOS) and 1.13.
       ],
       'route': _route(options, blockQuic: !node.protocol.isUdpNative),
     };
@@ -172,7 +174,8 @@ class SingboxConfig {
         ...nodeOutbounds,
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
-        <String, dynamic>{'type': 'dns', 'tag': 'dns-out'},
+        // No 'dns' outbound (removed in sing-box 1.13); DNS is hijacked via a
+        // route rule action instead (see _route).
       ],
       // If any exit in the pool is UDP-native (Hysteria2/TUIC), let QUIC flow;
       // otherwise (an all-worker pool) keep blocking it so apps fall back to TCP.
@@ -382,7 +385,10 @@ class SingboxConfig {
 
   static Map<String, dynamic> _route(SingboxRouteOptions o, {bool blockQuic = true}) {
     final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[
-      <String, dynamic>{'protocol': 'dns', 'outbound': 'dns-out'},
+      // Hijack sniffed DNS to the DNS module. The old form routed to a 'dns'
+      // outbound, which sing-box 1.13 removed; the 'hijack-dns' rule action is
+      // the supported replacement (valid on 1.11+/1.12/1.13).
+      <String, dynamic>{'protocol': 'dns', 'action': 'hijack-dns'},
       // Nova's own Cloudflare management calls (panel deploy, KV, etc.) must go
       // direct: routing them through the proxy fails because Cloudflare loop-
       // protects requests coming back through a CF-worker exit ("Failed host
