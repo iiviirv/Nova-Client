@@ -163,7 +163,7 @@ class SingboxProxyController extends ProxyController {
       notifyListeners();
       return;
     } catch (e) {
-      _lastError = 'Could not load subscription: $e';
+      _lastError = _subscriptionErrorMessage(e);
       _state = ProxyConnectionState.error;
       notifyListeners();
       return;
@@ -184,12 +184,30 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
+  /// Turns a subscription-fetch failure into something the user can act on. A
+  /// timeout or socket error almost always means the subscription URL is being
+  /// filtered on this network (common in Iran, where the worker's *.workers.dev
+  /// domain is blocked), not that the config itself is broken.
+  String _subscriptionErrorMessage(Object e) {
+    final String s = e.toString().toLowerCase();
+    final bool networky = s.contains('timed out') ||
+        s.contains('socketexception') ||
+        s.contains('failed host lookup') ||
+        s.contains('connection');
+    if (networky) {
+      return "Couldn't reach your subscription. This network may be blocking "
+          'it (common in Iran). Try mobile data or another network, or connect '
+          'through a working config first, then refresh.';
+    }
+    return 'Could not load subscription: $e';
+  }
+
   void _armWatchdog() {
     _watchdog?.cancel();
     _watchdog = Timer(_connectTimeout, () {
       if (_state == ProxyConnectionState.connecting) {
         _lastError = 'The tunnel did not come up in time. The server may be '
-            'unreachable — try another config or scan a clean IP in Radar.';
+            'unreachable, try another config or scan a clean IP in Radar.';
         _state = ProxyConnectionState.error;
         notifyListeners();
       }
