@@ -197,7 +197,8 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       guard let self, self.statusClient == nil else { return }
       self.ensureLibboxSetup()
       let options = LibboxCommandClientOptions()
-      options.command = LibboxCommandStatus
+      // 1.13 replaced the single `command` field with a command list.
+      options.addCommand(LibboxCommandStatus)
       options.statusInterval = Int64(NSEC_PER_SEC) // one status push per second
       guard let client = LibboxNewCommandClient(StatusHandler(host: self), options)
       else { return }
@@ -281,7 +282,10 @@ private final class StatusHandler: NSObject, LibboxCommandClientHandlerProtocol 
   func clearLogs() {}
   func initializeClashMode(_ modeList: LibboxStringIteratorProtocol?, currentMode: String?) {}
   func updateClashMode(_ newMode: String?) {}
-  func write(_ message: LibboxConnections?) {}
+  func write(_ events: LibboxConnectionEvents?) {}
   func writeGroups(_ message: LibboxOutboundGroupIteratorProtocol?) {}
-  func writeLogs(_ messageList: LibboxStringIteratorProtocol?) {}
+  func writeLogs(_ messageList: LibboxLogIteratorProtocol?) {}
+  // Added in sing-box 1.13's command-client handler; we drive log level from the
+  // config, so this is a no-op.
+  func setDefaultLogLevel(_ level: Int32) {}
 }
