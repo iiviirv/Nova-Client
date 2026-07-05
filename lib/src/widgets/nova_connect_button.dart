@@ -28,7 +28,9 @@ class NovaConnectButton extends StatelessWidget {
     final visual = NovaConnectVisual.of(state, nova);
     final bool connected = state.isActive;
     final bool busy = state.isBusy;
-    final double halo = size * 1.28;
+    // A tighter halo than before — a soft seat that sets the button off from
+    // the bar without the big consumer-app glow.
+    final double halo = size * 1.16;
 
     return Semantics(
       button: true,
@@ -46,22 +48,30 @@ class NovaConnectButton extends StatelessWidget {
           transformAlignment: Alignment.center,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            color: visual.accent.withValues(alpha: 0.10),
+            shape: BoxShape.circle,
+            color: nova.bg,
+            border: Border.all(color: nova.border, width: 1),
           ),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             width: size,
             height: size,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              // A true circle reads as a proper power control; the crisp inner
+              // hairline gives the gradient a defined edge (an enterprise
+              // detail) rather than bleeding into the glow.
+              shape: BoxShape.circle,
               gradient: visual.linear(),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.16),
+                width: 1,
+              ),
               boxShadow: <BoxShadow>[
                 BoxShadow(
-                  color: visual.accent.withValues(alpha: 0.22),
-                  blurRadius: 14,
+                  color: visual.accent.withValues(alpha: 0.26),
+                  blurRadius: 16,
                   offset: const Offset(0, 6),
-                  spreadRadius: -6,
+                  spreadRadius: -8,
                 ),
               ],
             ),
