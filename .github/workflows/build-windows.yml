@@ -43,6 +43,11 @@ jobs:
       - name: Bundle sing-box core next to the app
         run: Copy-Item assets/bin/sing-box-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
 
+      # wintun.dll is required for TUN (full-device) mode; sing-box loads it from
+      # beside the core. Proxy mode (the default) doesn't need it.
+      - name: Bundle wintun.dll next to the app
+        run: Copy-Item assets/bin/wintun.dll -Destination build/windows/x64/runner/Release/ -Force
+
       - name: Package Nova-Windows.zip
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Nova-Windows.zip
 

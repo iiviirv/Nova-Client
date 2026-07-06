@@ -280,7 +280,31 @@ class DesktopProxyController extends ProxyController {
         await Process.run('chmod', <String>['+x', out.path]);
       }
     }
+    if (Platform.isWindows) {
+      // TUN (full-device) mode on Windows needs wintun.dll beside the core, or
+      // sing-box fails to create the tunnel. Ship it next to the exe (the CI
+      // packages it) and mirror it into the run dir. Proxy mode doesn't use it,
+      // so a missing dll only affects TUN mode.
+      await _ensureWintun(dir);
+    }
     return out.path;
+  }
+
+  /// Copies the bundled `wintun.dll` next to the running core (Windows only).
+  /// Best-effort: if the dll isn't found (e.g. running from source without it),
+  /// proxy mode still works and TUN mode surfaces its own error.
+  Future<void> _ensureWintun(Directory dir) async {
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    final File src = <File>[
+      File('${exeDir.path}\\wintun.dll'),
+      File('assets/bin/wintun.dll'),
+    ].firstWhere((File f) => f.existsSync(),
+        orElse: () => File('${exeDir.path}\\wintun.dll'));
+    if (!src.existsSync()) return;
+    final File out = File('${dir.path}/wintun.dll');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+    }
   }
 
   /// Locates the core binary shipped alongside the app executable:
