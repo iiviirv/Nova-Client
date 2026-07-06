@@ -162,19 +162,19 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   /// Best-effort exit IP + country over HTTPS, trying providers in turn. The
-  /// **non-Cloudflare** providers come first on purpose: the two popular ones
-  /// (ipwho.is, api.ip.sb) sit behind Cloudflare, and a Nova worker exit can't
-  /// relay to Cloudflare's own hosts (loop protection), so through the tunnel
-  /// they simply fail and the country stayed blank. ifconfig.co / ipinfo /
-  /// freeipapi are off-Cloudflare and resolve the real exit; the Cloudflare ones
-  /// stay as a fallback for non-worker exits. The successful request's
-  /// round-trip back-fills a coarse ping. Field names differ per provider, so
-  /// the parse is tolerant. (ip-api is skipped: cleartext, blocked on a modern
-  /// SDK.)
+  /// **non-Cloudflare** provider comes first on purpose: a Nova exit is a
+  /// Cloudflare Worker, and a Worker can't relay to Cloudflare's own hosts (loop
+  /// protection), so any CF-fronted geo API just fails through the tunnel and the
+  /// country stayed blank. Most geo APIs now sit behind Cloudflare (ifconfig.co,
+  /// freeipapi, ipwho.is, api.ip.sb, ipapi.co ... all resolve to 104.x/172.6x);
+  /// ipinfo.io is the reliable off-Cloudflare one (Google Cloud), so it leads.
+  /// The CF ones stay as fallbacks for non-worker exits. The successful request's
+  /// round-trip back-fills a coarse ping. Field names differ per provider, so the
+  /// parse is tolerant. (ip-api is skipped: cleartext, blocked on a modern SDK.)
   Future<ConnInfo?> _fetchGeo() async {
     const List<String> urls = <String>[
-      'https://ifconfig.co/json',
       'https://ipinfo.io/json',
+      'https://ifconfig.co/json',
       'https://freeipapi.com/api/json',
       'https://ipwho.is/',
       'https://api.ip.sb/geoip',

@@ -301,6 +301,12 @@ class SingboxProxyController extends ProxyController {
     final SingboxRouteOptions opts = routeOptions.copyWith(
       lean: Platform.isIOS,
       localRuleSets: Platform.isAndroid,
+      // Android's VpnService uses the gvisor stack (userspace TCP, clamped MSS),
+      // like iOS. The system stack forwards raw IP and doesn't clamp MSS, which
+      // the code comment on the inbound documents as dropping large packets on a
+      // constrained full-device TUN. Desktop keeps the system stack (its host
+      // clamps fine). tlsFragment stays ON (Iran anti-DPI).
+      gvisorStack: Platform.isAndroid,
     );
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
@@ -366,18 +372,33 @@ class SingboxProxyController extends ProxyController {
   /// device TUN, so the app's own request egresses through the tunnel: a
   /// reachable 204 means the exit genuinely works, a timeout means it's dead.
   Future<bool> _probeInternet() async {
+    // NON-Cloudflare 204 endpoints on purpose: the Nova exit is usually a
+    // Cloudflare Worker, and a Worker can't relay to Cloudflare's own hosts
+    // (loop protection), so cp.cloudflare.com always fails through the tunnel and
+    // made this health check read every pinned exit as dead. gstatic/google are
+    // off-Cloudflare and resolve to the working v4 path. Mirrors ConnInfo._probe.
+    const List<String> urls = <String>[
+      'https://www.gstatic.com/generate_204',
+      'https://connectivitycheck.gstatic.com/generate_204',
+      'https://www.google.com/generate_204',
+    ];
     for (int attempt = 0; attempt < 2; attempt++) {
       final HttpClient client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 4);
       try {
-        final HttpClientRequest req = await client
-            .getUrl(Uri.parse('http://cp.cloudflare.com/generate_204'));
-        final HttpClientResponse resp =
-            await req.close().timeout(const Duration(seconds: 5));
-        await resp.drain<void>();
-        if (resp.statusCode == 204 || resp.statusCode == 200) return true;
-      } catch (_) {
-        // Unreachable or timed out; try once more, then treat as dead.
+        for (final String url in urls) {
+          try {
+            final HttpClientRequest req =
+                await client.getUrl(Uri.parse(url));
+            req.followRedirects = false;
+            final HttpClientResponse resp =
+                await req.close().timeout(const Duration(seconds: 5));
+            await resp.drain<void>();
+            if (resp.statusCode >= 200 && resp.statusCode < 400) return true;
+          } catch (_) {
+            // Try the next endpoint.
+          }
+        }
       } finally {
         client.close(force: true);
       }

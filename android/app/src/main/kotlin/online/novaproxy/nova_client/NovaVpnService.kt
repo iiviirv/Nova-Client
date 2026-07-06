@@ -61,7 +61,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopBox()
+            stopBox(startId)
             return START_NOT_STICKY
         }
         val config = intent?.getStringExtra(EXTRA_CONFIG)
@@ -103,9 +103,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun stopBox() {
+    private fun stopBox(stopStartId: Int = -1) {
         if (!running && commandServer == null) {
-            stopSelf()
+            stopSelfSafely(stopStartId)
             return
         }
         running = false
@@ -113,8 +113,18 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         Thread {
             cleanup()
             NovaProxyBridge.emitState("disconnected")
-            stopSelf()
+            stopSelfSafely(stopStartId)
         }.start()
+    }
+
+    /// Stop this service instance without killing a restart that raced in behind
+    /// us. A "switch server" is stop-then-start; the stop runs cleanup on a
+    /// background thread and, when it finished, an unconditional stopSelf() would
+    /// tear down the *new* tunnel the restart had already established (onDestroy
+    /// closes the fresh command server). stopSelf(startId) only stops if no newer
+    /// start command has arrived, so the restart survives.
+    private fun stopSelfSafely(stopStartId: Int) {
+        if (stopStartId >= 0) stopSelf(stopStartId) else stopSelf()
     }
 
     private fun cleanup() {
