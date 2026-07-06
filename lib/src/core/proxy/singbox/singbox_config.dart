@@ -165,14 +165,23 @@ class SingboxConfig {
     // 12 is still plenty for the urltest to find a fast exit; roomier hosts
     // (desktop/Android) use the full budget.
     final int cap = options.lean ? 12 : kMaxAutoNodes;
-    // Drop transports the sing-box core can't carry (xhttp / SplitHTTP is Xray
-    // only) so they don't sit in the urltest pool as dead exits that Auto might
-    // pick. If that leaves nothing, fall through to the single-node path below,
-    // which surfaces a clear "no usable node" rather than a broken tunnel.
+    // Drop transports the sing-box core can't carry at all (xhttp / SplitHTTP is
+    // Xray only) so they never sit in the urltest pool as dead exits.
     final List<ProxyNode> usable =
         nodes.where((ProxyNode n) => n.network != 'xhttp').toList();
+    // gRPC is a softer case: sing-box speaks standard gRPC (a real external gRPC
+    // server works), but the Nova worker's gRPC is Xray "gun" framing that
+    // sing-box can't talk to, so Nova gRPC nodes fail to connect. We can't tell
+    // the two apart, so instead of dropping gRPC we push it to the back: Auto
+    // fills its pool with ws/Trojan first (and never opens on a dead gRPC node),
+    // while a sub that is *only* gRPC still gets used. Order within each group is
+    // preserved, so the caller's ping ranking still holds.
+    final List<ProxyNode> ordered = <ProxyNode>[
+      ...usable.where((ProxyNode n) => n.network != 'grpc'),
+      ...usable.where((ProxyNode n) => n.network == 'grpc'),
+    ];
     final List<ProxyNode> picked =
-        _dedupe(usable.isEmpty ? nodes : usable).take(cap).toList();
+        _dedupe(ordered.isEmpty ? nodes : ordered).take(cap).toList();
     if (picked.length <= 1) {
       return buildMap(
         picked.isEmpty ? nodes.first : picked.first,
