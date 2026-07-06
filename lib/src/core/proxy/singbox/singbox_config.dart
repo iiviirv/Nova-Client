@@ -165,7 +165,14 @@ class SingboxConfig {
     // 12 is still plenty for the urltest to find a fast exit; roomier hosts
     // (desktop/Android) use the full budget.
     final int cap = options.lean ? 12 : kMaxAutoNodes;
-    final List<ProxyNode> picked = _dedupe(nodes).take(cap).toList();
+    // Drop transports the sing-box core can't carry (xhttp / SplitHTTP is Xray
+    // only) so they don't sit in the urltest pool as dead exits that Auto might
+    // pick. If that leaves nothing, fall through to the single-node path below,
+    // which surfaces a clear "no usable node" rather than a broken tunnel.
+    final List<ProxyNode> usable =
+        nodes.where((ProxyNode n) => n.network != 'xhttp').toList();
+    final List<ProxyNode> picked =
+        _dedupe(usable.isEmpty ? nodes : usable).take(cap).toList();
     if (picked.length <= 1) {
       return buildMap(
         picked.isEmpty ? nodes.first : picked.first,
@@ -437,6 +444,22 @@ class SingboxConfig {
         return <String, dynamic>{
           'type': 'grpc',
           'service_name': n.grpcServiceName ?? '',
+        };
+      case 'http':
+        // HTTP/2 transport. sing-box takes `host` as a list and needs TLS/ALPN
+        // h2 (handled by the tls block). Previously this fell through to null,
+        // so h2 nodes silently built as plain TCP and never connected.
+        return <String, dynamic>{
+          'type': 'http',
+          if (n.wsHost != null && n.wsHost!.isNotEmpty)
+            'host': <String>[n.wsHost!],
+          'path': n.wsPath ?? '/',
+        };
+      case 'httpupgrade':
+        return <String, dynamic>{
+          'type': 'httpupgrade',
+          if (n.wsHost != null && n.wsHost!.isNotEmpty) 'host': n.wsHost,
+          'path': n.wsPath ?? '/',
         };
       default:
         return null;
