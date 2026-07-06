@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -58,9 +60,11 @@ class SettingsController extends ChangeNotifier {
   String get dns => _dns;
 
   /// Desktop only: route the whole machine through a TUN device (needs one
-  /// admin/UAC approval) instead of just setting the OS proxy. Off by default so
-  /// the unprivileged path stays the no-friction default.
-  bool _tunMode = false;
+  /// admin/UAC approval) instead of just setting the OS proxy. Defaults ON for
+  /// desktop so every app on the device is proxied (full-device VPN), matching
+  /// what mobile already does; the user can turn it off in Routing to fall back
+  /// to the unprivileged OS-proxy path. Mobile ignores this (it is always TUN).
+  bool _tunMode = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   bool get tunMode => _tunMode;
 
   /// The options the proxy controllers build the next config with.
@@ -86,7 +90,8 @@ class SettingsController extends ChangeNotifier {
     _bypassIran = p.getBool(_kBypassIran) ?? true;
     _bypassLan = p.getBool(_kBypassLan) ?? true;
     _dns = p.getString(_kDns) ?? '';
-    _tunMode = p.getBool(_kTunMode) ?? false;
+    _tunMode = p.getBool(_kTunMode) ??
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
   }
 
   void attachPrefs(SharedPreferences prefs) {
