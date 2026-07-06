@@ -49,7 +49,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       throw err ?? NSError(domain: "Nova", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create command server"])
     }
     try server.start()
-    try server.startOrReloadService(config, options: nil)
+    // Pass a real (empty) options object, NOT nil: despite the ObjC param being
+    // marked nullable, libbox 1.13's StartOrReloadService dereferences it
+    // (options.AutoRedirect) with no nil check, so nil panics the extension and
+    // the tunnel never comes up.
+    try server.startOrReloadService(config, options: LibboxOverrideOptions())
     commandServer = server
   }
 

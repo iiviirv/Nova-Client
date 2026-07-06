@@ -523,12 +523,28 @@ class _ResultTile extends StatelessWidget {
           ),
           const SizedBox(width: NovaSpace.md),
           Expanded(
-            child: Text(result.hostPort,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures()
-                      ],
-                    )),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(result.hostPort,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures()
+                          ],
+                        )),
+                // Stability signal behind the ranking: jitter (latency spread)
+                // and packet loss, matching the panel's Radar columns.
+                Text(
+                  '${NovaStrings.of(context).radarJitter} ${result.jitterMs} ms'
+                  ',  ${result.lossPct}% ${NovaStrings.of(context).radarLoss}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: nova.muted),
+                ),
+              ],
+            ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,

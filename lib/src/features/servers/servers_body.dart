@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_pill.dart';
 import '../../core/proxy/subscription.dart';
+import '../../core/proxy/proxy_controller.dart';
 import '../../widgets/nova_scope.dart';
 import '../profiles/profiles_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
@@ -125,14 +127,23 @@ class _ServersBodyState extends State<ServersBody> {
     );
   }
 
-  /// Make [p] the active config used for the next connect.
+  /// Make [p] the active config. If the tunnel is already up, hot-swap to it in
+  /// one step (disconnect + reconnect through the new server) so the user does
+  /// not have to manually disconnect and reconnect. reconnect() is a no-op when
+  /// idle, so selecting a server while disconnected just sets it for next time.
   void _select(BuildContext context, ProxyProfile p) {
     final scope = NovaScope.of(context);
     scope.profiles.setActive(p.id);
     scope.proxy.selectProfile(p);
+    final bool switching = scope.proxy.state.isActive ||
+        scope.proxy.state == ProxyConnectionState.connecting;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Using ${p.name}'), duration: const Duration(seconds: 1)),
+      SnackBar(
+        content: Text(switching ? 'Switching to ${p.name}' : 'Using ${p.name}'),
+        duration: const Duration(seconds: 1),
+      ),
     );
+    if (switching) unawaited(scope.proxy.reconnect());
   }
 
   /// Edit a profile's name and URL/link in place.

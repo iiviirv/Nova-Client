@@ -67,12 +67,30 @@ class ScanResult {
     required this.port,
     required this.link,
     required this.latencyMs,
-  });
+    this.jitterMs = 0,
+    this.lossPct = 0,
+    double? score,
+  }) : score = score ?? (latencyMs + jitterMs * 0.5 + lossPct * 20);
 
   final String ip;
   final int port;
   final String link;
+
+  /// Average latency across the probes that answered, in milliseconds.
   final int latencyMs;
+
+  /// Spread between the fastest and slowest answering probe (max - min), in ms.
+  /// High jitter means an unstable exit even if its average looks quick.
+  final int jitterMs;
+
+  /// Percentage of probes that got no answer (0-100). A low-latency IP that
+  /// drops packets is worse than a slightly slower one that never does.
+  final int lossPct;
+
+  /// Composite quality score, lower is better: `latency + jitter*0.5 + loss*20`.
+  /// This matches the Nova panel's Radar so both rank clean IPs the same way,
+  /// favouring stable exits over ones that merely handshake fast.
+  final double score;
 
   String get hostPort => '$ip:$port';
 }

@@ -43,6 +43,14 @@ class TrafficStats {
 /// Keeping the UI behind this abstraction means screens are built and reviewed
 /// against [MockProxyController] today and switch to the real core by swapping
 /// a single instance, with no UI changes.
+/// A user-facing event the controller wants the UI to announce. Kept as a code
+/// so the app shell can render it in the current app language.
+enum ProxyNotice {
+  /// A manually pinned server was dead, so Nova failed over to the fastest
+  /// working one.
+  failoverToWorkingServer,
+}
+
 abstract class ProxyController extends ChangeNotifier {
   ProxyConnectionState get state;
   TrafficStats get traffic;
@@ -50,6 +58,19 @@ abstract class ProxyController extends ChangeNotifier {
 
   /// Human-readable error from the last failed connection attempt, if any.
   String? get lastError;
+
+  /// Transient, user-facing notices the controller wants surfaced (for example,
+  /// an automatic failover to a working server). The app shell listens, maps the
+  /// code to a localized string, shows a snackbar, then resets it to null. It is
+  /// a code (not a string) so the message follows the app language. Kept separate
+  /// from [lastError] so an informational message doesn't read as a failure.
+  final ValueNotifier<ProxyNotice?> notice = ValueNotifier<ProxyNotice?>(null);
+
+  /// Optional hook the app wires so the controller can persist a profile it had
+  /// to mutate on its own, e.g. clearing a dead pinned exit during auto-failover
+  /// so the Servers list stops showing the dead server as selected. Without this
+  /// the change would live only in memory and the UI would look out of sync.
+  Future<void> Function(ProxyProfile profile)? persistProfile;
 
   /// When the tunnel last became active, used by the dashboard's uptime timer.
   /// Maintained centrally by observing [state] on every notification so the
