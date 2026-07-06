@@ -45,6 +45,10 @@ Future<void> main() async {
   // The host builds each config from the user's live routing/DNS choices.
   proxy.routeOptionsProvider = () => settings.routeOptions;
 
+  // Let the controller persist a profile it mutates itself (clearing a dead
+  // pinned exit during auto-failover) so the Servers list reflects the switch.
+  proxy.persistProfile = (profile) async => profiles.update(profile);
+
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.
   if (proxy is DesktopProxyController) {
     proxy.tunModeProvider = () => settings.tunMode;

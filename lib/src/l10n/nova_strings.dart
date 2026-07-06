@@ -26,6 +26,18 @@ class NovaStrings {
     return table[id] ?? _en[id] ?? id;
   }
 
+  // ---- Notices ----
+  /// Shown when a manually pinned server turns out to be dead and Nova
+  /// auto-switches to the fastest working one.
+  String get failoverSwitched => t('notice.failoverSwitched');
+
+  // ---- Radar ----
+  /// Short label for a clean IP's latency variance in the results list.
+  String get radarJitter => t('radar.jitter');
+
+  /// Short label for a clean IP's packet loss in the results list.
+  String get radarLoss => t('radar.loss');
+
   // ---- Navigation ----
   String get navDashboard => t('nav.dashboard');
   String get navProfiles => t('nav.profiles');
@@ -131,6 +143,10 @@ class NovaStrings {
   String get testing => t('common.testing');
 
   static const Map<String, String> _en = <String, String>{
+    'notice.failoverSwitched':
+        'That server was not responding, so Nova switched to the fastest working one.',
+    'radar.jitter': 'jitter',
+    'radar.loss': 'loss',
     'nav.dashboard': 'Home',
     'nav.profiles': 'Profiles',
     'nav.servers': 'Servers',
@@ -227,6 +243,10 @@ class NovaStrings {
   };
 
   static const Map<String, String> _fa = <String, String>{
+    'notice.failoverSwitched':
+        'این سرور پاسخ نمی‌داد؛ Nova به سریع‌ترین سرور فعال تغییر کرد.',
+    'radar.jitter': 'جیتر',
+    'radar.loss': 'افت',
     'nav.dashboard': 'خانه',
     'nav.profiles': 'پروفایل‌ها',
     'nav.servers': 'سرورها',

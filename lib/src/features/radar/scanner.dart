@@ -131,7 +131,9 @@ class NovaScanner {
   }
 
   List<ScanResult> _finish(List<ScanResult> results) {
-    results.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
+    // Rank by the composite quality score (latency + jitter + loss), matching
+    // the panel's Radar, rather than raw handshake latency.
+    results.sort((a, b) => a.score.compareTo(b.score));
     _alive = results.length;
     _emitStats(force: true);
     return results;
@@ -192,9 +194,9 @@ class NovaScanner {
       final Stopwatch sw = Stopwatch()..start();
       final bool ok = await _deepConnect(v.result.ip, v.result.port);
       final int latency = sw.elapsedMilliseconds;
+      v.attempts++;
       if (ok) {
-        v.success++;
-        if (v.latency == 0 || latency < v.latency) v.latency = latency;
+        v.latencies.add(latency);
       } else {
         _dead++;
       }
@@ -203,12 +205,23 @@ class NovaScanner {
 
     final List<ScanResult> out = <ScanResult>[];
     for (final _Verified v in verified) {
-      if (v.success >= 2) {
+      // Keep exits that answered at least twice, then score them the same way
+      // the Nova panel's Radar does: average latency, jitter (the spread across
+      // answering probes) and loss (probes that got no reply). Ranking by this
+      // composite favours stable exits over ones that only handshake fast once.
+      if (v.latencies.length >= 2) {
+        final int avg =
+            (v.latencies.reduce((a, b) => a + b) / v.latencies.length).round();
+        final int jitter = v.latencies.reduce(max) - v.latencies.reduce(min);
+        final int loss =
+            ((1 - v.latencies.length / v.attempts) * 100).round();
         final ScanResult r = ScanResult(
           ip: v.result.ip,
           port: v.result.port,
           link: _novaLink(v.result.ip, v.result.port),
-          latencyMs: v.latency,
+          latencyMs: avg,
+          jitterMs: jitter,
+          lossPct: loss,
         );
         out.add(r);
         _resultsCtrl.add(r);
@@ -426,8 +439,8 @@ class _Probe {
 class _Verified {
   _Verified(this.result);
   final ScanResult result;
-  int success = 0;
-  int latency = 0;
+  int attempts = 0;
+  final List<int> latencies = <int>[];
 }
 
 class _Attempt {

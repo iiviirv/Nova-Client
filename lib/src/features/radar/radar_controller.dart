@@ -240,7 +240,7 @@ class RadarController extends ChangeNotifier {
       final int da = _realDelays[a.hostPort] ?? 1 << 30;
       final int db = _realDelays[b.hostPort] ?? 1 << 30;
       if (da != db) return da.compareTo(db);
-      return a.latencyMs.compareTo(b.latencyMs);
+      return a.score.compareTo(b.score);
     });
 
     _testingDelays = false;

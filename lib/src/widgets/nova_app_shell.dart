@@ -36,8 +36,42 @@ class _NovaAppShellState extends State<NovaAppShell> {
   /// you'd left it on Configs).
   final ValueNotifier<int> _homeReset = ValueNotifier<int>(0);
 
+  /// The proxy controller we're subscribed to for user-facing notices (e.g. an
+  /// auto-failover message). Tracked so we can move the listener if it changes.
+  ProxyController? _noticeSource;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    if (!identical(proxy, _noticeSource)) {
+      _noticeSource?.notice.removeListener(_showNotice);
+      _noticeSource = proxy;
+      proxy.notice.addListener(_showNotice);
+    }
+  }
+
+  /// Surfaces a controller notice as a snackbar, then clears it so it doesn't
+  /// replay. Runs on the notice ValueNotifier's change.
+  void _showNotice() {
+    final ProxyNotice? code = _noticeSource?.notice.value;
+    if (code == null || !mounted) return;
+    final NovaStrings s = NovaStrings.of(context);
+    final String message = switch (code) {
+      ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 4),
+      ));
+    _noticeSource?.notice.value = null;
+  }
+
   @override
   void dispose() {
+    _noticeSource?.notice.removeListener(_showNotice);
     _homeReset.dispose();
     super.dispose();
   }

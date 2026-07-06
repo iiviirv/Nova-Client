@@ -85,6 +85,7 @@ class SingboxProxyController extends ProxyController {
     if (event is! Map) return;
     switch (event['type']) {
       case 'state':
+        final ProxyConnectionState prev = _state;
         _state = ProxyConnectionState.values.firstWhere(
           (s) => s.name == event['value'],
           orElse: () => _state,
@@ -95,6 +96,13 @@ class SingboxProxyController extends ProxyController {
           _watchdog = null;
         }
         notifyListeners();
+        // Just came up on a manually pinned exit: verify real traffic actually
+        // flows and fail over to the fastest live server if it doesn't.
+        if (_state == ProxyConnectionState.connected &&
+            prev != ProxyConnectionState.connected &&
+            _active?.pinnedNode != null) {
+          unawaited(_verifyPinnedConnectivity());
+        }
       case 'traffic':
         _traffic = TrafficStats(
           uplinkBps: (event['up'] as num?)?.toDouble() ?? 0,
@@ -286,6 +294,55 @@ class SingboxProxyController extends ProxyController {
     return nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
         : SingboxConfig.buildMulti(nodes, options: opts);
+  }
+
+  /// After coming up on a manually pinned exit, confirm the exit really carries
+  /// traffic. A pinned node builds a single-outbound config, so a dead exit still
+  /// "connects" (Cloudflare's anycast IP accepts the TCP handshake) while nothing
+  /// actually loads. If the probe fails, drop the pin so the urltest auto-picks
+  /// the fastest LIVE node, tell the user, and switch. No loop: the cleared pin
+  /// means the reconnect won't re-enter this path (auto already self-heals).
+  Future<void> _verifyPinnedConnectivity() async {
+    final ProxyProfile? profile = _active;
+    if (profile == null || profile.pinnedNode == null) return;
+    // Let the tunnel settle before probing.
+    await Future<void>.delayed(const Duration(seconds: 3));
+    // Bail if the user disconnected or switched away in the meantime.
+    if (_state != ProxyConnectionState.connected ||
+        _active?.pinnedNode != profile.pinnedNode) {
+      return;
+    }
+    if (await _probeInternet()) return; // exit is healthy
+    final ProxyProfile cleared = profile.copyWith(pinnedNode: null);
+    _active = cleared;
+    // Persist the un-pin so the Servers list stops showing the dead exit as the
+    // selected one (otherwise the change is in-memory only and the UI drifts).
+    await persistProfile?.call(cleared);
+    notice.value = ProxyNotice.failoverToWorkingServer;
+    await reconnect();
+  }
+
+  /// Fetches a tiny reliability endpoint. On mobile the core runs as a full
+  /// device TUN, so the app's own request egresses through the tunnel: a
+  /// reachable 204 means the exit genuinely works, a timeout means it's dead.
+  Future<bool> _probeInternet() async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      final HttpClient client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 4);
+      try {
+        final HttpClientRequest req = await client
+            .getUrl(Uri.parse('http://cp.cloudflare.com/generate_204'));
+        final HttpClientResponse resp =
+            await req.close().timeout(const Duration(seconds: 5));
+        await resp.drain<void>();
+        if (resp.statusCode == 204 || resp.statusCode == 200) return true;
+      } catch (_) {
+        // Unreachable or timed out; try once more, then treat as dead.
+      } finally {
+        client.close(force: true);
+      }
+    }
+    return false;
   }
 
   /// Loads the bundled `.srs` rule-sets the lean iOS config references, keyed by
