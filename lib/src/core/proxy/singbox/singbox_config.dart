@@ -190,27 +190,27 @@ class SingboxConfig {
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
-        // Auto-pick a fast node, then STICK to it. A low tolerance made the core
-        // hop between IPs the moment another node measured a few ms faster, which
-        // the user feels as constant disconnect/reconnect. With a wide tolerance
-        // the core only abandons the current node once it degrades badly (e.g.
-        // the picked node drifts from ~180ms up toward ~480ms), not on every
-        // minor jitter. A longer interval and no connection interruption keep
-        // downloads and long-lived sockets alive across a switch.
+        // Auto-pick the fastest node and keep tracking it. Every node exits the
+        // same Cloudflare worker, so their measured latencies all sit within a
+        // few hundred ms of each other. That is exactly why the old 800ms
+        // tolerance backfired: no node was ever 800ms faster than another, so the
+        // urltest could never move off its initial pick (node-0, an arbitrary
+        // first entry), and Auto looked "stuck on a slow server". A tight band
+        // lets it settle on the genuinely lowest-latency exit. Connection drops
+        // (the reason the band was widened) are already prevented by
+        // interrupt_exist_connections: false below, so a small tolerance is safe.
         <String, dynamic>{
           'type': 'urltest',
           'tag': 'proxy',
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          // Re-test only every 10 min so Auto isn't constantly re-shuffling.
-          'interval': '10m0s',
-          // 800ms band: since every node exits through the same Cloudflare
-          // worker their latencies are close, so a small tolerance would let the
-          // pick hop on trivial jitter — which the user feels as the connection
-          // dropping. This wide band means Auto keeps the node it chose and only
-          // abandons it once that node is genuinely failing (climbs ~800ms above
-          // the alternatives), not on noise.
-          'tolerance': 800,
+          // Re-test every 3 min so a node that degrades is dropped reasonably
+          // soon, without hammering the exits.
+          'interval': '3m0s',
+          // 50ms band: switch to a node only when it is meaningfully faster than
+          // the current pick (>50ms), which ignores trivial jitter but still
+          // homes in on the lowest-latency exit instead of clinging to node-0.
+          'tolerance': 50,
           'idle_timeout': '30m0s',
           // Never tear down live connections when the pick changes: an in-flight
           // download or stream stays on its node instead of being cut.
