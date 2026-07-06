@@ -76,8 +76,8 @@ ProxyNode? _parseUserInfoLink(String input, NodeProtocol protocol) {
         : (reality ? 'chrome' : null),
     flow: (q['flow'] ?? '').isEmpty ? null : q['flow'],
     network: network,
-    wsPath: network == 'ws' ? (q['path'] ?? '/') : null,
-    wsHost: network == 'ws' ? (q['host'] ?? q['sni']) : null,
+    wsPath: _carriesPath(network) ? (q['path'] ?? '/') : null,
+    wsHost: _carriesPath(network) ? (q['host'] ?? q['sni']) : null,
     grpcServiceName: network == 'grpc' ? (q['serviceName'] ?? q['path'] ?? '') : null,
     realityPublicKey: (pbk != null && pbk.isNotEmpty) ? pbk : null,
     realityShortId: reality ? q['sid'] : null,
@@ -117,8 +117,8 @@ ProxyNode? _parseVmess(String input) {
     alpn: _splitAlpn(s('alpn')),
     fingerprint: s('fp').isEmpty ? null : s('fp'),
     network: network,
-    wsPath: network == 'ws' ? (s('path').isEmpty ? '/' : s('path')) : null,
-    wsHost: network == 'ws' ? (s('host').isEmpty ? null : s('host')) : null,
+    wsPath: _carriesPath(network) ? (s('path').isEmpty ? '/' : s('path')) : null,
+    wsHost: _carriesPath(network) ? (s('host').isEmpty ? null : s('host')) : null,
     grpcServiceName: network == 'grpc' ? s('path') : null,
   );
 }
@@ -258,9 +258,18 @@ String _normalizeNetwork(String type) {
     'ws' || 'websocket' => 'ws',
     'grpc' => 'grpc',
     'http' || 'h2' => 'http',
+    'httpupgrade' => 'httpupgrade',
+    // xhttp / SplitHTTP is an Xray-only transport; the sing-box core has no
+    // implementation, so we tag it as-is and skip such nodes when building the
+    // config (see buildMultiMap) rather than silently mis-building them as tcp.
+    'xhttp' || 'splithttp' => 'xhttp',
     _ => 'tcp',
   };
 }
+
+/// Transports that carry an HTTP-style `path` + `host` (ws, http/2, httpupgrade).
+bool _carriesPath(String network) =>
+    network == 'ws' || network == 'http' || network == 'httpupgrade';
 
 List<String> _splitAlpn(String? alpn) {
   if (alpn == null || alpn.isEmpty) return const <String>[];
