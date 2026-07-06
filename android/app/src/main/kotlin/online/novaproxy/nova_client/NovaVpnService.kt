@@ -273,7 +273,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 runCatching { boxIf.setMTU(ni.mtu) }
                 val addrs = mutableListOf<String>()
                 for (ia in ni.interfaceAddresses) {
-                    val host = ia.address.hostAddress ?: continue
+                    // Strip any IPv6 zone id ("fe80::1%wlan0"): sing-box 1.13 feeds
+                    // these straight into netip.ParsePrefix, which rejects a zone
+                    // in a prefix and PANICS (SIGABRT), crashing the whole app on
+                    // connect. Every device has zoned link-local addresses, so
+                    // dropping the "%zone" suffix here is required, not cosmetic.
+                    val host = (ia.address.hostAddress ?: continue).substringBefore('%')
                     addrs.add("$host/${ia.networkPrefixLength}")
                 }
                 boxIf.setAddresses(StringArray(addrs.iterator()))
