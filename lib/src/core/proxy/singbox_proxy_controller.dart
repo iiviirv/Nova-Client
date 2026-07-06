@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
@@ -288,12 +289,51 @@ class SingboxProxyController extends ProxyController {
       nodes = await _rankByPing(nodes);
     }
     // iOS runs the core inside a Network Extension with a hard ~50 MB memory
-    // cap, so build a lean config there (fewer nodes, normal MTU, no rule-sets)
-    // to keep the extension from being OOM-killed mid-connection.
-    final SingboxRouteOptions opts = routeOptions.copyWith(lean: Platform.isIOS);
-    return nodes.length == 1
+    // cap, so build a lean config there (fewer nodes, normal MTU, rule-sets fed
+    // in as bytes) to keep the extension from being OOM-killed mid-connection.
+    //
+    // Android keeps the full config but must use BUNDLED (local) rule-sets: the
+    // remote-rule-set path downloads geosite/geoip .srs from raw.githubusercontent
+    // .com on connect, which fails during tunnel bring-up ("no available network
+    // interface") and is blocked outright in Iran, so the core never starts. The
+    // core shares this app's sandbox, so we extract the .srs to disk and point the
+    // config's path token at them, exactly like the desktop core does.
+    final SingboxRouteOptions opts = routeOptions.copyWith(
+      lean: Platform.isIOS,
+      localRuleSets: Platform.isAndroid,
+    );
+    final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: opts)
         : SingboxConfig.buildMulti(nodes, options: opts);
+    if (Platform.isAndroid) {
+      final String base = await _extractRuleSets();
+      return config.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+    }
+    return config;
+  }
+
+  /// Writes the bundled `.srs` rule-sets into the app-support dir (once) and
+  /// returns their directory, so the Android core can load them from disk
+  /// instead of fetching them over the (blocked) network. Only the two shipped
+  /// sets (geosite-ir, geosite-ads) are extracted; that's what [localRuleSets]
+  /// references.
+  Future<String> _extractRuleSets() async {
+    final Directory dir = await getApplicationSupportDirectory();
+    for (final String file in <String>[
+      SingboxConfig.kGeositeIrFile,
+      SingboxConfig.kGeositeAdsFile,
+    ]) {
+      final File out = File('${dir.path}/$file');
+      final ByteData data = await rootBundle.load('assets/rulesets/$file');
+      final int len = data.lengthInBytes;
+      if (!out.existsSync() || out.lengthSync() != len) {
+        await out.writeAsBytes(
+          data.buffer.asUint8List(data.offsetInBytes, len),
+          flush: true,
+        );
+      }
+    }
+    return dir.path.replaceAll(r'\', '/');
   }
 
   /// After coming up on a manually pinned exit, confirm the exit really carries
