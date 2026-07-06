@@ -15,6 +15,7 @@ class SingboxRouteOptions {
     this.lean = false,
     this.localRuleSets = false,
     this.tlsFragment = true,
+    this.gvisorStack = false,
   });
 
   final SingboxMode mode;
@@ -52,10 +53,21 @@ class SingboxRouteOptions {
   /// picker: '' / 1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 94.140.14.14.
   final String dns;
 
+  /// Force the gvisor TUN stack (userspace TCP) with a normal MTU, regardless of
+  /// [lean]. The `system` stack forwards raw IP and does NOT clamp MSS, so on a
+  /// full-device TUN with a jumbo MTU the app advertises an oversized MSS that
+  /// the real 1500-MTU path can't carry: TLS handshakes and bulk downloads get
+  /// reset ("ERR_CONNECTION_RESET" / traffic stalls). gvisor terminates TCP in
+  /// userspace and decouples the app-side MSS from the network path, which is why
+  /// iOS already uses it. Android's VpnService hits the exact same wall, so it
+  /// sets this too. Desktop keeps the system stack (its host handles MSS fine).
+  final bool gvisorStack;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
     bool? tlsFragment,
+    bool? gvisorStack,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -66,6 +78,7 @@ class SingboxRouteOptions {
         lean: lean ?? this.lean,
         localRuleSets: localRuleSets ?? this.localRuleSets,
         tlsFragment: tlsFragment ?? this.tlsFragment,
+        gvisorStack: gvisorStack ?? this.gvisorStack,
       );
 }
 
@@ -246,15 +259,16 @@ class SingboxConfig {
         // the standard for the iOS Network Extension. We keep it rather than
         // sing-box's `mixed` stack, which reintroduces that fragmentation risk.
         //
-        // MTU: 4064 on iOS (matching Karing, which runs the same core in the
-        // same ~50MB NE) instead of 1500. With gvisor a larger TUN MTU means
-        // fewer packets/syscalls per byte, so bulk throughput improves without
-        // the fragmentation drops the system stack would hit. Desktop/Android
-        // keep the faster system stack + jumbo MTU.
-        'mtu': o.lean ? 4064 : 9000,
+        // MTU: 4064 on the gvisor path (iOS, matching Karing which runs the same
+        // core in the same ~50MB NE; and Android) instead of 1500. With gvisor a
+        // larger TUN MTU means fewer packets/syscalls per byte, so bulk
+        // throughput improves without the fragmentation drops the system stack
+        // would hit. Only DESKTOP keeps the system stack + jumbo 9000 MTU: its
+        // host clamps MSS correctly, so it survives what a VpnService/NE can't.
+        'mtu': (o.lean || o.gvisorStack) ? 4064 : 9000,
         'auto_route': true,
         'strict_route': true,
-        'stack': o.lean ? 'gvisor' : 'system',
+        'stack': (o.lean || o.gvisorStack) ? 'gvisor' : 'system',
         // Sniffing is NOT set here anymore. sing-box 1.13 removed the
         // inbound-level `sniff`/`sniff_override_destination` fields ("legacy
         // inbound fields ... removed in sing-box 1.13.0"), which was fatal on
