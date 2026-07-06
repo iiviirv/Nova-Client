@@ -187,7 +187,7 @@ class RadarController extends ChangeNotifier {
     });
     _resultSub = scanner.onResult.listen((r) {
       _results.add(r);
-      _results.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
+      _results.sort((a, b) => a.score.compareTo(b.score));
       notifyListeners();
     });
 
@@ -200,6 +200,15 @@ class RadarController extends ChangeNotifier {
     _results
       ..clear()
       ..addAll(finalResults);
+
+    // Set the final Alive count from the authoritative results too: the scanner's
+    // last stats emit arrives over a stream that teardown can cancel before it's
+    // delivered, which left Alive reading 0 after a scan that clearly found IPs.
+    _stats = _stats.copyWith(
+      aliveCount: finalResults.length,
+      scanning: false,
+      secondPass: false,
+    );
 
     await _teardownScanner();
     notifyListeners();

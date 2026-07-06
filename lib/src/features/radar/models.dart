@@ -167,3 +167,11 @@ const List<int> kAllPorts = <int>[
 
 /// The SNI presented during the deep-test TLS handshake (Nova Worker host).
 const String kVlessSni = 'nova2.altramax083.workers.dev';
+
+/// SNI used for Radar's TLS reachability probes. Deliberately NOT the worker's
+/// `*.workers.dev` host: Iran's DPI resets that SNI, so probing with it made
+/// Radar find zero clean IPs from Iran. A benign Cloudflare SNI completes the
+/// handshake on every CF edge IP (an IP literal or empty SNI does not, reliably)
+/// while giving DPI nothing worth blocking. Real Nova traffic fragments its own
+/// SNI, so a reachable edge IP is exactly what "clean" means for the client.
+const String kRadarProbeSni = 'www.cloudflare.com';

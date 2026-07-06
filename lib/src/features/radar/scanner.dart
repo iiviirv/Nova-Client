@@ -197,6 +197,10 @@ class NovaScanner {
       v.attempts++;
       if (ok) {
         v.latencies.add(latency);
+        // Count this exit as alive the moment it clears the 2-answer bar, so the
+        // Alive counter climbs live during the deep phase instead of sitting at 0
+        // until the very end (which read as "found results but Alive is 0").
+        if (v.latencies.length == 2) _alive++;
       } else {
         _dead++;
       }
@@ -249,11 +253,13 @@ class NovaScanner {
       if (kTlsPorts.contains(port)) {
         final Socket raw = await Socket.connect(ip, port, timeout: deepTimeout);
         try {
-          // Present the active worker host as SNI so the handshake validates
-          // against the endpoint traffic actually uses, not a stale constant.
+          // Probe with a benign Cloudflare SNI, NOT the worker's *.workers.dev
+          // host: Iran's DPI resets that SNI, so handshaking with it found zero
+          // clean IPs from Iran (it worked elsewhere). This tests raw CF-edge
+          // reachability, matching the panel's Radar. See [kRadarProbeSni].
           final SecureSocket secure = await SecureSocket.secure(
             raw,
-            host: coreConfig?.sni ?? kVlessSni,
+            host: kRadarProbeSni,
             onBadCertificate: (_) => true,
           ).timeout(deepTimeout);
           secure.destroy();
@@ -391,9 +397,12 @@ Future<int?> measureRealDelay(
     raw = await Socket.connect(ip, port, timeout: timeout);
     Socket stream = raw;
     if (kTlsPorts.contains(port)) {
+      // Benign SNI (not the worker's *.workers.dev, which Iran resets); the Host
+      // header below still carries the real host for /cdn-cgi/trace. Measures the
+      // honest edge round-trip either way.
       stream = await SecureSocket.secure(
         raw,
-        host: host,
+        host: kRadarProbeSni,
         onBadCertificate: (_) => true,
       ).timeout(timeout);
     }
