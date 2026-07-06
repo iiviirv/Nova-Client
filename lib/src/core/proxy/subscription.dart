@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/proxy_profile.dart';
+import 'fragment_proxy.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/share_link.dart';
 
@@ -274,20 +275,39 @@ Future<List<ProxyNode>> resolveProfileNodes(
 /// through. A real HTTP status (non-200) is not retried, since that won't
 /// change on a second try.
 Future<String> _httpFetch(Uri url) async {
-  for (int attempt = 0; ; attempt++) {
+  // Fast path: a direct fetch, retried once for a transient hiccup. A bad HTTP
+  // status means we reached the server (not a block), so surface it as-is.
+  for (int attempt = 0; attempt < 2; attempt++) {
     try {
       return await _httpFetchOnce(url);
     } on HttpException {
       rethrow;
     } catch (_) {
-      if (attempt >= 1) rethrow;
+      if (attempt >= 1) break;
     }
+  }
+  // The direct fetch failed at the connection level, which is exactly what a
+  // plaintext-SNI block on workers.dev looks like from Iran. Retry through a
+  // local fragment proxy that splits the TLS ClientHello so the censor can't
+  // match the SNI in a single packet (the same anti-DPI trick the tunnel uses).
+  FragmentProxy? fp;
+  try {
+    fp = await FragmentProxy.start();
+    return await _httpFetchOnce(url, proxyAuthority: fp.authority);
+  } finally {
+    await fp?.stop();
   }
 }
 
-Future<String> _httpFetchOnce(Uri url) async {
+Future<String> _httpFetchOnce(Uri url, {String? proxyAuthority}) async {
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
+  if (proxyAuthority != null) {
+    // Route this request through the loopback fragment proxy: HttpClient issues
+    // CONNECT <host>:443 to it, then does TLS end to end through the tunnel, so
+    // the origin certificate still validates against the real host.
+    client.findProxy = (_) => 'PROXY $proxyAuthority';
+  }
   try {
     final HttpClientRequest req = await client.getUrl(url);
     req.headers.set(HttpHeaders.userAgentHeader, 'NovaClient');
