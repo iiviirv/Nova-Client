@@ -75,6 +75,67 @@ class NovaCloudflare {
 
   final Random _rng = Random.secure();
 
+  // Cloudflare's hosts (api.cloudflare.com, dash.cloudflare.com) and
+  // raw.githubusercontent.com are filtered inside Iran, which is exactly where a
+  // user setting up their first proxy has no working connection yet. When a
+  // direct call fails at the network level we retry through the same same-origin
+  // proxy the web installer uses (novaproxy.online/cf), then stick with it for
+  // the rest of the session so we don't pay the direct timeout on every call.
+  static const String _proxyBase = 'https://novaproxy.online/cf?url=';
+  static const Duration _directTimeout = Duration(seconds: 12);
+  static const Duration _proxyTimeout = Duration(seconds: 25);
+  bool _preferProxy = false;
+
+  String _via(String target) => '$_proxyBase${Uri.encodeComponent(target)}';
+
+  /// Send a request to [target], falling back to the loopback-safe proxy if the
+  /// direct call cannot reach Cloudflare (connection reset, DNS failure, or
+  /// timeout, the usual shapes of Iran's filtering). A non-2xx *response* is a
+  /// reachable server and is returned as-is; only thrown network errors trigger
+  /// the retry.
+  Future<http.Response> _http(String method, String target,
+      {Map<String, String>? headers, Object? body}) async {
+    Future<http.Response> run(String url) {
+      final Uri u = Uri.parse(url);
+      switch (method) {
+        case 'GET':
+          return _client.get(u, headers: headers);
+        case 'PUT':
+          return _client.put(u, headers: headers, body: body);
+        case 'DELETE':
+          return _client.delete(u, headers: headers, body: body);
+        default:
+          return _client.post(u, headers: headers, body: body);
+      }
+    }
+
+    if (_preferProxy) return run(_via(target)).timeout(_proxyTimeout);
+    try {
+      return await run(target).timeout(_directTimeout);
+    } catch (_) {
+      final http.Response r = await run(_via(target)).timeout(_proxyTimeout);
+      _preferProxy = true;
+      return r;
+    }
+  }
+
+  /// Multipart variant of [_http] for the worker upload. [build] must construct
+  /// a fresh request each call, since a MultipartRequest can only be sent once.
+  Future<http.StreamedResponse> _sendMultipart(
+      String target, http.MultipartRequest Function(Uri uri) build) async {
+    if (_preferProxy) {
+      return _client.send(build(Uri.parse(_via(target)))).timeout(_proxyTimeout);
+    }
+    try {
+      return await _client.send(build(Uri.parse(target))).timeout(_directTimeout);
+    } catch (_) {
+      final http.StreamedResponse r =
+          await _client.send(build(Uri.parse(_via(target)))).timeout(_proxyTimeout);
+      _preferProxy = true;
+      return r;
+    }
+  }
+
   // The loopback listeners for the in-flight OAuth redirect, kept so a cancel
   // (user dismissed the sign-in sheet) can close them and unwind connect().
   HttpServer? _authServer4;
@@ -111,7 +172,10 @@ class NovaCloudflare {
 
   /// Full desktop sign-in: open the browser, catch the redirect on the loopback,
   /// exchange the code, resolve the account, and persist the session.
-  Future<CfSession> connect({required FutureOr<void> Function(String url) openUrl}) async {
+  Future<CfSession> connect({
+    required FutureOr<void> Function(String url) openUrl,
+    FutureOr<void> Function()? onRedirect,
+  }) async {
     final String verifier = _b64url(_randomBytes(33));
     final ({String url, String state}) auth = authorizeUrl(verifier);
     // Listen on BOTH loopback stacks. The redirect URI is
@@ -149,6 +213,11 @@ class NovaCloudflare {
         ..headers.contentType = ContentType.html
         ..write(_callbackHtml(ok, params['error'] ?? 'Invalid response'));
       await req.response.close();
+
+      // Dismiss the in-app sign-in browser now, the instant the redirect lands,
+      // so the user is not left staring at the callback page during the token
+      // exchange and account lookup below (which can take a few seconds).
+      if (onRedirect != null) await onRedirect();
 
       if (params['error'] != null) throw CloudflareException('Authorization failed: ${params['error']}');
       if (params['code'] == null || params['state'] != auth.state) {
@@ -193,8 +262,7 @@ class NovaCloudflare {
     if (refresh.isEmpty) return null;
     final int expiresAt = int.tryParse(_store.get('cf_expires')) ?? 0;
     if (DateTime.now().millisecondsSinceEpoch < expiresAt - 120000) return null;
-    final http.Response r = await _client.post(
-      Uri.parse(_tokenUrl),
+    final http.Response r = await _http('POST', _tokenUrl,
       headers: <String, String>{'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'},
       body: _query(<String, String>{'grant_type': 'refresh_token', 'refresh_token': refresh, 'client_id': _clientId}),
     );
@@ -254,8 +322,7 @@ class NovaCloudflare {
         ' filter: { datetime_geq: \$start, datetime_leq: \$end }) {'
         ' sum { requests } } } } }';
     try {
-      final http.Response r = await _client.post(
-        Uri.parse('$_apiBase/graphql'),
+      final http.Response r = await _http('POST', '$_apiBase/graphql',
         headers: <String, String>{
           'Authorization': 'Bearer ${s.token}',
           'Content-Type': 'application/json',
@@ -293,8 +360,7 @@ class NovaCloudflare {
   }
 
   Future<void> deleteWorker(CfSession s, String name) async {
-    final http.Response r = await _client.delete(
-      Uri.parse('$_apiBase/accounts/${s.accountId}/workers/scripts/$name'),
+    final http.Response r = await _http('DELETE', '$_apiBase/accounts/${s.accountId}/workers/scripts/$name',
       headers: <String, String>{'Authorization': 'Bearer ${s.token}'},
     );
     if (r.statusCode < 200 || r.statusCode >= 300) {
@@ -346,8 +412,7 @@ class NovaCloudflare {
 
   Future<bool> _workerExists(String token, String aid, String name) async {
     try {
-      final http.Response r = await _client.get(
-        Uri.parse('$_apiBase/accounts/$aid/workers/scripts/$name'),
+      final http.Response r = await _http('GET', '$_apiBase/accounts/$aid/workers/scripts/$name',
         headers: <String, String>{'Authorization': 'Bearer $token'},
       );
       return r.statusCode >= 200 && r.statusCode < 300;
@@ -357,7 +422,7 @@ class NovaCloudflare {
   }
 
   Future<List<int>> _fetchWorkerCode() async {
-    final http.Response r = await _client.get(Uri.parse(_workerSrc));
+    final http.Response r = await _http('GET', _workerSrc);
     if (r.statusCode < 200 || r.statusCode >= 300 || r.bodyBytes.isEmpty) {
       throw CloudflareException('Could not fetch the worker');
     }
@@ -403,15 +468,14 @@ class NovaCloudflare {
         <String, dynamic>{'type': 'd1', 'name': 'DB', 'database_id': d1Id},
       ],
     });
-    final http.MultipartRequest req = http.MultipartRequest(
-      'PUT',
-      Uri.parse('$_apiBase/accounts/$aid/workers/scripts/$name'),
-    )
-      ..headers['Authorization'] = 'Bearer $token'
-      ..files.add(http.MultipartFile.fromString('metadata', metadata, contentType: MediaType('application', 'json')))
-      ..files.add(http.MultipartFile.fromBytes('worker.js', code,
-          filename: 'worker.js', contentType: MediaType('application', 'javascript+module')));
-    final http.StreamedResponse resp = await _client.send(req);
+    final http.StreamedResponse resp = await _sendMultipart(
+      '$_apiBase/accounts/$aid/workers/scripts/$name',
+      (Uri uri) => http.MultipartRequest('PUT', uri)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..files.add(http.MultipartFile.fromString('metadata', metadata, contentType: MediaType('application', 'json')))
+        ..files.add(http.MultipartFile.fromBytes('worker.js', code,
+            filename: 'worker.js', contentType: MediaType('application', 'javascript+module'))),
+    );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw CloudflareException('Worker upload failed (${resp.statusCode}): ${await resp.stream.bytesToString()}');
     }
@@ -423,8 +487,7 @@ class NovaCloudflare {
   // --- token + api helpers -------------------------------------------------
 
   Future<_TokenSet> _exchangeToken(String code, String verifier) async {
-    final http.Response r = await _client.post(
-      Uri.parse(_tokenUrl),
+    final http.Response r = await _http('POST', _tokenUrl,
       headers: <String, String>{'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'},
       body: _query(<String, String>{
         'client_id': _clientId,
@@ -464,14 +527,13 @@ class NovaCloudflare {
   }
 
   Future<Map<String, dynamic>> _apiGet(String token, String path) async {
-    final http.Response r = await _client.get(Uri.parse('$_apiBase$path'), headers: <String, String>{'Authorization': 'Bearer $token'});
+    final http.Response r = await _http('GET', '$_apiBase$path', headers: <String, String>{'Authorization': 'Bearer $token'});
     if (r.statusCode < 200 || r.statusCode >= 300) throw CloudflareException('Cloudflare API error (${r.statusCode})');
     return (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> _apiPost(String token, String path, Map<String, dynamic> body) async {
-    final http.Response r = await _client.post(
-      Uri.parse('$_apiBase$path'),
+    final http.Response r = await _http('POST', '$_apiBase$path',
       headers: <String, String>{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
@@ -487,14 +549,35 @@ class NovaCloudflare {
   List<int> _randomBytes(int n) => List<int>.generate(n, (_) => _rng.nextInt(256));
 
   String _callbackHtml(bool ok, String error) {
-    final String title = ok ? 'Nova is connected' : 'Sign-in failed';
-    final String msg = ok ? 'You can close this tab and return to Nova.' : error;
+    final String enTitle = ok ? 'Nova is connected' : 'Sign-in failed';
+    final String faTitle = ok ? 'نوا متصل شد' : 'ورود ناموفق بود';
+    final String enMsg = ok ? 'You can return to Nova now.' : error;
+    final String faMsg = ok ? 'حالا می‌توانید به نوا برگردید.' : error;
     final String color = ok ? '#22D3EE' : '#F87171';
-    return '<!doctype html><html><head><meta charset="utf-8">'
-        '<style>body{background:#05060A;color:#EAECF2;font-family:-apple-system,system-ui,sans-serif;'
+    // Deep link back into the app (scheme registered in the Android manifest and
+    // the iOS/macOS Info.plist). On mobile the app also dismisses this page
+    // automatically; the button is the fallback, and the main path on desktop
+    // where the sign-in opens in an external browser that can't self-close.
+    final String button = ok
+        ? '<a class="b" href="novaclient://oauth-return">بازگشت به نوا&nbsp;&nbsp;·&nbsp;&nbsp;Return to Nova</a>'
+        : '';
+    return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<style>body{background:#05060A;color:#EAECF2;'
+        'font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;'
         'display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}'
-        '.c{text-align:center;padding:32px}h1{color:$color;font-size:22px}p{color:#B6BCC9}</style></head>'
-        '<body><div class="c"><h1>$title</h1><p>$msg</p></div></body></html>';
+        '.c{text-align:center;padding:32px;max-width:360px}'
+        'h1{color:$color;font-size:22px;margin:0 0 6px}'
+        'h2{color:$color;font-size:18px;margin:22px 0 6px;font-weight:600}'
+        'p{color:#B6BCC9;margin:4px 0;font-size:15px}'
+        '.b{display:inline-block;margin-top:26px;padding:14px 28px;border-radius:12px;'
+        'background:linear-gradient(120deg,#22D3EE,#818CF8,#A855F7);color:#05060A;'
+        'font-weight:700;text-decoration:none;font-size:15px}</style></head>'
+        '<body><div class="c">'
+        '<h1>$faTitle</h1><p>$faMsg</p>'
+        '<h2 dir="ltr">$enTitle</h2><p dir="ltr">$enMsg</p>'
+        '$button'
+        '</div></body></html>';
   }
 }
 

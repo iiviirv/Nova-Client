@@ -26,6 +26,15 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep link used by the OAuth "Return to Nova" button on the
+                 sign-in callback page. singleTop + this filter brings the
+                 running app back to the front. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="novaclient"/>
+            </intent-filter>
         </activity>
 
         <!-- The sing-box tunnel host. BIND_VPN_SERVICE + the VpnService action
