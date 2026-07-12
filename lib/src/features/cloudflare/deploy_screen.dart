@@ -109,6 +109,8 @@ class _DeployScreenState extends State<DeployScreen> {
               await cf.connect((String url) async {
                 await launchUrl(Uri.parse(url),
                     mode: LaunchMode.inAppBrowserView);
+              }, onRedirect: () async {
+                await closeInAppWebView();
               });
               await closeInAppWebView();
             },

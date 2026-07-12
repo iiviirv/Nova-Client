@@ -105,12 +105,15 @@ class CloudflareController extends ChangeNotifier {
     }
   }
 
-  Future<void> connect(Future<void> Function(String url) openUrl) async {
+  Future<void> connect(
+    Future<void> Function(String url) openUrl, {
+    Future<void> Function()? onRedirect,
+  }) async {
     final NovaCloudflare? cf = _cf;
     if (cf == null) return;
     _set(phase: CfPhase.connecting, error: '');
     try {
-      final CfSession s = await cf.connect(openUrl: openUrl);
+      final CfSession s = await cf.connect(openUrl: openUrl, onRedirect: onRedirect);
       _session = s;
       await _loadWorkers(s);
     } catch (e) {

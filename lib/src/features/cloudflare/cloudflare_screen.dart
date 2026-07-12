@@ -129,8 +129,13 @@ class CloudflareScreen extends StatelessWidget {
               await cf.connect((String url) async {
                 await launchUrl(Uri.parse(url),
                     mode: LaunchMode.inAppBrowserView);
+              }, onRedirect: () async {
+                // Close the sign-in sheet the instant the redirect is caught,
+                // before the token exchange, so the user is not stranded on the
+                // callback page.
+                await closeInAppWebView();
               });
-              // Dismiss the sign-in sheet once the redirect has been handled.
+              // Safety net in case the redirect hook did not fire.
               await closeInAppWebView();
             },
           ),
