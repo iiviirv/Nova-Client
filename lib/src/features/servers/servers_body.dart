@@ -149,43 +149,20 @@ class _ServersBodyState extends State<ServersBody> {
   /// Edit a profile's name and URL/link in place.
   Future<void> _editProfile(
       BuildContext context, ProfilesController profiles, ProxyProfile p) async {
-    final TextEditingController nameC = TextEditingController(text: p.name);
     final bool isSub = p.isSubscription;
-    final TextEditingController urlC = TextEditingController(
-        text: isSub ? (p.subscriptionUrl ?? '') : p.uri);
-    final bool? saved = await showDialog<bool>(
+    final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: const Text('Edit'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TextField(
-              controller: nameC,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlC,
-              maxLines: 2,
-              decoration: InputDecoration(
-                  labelText: isSub ? 'Subscription URL' : 'Link'),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Save')),
-        ],
+      builder: (BuildContext ctx) => _ConfigDialog(
+        titleKey: _ConfigDialogTitle.edit,
+        initialName: p.name,
+        initialUri: isSub ? (p.subscriptionUrl ?? '') : p.uri,
+        uriLabel: isSub ? 'Subscription URL' : 'Link',
+        uriMaxLines: 2,
       ),
     );
-    if (saved != true) return;
-    final String name = nameC.text.trim();
-    final String url = urlC.text.trim();
+    if (res == null) return;
+    final String name = res.name;
+    final String url = res.uri;
     profiles.update(p.copyWith(
       name: name.isEmpty ? p.name : name,
       subscriptionUrl: isSub ? url : null,
@@ -549,88 +526,155 @@ class _EmptyAction extends StatelessWidget {
 Future<void> showAddServerDialog(BuildContext context,
     {String? prefill}) async {
   final profiles = NovaScope.of(context).profiles;
-  final s = NovaStrings.of(context);
-  final TextEditingController nameCtrl = TextEditingController();
-  final TextEditingController uriCtrl =
-      TextEditingController(text: prefill ?? '');
-  ProxyKind kind = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
+  final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
-  final bool? added = await showDialog<bool>(
+  final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
     context: context,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setLocal) {
-          return AlertDialog(
-            backgroundColor: context.nova.bgAlt,
-            shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
-            title: Text(s.add, style: Theme.of(context).textTheme.titleLarge),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(hintText: 'Name'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: uriCtrl,
-                  decoration: const InputDecoration(
-                      hintText: 'vless://…  or  https://…/sub'),
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      for (final k in ProxyKind.values)
-                        NovaPill(
-                          label: k.label,
-                          selected: kind == k,
-                          onTap: () => setLocal(() => kind = k),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text(s.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(s.save),
-              ),
-            ],
-          );
-        },
-      );
-    },
+    builder: (BuildContext ctx) => _ConfigDialog(
+      titleKey: _ConfigDialogTitle.add,
+      initialUri: prefill ?? '',
+      initialKind: detected,
+      showKindPills: true,
+      uriHint: 'vless://…  or  https://…/sub',
+    ),
   );
 
-  if (added == true && uriCtrl.text.trim().isNotEmpty) {
-    final String uri = uriCtrl.text.trim();
+  if (res != null && res.uri.isNotEmpty) {
+    final String uri = res.uri;
     // Trust what was pasted over the selected pill: a link's scheme tells us
     // exactly what it is, so an https://…/sub URL or a vless:// link always
     // lands in the right field instead of failing later as an invalid link.
-    final ProxyKind resolved = _detectKind(uri) ?? kind;
+    final ProxyKind resolved = _detectKind(uri) ?? res.kind;
     final bool isSub = resolved == ProxyKind.subscription;
     profiles.add(ProxyProfile(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      name: nameCtrl.text.trim().isEmpty
+      name: res.name.isEmpty
           ? 'Server ${profiles.profiles.length + 1}'
-          : nameCtrl.text.trim(),
+          : res.name,
       kind: resolved,
       uri: isSub ? '' : uri,
       subscriptionUrl: isSub ? uri : null,
       updatedAt: DateTime.now(),
     ));
   }
-  nameCtrl.dispose();
-  uriCtrl.dispose();
+}
+
+enum _ConfigDialogTitle { add, edit }
+
+class _ConfigDialogResult {
+  const _ConfigDialogResult(this.name, this.uri, this.kind);
+  final String name;
+  final String uri;
+  final ProxyKind kind;
+}
+
+/// Name + URI (+ optional protocol pills) dialog shared by the add and edit
+/// flows. It is a StatefulWidget so it OWNS its [TextEditingController]s and
+/// disposes them in [State.dispose] — i.e. only after the dialog route is fully
+/// gone. The previous version created the controllers outside `showDialog` and
+/// disposed them the moment the future returned, so a rebuild during the exit
+/// animation or a back-button dismiss used a disposed controller and crashed
+/// (and no config got saved). Owning them here fixes that and the matching leak
+/// in the edit dialog.
+class _ConfigDialog extends StatefulWidget {
+  const _ConfigDialog({
+    required this.titleKey,
+    this.initialName = '',
+    this.initialUri = '',
+    this.initialKind = ProxyKind.subscription,
+    this.showKindPills = false,
+    this.uriHint,
+    this.uriLabel,
+    this.uriMaxLines = 1,
+  });
+
+  final _ConfigDialogTitle titleKey;
+  final String initialName;
+  final String initialUri;
+  final ProxyKind initialKind;
+  final bool showKindPills;
+  final String? uriHint;
+  final String? uriLabel;
+  final int uriMaxLines;
+
+  @override
+  State<_ConfigDialog> createState() => _ConfigDialogState();
+}
+
+class _ConfigDialogState extends State<_ConfigDialog> {
+  late final TextEditingController _nameCtrl =
+      TextEditingController(text: widget.initialName);
+  late final TextEditingController _uriCtrl =
+      TextEditingController(text: widget.initialUri);
+  late ProxyKind _kind = widget.initialKind;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _uriCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final String title = widget.titleKey == _ConfigDialogTitle.add ? s.add : 'Edit';
+    return AlertDialog(
+      backgroundColor: context.nova.bgAlt,
+      shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
+      title: Text(title, style: Theme.of(context).textTheme.titleLarge),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(hintText: 'Name', labelText: 'Name'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _uriCtrl,
+            maxLines: widget.uriMaxLines,
+            decoration: InputDecoration(
+              hintText: widget.uriHint,
+              labelText: widget.uriLabel,
+            ),
+          ),
+          if (widget.showKindPills) ...<Widget>[
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final ProxyKind k in ProxyKind.values)
+                    NovaPill(
+                      label: k.label,
+                      selected: _kind == k,
+                      onTap: () => setState(() => _kind = k),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(s.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _ConfigDialogResult(
+                _nameCtrl.text.trim(), _uriCtrl.text.trim(), _kind),
+          ),
+          child: Text(s.save),
+        ),
+      ],
+    );
+  }
 }
 
 /// Infers the profile kind from the scheme of what was pasted, or null when it
