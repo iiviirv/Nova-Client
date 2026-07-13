@@ -552,7 +552,7 @@ Future<void> showAddServerDialog(BuildContext context,
     // lands in the right field instead of failing later as an invalid link.
     final ProxyKind resolved = _detectKind(uri) ?? res.kind;
     final bool isSub = resolved == ProxyKind.subscription;
-    profiles.add(ProxyProfile(
+    final ProxyProfile profile = ProxyProfile(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: res.name.isEmpty
           ? 'Server ${profiles.profiles.length + 1}'
@@ -561,7 +561,30 @@ Future<void> showAddServerDialog(BuildContext context,
       uri: isSub ? '' : uri,
       subscriptionUrl: isSub ? uri : null,
       updatedAt: DateTime.now(),
-    ));
+    );
+    profiles.add(profile);
+    // Resolve a subscription's real node count right away so the card shows,
+    // e.g., "17 nodes" instead of the default placeholder "1 nodes". Without
+    // this the count only updated when the user opened the node list, which
+    // read as "I can only see one config" even though all nodes were there.
+    // Fire-and-forget: a slow or failed fetch must not block adding the config.
+    if (isSub) {
+      unawaited(_resolveNodeCount(profiles, profile));
+    }
+  }
+}
+
+/// Best-effort background resolve of a subscription's node count, updating the
+/// stored profile so the servers card reflects the true number.
+Future<void> _resolveNodeCount(
+    ProfilesController profiles, ProxyProfile profile) async {
+  try {
+    final nodes = await resolveProfileNodes(profile);
+    if (nodes.isNotEmpty) {
+      profiles.update(profile.copyWith(nodeCount: nodes.length));
+    }
+  } catch (_) {
+    // Leave the placeholder count; the node list will resolve it on open.
   }
 }
 
