@@ -2,9 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'nova_cloudflare.dart';
 import 'nova_panel.dart';
+
+/// Best-effort dismissal of the in-app sign-in browser after the OAuth redirect
+/// is caught on the loopback server. `closeInAppWebView()` is only implemented
+/// on Android/iOS; on desktop (macOS/Windows) the sign-in page opens in the
+/// system browser and there is no in-app view to close, so the call throws
+/// `UnimplementedError`. Closing the sheet is purely cosmetic (the loopback
+/// server already has the code), so any failure here must not surface as a
+/// sign-in error. Swallow everything.
+Future<void> dismissSignInBrowser() async {
+  try {
+    await closeInAppWebView();
+  } catch (_) {
+    // No in-app browser on this platform (desktop), or nothing open. Ignore.
+  }
+}
 
 /// SharedPreferences-backed token store so the Cloudflare login persists.
 class SharedPrefsCfStore implements CfStore {
