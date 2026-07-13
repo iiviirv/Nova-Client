@@ -55,6 +55,16 @@ class SingboxProxyController extends ProxyController {
   static const Duration _connectTimeout = Duration(seconds: 30);
   Timer? _watchdog;
 
+  /// Guards the auto-mode self-heal (a single rebuild of a subscription tunnel
+  /// that came up but carries no traffic) so a genuinely dead subscription can't
+  /// loop reconnecting forever. Reset on each user-initiated connect/disconnect.
+  bool _autoHealTried = false;
+
+  /// True only while the self-heal is itself driving a [reconnect], so that
+  /// reconnect's internal disconnect/connect don't reset [_autoHealTried] and
+  /// re-arm the heal (which would let a dead subscription loop).
+  bool _healing = false;
+
   ProxyConnectionState _state = ProxyConnectionState.disconnected;
   @override
   ProxyConnectionState get state => _state;
@@ -97,12 +107,16 @@ class SingboxProxyController extends ProxyController {
           _watchdog = null;
         }
         notifyListeners();
-        // Just came up on a manually pinned exit: verify real traffic actually
-        // flows and fail over to the fastest live server if it doesn't.
+        // Just came up: verify real traffic actually flows. A manually pinned
+        // exit fails over to the fastest live server; an auto (subscription)
+        // exit whose urltest pool led with a dead node gets one clean rebuild.
         if (_state == ProxyConnectionState.connected &&
-            prev != ProxyConnectionState.connected &&
-            _active?.pinnedNode != null) {
-          unawaited(_verifyPinnedConnectivity());
+            prev != ProxyConnectionState.connected) {
+          if (_active?.pinnedNode != null) {
+            unawaited(_verifyPinnedConnectivity());
+          } else if (_active?.isSubscription ?? false) {
+            unawaited(_verifyAutoConnectivity());
+          }
         }
       case 'traffic':
         _traffic = TrafficStats(
@@ -159,6 +173,10 @@ class SingboxProxyController extends ProxyController {
       notifyListeners();
       return;
     }
+    // A fresh user-initiated connect re-arms the one-shot auto self-heal; the
+    // heal's own reconnect keeps [_autoHealTried] set (via [_healing]) so it
+    // can't loop.
+    if (!_healing) _autoHealTried = false;
     _state = ProxyConnectionState.connecting;
     _lastError = null;
     notifyListeners();
@@ -227,6 +245,9 @@ class SingboxProxyController extends ProxyController {
   Future<void> disconnect() async {
     _watchdog?.cancel();
     _watchdog = null;
+    // A real user disconnect clears the heal guard so the next session can heal
+    // again; the heal's own reconnect (which disconnects first) must not.
+    if (!_healing) _autoHealTried = false;
     _state = ProxyConnectionState.disconnecting;
     notifyListeners();
     try {
@@ -366,6 +387,44 @@ class SingboxProxyController extends ProxyController {
     await persistProfile?.call(cleared);
     notice.value = ProxyNotice.failoverToWorkingServer;
     await reconnect();
+  }
+
+  /// After an auto (subscription) tunnel comes up, confirm traffic really flows.
+  /// A multi-node profile builds a `urltest` outbound: the core health-checks the
+  /// pool and settles on a live node, but the *initial* pick can be a dead exit,
+  /// so the orb goes green while nothing loads (the exact "connected but no
+  /// internet" report). We probe for a while first — urltest usually self-corrects
+  /// within a few cycles, no rebuild needed — and only if it never gets through do
+  /// we rebuild the tunnel ONCE, which re-resolves the pool and restarts urltest
+  /// from scratch. Guarded by [_autoHealTried] so a genuinely dead subscription
+  /// can't loop; the honest "Verifying…" subtitle keeps the UI truthful meanwhile.
+  Future<void> _verifyAutoConnectivity() async {
+    final ProxyProfile? profile = _active;
+    if (profile == null || !profile.isSubscription || profile.pinnedNode != null) {
+      return;
+    }
+    // Probe periodically over ~18s, giving urltest time to converge on a live
+    // node before we consider a heavier rebuild.
+    for (int attempt = 0; attempt < 6; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      // Bail if the user disconnected, switched profile, or pinned in between.
+      if (_state != ProxyConnectionState.connected ||
+          _active?.id != profile.id ||
+          _active?.pinnedNode != null) {
+        return;
+      }
+      if (await _probeInternet()) return; // traffic flows — nothing to do
+    }
+    // Still nothing after ~18s. Rebuild the tunnel once (fresh pool + fresh
+    // urltest) unless we've already tried this session.
+    if (_autoHealTried) return;
+    _autoHealTried = true;
+    _healing = true;
+    try {
+      await reconnect();
+    } finally {
+      _healing = false;
+    }
   }
 
   /// Fetches a tiny reliability endpoint. On mobile the core runs as a full

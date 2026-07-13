@@ -75,6 +75,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         scope.proxy,
         scope.profiles,
         scope.cloudflare,
+        // So the hero's "Verifying…/Secure" subtitle flips the moment a probe
+        // confirms traffic is actually getting through the tunnel.
+        scope.connInfo,
       ]),
       builder: (context, _) {
         final proxy = scope.proxy;
@@ -293,6 +296,11 @@ class _ConnectHero extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final ProxyConnectionState state = proxy.state;
     final bool connected = state == ProxyConnectionState.connected;
+    // Honest reachability: the tunnel can report "connected" while a dead exit
+    // (or an urltest that hasn't settled on a live node yet) carries no traffic.
+    // Until a probe actually gets through we say "Verifying…", not "Secure", so
+    // a green orb never lies about a working connection.
+    final bool reachable = NovaScope.of(context).connInfo.info.reachable;
 
     // Status pill — distinct color/label per state, not just active/inactive,
     // so "Connecting…" and errors read correctly instead of "Not connected".
@@ -315,8 +323,9 @@ class _ConnectHero extends StatelessWidget {
       case ProxyConnectionState.connected:
         headline = Fmt.uptime(proxy.connectedSince);
         headlineIsTimer = true;
-        subtitle = s.dashSecure;
-        subtitleColor = NovaSemantics.connectGreen;
+        subtitle = reachable ? s.dashSecure : s.dashVerifying;
+        subtitleColor =
+            reachable ? NovaSemantics.connectGreen : NovaSemantics.amber;
       case ProxyConnectionState.connecting:
       case ProxyConnectionState.disconnecting:
         headline = s.connecting;

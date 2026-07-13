@@ -102,6 +102,7 @@ class NovaStrings {
 
   // ---- Dashboard extras ----
   String get dashSecure => t('dash.secure');
+  String get dashVerifying => t('dash.verifying');
   String get dashError => t('dash.error');
   String get dashLocation => t('dash.location');
   String get dashIp => t('dash.ip');
@@ -211,6 +212,7 @@ class NovaStrings {
     'stats.requestsToday': 'requests today',
     'stats.workerNoData': 'Connect Cloudflare to see usage',
     'dash.secure': 'Secure',
+    'dash.verifying': 'Verifying connection…',
     'dash.error': 'Error',
     'home.time': 'Time',
     'home.data': 'Data',
@@ -311,6 +313,7 @@ class NovaStrings {
     'stats.requestsToday': 'درخواست امروز',
     'stats.workerNoData': 'برای دیدن مصرف، کلودفلر را وصل کنید',
     'dash.secure': 'ایمن',
+    'dash.verifying': 'در حال بررسی اتصال…',
     'dash.error': 'خطا',
     'home.time': 'زمان',
     'home.data': 'داده',
