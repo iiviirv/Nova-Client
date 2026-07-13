@@ -164,6 +164,18 @@ class DesktopProxyController extends ProxyController {
           final String reason = _coreTailText();
           final String logPath = _coreLogFile?.path ?? '';
           final String suffix = logPath.isEmpty ? '' : ' Log: $logPath';
+          // A port-already-bound FATAL is the one desktop failure a user can act
+          // on directly. We already kill our own orphaned core before starting,
+          // so if the port is STILL taken it's another program (or a core we
+          // couldn't reach). Surface a plain instruction instead of the raw
+          // sing-box deprecation-plus-FATAL wall of text.
+          final String low = reason.toLowerCase();
+          if (low.contains('address already in use') ||
+              low.contains('only one usage of each socket address')) {
+            throw 'Port $socksPort is already in use by another program. '
+                'Close whatever is using it (or restart your computer), then '
+                'connect again.$suffix';
+          }
           if (_coreExitCode != null) {
             // The process FATAL-exited before the API came up: report the exit
             // code and the last core output (the real reason).
