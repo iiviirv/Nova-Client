@@ -684,12 +684,15 @@ class DesktopProxyController extends ProxyController {
   /// through a tiny inline P/Invoke in PowerShell. Best-effort.
   Future<void> _refreshWinInet() async {
     if (!Platform.isWindows) return;
+    // The here-string terminator `"@` must be the first characters on its own
+    // line, so keep it alone (no trailing `;`) and start the next statement on
+    // the following line.
     const String ps =
         r'$s=@"' '\n'
         r'using System;using System.Runtime.InteropServices;' '\n'
         r'public class Wininet{[DllImport("wininet.dll",SetLastError=true)]'
         r'public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int l);}' '\n'
-        r'"@;' '\n'
+        r'"@' '\n'
         r'Add-Type $s;'
         r'[Wininet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0)|Out-Null;'
         r'[Wininet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0)|Out-Null;';
