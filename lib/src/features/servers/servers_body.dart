@@ -137,9 +137,11 @@ class _ServersBodyState extends State<ServersBody> {
     scope.proxy.selectProfile(p);
     final bool switching = scope.proxy.state.isActive ||
         scope.proxy.state == ProxyConnectionState.connecting;
+    final s = NovaStrings.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(switching ? 'Switching to ${p.name}' : 'Using ${p.name}'),
+        content: Text(
+            switching ? s.switchingProfile(p.name) : s.usingProfile(p.name)),
         duration: const Duration(seconds: 1),
       ),
     );
@@ -150,13 +152,14 @@ class _ServersBodyState extends State<ServersBody> {
   Future<void> _editProfile(
       BuildContext context, ProfilesController profiles, ProxyProfile p) async {
     final bool isSub = p.isSubscription;
+    final s = NovaStrings.of(context);
     final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
       context: context,
       builder: (BuildContext ctx) => _ConfigDialog(
         titleKey: _ConfigDialogTitle.edit,
         initialName: p.name,
         initialUri: isSub ? (p.subscriptionUrl ?? '') : p.uri,
-        uriLabel: isSub ? 'Subscription URL' : 'Link',
+        uriLabel: isSub ? s.serversSubUrl : s.serversLink,
         uriMaxLines: 2,
       ),
     );
@@ -184,7 +187,7 @@ class _SearchField extends StatelessWidget {
       onChanged: onChanged,
       style: Theme.of(context).textTheme.bodyMedium,
       decoration: InputDecoration(
-        hintText: 'Search servers',
+        hintText: NovaStrings.of(context).serversSearch,
         prefixIcon: Icon(Icons.search, color: nova.muted, size: 20),
         filled: true,
         fillColor: nova.surface,
@@ -261,6 +264,7 @@ class _ServerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
+    final s = NovaStrings.of(context);
     final int? latency = profile.lastLatencyMs;
 
     return GestureDetector(
@@ -328,7 +332,7 @@ class _ServerRow extends StatelessWidget {
               Icon(Icons.chevron_right_rounded, color: nova.muted, size: 20),
             PopupMenuButton<String>(
               icon: Icon(Icons.more_vert_rounded, color: nova.muted, size: 20),
-              tooltip: 'Actions',
+              tooltip: s.serversActions,
               onSelected: (String v) {
                 switch (v) {
                   case 'select':
@@ -342,32 +346,32 @@ class _ServerRow extends StatelessWidget {
                 }
               },
               itemBuilder: (_) => <PopupMenuEntry<String>>[
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'select',
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.check_circle_outline_rounded),
-                    title: Text('Select'),
+                    leading: const Icon(Icons.check_circle_outline_rounded),
+                    title: Text(s.serversSelect),
                   ),
                 ),
                 if (profile.isSubscription)
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'extract',
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.list_alt_rounded),
-                      title: Text('Extract configs'),
+                      leading: const Icon(Icons.list_alt_rounded),
+                      title: Text(s.serversExtract),
                     ),
                   ),
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'edit',
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.edit_outlined),
-                    title: Text('Edit'),
+                    leading: const Icon(Icons.edit_outlined),
+                    title: Text(s.serversEdit),
                   ),
                 ),
                 PopupMenuItem<String>(
@@ -376,7 +380,7 @@ class _ServerRow extends StatelessWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.delete_outline_rounded, color: nova.danger),
-                    title: Text('Delete', style: TextStyle(color: nova.danger)),
+                    title: Text(s.serversDelete, style: TextStyle(color: nova.danger)),
                   ),
                 ),
               ],
@@ -397,6 +401,7 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
+    final s = NovaStrings.of(context);
 
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,18 +418,18 @@ class _EmptyState extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text('No servers yet',
+        Text(s.serversEmpty,
             textAlign: TextAlign.center,
             style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        Text('Deploy your own panel, sign in to one, or add a config to get started.',
+        Text(s.serversEmptySub,
             textAlign: TextAlign.center,
             style: text.bodySmall?.copyWith(color: nova.muted)),
         const SizedBox(height: 20),
         _EmptyAction(
           icon: Icons.cloud_upload_rounded,
-          title: 'Deploy your own panel',
-          subtitle: 'Spin up a free Nova worker on Cloudflare',
+          title: s.serversDeploy,
+          subtitle: s.serversDeploySub,
           highlighted: true,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
@@ -433,8 +438,8 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 10),
         _EmptyAction(
           icon: Icons.login_rounded,
-          title: 'Sign in to your panel',
-          subtitle: 'Import configs from an existing panel',
+          title: s.serversSignIn,
+          subtitle: s.serversSignInSub,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
           ),
@@ -442,8 +447,8 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 10),
         _EmptyAction(
           icon: Icons.add_rounded,
-          title: 'Add a config',
-          subtitle: 'Paste a vless:// link or subscription URL',
+          title: s.serversAddConfig,
+          subtitle: s.serversAddConfigSub,
           onTap: () => showAddConfigSheet(context),
         ),
       ],
@@ -526,6 +531,7 @@ class _EmptyAction extends StatelessWidget {
 Future<void> showAddServerDialog(BuildContext context,
     {String? prefill}) async {
   final profiles = NovaScope.of(context).profiles;
+  final s = NovaStrings.of(context);
   final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
@@ -535,7 +541,7 @@ Future<void> showAddServerDialog(BuildContext context,
       initialUri: prefill ?? '',
       initialKind: detected,
       showKindPills: true,
-      uriHint: 'vless://…  or  https://…/sub',
+      uriHint: s.serversUriHint,
     ),
   );
 
@@ -618,7 +624,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   @override
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
-    final String title = widget.titleKey == _ConfigDialogTitle.add ? s.add : 'Edit';
+    final String title =
+        widget.titleKey == _ConfigDialogTitle.add ? s.add : s.serversEdit;
     return AlertDialog(
       backgroundColor: context.nova.bgAlt,
       shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
@@ -628,7 +635,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
         children: <Widget>[
           TextField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(hintText: 'Name', labelText: 'Name'),
+            decoration:
+                InputDecoration(hintText: s.serversName, labelText: s.serversName),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -697,6 +705,7 @@ ProxyKind? _detectKind(String raw) {
 /// detection stay shared. QR scanning is only offered where a camera exists.
 Future<void> showAddConfigSheet(BuildContext context) async {
   final nova = context.nova;
+  final s = NovaStrings.of(context);
   final bool canScan =
       Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
   await showModalBottomSheet<void>(
@@ -724,8 +733,8 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               _AddOption(
                 icon: Icons.qr_code_scanner_rounded,
                 color: nova.cyan,
-                title: 'Scan QR code',
-                subtitle: 'Point the camera at a config QR',
+                title: s.serversScanQr,
+                subtitle: s.serversScanQrSub,
                 onTap: () async {
                   Navigator.pop(sheetCtx);
                   final String? code =
@@ -743,8 +752,8 @@ Future<void> showAddConfigSheet(BuildContext context) async {
             _AddOption(
               icon: Icons.content_paste_rounded,
               color: nova.violet,
-              title: 'Paste from clipboard',
-              subtitle: 'Import a link or subscription you copied',
+              title: s.serversPaste,
+              subtitle: s.serversPasteSub,
               onTap: () async {
                 Navigator.pop(sheetCtx);
                 final ClipboardData? data =
@@ -753,7 +762,7 @@ Future<void> showAddConfigSheet(BuildContext context) async {
                 if (!context.mounted) return;
                 if (text.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Clipboard is empty')),
+                    SnackBar(content: Text(s.serversClipboardEmpty)),
                   );
                   return;
                 }
@@ -763,8 +772,8 @@ Future<void> showAddConfigSheet(BuildContext context) async {
             _AddOption(
               icon: Icons.edit_rounded,
               color: nova.indigo,
-              title: 'Enter manually',
-              subtitle: 'Paste or type a link or subscription URL',
+              title: s.serversManual,
+              subtitle: s.serversManualSub,
               onTap: () async {
                 Navigator.pop(sheetCtx);
                 await showAddServerDialog(context);
@@ -846,7 +855,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Scan QR code'),
+        title: Text(NovaStrings.of(context).serversScanQr),
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.flash_on),

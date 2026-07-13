@@ -143,6 +143,57 @@ class NovaStrings {
   String get testRealDelay => t('common.testRealDelay');
   String get testing => t('common.testing');
 
+  // ---- Routing ----
+  String get routeMode => t('route.mode');
+  String get routeModeRule => t('route.modeRule');
+  String get routeModeGlobal => t('route.modeGlobal');
+  String get routeModeDirect => t('route.modeDirect');
+  String get routeModeRuleDesc => t('route.modeRuleDesc');
+  String get routeModeGlobalDesc => t('route.modeGlobalDesc');
+  String get routeModeDirectDesc => t('route.modeDirectDesc');
+  String get routeBlockAds => t('route.blockAds');
+  String get routeBlockAdsSub => t('route.blockAdsSub');
+  String get routeDirectIran => t('route.directIran');
+  String get routeDirectIranSub => t('route.directIranSub');
+  String get routeBypassLan => t('route.bypassLan');
+  String get routeBypassLanSub => t('route.bypassLanSub');
+  String get routeTun => t('route.tun');
+  String get routeTunSub => t('route.tunSub');
+  String get routeDns => t('route.dns');
+  String get routeDnsSub => t('route.dnsSub');
+  String get routeApplyNote => t('route.applyNote');
+
+  // ---- Servers ----
+  String get serversSearch => t('servers.search');
+  String get serversActions => t('servers.actions');
+  String get serversSelect => t('servers.select');
+  String get serversExtract => t('servers.extract');
+  String get serversEdit => t('servers.edit');
+  String get serversDelete => t('servers.delete');
+  String get serversEmpty => t('servers.empty');
+  String get serversEmptySub => t('servers.emptySub');
+  String get serversDeploy => t('servers.deploy');
+  String get serversDeploySub => t('servers.deploySub');
+  String get serversSignIn => t('servers.signIn');
+  String get serversSignInSub => t('servers.signInSub');
+  String get serversAddConfig => t('servers.addConfig');
+  String get serversAddConfigSub => t('servers.addConfigSub');
+  String get serversName => t('servers.name');
+  String get serversLink => t('servers.link');
+  String get serversSubUrl => t('servers.subUrl');
+  String get serversUriHint => t('servers.uriHint');
+  String get serversScanQr => t('servers.scanQr');
+  String get serversScanQrSub => t('servers.scanQrSub');
+  String get serversPaste => t('servers.paste');
+  String get serversPasteSub => t('servers.pasteSub');
+  String get serversManual => t('servers.manual');
+  String get serversManualSub => t('servers.manualSub');
+  String get serversClipboardEmpty => t('servers.clipboardEmpty');
+  String usingProfile(String name) =>
+      t('servers.using').replaceFirst('{name}', name);
+  String switchingProfile(String name) =>
+      t('servers.switching').replaceFirst('{name}', name);
+
   static const Map<String, String> _en = <String, String>{
     'notice.failoverSwitched':
         'That server was not responding, so Nova switched to the fastest working one.',
@@ -242,6 +293,54 @@ class NovaStrings {
     'common.about': 'About',
     'common.testRealDelay': 'Test real delay',
     'common.testing': 'Testing…',
+    'route.mode': 'Mode',
+    'route.modeRule': 'Rule-based',
+    'route.modeGlobal': 'Global',
+    'route.modeDirect': 'Direct',
+    'route.modeRuleDesc':
+        'Smart routing: proxy what needs it, keep the rest direct.',
+    'route.modeGlobalDesc': 'Route all traffic through the proxy.',
+    'route.modeDirectDesc': 'No proxying: everything goes direct.',
+    'route.blockAds': 'Block ads & trackers',
+    'route.blockAdsSub': 'Drops known ad/tracker domains',
+    'route.directIran': 'Direct for Iran (GeoIP/GeoSite)',
+    'route.directIranSub': 'Iranian destinations bypass the proxy',
+    'route.bypassLan': 'Bypass LAN',
+    'route.bypassLanSub': 'Private/local ranges stay direct',
+    'route.tun': 'Full-device tunnel (TUN)',
+    'route.tunSub': 'Route every app, not just proxy-aware ones. Needs '
+        'one admin approval when you connect.',
+    'route.dns': 'DNS resolver',
+    'route.dnsSub': 'Encrypted DNS over HTTPS, resolved through the tunnel.',
+    'route.applyNote': 'Changes apply the next time you connect.',
+    'servers.search': 'Search servers',
+    'servers.actions': 'Actions',
+    'servers.select': 'Select',
+    'servers.extract': 'Extract configs',
+    'servers.edit': 'Edit',
+    'servers.delete': 'Delete',
+    'servers.empty': 'No servers yet',
+    'servers.emptySub':
+        'Deploy your own panel, sign in to one, or add a config to get started.',
+    'servers.deploy': 'Deploy your own panel',
+    'servers.deploySub': 'Spin up a free Nova worker on Cloudflare',
+    'servers.signIn': 'Sign in to your panel',
+    'servers.signInSub': 'Import configs from an existing panel',
+    'servers.addConfig': 'Add a config',
+    'servers.addConfigSub': 'Paste a vless:// link or subscription URL',
+    'servers.name': 'Name',
+    'servers.link': 'Link',
+    'servers.subUrl': 'Subscription URL',
+    'servers.uriHint': 'vless://…  or  https://…/sub',
+    'servers.scanQr': 'Scan QR code',
+    'servers.scanQrSub': 'Point the camera at a config QR',
+    'servers.paste': 'Paste from clipboard',
+    'servers.pasteSub': 'Import a link or subscription you copied',
+    'servers.manual': 'Enter manually',
+    'servers.manualSub': 'Paste or type a link or subscription URL',
+    'servers.clipboardEmpty': 'Clipboard is empty',
+    'servers.using': 'Using {name}',
+    'servers.switching': 'Switching to {name}',
   };
 
   static const Map<String, String> _fa = <String, String>{
@@ -343,6 +442,54 @@ class NovaStrings {
     'common.about': 'درباره',
     'common.testRealDelay': 'تست تأخیر واقعی',
     'common.testing': 'در حال تست…',
+    'route.mode': 'حالت',
+    'route.modeRule': 'قانون‌محور',
+    'route.modeGlobal': 'سراسری',
+    'route.modeDirect': 'مستقیم',
+    'route.modeRuleDesc':
+        'مسیریابی هوشمند: هرچه لازم است از پروکسی عبور کند، بقیه مستقیم بماند.',
+    'route.modeGlobalDesc': 'همهٔ ترافیک از پروکسی عبور می‌کند.',
+    'route.modeDirectDesc': 'بدون پروکسی؛ همه‌چیز مستقیم می‌رود.',
+    'route.blockAds': 'مسدودسازی تبلیغات و ردیاب‌ها',
+    'route.blockAdsSub': 'دامنه‌های شناخته‌شدهٔ تبلیغ و ردیاب را حذف می‌کند',
+    'route.directIran': 'مستقیم برای ایران (GeoIP/GeoSite)',
+    'route.directIranSub': 'مقصدهای ایرانی بدون پروکسی عبور می‌کنند',
+    'route.bypassLan': 'عبور از شبکهٔ محلی',
+    'route.bypassLanSub': 'محدوده‌های خصوصی و محلی مستقیم می‌مانند',
+    'route.tun': 'تونل کل دستگاه (TUN)',
+    'route.tunSub': 'همهٔ برنامه‌ها را تونل می‌کند، نه فقط برنامه‌های سازگار با '
+        'پروکسی. هنگام اتصال به یک‌ بار تأیید مدیر نیاز دارد.',
+    'route.dns': 'حل‌کنندهٔ DNS',
+    'route.dnsSub': 'DNS رمزگذاری‌شده روی HTTPS که از طریق تونل حل می‌شود.',
+    'route.applyNote': 'تغییرات در اتصال بعدی اعمال می‌شوند.',
+    'servers.search': 'جستجوی سرورها',
+    'servers.actions': 'کنش‌ها',
+    'servers.select': 'انتخاب',
+    'servers.extract': 'استخراج پیکربندی‌ها',
+    'servers.edit': 'ویرایش',
+    'servers.delete': 'حذف',
+    'servers.empty': 'هنوز سروری نیست',
+    'servers.emptySub':
+        'برای شروع، پنل خودتان را مستقر کنید، به یک پنل وارد شوید، یا یک پیکربندی اضافه کنید.',
+    'servers.deploy': 'پنل خودتان را مستقر کنید',
+    'servers.deploySub': 'یک ورکر رایگان نوا روی کلودفلر بسازید',
+    'servers.signIn': 'به پنل خود وارد شوید',
+    'servers.signInSub': 'پیکربندی‌ها را از یک پنل موجود وارد کنید',
+    'servers.addConfig': 'افزودن پیکربندی',
+    'servers.addConfigSub': 'یک لینک vless:// یا نشانی اشتراک را بچسبانید',
+    'servers.name': 'نام',
+    'servers.link': 'لینک',
+    'servers.subUrl': 'نشانی اشتراک',
+    'servers.uriHint': 'vless://…  یا  https://…/sub',
+    'servers.scanQr': 'اسکن کد QR',
+    'servers.scanQrSub': 'دوربین را به سمت کد QR پیکربندی بگیرید',
+    'servers.paste': 'چسباندن از کلیپ‌بورد',
+    'servers.pasteSub': 'لینک یا اشتراکی که کپی کرده‌اید را وارد کنید',
+    'servers.manual': 'ورود دستی',
+    'servers.manualSub': 'لینک یا نشانی اشتراک را بچسبانید یا تایپ کنید',
+    'servers.clipboardEmpty': 'کلیپ‌بورد خالی است',
+    'servers.using': 'در حال استفاده از {name}',
+    'servers.switching': 'در حال تغییر به {name}',
   };
 }
 
