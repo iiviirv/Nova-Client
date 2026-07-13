@@ -132,11 +132,11 @@ class CloudflareScreen extends StatelessWidget {
               }, onRedirect: () async {
                 // Close the sign-in sheet the instant the redirect is caught,
                 // before the token exchange, so the user is not stranded on the
-                // callback page.
-                await closeInAppWebView();
+                // callback page. Best-effort: a no-op on desktop.
+                await dismissSignInBrowser();
               });
               // Safety net in case the redirect hook did not fire.
-              await closeInAppWebView();
+              await dismissSignInBrowser();
             },
           ),
         ],

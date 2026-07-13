@@ -110,9 +110,9 @@ class _DeployScreenState extends State<DeployScreen> {
                 await launchUrl(Uri.parse(url),
                     mode: LaunchMode.inAppBrowserView);
               }, onRedirect: () async {
-                await closeInAppWebView();
+                await dismissSignInBrowser();
               });
-              await closeInAppWebView();
+              await dismissSignInBrowser();
             },
           ),
           if (connecting)
