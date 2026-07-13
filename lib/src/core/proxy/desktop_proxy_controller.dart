@@ -136,6 +136,13 @@ class DesktopProxyController extends ProxyController {
         _coreExited = Completer<void>();
         await _openCoreLog(cfgFile);
 
+        // Kill any orphaned Nova core left holding the mixed/Clash ports before
+        // we spawn a fresh one. If the app was force-quit (or crashed) while
+        // connected, its child sing-box can outlive it and keep 127.0.0.1:2080
+        // bound, so the next connect FATALs with "address already in use". Our
+        // own [_process] is already gone by then, so [_cleanup] can't see it.
+        await _killStaleCores(cfgFile.path);
+
         _process =
             await Process.start(binary, <String>['run', '-c', cfgFile.path]);
         // Capture BOTH streams into the rolling tail and the log file, so a
@@ -707,6 +714,39 @@ class DesktopProxyController extends ProxyController {
     } catch (_) {}
     _coreLogSink = null;
     _traffic = TrafficStats.zero;
+  }
+
+  /// Kill any leftover Nova sing-box core that survived a previous session and
+  /// is still holding the local ports, so a fresh connect can bind. Matches ONLY
+  /// our own core by its config-file argument ([cfgPath] ends in
+  /// `nova-singbox.json`), never a sing-box the user runs for their own reasons.
+  /// Best-effort and fast: any failure here just falls through to the normal
+  /// "address already in use" report if the port really is stuck.
+  Future<void> _killStaleCores(String cfgPath) async {
+    // The config filename is our unique marker; the full path differs by user.
+    final String marker = cfgPath.split(Platform.pathSeparator).last;
+    try {
+      if (Platform.isWindows) {
+        // WMIC/PowerShell: stop sing-box.exe instances whose command line ran
+        // our config, leaving any unrelated sing-box alone.
+        await Process.run('powershell', <String>[
+          '-NoProfile',
+          '-Command',
+          "Get-CimInstance Win32_Process -Filter \"Name='sing-box.exe'\" | "
+              "Where-Object { \$_.CommandLine -like '*$marker*' } | "
+              'ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }',
+        ]).timeout(const Duration(seconds: 6));
+      } else {
+        // macOS/Linux: pkill matching the full command line (the config path).
+        await Process.run('pkill', <String>['-f', marker])
+            .timeout(const Duration(seconds: 6));
+      }
+      // Give the OS a beat to release the socket before we bind it.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    } catch (_) {
+      // No stale core, tool missing, or timed out: proceed and let the real
+      // bind attempt surface any genuine conflict.
+    }
   }
 
   void _setState(ProxyConnectionState s) {
