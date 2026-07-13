@@ -50,7 +50,7 @@ class RoutingScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const NovaEyebrow('Mode'),
+                      NovaEyebrow(s.routeMode),
                       const SizedBox(height: NovaSpace.md),
                       Wrap(
                         spacing: 8,
@@ -58,7 +58,7 @@ class RoutingScreen extends StatelessWidget {
                         children: <Widget>[
                           for (final SingboxMode m in SingboxMode.values)
                             NovaPill(
-                              label: m.label,
+                              label: m.label(s),
                               icon: m.icon,
                               selected: settings.mode == m,
                               onTap: () => settings.setMode(m),
@@ -66,7 +66,7 @@ class RoutingScreen extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: NovaSpace.sm),
-                      Text(settings.mode.description,
+                      Text(settings.mode.description(s),
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -81,24 +81,24 @@ class RoutingScreen extends StatelessWidget {
                     children: <Widget>[
                       _RuleSwitch(
                         icon: Icons.block,
-                        title: 'Block ads & trackers',
-                        subtitle: 'Drops known ad/tracker domains',
+                        title: s.routeBlockAds,
+                        subtitle: s.routeBlockAdsSub,
                         value: settings.blockAds,
                         onChanged: settings.setBlockAds,
                       ),
                       Divider(height: 1, color: nova.border),
                       _RuleSwitch(
                         icon: Icons.flag_outlined,
-                        title: 'Direct for Iran (GeoIP/GeoSite)',
-                        subtitle: 'Iranian destinations bypass the proxy',
+                        title: s.routeDirectIran,
+                        subtitle: s.routeDirectIranSub,
                         value: settings.bypassIran,
                         onChanged: settings.setBypassIran,
                       ),
                       Divider(height: 1, color: nova.border),
                       _RuleSwitch(
                         icon: Icons.lan_outlined,
-                        title: 'Bypass LAN',
-                        subtitle: 'Private/local ranges stay direct',
+                        title: s.routeBypassLan,
+                        subtitle: s.routeBypassLanSub,
                         value: settings.bypassLan,
                         onChanged: settings.setBypassLan,
                       ),
@@ -111,10 +111,8 @@ class RoutingScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: _RuleSwitch(
                       icon: Icons.devices_rounded,
-                      title: 'Full-device tunnel (TUN)',
-                      subtitle:
-                          'Route every app, not just proxy-aware ones. Needs '
-                          'one admin approval when you connect.',
+                      title: s.routeTun,
+                      subtitle: s.routeTunSub,
                       value: settings.tunMode,
                       onChanged: settings.setTunMode,
                     ),
@@ -125,7 +123,7 @@ class RoutingScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const NovaEyebrow('DNS resolver'),
+                      NovaEyebrow(s.routeDns),
                       const SizedBox(height: NovaSpace.md),
                       Wrap(
                         spacing: 8,
@@ -141,7 +139,7 @@ class RoutingScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: NovaSpace.sm),
                       Text(
-                        'Encrypted DNS over HTTPS, resolved through the tunnel.',
+                        s.routeDnsSub,
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
@@ -164,7 +162,7 @@ class RoutingScreen extends StatelessWidget {
                       const SizedBox(width: NovaSpace.sm),
                       Expanded(
                         child: Text(
-                          'Changes apply the next time you connect.',
+                          s.routeApplyNote,
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -185,21 +183,20 @@ class RoutingScreen extends StatelessWidget {
 }
 
 extension _RouteModeMeta on SingboxMode {
-  String get label => switch (this) {
-        SingboxMode.rule => 'Rule-based',
-        SingboxMode.global => 'Global',
-        SingboxMode.direct => 'Direct',
+  String label(NovaStrings s) => switch (this) {
+        SingboxMode.rule => s.routeModeRule,
+        SingboxMode.global => s.routeModeGlobal,
+        SingboxMode.direct => s.routeModeDirect,
       };
   IconData get icon => switch (this) {
         SingboxMode.rule => Icons.alt_route,
         SingboxMode.global => Icons.public,
         SingboxMode.direct => Icons.arrow_forward,
       };
-  String get description => switch (this) {
-        SingboxMode.rule =>
-          'Smart routing — proxy what needs it, keep the rest direct.',
-        SingboxMode.global => 'Route all traffic through the proxy.',
-        SingboxMode.direct => 'No proxying — everything goes direct.',
+  String description(NovaStrings s) => switch (this) {
+        SingboxMode.rule => s.routeModeRuleDesc,
+        SingboxMode.global => s.routeModeGlobalDesc,
+        SingboxMode.direct => s.routeModeDirectDesc,
       };
 }
 
