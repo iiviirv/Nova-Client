@@ -114,9 +114,51 @@ List<ProxyNode> parseSubscriptionBody(String body) {
     final String line = raw.trim();
     if (line.isEmpty) continue;
     final ProxyNode? node = parseShareLink(line);
-    if (node != null) nodes.add(node);
+    if (node != null) {
+      if (!_isPlaceholderNode(node)) nodes.add(node);
+      continue;
+    }
+    // A single line may itself be base64 that expands to one or more links.
+    // Some panels return a MIXED body: a plaintext info node on the first line
+    // (its name carries the usage/expiry) followed by a base64 blob holding the
+    // real node list. The whole-body decode above only fires when the body has
+    // no '://' at all, so that base64 line would otherwise be dropped and the
+    // user sees just the one plaintext node ("I can only see one config").
+    // Decode per line so the real nodes come through.
+    final String? decoded = _decodeBase64Line(line);
+    if (decoded != null) {
+      for (final String inner in const LineSplitter().convert(decoded)) {
+        final ProxyNode? n = parseShareLink(inner.trim());
+        if (n != null && !_isPlaceholderNode(n)) nodes.add(n);
+      }
+    }
   }
   return nodes;
+}
+
+/// True for the fake "info" node some panels prepend to a subscription to show
+/// quota/expiry in its name: it points at a placeholder address (1.1.1.1,
+/// 0.0.0.0, 127.0.0.1) and is not a real exit, so it must not appear as a
+/// selectable config.
+bool _isPlaceholderNode(ProxyNode node) {
+  const Set<String> placeholders = <String>{'1.1.1.1', '0.0.0.0', '127.0.0.1'};
+  return placeholders.contains(node.server.trim());
+}
+
+/// Try to base64-decode a single subscription line (URL-safe alphabet, missing
+/// padding tolerated). Returns the decoded text only if it actually reveals
+/// share links (`://`), else null so a non-base64 line is left untouched.
+String? _decodeBase64Line(String line) {
+  if (line.contains('://')) return null; // already a plaintext link
+  try {
+    String s = line.replaceAll('-', '+').replaceAll('_', '/');
+    final int mod = s.length % 4;
+    if (mod != 0) s = s.padRight(s.length + (4 - mod), '=');
+    final String decoded = utf8.decode(base64.decode(s));
+    return decoded.contains('://') ? decoded : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Fetches [url] and returns its [NovaCoreConfig], or `null` if it yields no
