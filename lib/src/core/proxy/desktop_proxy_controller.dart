@@ -84,6 +84,14 @@ class DesktopProxyController extends ProxyController {
   int _lastDown = 0;
   bool _systemProxyOn = false;
 
+  /// One-shot guard for the auto (subscription) self-heal, matching the mobile
+  /// core: if a subscription tunnel comes up but no traffic flows (urltest landed
+  /// on a dead exit), rebuild the core once so it re-picks. [_healing] keeps the
+  /// heal's own reconnect from re-arming the guard so a dead sub can't loop.
+  /// Only ever runs in proxy mode — a TUN rebuild would raise a second UAC prompt.
+  bool _autoHealTried = false;
+  bool _healing = false;
+
   /// Supplies whether to run a whole-device TUN (needs one admin/UAC approval)
   /// instead of a local inbound + system proxy. Wired from settings at startup;
   /// defaults to the unprivileged system-proxy path.
@@ -104,6 +112,9 @@ class DesktopProxyController extends ProxyController {
       _fail('Select a config first');
       return;
     }
+    // A fresh user-initiated connect re-arms the one-shot self-heal; the heal's
+    // own reconnect keeps [_autoHealTried] set (via [_healing]) so it can't loop.
+    if (!_healing) _autoHealTried = false;
     _setState(ProxyConnectionState.connecting);
     try {
       final String config = await _buildConfig(profile);
@@ -117,8 +128,7 @@ class DesktopProxyController extends ProxyController {
         // everything, so it must run elevated and no system proxy is set.
         await _startElevatedTun(binary, cfgFile);
         if (!await _waitForCore()) {
-          throw 'The tunnel did not come up. Admin approval is required for '
-              'full-device mode.';
+          throw await _tunFailureMessage();
         }
       } else {
         _coreTail.clear();
@@ -161,15 +171,82 @@ class DesktopProxyController extends ProxyController {
       }
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
+      // Auto (subscription) post-connect health check, proxy mode only (a TUN
+      // rebuild would re-prompt for admin). Mirrors the mobile core.
+      if (!_healing && !tunMode && (_active?.isSubscription ?? false)) {
+        unawaited(_verifyAutoConnectivity());
+      }
     } catch (e) {
       await _cleanup();
       _fail(e.toString());
     }
   }
 
+  /// After a subscription tunnel comes up in proxy mode, confirm traffic really
+  /// flows through the local exit. urltest can lead with a dead node, leaving the
+  /// orb "connected" while nothing loads; probe for ~18s (letting urltest settle)
+  /// and, if still nothing, rebuild the core ONCE so it re-picks. Guarded against
+  /// looping; the dashboard's honest "Verifying…" label covers the wait.
+  Future<void> _verifyAutoConnectivity() async {
+    final ProxyProfile? profile = _active;
+    if (profile == null || !profile.isSubscription) return;
+    for (int attempt = 0; attempt < 6; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (_state != ProxyConnectionState.connected || _active?.id != profile.id) {
+        return;
+      }
+      if (await _probeInternet()) return; // traffic flows — done
+    }
+    if (_autoHealTried || tunMode) return;
+    _autoHealTried = true;
+    _healing = true;
+    try {
+      await reconnect();
+    } finally {
+      _healing = false;
+    }
+  }
+
+  /// A tiny generate_204 request through the local exit: its completion is the
+  /// "traffic is getting through" signal. Routes via the local mixed inbound
+  /// (proxy mode) exactly like the conn-info probe. Non-Cloudflare endpoints on
+  /// purpose (a Nova worker can't relay to Cloudflare's own hosts).
+  Future<bool> _probeInternet() async {
+    const List<String> urls = <String>[
+      'https://www.gstatic.com/generate_204',
+      'https://connectivitycheck.gstatic.com/generate_204',
+      'https://www.google.com/generate_204',
+    ];
+    for (int attempt = 0; attempt < 2; attempt++) {
+      final HttpClient client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 4);
+      client.findProxy = (_) => proxyUri ?? 'DIRECT';
+      try {
+        for (final String url in urls) {
+          try {
+            final HttpClientRequest req = await client.getUrl(Uri.parse(url));
+            req.followRedirects = false;
+            final HttpClientResponse resp =
+                await req.close().timeout(const Duration(seconds: 5));
+            await resp.drain<void>();
+            if (resp.statusCode >= 200 && resp.statusCode < 400) return true;
+          } catch (_) {
+            // Try the next endpoint.
+          }
+        }
+      } finally {
+        client.close(force: true);
+      }
+    }
+    return false;
+  }
+
   @override
   Future<void> disconnect() async {
     if (_state == ProxyConnectionState.disconnected) return;
+    // A real user disconnect clears the heal guard so the next session can heal
+    // again; the heal's own reconnect (which disconnects first) must not.
+    if (!_healing) _autoHealTried = false;
     _setState(ProxyConnectionState.disconnecting);
     await _cleanup();
     _setState(ProxyConnectionState.disconnected);
@@ -347,8 +424,18 @@ class DesktopProxyController extends ProxyController {
   Future<bool> _waitForCore() async {
     final Uri url = Uri.parse('http://127.0.0.1:$clashPort/version');
     for (int i = 0; i < 80; i++) {
-      if (_process == null) return false;
-      if (_coreExited?.isCompleted ?? false) return false;
+      // Non-TUN (proxy) mode runs the core as our own child in [_process], so a
+      // null reference means the start was aborted — bail. TUN mode has NO
+      // [_process]: the core runs inside the elevated helper, and its Clash API
+      // is the only handle we have. Guarding on [_process] there made every
+      // full-device connect return false on the first iteration and report
+      // "admin approval required" even after the user approved UAC and the
+      // tunnel actually came up. So only apply that guard in proxy mode.
+      if (!tunMode && _process == null) return false;
+      // [_coreExited] tracks our own child (proxy mode). In TUN mode there is no
+      // child and this completer may be left completed from a prior proxy
+      // session, so only consult it in proxy mode.
+      if (!tunMode && (_coreExited?.isCompleted ?? false)) return false;
       try {
         final r = await http.get(url).timeout(const Duration(milliseconds: 500));
         if (r.statusCode == 200) return true;
@@ -356,6 +443,44 @@ class DesktopProxyController extends ProxyController {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     return false;
+  }
+
+  /// Builds the message shown when full-device (TUN) mode fails to come up.
+  /// The core runs elevated and logs to nova-tun.log (not our stdout tail), so we
+  /// read that log's last lines for the real reason and distinguish the two
+  /// common causes: the UAC/admin prompt was dismissed (no log written), or the
+  /// core started but failed (a FATAL line in the log, e.g. missing wintun.dll).
+  Future<String> _tunFailureMessage() async {
+    String reason = '';
+    String logPath = '';
+    try {
+      final Directory dir = await getApplicationSupportDirectory();
+      final File log = File('${dir.path}/nova-tun.log');
+      logPath = log.path;
+      if (log.existsSync()) {
+        final List<String> lines = (await log.readAsString())
+            .split('\n')
+            .map((String l) => l.replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '').trim())
+            .where((String l) => l.isNotEmpty)
+            .toList();
+        if (lines.isNotEmpty) {
+          reason = lines.sublist(lines.length > 3 ? lines.length - 3 : 0).join(' | ');
+        }
+      }
+    } catch (_) {
+      // Best-effort; fall back to the generic guidance below.
+    }
+    if (reason.isEmpty) {
+      // No log means the elevated core never ran — almost always a dismissed
+      // Windows UAC (or macOS admin) prompt.
+      return 'The tunnel did not come up. Full-device mode needs the admin '
+          '(UAC) prompt approved so it can create the network adapter. Approve '
+          'it and try again, or turn off full-device mode in Settings to use '
+          'proxy mode (no admin needed).';
+    }
+    // The core ran but failed: surface its actual reason and the log path.
+    return 'Full-device mode failed to start: $reason. Log: $logPath. You can '
+        'turn off full-device mode in Settings to use proxy mode instead.';
   }
 
   /// Open (truncate) the tee log and record which config the core is running.
