@@ -660,11 +660,44 @@ class DesktopProxyController extends ProxyController {
           r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
       if (on) {
         await Process.run('reg', <String>['add', key, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '1', '/f']);
-        await Process.run('reg', <String>['add', key, '/v', 'ProxyServer', '/d', 'socks=127.0.0.1:$socksPort', '/f']);
+        // Register the mixed inbound as an HTTP proxy for all protocols, NOT
+        // `socks=`. WinINET (what Chrome/Edge use) treats `socks=` as SOCKS4,
+        // which cannot tunnel HTTPS or resolve names remotely, so pages fail to
+        // load. A bare host:port is an HTTP proxy and the mixed inbound speaks
+        // HTTP CONNECT, so HTTPS works.
+        await Process.run('reg', <String>['add', key, '/v', 'ProxyServer', '/d', '127.0.0.1:$socksPort', '/f']);
+        // Keep localhost/intranet direct so loopback and LAN still resolve.
+        await Process.run('reg', <String>['add', key, '/v', 'ProxyOverride', '/d', '<local>', '/f']);
       } else {
         await Process.run('reg', <String>['add', key, '/v', 'ProxyEnable', '/t', 'REG_DWORD', '/d', '0', '/f']);
       }
+      // Registry writes alone don't take effect: WinINET caches proxy settings,
+      // so running browsers keep going direct until told to reload. Notify it.
+      await _refreshWinInet();
       _systemProxyOn = on;
+    }
+  }
+
+  /// Tell WinINET its proxy settings changed so already-running browsers pick
+  /// them up immediately (otherwise the registry write is ignored until the
+  /// browser restarts). Dart can't call the Win32 API directly, so drive it
+  /// through a tiny inline P/Invoke in PowerShell. Best-effort.
+  Future<void> _refreshWinInet() async {
+    if (!Platform.isWindows) return;
+    const String ps =
+        r'$s=@"' '\n'
+        r'using System;using System.Runtime.InteropServices;' '\n'
+        r'public class Wininet{[DllImport("wininet.dll",SetLastError=true)]'
+        r'public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int l);}' '\n'
+        r'"@;' '\n'
+        r'Add-Type $s;'
+        r'[Wininet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0)|Out-Null;'
+        r'[Wininet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0)|Out-Null;';
+    try {
+      await Process.run('powershell', <String>['-NoProfile', '-Command', ps])
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {
+      // Non-fatal: the proxy is set, it just may need a browser restart to apply.
     }
   }
 
