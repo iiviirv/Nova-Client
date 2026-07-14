@@ -517,6 +517,10 @@ class SingboxConfig {
         leanRuleSets.add(_localRuleSet('geosite-ads', kGeositeAdsFile));
       }
       if (o.bypassIran && o.mode == SingboxMode.rule) {
+        // Any .ir domain goes direct by TLD suffix alone: an instant match that
+        // needs no rule-set download, so every Iranian site keeps working (on the
+        // user's real IP) even if the geosite-ir set can't load.
+        rules.add(<String, dynamic>{'domain_suffix': '.ir', 'outbound': 'direct'});
         rules.add(<String, dynamic>{'rule_set': 'geosite-ir', 'outbound': 'direct'});
         leanRuleSets.add(_localRuleSet('geosite-ir', kGeositeIrFile));
       }
@@ -542,6 +546,11 @@ class SingboxConfig {
       }
       if (o.blockAds) addAds();
       if (o.bypassIran) {
+        // Any .ir domain goes direct by TLD suffix alone (real IP, bypass proxy):
+        // an instant match with no rule-set download, so Iranian sites keep working
+        // even if the geo rule-sets below fail to load. The rule-sets still add the
+        // Iranian sites that live on non-.ir domains (e.g. .com).
+        rules.add(<String, dynamic>{'domain_suffix': '.ir', 'outbound': 'direct'});
         if (o.localRuleSets) {
           // geoip-ir isn't bundled; bypass Iran by domain only (the geosite-ir
           // list covers Iranian sites) so nothing has to download at startup.

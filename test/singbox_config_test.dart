@@ -354,6 +354,31 @@ void main() {
       expect(tags, containsAll(<String>['geoip-ir', 'geosite-ir']));
     });
 
+    // Any .ir domain must go direct by TLD suffix alone (real IP, no rule-set
+    // download), so Iranian sites keep working even if the geo rule-sets fail to
+    // load. Present on the full, local, and lean paths when bypassIran is on; gone
+    // when it is off.
+    test('Iran bypass adds a plain .ir domain-suffix direct rule', () {
+      bool hasIrSuffixDirect(Map<String, dynamic> cfg) {
+        final rules = ((cfg['route'] as Map)['rules'] as List).cast<Map>();
+        return rules.any((r) =>
+            r['outbound'] == 'direct' && r['domain_suffix'] == '.ir');
+      }
+
+      for (final opts in <SingboxRouteOptions>[
+        const SingboxRouteOptions(),
+        const SingboxRouteOptions(localRuleSets: true),
+        const SingboxRouteOptions(lean: true),
+      ]) {
+        expect(hasIrSuffixDirect(SingboxConfig.buildMap(vlessNode(), options: opts)),
+            isTrue);
+      }
+      expect(
+          hasIrSuffixDirect(SingboxConfig.buildMap(vlessNode(),
+              options: const SingboxRouteOptions(bypassIran: false))),
+          isFalse);
+    });
+
     test('localRuleSets uses bundled files, never a remote download', () {
       // Desktop path: a remote rule-set that can\'t be fetched FATALs the core
       // ("the core did not come up in time" in Iran, where the CDN is blocked),
