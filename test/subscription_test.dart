@@ -40,6 +40,23 @@ void main() {
       expect(nodes, hasLength(1));
       expect(nodes.single.server, '162.159.38.19');
     });
+
+    test('drops the RFC 5737 info nodes the panel uses for announcements', () {
+      // Nova's panel prepends two fake "info" nodes on documentation addresses:
+      // one carries a Telegram link in its name, the other the usage/expiry. They
+      // are not real exits, so they must never show up as selectable configs.
+      const String tgInfo =
+          'vless://e8f57fa7-ecc0-4850-89d1-7814dd585d8c@192.0.2.1:443'
+          '?security=tls&type=ws&host=$workerHost&sni=$workerHost'
+          '&path=%2F&encryption=none#t.me%2Firnova_proxy';
+      const String usageInfo =
+          'vless://e8f57fa7-ecc0-4850-89d1-7814dd585d8c@198.51.100.9:443'
+          '?security=tls&type=ws&host=$workerHost&sni=$workerHost'
+          '&path=%2F&encryption=none#0GB%20%2F%209999GB';
+      final nodes = parseSubscriptionBody('$tgInfo\n$usageInfo\n$node\n');
+      expect(nodes, hasLength(1));
+      expect(nodes.single.server, '162.159.38.19');
+    });
   });
 
   group('NovaCoreConfig', () {
