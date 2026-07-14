@@ -34,6 +34,8 @@ class _NodeListScreenState extends State<NodeListScreen> {
   final Map<String, int> _ping = <String, int>{}; // key -> ms (-1 = unreachable)
   final Map<String, String> _cc = <String, String>{}; // key -> ISO country code
   final Map<String, String> _ccByIp = <String, String>{}; // ip -> cc cache
+  final Map<String, String> _place = <String, String>{}; // key -> "Country · City"
+  final Map<String, String> _placeByIp = <String, String>{}; // ip -> place cache
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5);
   bool _loading = true;
@@ -145,6 +147,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final String host = n.server;
     if (_ccByIp.containsKey(host)) {
       _cc[_key(n)] = _ccByIp[host]!;
+      if ((_placeByIp[host] ?? '').isNotEmpty) _place[_key(n)] = _placeByIp[host]!;
       return;
     }
     try {
@@ -153,8 +156,17 @@ class _NodeListScreenState extends State<NodeListScreen> {
       final body = await resp.transform(utf8.decoder).join();
       final j = jsonDecode(body) as Map<String, dynamic>;
       final cc = (j['country_code'] as String?)?.toUpperCase() ?? '';
+      final country = (j['country'] as String?) ?? '';
+      final city = (j['city'] as String?) ?? '';
+      // Lead with the city (the distinguishing part; the flag already shows the
+      // country), kept short with the country code. Fall back to country name.
+      final String place = city.isNotEmpty
+          ? (cc.isNotEmpty ? '$city, $cc' : city)
+          : country;
       _ccByIp[host] = cc;
+      _placeByIp[host] = place;
       if (cc.isNotEmpty) _cc[_key(n)] = cc;
+      if (place.isNotEmpty) _place[_key(n)] = place;
     } catch (_) {/* leave flag blank */}
   }
 
@@ -216,6 +228,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
                         node: n,
                         ms: _ping[_key(n)],
                         countryCode: _cc[_key(n)],
+                        place: _place[_key(n)],
                         selected: pinned == _key(n),
                         onTap: () => _pin(_key(n)),
                       ),
@@ -267,7 +280,8 @@ String _cleanNodeName(ProxyNode n) {
   return s;
 }
 
-/// Short transport chips: how the node actually connects (WS/gRPC, TLS/Reality).
+/// Short transport chips: how the node actually connects (WS/gRPC, TLS/Reality,
+/// and UDP for the QUIC protocols that carry UDP end to end, good for calls).
 List<String> _transportTags(ProxyNode n) {
   final List<String> t = <String>[];
   switch (n.network.toLowerCase()) {
@@ -283,7 +297,21 @@ List<String> _transportTags(ProxyNode n) {
   } else if (n.tls) {
     t.add('TLS');
   }
+  if (n.protocol.isUdpNative) t.add('UDP');
   return t;
+}
+
+/// The deeper TLS handshake details (SNI, uTLS fingerprint, VLESS flow) shown on
+/// a secondary line. Empty when the node carries none of them.
+String _nodeDetail(ProxyNode n) {
+  // Short, high-value bits first (uTLS, flow) so they stay visible; the long
+  // SNI host goes last and truncates gracefully.
+  final List<String> parts = <String>[
+    if ((n.fingerprint ?? '').isNotEmpty) 'uTLS ${n.fingerprint}',
+    if ((n.flow ?? '').isNotEmpty) 'flow ${n.flow}',
+    if ((n.sni ?? '').isNotEmpty) 'SNI ${n.sni}',
+  ];
+  return parts.join('   ·   ');
 }
 
 class _NodeRow extends StatelessWidget {
@@ -291,6 +319,7 @@ class _NodeRow extends StatelessWidget {
     required this.node,
     required this.ms,
     required this.countryCode,
+    required this.place,
     required this.selected,
     required this.onTap,
   });
@@ -298,20 +327,27 @@ class _NodeRow extends StatelessWidget {
   final ProxyNode node;
   final int? ms;
   final String? countryCode;
+  final String? place; // "Country · City" once geo resolves
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
     final String cc = countryCode ?? '';
     final String addr = '${node.server}:${node.port}';
     final String clean = _cleanNodeName(node);
-    final String primary = clean.isNotEmpty ? clean : addr;
+    // Lead with the location so rows are distinguishable; fall back to the
+    // (cleaned) node name, then the address, while geo is still resolving.
+    final String location = place ?? '';
+    final String primary =
+        location.isNotEmpty ? location : (clean.isNotEmpty ? clean : addr);
     final List<String> transport = _transportTags(node);
-    final String meta = cc.isNotEmpty ? '$cc · $addr' : addr;
+    final String detail = _nodeDetail(node);
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      isThreeLine: detail.isNotEmpty,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: cc.isNotEmpty
           ? Text(_flagEmoji(cc), style: const TextStyle(fontSize: 26))
           : Icon(Icons.public_rounded, color: nova.muted, size: 24),
@@ -327,21 +363,31 @@ class _NodeRow extends StatelessWidget {
           ),
         ],
       ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 4,
-          children: <Widget>[
-            Text(meta,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: nova.muted)),
-            for (final String t in transport) _MiniTag(text: t),
-          ],
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const SizedBox(height: 4),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
+            children: <Widget>[
+              Text(addr,
+                  style: text.bodySmall?.copyWith(color: nova.muted)),
+              for (final String t in transport) _MiniTag(text: t),
+            ],
+          ),
+          if (detail.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall?.copyWith(color: nova.muted),
+              ),
+            ),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
