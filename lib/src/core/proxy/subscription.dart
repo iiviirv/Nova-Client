@@ -137,12 +137,18 @@ List<ProxyNode> parseSubscriptionBody(String body) {
 }
 
 /// True for the fake "info" node some panels prepend to a subscription to show
-/// quota/expiry in its name: it points at a placeholder address (1.1.1.1,
-/// 0.0.0.0, 127.0.0.1) and is not a real exit, so it must not appear as a
-/// selectable config.
+/// quota/expiry or a channel link in its name: it points at a placeholder
+/// address and is not a real exit, so it must not appear as a selectable
+/// config. Covers the obvious loopback/unspecified hosts plus the RFC 5737
+/// documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) that
+/// Nova's panel uses for its announcement and usage rows.
 bool _isPlaceholderNode(ProxyNode node) {
+  final String host = node.server.trim();
   const Set<String> placeholders = <String>{'1.1.1.1', '0.0.0.0', '127.0.0.1'};
-  return placeholders.contains(node.server.trim());
+  if (placeholders.contains(host)) return true;
+  return host.startsWith('192.0.2.') ||
+      host.startsWith('198.51.100.') ||
+      host.startsWith('203.0.113.');
 }
 
 /// Try to base64-decode a single subscription line (URL-safe alphabet, missing
