@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
+import '../../l10n/nova_strings.dart';
 import '../../theme/nova_colors.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
@@ -38,6 +40,8 @@ class _NodeListScreenState extends State<NodeListScreen> {
   final Map<String, String> _placeByIp = <String, String>{}; // ip -> place cache
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5);
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
   bool _loading = true;
   String? _error;
 
@@ -46,13 +50,33 @@ class _NodeListScreenState extends State<NodeListScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // Defer to after the first frame: _load() reads NovaScope.of(context),
+    // which can't be looked up while initState is still running.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   @override
   void dispose() {
     _http.close(force: true);
+    _search.dispose();
     super.dispose();
+  }
+
+  /// True when the node matches the current search text. Matches on the display
+  /// name, protocol, address and resolved location so any of them can be typed.
+  bool _matches(ProxyNode n) {
+    final String q = _query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final String hay = <String>[
+      n.tag,
+      n.protocol.label,
+      '${n.server}:${n.port}',
+      _place[_key(n)] ?? '',
+      n.sni ?? '',
+    ].join(' ').toLowerCase();
+    return hay.contains(q);
   }
 
   ProxyProfile? get _profile {
@@ -186,6 +210,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
     final profile = _profile;
     final sorted = <ProxyNode>[..._nodes]..sort((a, b) {
         final pa = _ping[_key(a)] ?? 9999;
@@ -194,6 +219,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         final nb = pb < 0 ? 100000 : pb;
         return na.compareTo(nb);
       });
+    final visible = sorted.where(_matches).toList();
     final pinned = profile?.pinnedNode;
     return Scaffold(
       appBar: AppBar(
@@ -201,7 +227,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         actions: <Widget>[
           if (!_loading)
             IconButton(
-              tooltip: 'Refresh',
+              tooltip: s.nodeRefresh,
               icon: const Icon(Icons.refresh),
               onPressed: () {
                 clearSubscriptionCache();
@@ -218,22 +244,185 @@ class _NodeListScreenState extends State<NodeListScreen> {
               ? Center(child: Text(_error!))
               : ListView(
                   children: <Widget>[
+                    const _FreeBanner(),
+                    const _SocialRow(),
+                    const Divider(height: 1),
                     _AutoRow(
                       selected: pinned == null,
                       onTap: () => _pin(null),
                     ),
                     const Divider(height: 1),
-                    for (final n in sorted)
-                      _NodeRow(
-                        node: n,
-                        ms: _ping[_key(n)],
-                        countryCode: _cc[_key(n)],
-                        place: _place[_key(n)],
-                        selected: pinned == _key(n),
-                        onTap: () => _pin(_key(n)),
-                      ),
+                    if (_nodes.length > 6) _searchField(s),
+                    if (visible.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 40),
+                        child: Center(
+                          child: Text(s.nodeNoMatch,
+                              style: TextStyle(color: context.nova.muted)),
+                        ),
+                      )
+                    else
+                      for (final n in visible)
+                        _NodeRow(
+                          node: n,
+                          ms: _ping[_key(n)],
+                          countryCode: _cc[_key(n)],
+                          place: _place[_key(n)],
+                          selected: pinned == _key(n),
+                          onTap: () => _pin(_key(n)),
+                        ),
                   ],
                 ),
+    );
+  }
+
+  Widget _searchField(NovaStrings s) {
+    final nova = context.nova;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _search,
+        onChanged: (v) => setState(() => _query = v),
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: s.nodeSearch,
+          prefixIcon: Icon(Icons.search, color: nova.muted, size: 20),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: Icon(Icons.close, color: nova.muted, size: 18),
+                  onPressed: () {
+                    _search.clear();
+                    setState(() => _query = '');
+                  },
+                ),
+          filled: true,
+          fillColor: nova.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: nova.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: nova.border),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Anti-resale banner: Nova is free, so anyone who was sold these configs sees
+/// they should never have paid. Shown at the top of every node list.
+class _FreeBanner extends StatelessWidget {
+  const _FreeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: <Color>[
+            nova.cyan.withValues(alpha: 0.16),
+            nova.violet.withValues(alpha: 0.16),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: nova.cyan.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: nova.cyan.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.volunteer_activism_rounded,
+                color: nova.cyan, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(s.nodeFreeTitle,
+                    style:
+                        text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text(s.nodeFreeBody,
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Nova's official channels. Same links as Settings, surfaced here so users
+/// find the real community (and don't chase a reseller's fake one).
+class _SocialRow extends StatelessWidget {
+  const _SocialRow();
+
+  static const List<(IconData, String)> _links = <(IconData, String)>[
+    (Icons.send_rounded, 'https://t.me/irnova_proxy'),
+    (Icons.camera_alt_rounded, 'https://instagram.com/irnova_proxy'),
+    (Icons.code_rounded, 'https://github.com/IRNova'),
+    (Icons.language_rounded, 'https://novaproxy.online/'),
+  ];
+
+  Future<void> _open(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: <Widget>[
+          Text(s.nodeCommunity,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(color: nova.muted, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          for (final (IconData icon, String url) in _links)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _open(url),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: nova.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: nova.border),
+                  ),
+                  child: Icon(icon, color: nova.cyan, size: 18),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -245,11 +434,12 @@ class _AutoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
     final Color accent = context.nova.indigo;
     return ListTile(
       leading: Icon(Icons.bolt, color: accent),
-      title: const Text('Auto (fastest)'),
-      subtitle: const Text('Let Nova pick the lowest-latency node'),
+      title: Text(s.nodeAuto),
+      subtitle: Text(s.nodeAutoSub),
       trailing: selected ? Icon(Icons.check_circle, color: accent) : null,
       onTap: onTap,
     );

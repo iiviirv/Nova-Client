@@ -194,6 +194,17 @@ class NovaStrings {
   String switchingProfile(String name) =>
       t('servers.switching').replaceFirst('{name}', name);
 
+  // ---- Node list ----
+  String get nodeAuto => t('node.auto');
+  String get nodeAutoSub => t('node.autoSub');
+  String get nodeRefresh => t('node.refresh');
+  String get nodeSearch => t('node.search');
+  String get nodeNoMatch => t('node.noMatch');
+  String get nodeFreeTitle => t('node.freeTitle');
+  String get nodeFreeBody => t('node.freeBody');
+  String get nodeCommunity => t('node.community');
+  String nodeCount(int n) => t('node.count').replaceFirst('{n}', '$n');
+
   static const Map<String, String> _en = <String, String>{
     'notice.failoverSwitched':
         'That server was not responding, so Nova switched to the fastest working one.',
@@ -341,6 +352,16 @@ class NovaStrings {
     'servers.clipboardEmpty': 'Clipboard is empty',
     'servers.using': 'Using {name}',
     'servers.switching': 'Switching to {name}',
+    'node.auto': 'Auto (fastest)',
+    'node.autoSub': 'Let Nova pick the lowest-latency node',
+    'node.refresh': 'Refresh',
+    'node.search': 'Search nodes',
+    'node.noMatch': 'No nodes match your search',
+    'node.freeTitle': 'Nova is free',
+    'node.freeBody':
+        'Never pay anyone for these configs. Nova is a free service, share it with friends.',
+    'node.community': 'Follow Nova',
+    'node.count': '{n} nodes',
   };
 
   static const Map<String, String> _fa = <String, String>{
@@ -490,6 +511,16 @@ class NovaStrings {
     'servers.clipboardEmpty': 'کلیپ‌بورد خالی است',
     'servers.using': 'در حال استفاده از {name}',
     'servers.switching': 'در حال تغییر به {name}',
+    'node.auto': 'خودکار (سریع‌ترین)',
+    'node.autoSub': 'نوا سریع‌ترین سرور را انتخاب می‌کند',
+    'node.refresh': 'بازخوانی',
+    'node.search': 'جستجوی سرور',
+    'node.noMatch': 'سروری با جستجوی شما پیدا نشد',
+    'node.freeTitle': 'نوا رایگان است',
+    'node.freeBody':
+        'برای این کانفیگ‌ها به کسی پول ندهید. نوا یک سرویس رایگان است، آن را با دوستانتان به اشتراک بگذارید.',
+    'node.community': 'نوا را دنبال کنید',
+    'node.count': '{n} سرور',
   };
 }
 
