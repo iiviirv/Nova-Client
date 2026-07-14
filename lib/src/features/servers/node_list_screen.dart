@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
+import '../../theme/nova_colors.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_scope.dart';
@@ -252,6 +253,39 @@ String _flagEmoji(String cc) {
   return String.fromCharCodes(<int>[base + a, base + b]);
 }
 
+/// Strips the protocol tag and address that panels bake into a node's display
+/// name (e.g. "سرویس رایگان نوا [VLESS] 1.2.3.4:2087") so the row can show a
+/// clean name and render the protocol/address itself. Returns '' when nothing
+/// meaningful is left (all the info was the address).
+String _cleanNodeName(ProxyNode n) {
+  String s = n.tag;
+  s = s.replaceAll(RegExp(r'\[[^\]]*\]'), ' '); // [VLESS] etc.
+  s = s.replaceAll('${n.server}:${n.port}', ' ').replaceAll(n.server, ' ');
+  s = s.replaceAll(RegExp(r'\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b'), ' '); // any ip:port
+  s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  s = s.replaceAll(RegExp(r'^[\-·•|:]+|[\-·•|:]+$'), '').trim();
+  return s;
+}
+
+/// Short transport chips: how the node actually connects (WS/gRPC, TLS/Reality).
+List<String> _transportTags(ProxyNode n) {
+  final List<String> t = <String>[];
+  switch (n.network.toLowerCase()) {
+    case 'ws':
+      t.add('WS');
+    case 'grpc':
+      t.add('gRPC');
+    case 'http':
+      t.add('HTTP');
+  }
+  if ((n.realityPublicKey ?? '').isNotEmpty) {
+    t.add('Reality');
+  } else if (n.tls) {
+    t.add('TLS');
+  }
+  return t;
+}
+
 class _NodeRow extends StatelessWidget {
   const _NodeRow({
     required this.node,
@@ -269,30 +303,113 @@ class _NodeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String name = node.tag.isNotEmpty ? node.tag : node.server;
-    final String? cc = countryCode;
+    final nova = context.nova;
+    final String cc = countryCode ?? '';
+    final String addr = '${node.server}:${node.port}';
+    final String clean = _cleanNodeName(node);
+    final String primary = clean.isNotEmpty ? clean : addr;
+    final List<String> transport = _transportTags(node);
+    final String meta = cc.isNotEmpty ? '$cc · $addr' : addr;
     return ListTile(
-      leading: cc != null && cc.isNotEmpty
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: cc.isNotEmpty
           ? Text(_flagEmoji(cc), style: const TextStyle(fontSize: 26))
-          : const SizedBox(width: 26),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-          cc != null && cc.isNotEmpty
-              ? '$cc · ${node.server}:${node.port}'
-              : '${node.server}:${node.port}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis),
+          : Icon(Icons.public_rounded, color: nova.muted, size: 24),
+      title: Row(
+        children: <Widget>[
+          _ProtoBadge(protocol: node.protocol),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(primary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 4,
+          children: <Widget>[
+            Text(meta,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: nova.muted)),
+            for (final String t in transport) _MiniTag(text: t),
+          ],
+        ),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           _PingBadge(ms: ms),
           if (selected) ...<Widget>[
             const SizedBox(width: 10),
-            Icon(Icons.check_circle, color: context.nova.indigo, size: 20),
+            Icon(Icons.check_circle, color: nova.indigo, size: 20),
           ],
         ],
       ),
       onTap: onTap,
+    );
+  }
+}
+
+/// A small colored pill naming the node's protocol (VLESS, VMess, …), so it is
+/// always readable instead of being truncated inside the name.
+class _ProtoBadge extends StatelessWidget {
+  const _ProtoBadge({required this.protocol});
+  final NodeProtocol protocol;
+
+  Color _color(NovaColors nova) => switch (protocol) {
+        NodeProtocol.vless => nova.cyan,
+        NodeProtocol.vmess => nova.violet,
+        NodeProtocol.trojan => nova.indigo,
+        NodeProtocol.shadowsocks => nova.info,
+        NodeProtocol.hysteria2 => nova.cyan,
+        NodeProtocol.tuic => nova.violet,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final Color c = _color(nova);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        protocol.label.toUpperCase(),
+        style: TextStyle(
+            color: c, fontWeight: FontWeight.w700, fontSize: 11, height: 1.1),
+      ),
+    );
+  }
+}
+
+/// A muted outline chip for a transport detail (WS, TLS, Reality, …).
+class _MiniTag extends StatelessWidget {
+  const _MiniTag({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: nova.border),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              color: nova.muted, fontWeight: FontWeight.w600, fontSize: 10)),
     );
   }
 }
