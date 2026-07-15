@@ -323,9 +323,19 @@ class _ConnectHero extends StatelessWidget {
       case ProxyConnectionState.connected:
         headline = Fmt.uptime(proxy.connectedSince);
         headlineIsTimer = true;
-        subtitle = reachable ? s.dashSecure : s.dashVerifying;
-        subtitleColor =
-            reachable ? NovaSemantics.connectGreen : NovaSemantics.amber;
+        // Three honest levels: probe got through (Secure), still checking
+        // (Verifying), or the controller gave up after its probes and one
+        // rebuild (No traffic). The last one must not read as "in progress".
+        if (reachable) {
+          subtitle = s.dashSecure;
+          subtitleColor = NovaSemantics.connectGreen;
+        } else if (proxy.exitUnreachable) {
+          subtitle = s.dashNoTraffic;
+          subtitleColor = nova.danger;
+        } else {
+          subtitle = s.dashVerifying;
+          subtitleColor = NovaSemantics.amber;
+        }
       case ProxyConnectionState.connecting:
       case ProxyConnectionState.disconnecting:
         headline = s.connecting;

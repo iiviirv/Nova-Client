@@ -103,6 +103,8 @@ class NovaStrings {
   // ---- Dashboard extras ----
   String get dashSecure => t('dash.secure');
   String get dashVerifying => t('dash.verifying');
+  String get dashNoTraffic => t('dash.noTraffic');
+  String get tunnelNoInternet => t('notice.tunnelNoInternet');
   String get dashError => t('dash.error');
   String get dashLocation => t('dash.location');
   String get dashIp => t('dash.ip');
@@ -208,6 +210,11 @@ class NovaStrings {
   static const Map<String, String> _en = <String, String>{
     'notice.failoverSwitched':
         'That server was not responding, so Nova switched to the fastest working one.',
+    'notice.tunnelNoInternet':
+        'The tunnel is up but no traffic is getting through. Your network may '
+            'be blocking this config; scan a clean IP in Radar or try another '
+            'config or network.',
+    'dash.noTraffic': 'No traffic is getting through',
     'radar.jitter': 'jitter',
     'radar.loss': 'loss',
     'nav.dashboard': 'Home',
@@ -367,6 +374,11 @@ class NovaStrings {
   static const Map<String, String> _fa = <String, String>{
     'notice.failoverSwitched':
         'این سرور پاسخ نمی‌داد؛ Nova به سریع‌ترین سرور فعال تغییر کرد.',
+    'notice.tunnelNoInternet':
+        'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
+            'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '
+            'دیگری را امتحان کنید.',
+    'dash.noTraffic': 'ترافیکی عبور نمی‌کند',
     'radar.jitter': 'جیتر',
     'radar.loss': 'افت',
     'nav.dashboard': 'خانه',

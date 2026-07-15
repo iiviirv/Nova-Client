@@ -197,6 +197,16 @@ class _DeployScreenState extends State<DeployScreen> {
               const SizedBox(width: NovaSpace.sm),
               const Expanded(child: Text('Panel password set and saved.')),
             ]),
+          ] else if (url.isEmpty) ...<Widget>[
+            // No workers.dev subdomain could be read or registered (usually a
+            // fully blocked network). Posting the password would go nowhere, so
+            // explain instead of offering a form that can only fail.
+            Text(
+              'The worker was created, but its public address is not ready '
+              'yet. Reopen the worker list to finish setup, then set the '
+              'panel password from there.',
+              style: TextStyle(color: nova.muted),
+            ),
           ] else ...<Widget>[
             Text('Set an admin password for your panel', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: NovaSpace.sm),

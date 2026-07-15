@@ -10,7 +10,7 @@ plugins {
 // Release signing: load the keystore details from android/key.properties (which
 // is gitignored and never committed). When the file is absent (e.g. a plain CI
 // analysis run, or a contributor without the key), we fall back to debug signing
-// so the build still succeeds — it just isn't the distributable, updatable APK.
+// so the build still succeeds, it just isn't the distributable, updatable APK.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 val hasReleaseKeystore = keystorePropertiesFile.exists()
@@ -68,6 +68,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Keep rules for ML Kit / mobile_scanner: R8 was stripping ML Kit
+            // internals the plugin's own consumer rules miss, crashing the QR
+            // scanner on release builds before the camera opened.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

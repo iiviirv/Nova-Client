@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
 import '../../l10n/nova_strings.dart';
@@ -152,16 +153,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
   }
 
   Future<void> _pingOne(ProxyNode n) async {
-    final sw = Stopwatch()..start();
-    try {
-      final s = await Socket.connect(n.server, n.port,
-          timeout: const Duration(seconds: 3));
-      sw.stop();
-      s.destroy();
-      _ping[_key(n)] = sw.elapsedMilliseconds;
-    } catch (_) {
-      _ping[_key(n)] = -1;
-    }
+    // Full TLS-handshake probe, not a bare TCP connect: Cloudflare's edge
+    // accepts any TCP handshake, so a plain connect showed every node green
+    // even on networks where the SNI is DPI-blocked and nothing would work.
+    _ping[_key(n)] = await probeNodeMs(n) ?? -1;
     await _geoOne(n);
   }
 

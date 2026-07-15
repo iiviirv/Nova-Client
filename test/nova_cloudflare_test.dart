@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:nova_client/src/features/cloudflare/nova_cloudflare.dart';
 
 class _MemStore implements CfStore {
@@ -31,5 +33,54 @@ void main() {
         'https://raw.githubusercontent.com/IRNova/Nova-Proxy/refs/heads/main/worker.js'));
     expect(r.statusCode, 200);
     expect(r.bodyBytes.length, greaterThan(1000));
+  });
+
+  test('falls back to the proxy when the direct call throws', () async {
+    final hosts = <String>[];
+    final client = MockClient((http.Request req) async {
+      hosts.add(req.url.host);
+      if (req.url.host == 'api.cloudflare.com') {
+        throw const SocketException('Failed host lookup: api.cloudflare.com');
+      }
+      return http.Response('{}', 200); // proxy relay succeeds
+    });
+    final cf = NovaCloudflare(_MemStore(), client: client);
+    final s = const CfSession(token: 't', accountId: 'a', accountName: 'n');
+    // deleteWorker uses the _http path and only succeeds on a 2xx.
+    await cf.deleteWorker(s, 'w1');
+    expect(hosts, contains('api.cloudflare.com')); // direct tried first
+    expect(hosts, contains('novaproxy.online')); // then the proxy
+  });
+
+  test('sticks to the proxy on the next call, skipping the dead direct path',
+      () async {
+    final hosts = <String>[];
+    final client = MockClient((http.Request req) async {
+      hosts.add(req.url.host);
+      if (req.url.host == 'api.cloudflare.com') {
+        throw const SocketException('blocked');
+      }
+      return http.Response('{}', 200);
+    });
+    final cf = NovaCloudflare(_MemStore(), client: client);
+    final s = const CfSession(token: 't', accountId: 'a', accountName: 'n');
+    await cf.deleteWorker(s, 'w1'); // learns the proxy works
+    hosts.clear();
+    await cf.deleteWorker(s, 'w2'); // should hit the proxy first now
+    expect(hosts.first, 'novaproxy.online');
+  });
+
+  test('a non-2xx direct response is returned as-is, not re-routed to proxy',
+      () async {
+    final hosts = <String>[];
+    final client = MockClient((http.Request req) async {
+      hosts.add(req.url.host);
+      return http.Response('{"error":"nope"}', 404);
+    });
+    final cf = NovaCloudflare(_MemStore(), client: client);
+    final s = const CfSession(token: 't', accountId: 'a', accountName: 'n');
+    // A reachable server that answers 404 must not trigger the proxy fallback.
+    await expectLater(cf.deleteWorker(s, 'w1'), throwsA(isA<CloudflareException>()));
+    expect(hosts, <String>['api.cloudflare.com']);
   });
 }

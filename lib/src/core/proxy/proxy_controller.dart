@@ -49,6 +49,12 @@ enum ProxyNotice {
   /// A manually pinned server was dead, so Nova failed over to the fastest
   /// working one.
   failoverToWorkingServer,
+
+  /// The tunnel is up but repeated probes (and one full rebuild) never got any
+  /// traffic through: "connected but no internet". Fired once, when the
+  /// controller stops trying, so the user learns what to do instead of staring
+  /// at an eternal "Verifying connection".
+  tunnelHasNoInternet,
 }
 
 abstract class ProxyController extends ChangeNotifier {
@@ -65,6 +71,14 @@ abstract class ProxyController extends ChangeNotifier {
   /// a code (not a string) so the message follows the app language. Kept separate
   /// from [lastError] so an informational message doesn't read as a failure.
   final ValueNotifier<ProxyNotice?> notice = ValueNotifier<ProxyNotice?>(null);
+
+  /// True when the tunnel reports connected but the controller has exhausted
+  /// its traffic probes and its one self-heal rebuild without a single request
+  /// getting through. The dashboard uses this to swap the amber "Verifying
+  /// connection" subtitle for an honest failure message rather than implying
+  /// the check is still in progress. Implementations set it and must clear it
+  /// on every fresh connect/disconnect and whenever a probe succeeds.
+  bool exitUnreachable = false;
 
   /// Optional hook the app wires so the controller can persist a profile it had
   /// to mutate on its own, e.g. clearing a dead pinned exit during auto-failover
