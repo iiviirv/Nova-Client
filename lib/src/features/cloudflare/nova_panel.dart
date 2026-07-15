@@ -262,6 +262,16 @@ class NovaPanel {
     u = u.replaceAll(RegExp(r'/+$'), '');
     if (u.endsWith('/admin')) u = u.substring(0, u.length - '/admin'.length);
     if (u.endsWith('/login')) u = u.substring(0, u.length - '/login'.length);
-    return u.replaceAll(RegExp(r'/+$'), '');
+    u = u.replaceAll(RegExp(r'/+$'), '');
+    // An empty worker URL (the account had no workers.dev subdomain when the
+    // list was built) normalizes to a hostless "https:", and every request on
+    // it would die as a raw "No host specified in URI" ArgumentError. Fail
+    // here with something the user can act on instead.
+    if ((Uri.tryParse(u)?.host ?? '').isEmpty) {
+      throw PanelException(
+          'This worker has no address yet. Pull the worker list to refresh '
+          '(Nova will set up your workers.dev subdomain), then try again.');
+    }
+    return u;
   }
 }

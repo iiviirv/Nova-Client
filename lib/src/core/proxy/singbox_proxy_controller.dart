@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/proxy_profile.dart';
 import 'proxy_controller.dart';
+import 'singbox/node_probe.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
@@ -177,6 +178,7 @@ class SingboxProxyController extends ProxyController {
     // heal's own reconnect keeps [_autoHealTried] set (via [_healing]) so it
     // can't loop.
     if (!_healing) _autoHealTried = false;
+    exitUnreachable = false;
     _state = ProxyConnectionState.connecting;
     _lastError = null;
     notifyListeners();
@@ -248,6 +250,7 @@ class SingboxProxyController extends ProxyController {
     // A real user disconnect clears the heal guard so the next session can heal
     // again; the heal's own reconnect (which disconnects first) must not.
     if (!_healing) _autoHealTried = false;
+    exitUnreachable = false;
     _state = ProxyConnectionState.disconnecting;
     notifyListeners();
     try {
@@ -413,11 +416,28 @@ class SingboxProxyController extends ProxyController {
           _active?.pinnedNode != null) {
         return;
       }
-      if (await _probeInternet()) return; // traffic flows — nothing to do
+      if (await _probeInternet()) {
+        // Traffic flows. Clear a stale failure verdict (a late-converging
+        // urltest can recover after we already gave up) so the dashboard goes
+        // back to "Secure" instead of staying on the failure message.
+        if (exitUnreachable) {
+          exitUnreachable = false;
+          notifyListeners();
+        }
+        return;
+      }
     }
     // Still nothing after ~18s. Rebuild the tunnel once (fresh pool + fresh
-    // urltest) unless we've already tried this session.
-    if (_autoHealTried) return;
+    // urltest) unless we've already tried this session; if we have, stop
+    // pretending to verify and say so, once.
+    if (_autoHealTried) {
+      if (!exitUnreachable) {
+        exitUnreachable = true;
+        notice.value = ProxyNotice.tunnelHasNoInternet;
+        notifyListeners();
+      }
+      return;
+    }
     _autoHealTried = true;
     _healing = true;
     try {
@@ -496,16 +516,12 @@ class SingboxProxyController extends ProxyController {
     }
     final Map<ProxyNode, int> ping = <ProxyNode, int>{};
     await Future.wait(sample.map((ProxyNode n) async {
-      final Stopwatch sw = Stopwatch()..start();
-      try {
-        final Socket s = await Socket.connect(n.server, n.port,
-            timeout: const Duration(milliseconds: 1500));
-        sw.stop();
-        s.destroy();
-        ping[n] = sw.elapsedMilliseconds;
-      } catch (_) {
-        ping[n] = 1 << 30; // unreachable -> sort last
-      }
+      // TLS-handshake probe with the node's SNI (see node_probe.dart): a bare
+      // TCP connect ranks DPI-blocked Cloudflare nodes as "fast", front-loading
+      // the urltest pool with exits that can never carry traffic.
+      final int? ms =
+          await probeNodeMs(n, timeout: const Duration(milliseconds: 1500));
+      ping[n] = ms ?? 1 << 30; // unreachable -> sort last
     }));
     final List<ProxyNode> ranked = <ProxyNode>[...sample]
       ..sort((ProxyNode a, ProxyNode b) =>

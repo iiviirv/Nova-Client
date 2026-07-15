@@ -5,7 +5,10 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart' as io;
 import 'package:http_parser/http_parser.dart';
+
+import 'doh_resolver.dart';
 
 class CloudflareException implements Exception {
   CloudflareException(this.message);
@@ -47,10 +50,42 @@ abstract class CfStore {
 /// across every platform; on desktop the loopback flow is a single shot (open
 /// the browser, catch the redirect on 127.0.0.1).
 class NovaCloudflare {
-  NovaCloudflare(this._store, {http.Client? client}) : _client = client ?? http.Client();
+  /// [client] is injectable for tests. When omitted, the real client resolves
+  /// the fallback proxy hosts over DoH (see [DohResolver]) so a poisoned system
+  /// resolver can't kill the proxy path.
+  factory NovaCloudflare(CfStore store, {http.Client? client, DohResolver? doh}) {
+    return NovaCloudflare._(store, client ?? _dohClient(doh ?? DohResolver()));
+  }
+
+  NovaCloudflare._(this._store, this._client);
 
   final CfStore _store;
   final http.Client _client;
+
+  // Hostnames we resolve over DoH instead of the system resolver. Only the
+  // fallback proxy hosts: Cloudflare's own API hosts use system DNS (they
+  // resolve fine even where the proxy name is poisoned, and this keeps the
+  // common path untouched).
+  static Set<String> get _dohHosts =>
+      _proxyBases.map((String b) => Uri.parse(b).host).toSet();
+
+  /// Builds the real HTTP client. Its socket factory routes [_dohHosts] through
+  /// a DoH-resolved IP (TLS still validates the original hostname), and every
+  /// other host through the system resolver exactly as before.
+  static http.Client _dohClient(DohResolver doh) {
+    final HttpClient inner = HttpClient();
+    inner.connectionFactory =
+        (Uri uri, String? proxyHost, int? proxyPort) async {
+      final int port = uri.port;
+      if (proxyHost != null) return Socket.startConnect(proxyHost, proxyPort ?? port);
+      if (_dohHosts.contains(uri.host)) {
+        final List<String> ips = await doh.resolveA(uri.host);
+        if (ips.isNotEmpty) return Socket.startConnect(ips.first, port);
+      }
+      return Socket.startConnect(uri.host, port);
+    };
+    return io.IOClient(inner);
+  }
 
   static const String _clientId = '54d11594-84e4-41aa-b438-e81b8fa78ee7';
   static const String _authUrl = 'https://dash.cloudflare.com/oauth2/auth';
@@ -78,21 +113,74 @@ class NovaCloudflare {
   // Cloudflare's hosts (api.cloudflare.com, dash.cloudflare.com) and
   // raw.githubusercontent.com are filtered inside Iran, which is exactly where a
   // user setting up their first proxy has no working connection yet. When a
-  // direct call fails at the network level we retry through the same same-origin
-  // proxy the web installer uses (novaproxy.online/cf), then stick with it for
-  // the rest of the session so we don't pay the direct timeout on every call.
-  static const String _proxyBase = 'https://novaproxy.online/cf?url=';
+  // direct call fails at the network level we retry through a same-origin proxy
+  // fronting the same /cf installer worker. Several hosts are listed so DNS
+  // poisoning of one (the "Failed host lookup" users hit) still leaves others;
+  // add more here as sibling domains are deployed. DoH resolution (see
+  // [_dohClient]) additionally defeats the poisoning on each of these names.
+  static const List<String> _proxyBases = <String>[
+    'https://novaproxy.online/cf?url=',
+  ];
   static const Duration _directTimeout = Duration(seconds: 12);
   static const Duration _proxyTimeout = Duration(seconds: 25);
-  bool _preferProxy = false;
 
-  String _via(String target) => '$_proxyBase${Uri.encodeComponent(target)}';
+  // The proxy base that last worked, so once direct is blocked we skip its
+  // 12s timeout on every subsequent call. Unlike a permanent latch this
+  // EXPIRES: a single transient failure can't pin the whole session to a proxy
+  // (or to a direct path that has since recovered) forever.
+  String? _stickyProxy;
+  DateTime? _stickyAt;
+  static const Duration _stickyTtl = Duration(minutes: 3);
 
-  /// Send a request to [target], falling back to the loopback-safe proxy if the
+  bool get _stickyLive =>
+      _stickyProxy != null &&
+      _stickyAt != null &&
+      DateTime.now().difference(_stickyAt!) < _stickyTtl;
+
+  String _via(String base, String target) =>
+      '$base${Uri.encodeComponent(target)}';
+
+  /// Endpoints to try, in order, for [target]. When a proxy is known-good
+  /// (direct is blocked) it goes first, then direct, then the remaining
+  /// proxies. Otherwise direct first, then every proxy.
+  List<({String url, bool proxy})> _endpoints(String target) {
+    final ({String url, bool proxy}) direct = (url: target, proxy: false);
+    final List<({String url, bool proxy})> proxies = <({String url, bool proxy})>[
+      for (final String b in _proxyBases) (url: _via(b, target), proxy: true),
+    ];
+    if (_stickyLive) {
+      final String stickyUrl = _via(_stickyProxy!, target);
+      return <({String url, bool proxy})>[
+        (url: stickyUrl, proxy: true),
+        direct,
+        for (final ({String url, bool proxy}) p in proxies)
+          if (p.url != stickyUrl) p,
+      ];
+    }
+    return <({String url, bool proxy})>[direct, ...proxies];
+  }
+
+  void _noteSuccess(({String url, bool proxy}) ep, String target) {
+    if (!ep.proxy) {
+      // Direct works again; stop preferring a proxy.
+      _stickyProxy = null;
+      _stickyAt = null;
+      return;
+    }
+    for (final String b in _proxyBases) {
+      if (ep.url == _via(b, target)) {
+        _stickyProxy = b;
+        _stickyAt = DateTime.now();
+        return;
+      }
+    }
+  }
+
+  /// Send a request to [target], falling back through the proxy hosts if the
   /// direct call cannot reach Cloudflare (connection reset, DNS failure, or
   /// timeout, the usual shapes of Iran's filtering). A non-2xx *response* is a
-  /// reachable server and is returned as-is; only thrown network errors trigger
-  /// the retry.
+  /// reachable server and is returned as-is; only thrown network errors move on
+  /// to the next endpoint.
   Future<http.Response> _http(String method, String target,
       {Map<String, String>? headers, Object? body}) async {
     Future<http.Response> run(String url) {
@@ -109,31 +197,37 @@ class NovaCloudflare {
       }
     }
 
-    if (_preferProxy) return run(_via(target)).timeout(_proxyTimeout);
-    try {
-      return await run(target).timeout(_directTimeout);
-    } catch (_) {
-      final http.Response r = await run(_via(target)).timeout(_proxyTimeout);
-      _preferProxy = true;
-      return r;
+    Object? lastErr;
+    for (final ({String url, bool proxy}) ep in _endpoints(target)) {
+      try {
+        final http.Response r = await run(ep.url)
+            .timeout(ep.proxy ? _proxyTimeout : _directTimeout);
+        _noteSuccess(ep, target);
+        return r;
+      } catch (e) {
+        lastErr = e;
+      }
     }
+    throw lastErr ?? CloudflareException('Could not reach Cloudflare');
   }
 
   /// Multipart variant of [_http] for the worker upload. [build] must construct
   /// a fresh request each call, since a MultipartRequest can only be sent once.
   Future<http.StreamedResponse> _sendMultipart(
       String target, http.MultipartRequest Function(Uri uri) build) async {
-    if (_preferProxy) {
-      return _client.send(build(Uri.parse(_via(target)))).timeout(_proxyTimeout);
+    Object? lastErr;
+    for (final ({String url, bool proxy}) ep in _endpoints(target)) {
+      try {
+        final http.StreamedResponse r = await _client
+            .send(build(Uri.parse(ep.url)))
+            .timeout(ep.proxy ? _proxyTimeout : _directTimeout);
+        _noteSuccess(ep, target);
+        return r;
+      } catch (e) {
+        lastErr = e;
+      }
     }
-    try {
-      return await _client.send(build(Uri.parse(target))).timeout(_directTimeout);
-    } catch (_) {
-      final http.StreamedResponse r =
-          await _client.send(build(Uri.parse(_via(target)))).timeout(_proxyTimeout);
-      _preferProxy = true;
-      return r;
-    }
+    throw lastErr ?? CloudflareException('Could not reach Cloudflare');
   }
 
   // The loopback listeners for the in-flight OAuth redirect, kept so a cancel
@@ -282,7 +376,12 @@ class NovaCloudflare {
     final Map<String, dynamic> res = await _apiGet(s.token, '/accounts/${s.accountId}/workers/scripts');
     final List<dynamic> arr = (res['result'] as List<dynamic>?) ?? <dynamic>[];
     String sub = s.subdomain.isNotEmpty ? s.subdomain : _store.get('cf_subdomain');
-    if (sub.isEmpty) {
+    if (sub.isEmpty && arr.isNotEmpty) {
+      // Workers exist but we have no subdomain: without one every worker URL is
+      // blank and the panel is unreachable (the "password never sets" report).
+      // Register one so accounts that deployed before this fix heal themselves.
+      sub = await _ensureSubdomain(s.token, s.accountId);
+    } else if (sub.isEmpty) {
       sub = await _accountSubdomain(s.token, s.accountId);
       if (sub.isNotEmpty) _store.set('cf_subdomain', sub);
     }
@@ -393,18 +492,26 @@ class NovaCloudflare {
       _fetchWorkerCode(),
       _getOrCreateKv(token, aid, '$workerName-vault'),
       _getOrCreateD1(token, aid, '$workerName-db'),
-      _accountSubdomain(token, aid),
+      // A fresh account has no workers.dev subdomain until one is registered;
+      // without it the worker URL comes out blank and everything downstream
+      // (the /install/set password call) posts to a hostless URI and fails.
+      _ensureSubdomain(token, aid),
     ]);
     final List<int> code = results[0] as List<int>;
     final String kvId = results[1] as String;
     final String d1Id = results[2] as String;
-    final String subdomain = results[3] as String;
+    String subdomain = results[3] as String;
 
     progress('Uploading the worker');
     await _uploadWorker(token, aid, workerName, code, kvId, d1Id);
 
     progress('Publishing');
     await _enableSubdomain(token, aid, workerName);
+
+    // Last chance if registration raced or was proxied: Cloudflare may have
+    // assigned the subdomain by the time the worker is published.
+    if (subdomain.isEmpty) subdomain = await _accountSubdomain(token, aid);
+    if (subdomain.isNotEmpty) _store.set('cf_subdomain', subdomain);
 
     final String url = subdomain.isNotEmpty ? 'https://$workerName.$subdomain.workers.dev' : '';
     return DeployResult(workerName, url, url.isNotEmpty ? '$url/install' : '');
@@ -456,6 +563,49 @@ class NovaCloudflare {
     } catch (_) {
       return '';
     }
+  }
+
+  /// Fetch the account's workers.dev subdomain, registering one when the
+  /// account has never claimed one (a fresh account deploying its first
+  /// worker, exactly the Nova onboarding persona). Registration retries a few
+  /// random candidates since names are claimed globally. Returns '' only when
+  /// the subdomain can neither be read nor registered (e.g. every path to the
+  /// API is blocked); callers must treat an empty result as "no URL yet", not
+  /// build a hostless https:// URL from it.
+  Future<String> _ensureSubdomain(String token, String aid) async {
+    final String existing = await _accountSubdomain(token, aid);
+    if (existing.isNotEmpty) {
+      _store.set('cf_subdomain', existing);
+      return existing;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+      final String candidate = 'nova-${_hex(_randomBytes(6))}';
+      try {
+        final http.Response r = await _http(
+          'PUT',
+          '$_apiBase/accounts/$aid/workers/subdomain',
+          headers: <String, String>{
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(<String, String>{'subdomain': candidate}),
+        );
+        if (r.statusCode >= 200 && r.statusCode < 300) {
+          final Map<String, dynamic> j =
+              (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
+          final String sub =
+              (j['result'] as Map<String, dynamic>?)?['subdomain'] as String? ?? candidate;
+          _store.set('cf_subdomain', sub);
+          return sub;
+        }
+      } catch (_) {
+        // Network failure; the retry below tries a fresh candidate anyway.
+      }
+    }
+    // A parallel register (or a slow one above) may have landed; read once more.
+    final String sub = await _accountSubdomain(token, aid);
+    if (sub.isNotEmpty) _store.set('cf_subdomain', sub);
+    return sub;
   }
 
   Future<void> _uploadWorker(String token, String aid, String name, List<int> code, String kvId, String d1Id) async {
@@ -545,6 +695,9 @@ class NovaCloudflare {
       m.entries.map((MapEntry<String, String> e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&');
 
   String _b64url(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
+
+  String _hex(List<int> bytes) =>
+      bytes.map((int b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   List<int> _randomBytes(int n) => List<int>.generate(n, (_) => _rng.nextInt(256));
 
