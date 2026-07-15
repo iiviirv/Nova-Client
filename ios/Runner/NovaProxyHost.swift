@@ -1,6 +1,6 @@
 import Flutter
 import Foundation
-import Libbox
+import Novacore
 import NetworkExtension
 
 /// iOS implementation of the `nova.proxy/control` MethodChannel + `nova.proxy/events`
@@ -14,7 +14,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
 
   private var eventSink: FlutterEventSink?
   private var manager: NETunnelProviderManager?
-  private var statusClient: LibboxCommandClient?
+  private var statusClient: NovacoreCommandClient?
   private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -171,21 +171,21 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   /// libbox's setup must run once in this process before a command client can
   /// find the extension's command socket. It points at the same shared App
   /// Group paths the extension uses.
-  private func ensureLibboxSetup() {
+  private func ensureNovacoreSetup() {
     if libboxReady { return }
     guard let container = FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else { return }
-    let setup = LibboxSetupOptions()
+    let setup = NovacoreSetupOptions()
     setup.basePath = container.path
     setup.workingPath = container.appendingPathComponent("work").path
     setup.tempPath = container.appendingPathComponent("tmp").path
     var err: NSError?
-    LibboxSetup(setup, &err)
+    NovacoreSetup(setup, &err)
     libboxReady = (err == nil)
   }
 
-  /// Serializes the status-client lifecycle off the main thread. `LibboxSetup`
-  /// (in `ensureLibboxSetup`) and the client connect are the heavy calls; running
+  /// Serializes the status-client lifecycle off the main thread. `NovacoreSetup`
+  /// (in `ensureNovacoreSetup`) and the client connect are the heavy calls; running
   /// them here instead of on the platform/main thread is what stops the app from
   /// freezing for a beat when it's cold-launched (returned to) while the tunnel
   /// is already up. A serial queue also makes every `statusClient` mutation
@@ -195,12 +195,12 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private func startStatusClient() {
     statusQueue.async { [weak self] in
       guard let self, self.statusClient == nil else { return }
-      self.ensureLibboxSetup()
-      let options = LibboxCommandClientOptions()
+      self.ensureNovacoreSetup()
+      let options = NovacoreCommandClientOptions()
       // 1.13 replaced the single `command` field with a command list.
-      options.addCommand(LibboxCommandStatus)
+      options.addCommand(NovacoreCommandStatus)
       options.statusInterval = Int64(NSEC_PER_SEC) // one status push per second
-      guard let client = LibboxNewCommandClient(StatusHandler(host: self), options)
+      guard let client = NovacoreNewCommandClient(StatusHandler(host: self), options)
       else { return }
       self.statusClient = client
       // The extension's server may take a beat to bind after the tunnel reports
@@ -210,7 +210,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   }
 
   /// Runs on `statusQueue`.
-  private func connectStatusClientLocked(_ client: LibboxCommandClient, attempt: Int) {
+  private func connectStatusClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
     do {
       try client.connect()
     } catch {
@@ -231,7 +231,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     }
   }
 
-  fileprivate func onStatus(_ message: LibboxStatusMessage) {
+  fileprivate func onStatus(_ message: NovacoreStatusMessage) {
     emit([
       "type": "traffic",
       "up": message.uplink,
@@ -268,11 +268,11 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
 
 /// Receives the libbox status stream and forwards only the traffic numbers to
 /// the host. Every other callback is a required-but-unused protocol stub.
-private final class StatusHandler: NSObject, LibboxCommandClientHandlerProtocol {
+private final class StatusHandler: NSObject, NovacoreCommandClientHandlerProtocol {
   private weak var host: NovaProxyHost?
   init(host: NovaProxyHost) { self.host = host }
 
-  func writeStatus(_ message: LibboxStatusMessage?) {
+  func writeStatus(_ message: NovacoreStatusMessage?) {
     guard let message else { return }
     host?.onStatus(message)
   }
@@ -280,11 +280,11 @@ private final class StatusHandler: NSObject, LibboxCommandClientHandlerProtocol 
   func connected() {}
   func disconnected(_ message: String?) {}
   func clearLogs() {}
-  func initializeClashMode(_ modeList: LibboxStringIteratorProtocol?, currentMode: String?) {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
   func updateClashMode(_ newMode: String?) {}
-  func write(_ events: LibboxConnectionEvents?) {}
-  func writeGroups(_ message: LibboxOutboundGroupIteratorProtocol?) {}
-  func writeLogs(_ messageList: LibboxLogIteratorProtocol?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {}
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
   // Added in sing-box 1.13's command-client handler; we drive log level from the
   // config, so this is a no-op.
   func setDefaultLogLevel(_ level: Int32) {}
