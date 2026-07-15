@@ -83,4 +83,37 @@ void main() {
     await expectLater(cf.deleteWorker(s, 'w1'), throwsA(isA<CloudflareException>()));
     expect(hosts, <String>['api.cloudflare.com']);
   });
+
+  test('an HTML error page is skipped, not decoded as JSON', () async {
+    final hosts = <String>[];
+    final client = MockClient((http.Request req) async {
+      hosts.add(req.url.host);
+      if (req.url.host == 'api.cloudflare.com') {
+        // Direct call answers with a block page, not JSON.
+        return http.Response('<html><body>blocked</body></html>', 200,
+            headers: <String, String>{'content-type': 'text/html'});
+      }
+      return http.Response('{}', 200); // proxy relays real JSON
+    });
+    final cf = NovaCloudflare(_MemStore(), client: client);
+    final s = const CfSession(token: 't', accountId: 'a', accountName: 'n');
+    // Must not throw a raw FormatException; the HTML is skipped and the proxy
+    // answer (a 2xx JSON) is used instead.
+    await cf.deleteWorker(s, 'w1');
+    expect(hosts, contains('api.cloudflare.com'));
+    expect(hosts, contains('novaproxy.online'));
+  });
+
+  test('when every endpoint returns HTML, a clean error is thrown', () async {
+    final client = MockClient((http.Request req) async => http.Response(
+          '<html>nope</html>', 200,
+          headers: <String, String>{'content-type': 'text/html'},
+        ));
+    final cf = NovaCloudflare(_MemStore(), client: client);
+    final s = const CfSession(token: 't', accountId: 'a', accountName: 'n');
+    await expectLater(
+      cf.deleteWorker(s, 'w1'),
+      throwsA(isA<CloudflareException>()),
+    );
+  });
 }

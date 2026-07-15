@@ -202,6 +202,17 @@ class NovaCloudflare {
       try {
         final http.Response r = await run(ep.url)
             .timeout(ep.proxy ? _proxyTimeout : _directTimeout);
+        // A JSON endpoint that answers with HTML is an error page, not a real
+        // response: a proxy that couldn't relay, a Cloudflare block page, or an
+        // ISP interstitial. Blindly decoding it throws a raw
+        // "FormatException: <html>" at the user, so treat it as a failed
+        // endpoint and try the next one instead.
+        if (_looksHtml(r)) {
+          lastErr = CloudflareException(
+              'A server returned a web page instead of data '
+              '(the proxy or network may be interfering).');
+          continue;
+        }
         _noteSuccess(ep, target);
         return r;
       } catch (e) {
@@ -209,6 +220,16 @@ class NovaCloudflare {
       }
     }
     throw lastErr ?? CloudflareException('Could not reach Cloudflare');
+  }
+
+  /// Whether a response body is an HTML page rather than the JSON/text the
+  /// Cloudflare + worker-source calls expect. Checks the content type and the
+  /// leading bytes so it catches error pages that mislabel themselves.
+  static bool _looksHtml(http.Response r) {
+    final String ct = (r.headers['content-type'] ?? '').toLowerCase();
+    if (ct.contains('text/html')) return true;
+    final String head = r.body.trimLeft().toLowerCase();
+    return head.startsWith('<!doctype html') || head.startsWith('<html');
   }
 
   /// Multipart variant of [_http] for the worker upload. [build] must construct
@@ -361,7 +382,12 @@ class NovaCloudflare {
       body: _query(<String, String>{'grant_type': 'refresh_token', 'refresh_token': refresh, 'client_id': _clientId}),
     );
     if (r.statusCode < 200 || r.statusCode >= 300) return null;
-    final Map<String, dynamic> j = jsonDecode(r.body) as Map<String, dynamic>;
+    Map<String, dynamic> j;
+    try {
+      j = (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null; // Non-JSON (e.g. an HTML error page): treat as no refresh.
+    }
     final String access = j['access_token'] as String? ?? '';
     if (access.isEmpty) return null;
     _store.set('cf_token', access);
@@ -647,7 +673,18 @@ class NovaCloudflare {
         'grant_type': 'authorization_code',
       }),
     );
-    final Map<String, dynamic> j = (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
+    Map<String, dynamic> j;
+    try {
+      j = (jsonDecode(r.body.isEmpty ? '{}' : r.body) as Map).cast<String, dynamic>();
+    } catch (_) {
+      // A non-JSON body here (after the HTML guard in _http) is still not
+      // something the user can read; give a clear message, not a raw parse
+      // error.
+      throw CloudflareException(
+          'Cloudflare returned an unexpected response during sign-in. This '
+          'network may be interfering; try again, or connect a working config '
+          'first and retry.');
+    }
     final String token = j['access_token'] as String? ?? '';
     if (r.statusCode < 200 || r.statusCode >= 300 || token.isEmpty) {
       throw CloudflareException('Token exchange failed: ${j['error_description'] ?? j['error'] ?? 'no token'}');

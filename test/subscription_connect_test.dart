@@ -100,4 +100,34 @@ void main() {
       expect(nodes.first.server, '104.17.214.82');
     });
   });
+
+  // A mixed subscription (VLESS + Trojan + Shadowsocks) used to collapse to
+  // just the uuid-carrying VLESS nodes, so a 500-node sub showed as ~41. Every
+  // real protocol node must now survive; only a credential-less banner drops.
+  test('mixed-protocol subscription keeps all real nodes', () async {
+    const String vless =
+        'vless://b90f8c50-b795-4a6d-84dd-d057e87c7f3a@104.17.214.82:443'
+        '?security=tls&type=ws&path=/&host=h.example&sni=h.example#vless';
+    const String trojan =
+        'trojan://somepass@104.18.0.9:443?security=tls&sni=h.example#trojan';
+    const String ss =
+        'ss://YWVzLTI1Ni1nY206c2VjcmV0@104.19.0.7:8388#ss';
+    final String body = base64.encode(utf8.encode('$vless\n$trojan\n$ss'));
+
+    final profile = ProxyProfile(
+      id: 't',
+      name: 'mixed',
+      kind: ProxyKind.subscription,
+      uri: '',
+      subscriptionUrl: 'https://example.com/sub',
+    );
+    final nodes = await resolveProfileNodes(
+      profile,
+      fetch: (Uri url) async => body,
+    );
+
+    final servers = nodes.map((n) => n.server).toSet();
+    expect(servers, containsAll(<String>['104.17.214.82', '104.18.0.9', '104.19.0.7']),
+        reason: 'VLESS, Trojan and Shadowsocks nodes must all survive');
+  });
 }
