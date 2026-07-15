@@ -1,5 +1,5 @@
 import Foundation
-import Libbox
+import Novacore
 import Network
 import NetworkExtension
 // sing-box 1.13's libbox references UIKit (UIApplication background-task APIs)
@@ -14,11 +14,11 @@ import UIKit
 ///
 /// openTun and the interface monitor are adapted from sing-box-for-apple's
 /// ExtensionPlatformInterface; if you hit routing edge cases, cross-check against
-/// that reference (it is built against this same Libbox.xcframework).
+/// that reference (it is built against this same Novacore.xcframework).
 class PacketTunnelProvider: NEPacketTunnelProvider {
   static let appGroup = "group.online.novaproxy.novaClient"
 
-  private var commandServer: LibboxCommandServer?
+  private var commandServer: NovacoreCommandServer?
   private var pathMonitor: NWPathMonitor?
 
   override func startTunnel(options _: [String: NSObject]?) async throws {
@@ -27,25 +27,25 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       throw NSError(domain: "Nova", code: 1, userInfo: [NSLocalizedDescriptionKey: "App Group missing"])
     }
     let base = container.path
-    let setup = LibboxSetupOptions()
+    let setup = NovacoreSetupOptions()
     setup.basePath = base
     setup.workingPath = container.appendingPathComponent("work").path
     setup.tempPath = container.appendingPathComponent("tmp").path
     try? FileManager.default.createDirectory(atPath: setup.workingPath, withIntermediateDirectories: true)
     try? FileManager.default.createDirectory(atPath: setup.tempPath, withIntermediateDirectories: true)
     var setupErr: NSError?
-    LibboxSetup(setup, &setupErr)
+    NovacoreSetup(setup, &setupErr)
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"), encoding: .utf8)
 
     // sing-box 1.13 folded the box service into the command server: instead of
-    // LibboxNewService(config, platform) + a separate command server, the command
+    // NovacoreNewService(config, platform) + a separate command server, the command
     // server now takes the PlatformInterface (self) and owns the service. We
     // create it, start its App Group control socket (so the main app can attach a
     // status client for live traffic), then start the service from the config,
     // which is what dials the TUN via openTun below.
     var err: NSError?
-    guard let server = LibboxNewCommandServer(commandServerHandler, self, &err), err == nil else {
+    guard let server = NovacoreNewCommandServer(commandServerHandler, self, &err), err == nil else {
       throw err ?? NSError(domain: "Nova", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create command server"])
     }
     try server.start()
@@ -53,7 +53,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // marked nullable, libbox 1.13's StartOrReloadService dereferences it
     // (options.AutoRedirect) with no nil check, so nil panics the extension and
     // the tunnel never comes up.
-    try server.startOrReloadService(config, options: LibboxOverrideOptions())
+    try server.startOrReloadService(config, options: NovacoreOverrideOptions())
     commandServer = server
   }
 
@@ -71,12 +71,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 /// Minimal command-server handler. The traffic/status stream the app consumes
 /// needs a running server; the system-proxy and reload hooks are not used on
 /// the iOS packet-tunnel path, so they answer with safe defaults.
-private final class CommandServerHandler: NSObject, LibboxCommandServerHandlerProtocol {
+private final class CommandServerHandler: NSObject, NovacoreCommandServerHandlerProtocol {
   private weak var provider: PacketTunnelProvider?
   init(provider: PacketTunnelProvider) { self.provider = provider }
 
-  func getSystemProxyStatus() throws -> LibboxSystemProxyStatus {
-    let status = LibboxSystemProxyStatus()
+  func getSystemProxyStatus() throws -> NovacoreSystemProxyStatus {
+    let status = NovacoreSystemProxyStatus()
     status.available = false
     status.enabled = false
     return status
@@ -94,10 +94,10 @@ private final class CommandServerHandler: NSObject, LibboxCommandServerHandlerPr
   func writeDebugMessage(_ message: String?) {}
 }
 
-// MARK: - LibboxPlatformInterface
+// MARK: - NovacorePlatformInterface
 
-extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
-  func openTun(_ options: LibboxTunOptionsProtocol?, ret0_: UnsafeMutablePointer<Int32>?) throws {
+extension PacketTunnelProvider: NovacorePlatformInterfaceProtocol {
+  func openTun(_ options: NovacoreTunOptionsProtocol?, ret0_: UnsafeMutablePointer<Int32>?) throws {
     guard let options, let ret0_ else {
       throw NSError(domain: "Nova", code: 3, userInfo: [NSLocalizedDescriptionKey: "Nil tun options"])
     }
@@ -199,7 +199,7 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
       ret0_.pointee = fd
       return
     }
-    let loopFd = LibboxGetTunnelFileDescriptor()
+    let loopFd = NovacoreGetTunnelFileDescriptor()
     if loopFd != -1 {
       ret0_.pointee = loopFd
     } else {
@@ -207,12 +207,12 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     }
   }
 
-  // Added in sing-box 1.12's LibboxPlatformInterface. We provide neither a
+  // Added in sing-box 1.12's NovacorePlatformInterface. We provide neither a
   // custom local DNS transport nor a platform certificate list, so sing-box uses
   // its own DNS handling (our config's remote/local servers) and the bundled
   // system trust store. Returning nil is the "use defaults" contract.
-  func localDNSTransport() -> LibboxLocalDNSTransportProtocol? { nil }
-  func systemCertificates() -> LibboxStringIteratorProtocol? { nil }
+  func localDNSTransport() -> NovacoreLocalDNSTransportProtocol? { nil }
+  func systemCertificates() -> NovacoreStringIteratorProtocol? { nil }
   func useProcFS() -> Bool { false }
   func underNetworkExtension() -> Bool { true }
   func includeAllNetworks() -> Bool { false }
@@ -224,7 +224,7 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   func autoDetectControl(_: Int32) throws {}
   func clearDNSCache() {}
 
-  func startDefaultInterfaceMonitor(_ listener: LibboxInterfaceUpdateListenerProtocol?) throws {
+  func startDefaultInterfaceMonitor(_ listener: NovacoreInterfaceUpdateListenerProtocol?) throws {
     guard let listener else { return }
     let monitor = NWPathMonitor()
     pathMonitor = monitor
@@ -241,7 +241,7 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
     semaphore.wait()
   }
 
-  private func report(_ listener: LibboxInterfaceUpdateListenerProtocol, _ path: Network.NWPath) {
+  private func report(_ listener: NovacoreInterfaceUpdateListenerProtocol, _ path: Network.NWPath) {
     guard path.status != .unsatisfied, let iface = path.availableInterfaces.first else {
       listener.updateDefaultInterface("", interfaceIndex: -1, isExpensive: false, isConstrained: false)
       return
@@ -250,7 +250,7 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
                                     isExpensive: path.isExpensive, isConstrained: path.isConstrained)
   }
 
-  func closeDefaultInterfaceMonitor(_: LibboxInterfaceUpdateListenerProtocol?) throws {
+  func closeDefaultInterfaceMonitor(_: NovacoreInterfaceUpdateListenerProtocol?) throws {
     pathMonitor?.cancel()
     pathMonitor = nil
   }
@@ -258,46 +258,46 @@ extension PacketTunnelProvider: LibboxPlatformInterfaceProtocol {
   // sing-box enumerates interfaces here to bind outbound sockets to the physical
   // one. Throwing (as before) left it unable to bind -> traffic looped -> zero
   // download. Return the live interfaces from the path monitor.
-  func getInterfaces() throws -> LibboxNetworkInterfaceIteratorProtocol {
+  func getInterfaces() throws -> NovacoreNetworkInterfaceIteratorProtocol {
     guard let path = pathMonitor?.currentPath, path.status != .unsatisfied else {
       return InterfaceArray([])
     }
-    var out: [LibboxNetworkInterface] = []
+    var out: [NovacoreNetworkInterface] = []
     for it in path.availableInterfaces {
-      let n = LibboxNetworkInterface()
+      let n = NovacoreNetworkInterface()
       n.name = it.name
       n.index = Int32(it.index)
       switch it.type {
-      case .wifi: n.type = LibboxInterfaceTypeWIFI
-      case .cellular: n.type = LibboxInterfaceTypeCellular
-      case .wiredEthernet: n.type = LibboxInterfaceTypeEthernet
-      default: n.type = LibboxInterfaceTypeOther
+      case .wifi: n.type = NovacoreInterfaceTypeWIFI
+      case .cellular: n.type = NovacoreInterfaceTypeCellular
+      case .wiredEthernet: n.type = NovacoreInterfaceTypeEthernet
+      default: n.type = NovacoreInterfaceTypeOther
       }
       out.append(n)
     }
     return InterfaceArray(out)
   }
 
-  // 1.13 changed this to return a LibboxConnectionOwner instead of an out-param;
+  // 1.13 changed this to return a NovacoreConnectionOwner instead of an out-param;
   // process/owner lookup is unsupported in the iOS extension, so return nil.
   func findConnectionOwner(_: Int32, sourceAddress _: String?, sourcePort _: Int32,
-                           destinationAddress _: String?, destinationPort _: Int32) throws -> LibboxConnectionOwner {
+                           destinationAddress _: String?, destinationPort _: Int32) throws -> NovacoreConnectionOwner {
     throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
   }
 
-  func readWIFIState() -> LibboxWIFIState? { nil }
-  func send(_: LibboxNotification?) throws {}
+  func readWIFIState() -> NovacoreWIFIState? { nil }
+  func send(_: NovacoreNotification?) throws {}
 }
 
 /// Bridges a Swift array of interfaces to libbox's iterator protocol so the core
 /// can enumerate the device's network interfaces.
-private final class InterfaceArray: NSObject, LibboxNetworkInterfaceIteratorProtocol {
-  private var iterator: IndexingIterator<[LibboxNetworkInterface]>
-  private var current: LibboxNetworkInterface?
-  init(_ array: [LibboxNetworkInterface]) { iterator = array.makeIterator() }
+private final class InterfaceArray: NSObject, NovacoreNetworkInterfaceIteratorProtocol {
+  private var iterator: IndexingIterator<[NovacoreNetworkInterface]>
+  private var current: NovacoreNetworkInterface?
+  init(_ array: [NovacoreNetworkInterface]) { iterator = array.makeIterator() }
   func hasNext() -> Bool {
     current = iterator.next()
     return current != nil
   }
-  func next() -> LibboxNetworkInterface? { current }
+  func next() -> NovacoreNetworkInterface? { current }
 }
