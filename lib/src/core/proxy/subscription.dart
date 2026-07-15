@@ -304,9 +304,17 @@ Future<List<ProxyNode>> resolveProfileNodes(
     if (fetch == null && _nodeCache[raw] != null) return _nodeCache[raw]!;
     final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
     if (core == null) return const <ProxyNode>[];
-    final List<ProxyNode> real = core.nodes
-        .where((ProxyNode n) => (n.uuid ?? '').isNotEmpty)
-        .toList();
+    // Keep every real node, whatever its protocol. Previously this kept only
+    // uuid-carrying nodes (VLESS/VMess), which silently dropped every Trojan,
+    // Shadowsocks, Hysteria2 and TUIC node in a mixed subscription (a 500-node
+    // sub showed as 41). Filter only the credential-less info/banner node some
+    // panels prepend; a node with any credential is a real exit.
+    bool hasCredential(ProxyNode n) =>
+        (n.uuid ?? '').isNotEmpty ||
+        (n.password ?? '').isNotEmpty ||
+        (n.method ?? '').isNotEmpty;
+    final List<ProxyNode> real =
+        core.nodes.where(hasCredential).toList();
     final List<ProxyNode> out = real.isNotEmpty ? real : core.nodes;
     if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
     return out;
