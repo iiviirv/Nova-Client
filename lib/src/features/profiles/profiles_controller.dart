@@ -38,10 +38,7 @@ class ProfilesController extends ChangeNotifier {
 
   void _load() {
     final prefs = _prefs;
-    if (prefs == null) {
-      if (_profiles.isEmpty) _seedDemo();
-      return;
-    }
+    if (prefs == null) return;
     final raw = prefs.getString(_kProfilesKey);
     _profiles.clear();
     if (raw != null) {
@@ -49,34 +46,30 @@ class ProfilesController extends ChangeNotifier {
         _profiles.addAll(ProxyProfile.decodeList(raw));
       } catch (_) {}
     }
-    if (_profiles.isEmpty) _seedDemo();
-    _activeId = prefs.getString(_kActiveKey) ?? _profiles.first.id;
+    _pruneBrokenDemos();
+    final String? savedActive = prefs.getString(_kActiveKey);
+    _activeId =
+        (savedActive != null && _profiles.any((p) => p.id == savedActive))
+            ? savedActive
+            : (_profiles.isNotEmpty ? _profiles.first.id : null);
   }
 
-  /// A couple of placeholder profiles so the dashboard is meaningful on first
-  /// run, before the user imports a real Nova subscription.
-  void _seedDemo() {
-    _profiles.addAll(<ProxyProfile>[
-      ProxyProfile(
-        id: 'demo-sub',
-        name: 'Nova Proxy — Subscription',
-        kind: ProxyKind.subscription,
-        uri: '',
-        subscriptionUrl: 'https://novaproxy.online/sub',
-        nodeCount: 6,
-        lastLatencyMs: 84,
-        updatedAt: DateTime.now(),
-      ),
-      ProxyProfile(
-        id: 'demo-vless',
-        name: 'Nova VLESS — Direct',
-        kind: ProxyKind.vless,
-        uri: 'vless://example',
-        lastLatencyMs: 132,
-        updatedAt: DateTime.now(),
-      ),
-    ]);
-    _activeId ??= _profiles.first.id;
+  /// Earlier builds seeded two placeholder profiles that can never connect: a
+  /// "subscription" pointing at the marketing site (which serves HTML, not a
+  /// node list) and a `vless://example` stub. Both surfaced on connect as
+  /// "Unsupported or invalid profile link", so strip them from any install that
+  /// still carries them. New installs start empty and prompt for a real link.
+  void _pruneBrokenDemos() {
+    final int before = _profiles.length;
+    _profiles.removeWhere((ProxyProfile p) =>
+        p.id == 'demo-sub' ||
+        p.id == 'demo-vless' ||
+        p.subscriptionUrl == 'https://novaproxy.online/sub' ||
+        p.uri.trim() == 'vless://example');
+    if (_profiles.length != before) {
+      // Persist the cleanup so it only runs once.
+      _prefs?.setString(_kProfilesKey, ProxyProfile.encodeList(_profiles));
+    }
   }
 
   void setActive(String id) {

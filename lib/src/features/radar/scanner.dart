@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import '../../core/proxy/singbox/nova_naming.dart';
-import '../../core/proxy/singbox/share_link_builder.dart';
 import '../../core/proxy/subscription.dart';
 import 'models.dart';
 import 'sources.dart';
@@ -131,7 +131,9 @@ class NovaScanner {
   }
 
   List<ScanResult> _finish(List<ScanResult> results) {
-    results.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
+    // Rank by the composite quality score (latency + jitter + loss), matching
+    // the panel's Radar, rather than raw handshake latency.
+    results.sort((a, b) => a.score.compareTo(b.score));
     _alive = results.length;
     _emitStats(force: true);
     return results;
@@ -192,9 +194,13 @@ class NovaScanner {
       final Stopwatch sw = Stopwatch()..start();
       final bool ok = await _deepConnect(v.result.ip, v.result.port);
       final int latency = sw.elapsedMilliseconds;
+      v.attempts++;
       if (ok) {
-        v.success++;
-        if (v.latency == 0 || latency < v.latency) v.latency = latency;
+        v.latencies.add(latency);
+        // Count this exit as alive the moment it clears the 2-answer bar, so the
+        // Alive counter climbs live during the deep phase instead of sitting at 0
+        // until the very end (which read as "found results but Alive is 0").
+        if (v.latencies.length == 2) _alive++;
       } else {
         _dead++;
       }
@@ -203,12 +209,23 @@ class NovaScanner {
 
     final List<ScanResult> out = <ScanResult>[];
     for (final _Verified v in verified) {
-      if (v.success >= 2) {
+      // Keep exits that answered at least twice, then score them the same way
+      // the Nova panel's Radar does: average latency, jitter (the spread across
+      // answering probes) and loss (probes that got no reply). Ranking by this
+      // composite favours stable exits over ones that only handshake fast once.
+      if (v.latencies.length >= 2) {
+        final int avg =
+            (v.latencies.reduce((a, b) => a + b) / v.latencies.length).round();
+        final int jitter = v.latencies.reduce(max) - v.latencies.reduce(min);
+        final int loss =
+            ((1 - v.latencies.length / v.attempts) * 100).round();
         final ScanResult r = ScanResult(
           ip: v.result.ip,
           port: v.result.port,
           link: _novaLink(v.result.ip, v.result.port),
-          latencyMs: v.latency,
+          latencyMs: avg,
+          jitterMs: jitter,
+          lossPct: loss,
         );
         out.add(r);
         _resultsCtrl.add(r);
@@ -236,11 +253,13 @@ class NovaScanner {
       if (kTlsPorts.contains(port)) {
         final Socket raw = await Socket.connect(ip, port, timeout: deepTimeout);
         try {
-          // Present the active worker host as SNI so the handshake validates
-          // against the endpoint traffic actually uses, not a stale constant.
+          // Probe with a benign Cloudflare SNI, NOT the worker's *.workers.dev
+          // host: Iran's DPI resets that SNI, so handshaking with it found zero
+          // clean IPs from Iran (it worked elsewhere). This tests raw CF-edge
+          // reachability, matching the panel's Radar. See [kRadarProbeSni].
           final SecureSocket secure = await SecureSocket.secure(
             raw,
-            host: coreConfig?.sni ?? kVlessSni,
+            host: kRadarProbeSni,
             onBadCertificate: (_) => true,
           ).timeout(deepTimeout);
           secure.destroy();
@@ -337,17 +356,86 @@ class NovaScanner {
     if (!_statsCtrl.isClosed) _statsCtrl.add(_stats());
   }
 
-  /// Builds the result entry for a clean [ip]:[port]. With an active core
-  /// config this is a full, importable `vless://` node stamped into the
-  /// subscription template and named `{flag} Nova-{id}{suffix}` exactly like
-  /// the worker; otherwise it falls back to a bare `ip:port#name`.
+  /// Builds the copyable result entry for a clean [ip]:[port] as plain
+  /// `ip:port#name` — the clean-IP format the Nova panel/sub expect. Always this
+  /// format (not a stamped `vless://`), so a scan is a paste-ready clean-IP list
+  /// whether or not a subscription is bound. The colo flag (from a bound sub)
+  /// still enriches the name.
   String _novaLink(String ip, int port) {
     final String name = novaNodeName(colo: colo, suffix: suffix, rng: _rng);
-    final template = coreConfig?.template;
-    if (template != null) {
-      return stampCleanIp(template: template, ip: ip, port: port, name: name);
-    }
     return '$ip:$port#$name';
+  }
+}
+
+/// Measures the **real delay** of a clean [ip]:[port]: a full HTTP round-trip
+/// through that specific Cloudflare edge to [host], timed to the first response
+/// byte. Unlike the scan's TCP/TLS connect latency (which can read absurdly low,
+/// e.g. 3-10ms, because it only times the handshake), this includes the request
+/// travelling to the worker and the first byte coming back, so it reports the
+/// honest number a user actually feels (typically ~100-1000ms from Iran).
+///
+/// Returns the round-trip in milliseconds, or null if the endpoint doesn't
+/// answer in time. TLS ports get a real HTTPS request (SNI = [host]); plain HTTP
+/// ports get an HTTP/1.1 request with a matching Host header.
+Future<int?> measureRealDelay(
+  String ip,
+  int port, {
+  required String host,
+  Duration timeout = const Duration(seconds: 8),
+}) async {
+  // A cdn-cgi/trace hit is served by Cloudflare's edge for any CF-fronted host
+  // (workers.dev included), so it exercises the same edge path real traffic uses
+  // without needing app credentials.
+  final String request = 'GET /cdn-cgi/trace HTTP/1.1\r\n'
+      'Host: $host\r\n'
+      'User-Agent: Nova-Radar\r\n'
+      'Accept: */*\r\n'
+      'Connection: close\r\n\r\n';
+  final Stopwatch sw = Stopwatch()..start();
+  Socket? raw;
+  try {
+    raw = await Socket.connect(ip, port, timeout: timeout);
+    Socket stream = raw;
+    if (kTlsPorts.contains(port)) {
+      // Benign SNI (not the worker's *.workers.dev, which Iran resets); the Host
+      // header below still carries the real host for /cdn-cgi/trace. Measures the
+      // honest edge round-trip either way.
+      stream = await SecureSocket.secure(
+        raw,
+        host: kRadarProbeSni,
+        onBadCertificate: (_) => true,
+      ).timeout(timeout);
+    }
+    final Completer<int?> done = Completer<int?>();
+    final Timer timer = Timer(timeout, () {
+      if (!done.isCompleted) done.complete(null);
+    });
+    late final StreamSubscription<List<int>> sub;
+    sub = stream.listen(
+      (List<int> data) {
+        if (data.isNotEmpty && !done.isCompleted) {
+          sw.stop();
+          done.complete(sw.elapsedMilliseconds);
+        }
+      },
+      onError: (_) {
+        if (!done.isCompleted) done.complete(null);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete(null);
+      },
+      cancelOnError: true,
+    );
+    stream.add(utf8.encode(request));
+    final int? ms = await done.future;
+    timer.cancel();
+    await sub.cancel();
+    stream.destroy();
+    return ms;
+  } catch (_) {
+    return null;
+  } finally {
+    raw?.destroy();
   }
 }
 
@@ -360,8 +448,8 @@ class _Probe {
 class _Verified {
   _Verified(this.result);
   final ScanResult result;
-  int success = 0;
-  int latency = 0;
+  int attempts = 0;
+  final List<int> latencies = <int>[];
 }
 
 class _Attempt {

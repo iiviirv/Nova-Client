@@ -26,4 +26,18 @@ class Fmt {
     final int s = seconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
   }
+
+  /// `h:mm:ss` (or `m:ss` under an hour) uptime since [since].
+  static String uptime(DateTime? since, {DateTime? now}) {
+    if (since == null) return '0:00';
+    final int seconds =
+        (now ?? DateTime.now()).difference(since).inSeconds.clamp(0, 1 << 31);
+    final int h = seconds ~/ 3600;
+    final int m = (seconds % 3600) ~/ 60;
+    final int s = seconds % 60;
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 }

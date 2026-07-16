@@ -1,8 +1,11 @@
 import 'package:flutter/widgets.dart';
 
+import '../core/proxy/conn_info_controller.dart';
 import '../core/proxy/proxy_controller.dart';
+import '../features/cloudflare/cloudflare_controller.dart';
 import '../features/profiles/profiles_controller.dart';
 import '../features/radar/radar_controller.dart';
+import '../features/settings/settings_controller.dart';
 import '../theme/theme_controller.dart';
 
 /// A lightweight dependency locator for the app's long-lived controllers.
@@ -17,15 +20,21 @@ class NovaScope extends InheritedWidget {
     super.key,
     required this.theme,
     required this.proxy,
+    required this.connInfo,
     required this.profiles,
     required this.radar,
+    required this.cloudflare,
+    required this.settings,
     required super.child,
   });
 
   final ThemeController theme;
   final ProxyController proxy;
+  final ConnInfoController connInfo;
   final ProfilesController profiles;
   final RadarController radar;
+  final CloudflareController cloudflare;
+  final SettingsController settings;
 
   static NovaScope of(BuildContext context) {
     final NovaScope? scope =
@@ -38,6 +47,9 @@ class NovaScope extends InheritedWidget {
   bool updateShouldNotify(NovaScope oldWidget) =>
       theme != oldWidget.theme ||
       proxy != oldWidget.proxy ||
+      connInfo != oldWidget.connInfo ||
       profiles != oldWidget.profiles ||
-      radar != oldWidget.radar;
+      radar != oldWidget.radar ||
+      cloudflare != oldWidget.cloudflare ||
+      settings != oldWidget.settings;
 }
