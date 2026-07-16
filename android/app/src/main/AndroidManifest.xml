@@ -7,6 +7,9 @@
          core must REQUEST the physical uplink to route `direct` outbounds. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- targetSdk 35: the VpnService runs as a "systemExempted" foreground
+         service, which Android 14+ gates behind this permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
