@@ -9,8 +9,20 @@ class NovaGradients {
   const NovaGradients._();
 
   static const Color cyan = Color(0xFF22D3EE);
-  static const Color indigo = Color(0xFF818CF8);
-  static const Color violet = Color(0xFFA855F7);
+  static const Color indigo = Color(0xFF7C5CFF);
+  static const Color violet = Color(0xFF9D4EFB);
+
+  /// The four-stop sweep used by the connect orb ring when idle
+  /// (cyan → indigo → violet → cyan, matching native `NovaConnectOrb`).
+  static const List<Color> orbSweepIdle = <Color>[cyan, indigo, violet, cyan];
+
+  /// The orb ring sweep when connected (green family).
+  static const List<Color> orbSweepConnected = <Color>[
+    Color(0xFF22C55E),
+    Color(0xFF34D399),
+    Color(0xFF10B981),
+    Color(0xFF22C55E),
+  ];
 
   /// CSS `120deg` ≈ a vector pointing toward the upper-right. In CSS a 0deg
   /// gradient points up and angles increase clockwise, so 120deg runs from the

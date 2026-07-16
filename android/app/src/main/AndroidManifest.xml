@@ -2,6 +2,10 @@
     <!-- Nova Radar (socket scanning) + the sing-box core both need network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- requestNetwork() for the VPN's underlying-network monitor: on Android 9+
+         registerDefaultNetworkCallback returns our own tun interface, so the
+         core must REQUEST the physical uplink to route `direct` outbounds. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
@@ -25,6 +29,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Deep link used by the OAuth "Return to Nova" button on the
+                 sign-in callback page. singleTop + this filter brings the
+                 running app back to the front. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="novaclient"/>
             </intent-filter>
         </activity>
 

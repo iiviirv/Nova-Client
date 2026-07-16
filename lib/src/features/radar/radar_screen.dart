@@ -25,33 +25,40 @@ class RadarScreen extends StatelessWidget {
     final RadarController radar = NovaScope.of(context).radar;
     final s = NovaStrings.of(context);
 
-    return ListenableBuilder(
-      listenable: radar,
-      builder: (context, _) {
-        final ScanStats stats = radar.stats;
-        return Center(
-          child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
-            child: ListView(
-              padding: const EdgeInsets.all(NovaSpace.xl),
-              children: <Widget>[
-                _RadarHeader(s: s),
-                const SizedBox(height: NovaSpace.xl),
-                _SubscriptionBanner(radar: radar, s: s),
-                const SizedBox(height: NovaSpace.lg),
-                _ScanPanel(radar: radar, stats: stats, s: s),
-                const SizedBox(height: NovaSpace.lg),
-                _PortSelector(radar: radar, s: s),
-                const SizedBox(height: NovaSpace.lg),
-                _SourceSelector(radar: radar, s: s),
-                const SizedBox(height: NovaSpace.lg),
-                _ResultsSection(radar: radar, s: s),
-              ],
+    // A themed Scaffold is essential here: Radar is a pushed route, and without
+    // it the page renders with no background (black) so the muted ip:port text
+    // becomes unreadable gray and the whole screen looks "dark" even in light
+    // mode. The Scaffold gives the route the app's real background + a back button.
+    return Scaffold(
+      appBar: AppBar(title: Text(s.radarTitle)),
+      body: ListenableBuilder(
+        listenable: radar,
+        builder: (context, _) {
+          final ScanStats stats = radar.stats;
+          return Center(
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
+              child: ListView(
+                padding: const EdgeInsets.all(NovaSpace.xl),
+                children: <Widget>[
+                  _RadarHeader(s: s),
+                  const SizedBox(height: NovaSpace.xl),
+                  _SubscriptionBanner(radar: radar, s: s),
+                  const SizedBox(height: NovaSpace.lg),
+                  _ScanPanel(radar: radar, stats: stats, s: s),
+                  const SizedBox(height: NovaSpace.lg),
+                  _PortSelector(radar: radar, s: s),
+                  const SizedBox(height: NovaSpace.lg),
+                  _SourceSelector(radar: radar, s: s),
+                  const SizedBox(height: NovaSpace.lg),
+                  _ResultsSection(radar: radar, s: s),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -68,8 +75,6 @@ class _RadarHeader extends StatelessWidget {
       children: <Widget>[
         const NovaEyebrow('Cloudflare scanner'),
         const SizedBox(height: 6),
-        Text(s.radarTitle, style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 4),
         Text(s.radarSubtitle,
             style: Theme.of(context)
                 .textTheme
@@ -427,6 +432,17 @@ class _ResultsSection extends StatelessWidget {
                 ),
             ],
           ),
+          if (results.isNotEmpty) ...<Widget>[
+            const SizedBox(height: NovaSpace.sm),
+            NovaButton(
+              label: radar.isTestingDelays ? s.testing : s.testRealDelay,
+              icon: Icons.network_check_rounded,
+              variant: NovaButtonVariant.secondary,
+              expand: true,
+              loading: radar.isTestingDelays,
+              onPressed: radar.isTestingDelays ? null : radar.testRealDelays,
+            ),
+          ],
           const SizedBox(height: NovaSpace.sm),
           if (results.isEmpty)
             Padding(
@@ -440,7 +456,12 @@ class _ResultsSection extends StatelessWidget {
               ),
             )
           else
-            for (final r in results) _ResultTile(result: r),
+            for (final r in results)
+              _ResultTile(
+                result: r,
+                realDelayMs: radar.realDelayFor(r.hostPort),
+                tested: radar.hasRealDelay(r.hostPort),
+              ),
         ],
       ),
     );
@@ -448,19 +469,36 @@ class _ResultsSection extends StatelessWidget {
 }
 
 class _ResultTile extends StatelessWidget {
-  const _ResultTile({required this.result});
+  const _ResultTile({
+    required this.result,
+    this.realDelayMs,
+    this.tested = false,
+  });
   final ScanResult result;
+
+  /// Measured real round-trip delay (ms) once "Test real delay" has run, or
+  /// null. [tested] distinguishes "not tested yet" from "tested but failed".
+  final int? realDelayMs;
+  final bool tested;
+
+  /// The delay we present: the honest real delay when we have it, otherwise the
+  /// scan's connect latency as a placeholder.
+  int? get _shownMs => tested ? realDelayMs : result.latencyMs;
 
   Color _latencyColor(BuildContext context) {
     final nova = context.nova;
-    if (result.latencyMs < 200) return nova.success;
-    if (result.latencyMs < 600) return nova.warning;
+    final int? ms = _shownMs;
+    if (ms == null) return nova.danger; // tested and failed
+    if (ms < 200) return nova.success;
+    if (ms < 600) return nova.warning;
     return nova.danger;
   }
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
+    final int? ms = _shownMs;
+    final String badge = ms == null ? '—' : '$ms ms';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -470,8 +508,14 @@ class _ResultTile extends StatelessWidget {
             decoration: BoxDecoration(
               color: _latencyColor(context).withValues(alpha: 0.14),
               borderRadius: NovaRadii.smR,
+              // A subtle ring marks a real-delay-verified entry vs. a raw
+              // connect-latency placeholder.
+              border: tested
+                  ? Border.all(
+                      color: _latencyColor(context).withValues(alpha: 0.5))
+                  : null,
             ),
-            child: Text('${result.latencyMs} ms',
+            child: Text(badge,
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
@@ -479,12 +523,28 @@ class _ResultTile extends StatelessWidget {
           ),
           const SizedBox(width: NovaSpace.md),
           Expanded(
-            child: Text(result.hostPort,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures()
-                      ],
-                    )),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(result.hostPort,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures()
+                          ],
+                        )),
+                // Stability signal behind the ranking: jitter (latency spread)
+                // and packet loss, matching the panel's Radar columns.
+                Text(
+                  '${NovaStrings.of(context).radarJitter} ${result.jitterMs} ms'
+                  ',  ${result.lossPct}% ${NovaStrings.of(context).radarLoss}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: nova.muted),
+                ),
+              ],
+            ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,

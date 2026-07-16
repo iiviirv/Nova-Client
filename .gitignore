@@ -26,3 +26,10 @@ Thumbs.db
 **/windows/flutter/ephemeral/
 **/linux/flutter/ephemeral/
 **/macos/Flutter/ephemeral/
+ios/Frameworks/Libbox.xcframework
+
+# Local release-staging (APKs, etc.)
+dist/
+
+# Large iOS core framework (build artifact, regenerated locally; too big for GitHub 100MB limit)
+ios/Frameworks/Novacore.xcframework/

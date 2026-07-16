@@ -67,12 +67,30 @@ class ScanResult {
     required this.port,
     required this.link,
     required this.latencyMs,
-  });
+    this.jitterMs = 0,
+    this.lossPct = 0,
+    double? score,
+  }) : score = score ?? (latencyMs + jitterMs * 0.5 + lossPct * 20);
 
   final String ip;
   final int port;
   final String link;
+
+  /// Average latency across the probes that answered, in milliseconds.
   final int latencyMs;
+
+  /// Spread between the fastest and slowest answering probe (max - min), in ms.
+  /// High jitter means an unstable exit even if its average looks quick.
+  final int jitterMs;
+
+  /// Percentage of probes that got no answer (0-100). A low-latency IP that
+  /// drops packets is worse than a slightly slower one that never does.
+  final int lossPct;
+
+  /// Composite quality score, lower is better: `latency + jitter*0.5 + loss*20`.
+  /// This matches the Nova panel's Radar so both rank clean IPs the same way,
+  /// favouring stable exits over ones that merely handshake fast.
+  final double score;
 
   String get hostPort => '$ip:$port';
 }
@@ -149,3 +167,11 @@ const List<int> kAllPorts = <int>[
 
 /// The SNI presented during the deep-test TLS handshake (Nova Worker host).
 const String kVlessSni = 'nova2.altramax083.workers.dev';
+
+/// SNI used for Radar's TLS reachability probes. Deliberately NOT the worker's
+/// `*.workers.dev` host: Iran's DPI resets that SNI, so probing with it made
+/// Radar find zero clean IPs from Iran. A benign Cloudflare SNI completes the
+/// handshake on every CF edge IP (an IP literal or empty SNI does not, reliably)
+/// while giving DPI nothing worth blocking. Real Nova traffic fragments its own
+/// SNI, so a reachable edge IP is exactly what "clean" means for the client.
+const String kRadarProbeSni = 'www.cloudflare.com';

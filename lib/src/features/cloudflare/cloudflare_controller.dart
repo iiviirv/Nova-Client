@@ -1,0 +1,328 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'nova_cloudflare.dart';
+import 'nova_panel.dart';
+
+/// Best-effort dismissal of the in-app sign-in browser after the OAuth redirect
+/// is caught on the loopback server. `closeInAppWebView()` is only implemented
+/// on Android/iOS; on desktop (macOS/Windows) the sign-in page opens in the
+/// system browser and there is no in-app view to close, so the call throws
+/// `UnimplementedError`. Closing the sheet is purely cosmetic (the loopback
+/// server already has the code), so any failure here must not surface as a
+/// sign-in error. Swallow everything.
+Future<void> dismissSignInBrowser() async {
+  try {
+    await closeInAppWebView();
+  } catch (_) {
+    // No in-app browser on this platform (desktop), or nothing open. Ignore.
+  }
+}
+
+/// SharedPreferences-backed token store so the Cloudflare login persists.
+class SharedPrefsCfStore implements CfStore {
+  SharedPrefsCfStore(this._prefs);
+  final SharedPreferences _prefs;
+  @override
+  String get(String key) => _prefs.getString('nova.$key') ?? '';
+  @override
+  void set(String key, String value) {
+    if (value.isEmpty) {
+      _prefs.remove('nova.$key');
+    } else {
+      _prefs.setString('nova.$key', value);
+    }
+  }
+}
+
+enum CfPhase { loading, disconnected, connecting, connected, working }
+
+/// App-scoped controller for the Cloudflare account + Deploy + Panel features.
+/// Wraps the ported [NovaCloudflare] and [NovaPanel] clients and exposes their
+/// state to the screens. Living above the screens means a deploy keeps running
+/// (with its timer) even if the user leaves the page.
+class CloudflareController extends ChangeNotifier {
+  CfPhase phase = CfPhase.disconnected;
+  String accountName = '';
+  List<CfWorker> workers = <CfWorker>[];
+  int kvCount = 0;
+  int d1Count = 0;
+  // Worker requests used today vs the free-plan daily allowance. null = not
+  // available (not connected, token lacks analytics scope, or no data yet).
+  int? workerRequestsToday;
+  int workerRequestLimit = NovaCloudflare.freeRequestsPerDay;
+  String error = '';
+  String message = '';
+  String busyWorker = '';
+
+  // Deploy state (survives leaving the Deploy screen).
+  bool deploying = false;
+  String deployProgress = '';
+  int deployElapsed = 0;
+  DeployResult? deployResult;
+  String deployError = '';
+
+  NovaCloudflare? _cf;
+  final NovaPanel _panel = NovaPanel();
+  CfSession? _session;
+  Timer? _deployTimer;
+
+  void attachPrefs(SharedPreferences prefs) {
+    _cf = NovaCloudflare(SharedPrefsCfStore(prefs));
+    refresh();
+  }
+
+  bool get isReady => _cf != null;
+
+  Future<void> refresh() async {
+    final NovaCloudflare? cf = _cf;
+    if (cf == null) return;
+    _set(phase: CfPhase.loading, error: '');
+    try {
+      final CfSession? s = await cf.restoreSession();
+      if (s == null) {
+        _set(phase: CfPhase.disconnected);
+        return;
+      }
+      _session = s;
+      await _loadWorkers(s);
+    } catch (_) {
+      _set(phase: CfPhase.disconnected);
+    }
+  }
+
+  Future<void> _loadWorkers(CfSession s) async {
+    try {
+      final List<CfWorker> w = await _cf!.listWorkers(s);
+      accountName = s.accountName;
+      workers = w;
+      _set(phase: CfPhase.connected, error: '');
+      final ({int kv, int d1}) counts = await _cf!.resourceCounts(s);
+      kvCount = counts.kv;
+      d1Count = counts.d1;
+      notifyListeners();
+      // Usage is best-effort and slower; fetch it after the screen is already
+      // usable so it never blocks showing the account.
+      workerRequestsToday = await _cf!.workerRequestsToday(s);
+      notifyListeners();
+    } catch (e) {
+      final String msg = e.toString();
+      if (msg.contains('401') || msg.contains('403')) {
+        _cf!.disconnect();
+        _session = null;
+        _set(phase: CfPhase.disconnected, error: 'Your Cloudflare session expired. Please connect again.');
+      } else {
+        accountName = s.accountName;
+        _set(phase: CfPhase.connected, error: msg);
+      }
+    }
+  }
+
+  Future<void> connect(
+    Future<void> Function(String url) openUrl, {
+    Future<void> Function()? onRedirect,
+  }) async {
+    final NovaCloudflare? cf = _cf;
+    if (cf == null) return;
+    _set(phase: CfPhase.connecting, error: '');
+    try {
+      final CfSession s = await cf.connect(openUrl: openUrl, onRedirect: onRedirect);
+      _session = s;
+      await _loadWorkers(s);
+    } catch (e) {
+      // A user cancel is not an error — reset quietly to the sign-in screen.
+      final bool cancelled = e.toString().toLowerCase().contains('cancel');
+      _set(phase: CfPhase.disconnected, error: cancelled ? '' : e.toString());
+    }
+  }
+
+  /// Aborts an in-flight [connect] when the user backs out of the sign-in sheet,
+  /// so the screen returns to its "Connect Cloudflare" state instead of sitting
+  /// on "Opening your browser…" until the redirect times out.
+  void cancelConnect() {
+    _cf?.cancelConnect();
+    _set(phase: CfPhase.disconnected, error: '');
+  }
+
+  void disconnect() {
+    _cf?.disconnect();
+    _session = null;
+    accountName = '';
+    workers = <CfWorker>[];
+    kvCount = 0;
+    d1Count = 0;
+    workerRequestsToday = null;
+    _set(phase: CfPhase.disconnected);
+  }
+
+  Future<bool> deleteWorker(CfWorker w) async {
+    final CfSession? s = _session;
+    if (s == null) return false;
+    busyWorker = w.name;
+    _set(message: '', error: '');
+    try {
+      await _cf!.deleteWorker(s, w.name);
+      busyWorker = '';
+      message = 'Worker deleted';
+      await _loadWorkers(s);
+      return true;
+    } catch (e) {
+      busyWorker = '';
+      _set(error: e.toString());
+      return false;
+    }
+  }
+
+  /// Deploy a new worker. Runs with a live timer and a 120s timeout; the state
+  /// stays on the controller so leaving the screen doesn't restart it.
+  Future<void> deploy(String name) async {
+    final CfSession? s = _session;
+    if (s == null || deploying) return;
+    deploying = true;
+    deployProgress = 'Starting';
+    deployElapsed = 0;
+    deployResult = null;
+    deployError = '';
+    notifyListeners();
+    _deployTimer?.cancel();
+    _deployTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      deployElapsed++;
+      notifyListeners();
+    });
+    try {
+      final DeployResult r = await _cf!
+          .deploy(s, name, onProgress: (String p) {
+            deployProgress = p;
+            notifyListeners();
+          })
+          .timeout(const Duration(seconds: 120));
+      deployResult = r;
+      deployProgress = 'Done';
+      await _loadWorkers(s);
+    } on TimeoutException {
+      deployError = 'Deploy timed out. Check your connection and try again.';
+    } catch (e) {
+      deployError = e.toString();
+    } finally {
+      _deployTimer?.cancel();
+      deploying = false;
+      notifyListeners();
+    }
+  }
+
+  void resetDeploy() {
+    deployResult = null;
+    deployError = '';
+    deployProgress = '';
+    deployElapsed = 0;
+    notifyListeners();
+  }
+
+  /// Set a fresh worker's panel password, then verify it.
+  ///
+  /// A just-deployed `*.workers.dev` subdomain often isn't serving its edge TLS
+  /// certificate yet: the worker is live (it shows in the list) but the panel
+  /// host answers the very first HTTPS ClientHello with a handshake failure (or
+  /// a Cloudflare 52x) for a few seconds up to about a minute until the cert
+  /// provisions. That is exactly why setting the password by hand in a browser a
+  /// moment later works. So ride out that warm-up window with a bounded retry
+  /// before giving up, and if it still fails, point the user at the browser path
+  /// that is known to work instead of dumping a raw handshake error on them.
+  Future<bool> setupPassword(String workerUrl, String password) async {
+    final Stopwatch sw = Stopwatch()..start();
+    const Duration budget = Duration(seconds: 45);
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final bool configured = await _panel.installConfigured(workerUrl);
+        if (!configured) await _panel.installSet(workerUrl, password);
+        await _panel.login(workerUrl, password); // verify
+        _set(error: '');
+        return true;
+      } catch (e) {
+        // A real answer from the panel (wrong password, 2FA, a 4xx) is final —
+        // retrying can't change it, so surface it right away.
+        if (!_isPanelWarmingUp(e)) {
+          _set(error: _friendlyPanelError(e));
+          return false;
+        }
+        // Transient: the edge isn't ready. Back off (capped) and try again
+        // until the budget runs out.
+        if (sw.elapsed >= budget) {
+          _set(
+              error:
+                  'Your panel is still coming online. Open $workerUrl in a '
+                  'browser to set the password, or come back and try again in '
+                  'a minute.');
+          return false;
+        }
+        final int ms = (500 * (1 << (attempt - 1))).clamp(500, 5000);
+        await Future<void>.delayed(Duration(milliseconds: ms));
+      }
+    }
+  }
+
+  /// True when [e] looks like a not-ready-yet edge rather than a real panel
+  /// answer: a TLS handshake refusal, a dropped/again-refused socket, a timeout,
+  /// or a Cloudflare edge status a fresh subdomain returns before it settles.
+  bool _isPanelWarmingUp(Object e) {
+    if (e is HandshakeException || e is SocketException || e is TimeoutException) {
+      return true;
+    }
+    final String m = e.toString();
+    if (m.contains('Handshake') ||
+        m.contains('Connection closed') ||
+        m.contains('Connection reset') ||
+        m.contains('Connection refused')) {
+      return true;
+    }
+    // Cloudflare "edge can't reach origin / not ready" statuses.
+    return m.contains('(502)') ||
+        m.contains('(503)') ||
+        m.contains('(521)') ||
+        m.contains('(522)') ||
+        m.contains('(523)') ||
+        m.contains('(525)') ||
+        m.contains('(526)');
+  }
+
+  String _friendlyPanelError(Object e) {
+    if (e is PanelException) return e.message;
+    return 'Could not reach the panel to set the password. Please try again.';
+  }
+
+  /// Sign in to a worker's panel and return its importable subscription URL.
+  Future<String?> fetchPanelSubscription(String workerUrl, String password) async {
+    busyWorker = workerUrl;
+    _set(error: '', message: '');
+    try {
+      final PanelSession ses = await _panel.login(workerUrl, password);
+      final String url = await _panel.importableSubscription(ses);
+      busyWorker = '';
+      notifyListeners();
+      return url;
+    } catch (e) {
+      busyWorker = '';
+      _set(error: e.toString());
+      return null;
+    }
+  }
+
+  void _set({CfPhase? phase, String? error, String? message}) {
+    if (phase != null) this.phase = phase;
+    if (error != null) this.error = error;
+    if (message != null) this.message = message;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _deployTimer?.cancel();
+    super.dispose();
+  }
+}

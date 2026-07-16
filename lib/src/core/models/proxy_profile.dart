@@ -5,6 +5,10 @@ import 'dart:convert';
 /// local-config kinds Karing-style clients import.
 enum ProxyKind { vless, trojan, shadowsocks, subscription, singboxConfig }
 
+/// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
+/// from "clear it to null" (back to auto-select).
+const Object _unset = Object();
+
 extension ProxyKindLabel on ProxyKind {
   String get label => switch (this) {
         ProxyKind.vless => 'VLESS',
@@ -27,6 +31,8 @@ class ProxyProfile {
     this.nodeCount = 1,
     this.lastLatencyMs,
     this.updatedAt,
+    this.pinnedNode,
+    this.fastNodes = const <String>[],
   });
 
   final String id;
@@ -47,24 +53,40 @@ class ProxyProfile {
 
   final DateTime? updatedAt;
 
+  /// For a subscription, the `server:port` of a manually pinned exit node, or
+  /// null to let the core auto-pick the fastest (urltest).
+  final String? pinnedNode;
+
+  /// `server:port` keys of the fastest measured nodes (from the node picker's
+  /// latency test), best first. Auto-select builds its urltest pool from these
+  /// so "fastest" actually uses good nodes instead of the subscription's first
+  /// few. Empty until the user opens the node list.
+  final List<String> fastNodes;
+
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
     String? name,
     String? uri,
+    String? subscriptionUrl,
     int? nodeCount,
     int? lastLatencyMs,
     DateTime? updatedAt,
+    Object? pinnedNode = _unset,
+    List<String>? fastNodes,
   }) {
     return ProxyProfile(
       id: id,
       name: name ?? this.name,
       kind: kind,
       uri: uri ?? this.uri,
-      subscriptionUrl: subscriptionUrl,
+      subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       nodeCount: nodeCount ?? this.nodeCount,
       lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
       updatedAt: updatedAt ?? this.updatedAt,
+      pinnedNode:
+          pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
+      fastNodes: fastNodes ?? this.fastNodes,
     );
   }
 
@@ -77,6 +99,8 @@ class ProxyProfile {
         'nodeCount': nodeCount,
         'lastLatencyMs': lastLatencyMs,
         'updatedAt': updatedAt?.toIso8601String(),
+        'pinnedNode': pinnedNode,
+        'fastNodes': fastNodes,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -93,6 +117,11 @@ class ProxyProfile {
         updatedAt: json['updatedAt'] != null
             ? DateTime.tryParse(json['updatedAt'] as String)
             : null,
+        pinnedNode: json['pinnedNode'] as String?,
+        fastNodes: (json['fastNodes'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            const <String>[],
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>
