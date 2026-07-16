@@ -2,6 +2,10 @@
     <!-- Nova Radar (socket scanning) + the sing-box core both need network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- requestNetwork() for the VPN's underlying-network monitor: on Android 9+
+         registerDefaultNetworkCallback returns our own tun interface, so the
+         core must REQUEST the physical uplink to route `direct` outbounds. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
