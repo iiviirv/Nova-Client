@@ -5,10 +5,10 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart' as io;
 import 'package:http_parser/http_parser.dart';
 
 import 'doh_resolver.dart';
+import 'secure_http.dart';
 
 class CloudflareException implements Exception {
   CloudflareException(this.message);
@@ -62,30 +62,78 @@ class NovaCloudflare {
   final CfStore _store;
   final http.Client _client;
 
-  // Hostnames we resolve over DoH instead of the system resolver. Only the
-  // fallback proxy hosts: Cloudflare's own API hosts use system DNS (they
-  // resolve fine even where the proxy name is poisoned, and this keeps the
-  // common path untouched).
-  static Set<String> get _dohHosts =>
-      _proxyBases.map((String b) => Uri.parse(b).host).toSet();
+  // Hosts we resolve ourselves instead of trusting the system resolver: the
+  // relay host plus Cloudflare's own API/dashboard. Inside Iran every resolver
+  // the app can reach is blocked or poisoned (the system lookup fails with "No
+  // address associated with hostname", and the public DoH endpoints are filtered
+  // too), so a plain lookup of these names throws before a byte is sent — the
+  // "Failed host lookup: novaproxy.online" / "web page instead of data" errors
+  // users hit when connecting Cloudflare. Each name here has a hardcoded IP of
+  // last resort so it stays reachable even when DNS is fully down.
+  //
+  // The IPs are real Cloudflare edge addresses (an arbitrary anycast IP answers
+  // Cloudflare's OWN api/dash hosts with "error 1034"; the relay is a customer
+  // Worker any edge serves by SNI). TLS still validates the true hostname, so a
+  // rotated/stale IP fails closed rather than trusting the wrong server.
+  static const Map<String, List<String>> _pinnedIps = <String, List<String>>{
+    'novaproxy.online': <String>['172.64.80.1', '104.17.80.1', '172.64.81.1'],
+    'api.cloudflare.com': <String>[
+      '104.19.192.174', '104.19.192.177', '104.19.193.29',
+    ],
+    'dash.cloudflare.com': <String>['104.17.110.184', '104.17.111.184'],
+  };
 
-  /// Builds the real HTTP client. Its socket factory routes [_dohHosts] through
-  /// a DoH-resolved IP (TLS still validates the original hostname), and every
-  /// other host through the system resolver exactly as before.
-  static http.Client _dohClient(DohResolver doh) {
-    final HttpClient inner = HttpClient();
-    inner.connectionFactory =
-        (Uri uri, String? proxyHost, int? proxyPort) async {
-      final int port = uri.port;
-      if (proxyHost != null) return Socket.startConnect(proxyHost, proxyPort ?? port);
-      if (_dohHosts.contains(uri.host)) {
-        final List<String> ips = await doh.resolveA(uri.host);
-        if (ips.isNotEmpty) return Socket.startConnect(ips.first, port);
+  /// Resolve [host] to a concrete IP for dialing, hardened against a blocked or
+  /// poisoned resolver. Each step is time-boxed so a hanging resolver can't
+  /// stall sign-in:
+  ///   1. an IP literal is dialed as-is;
+  ///   2. the system resolver (fast on an open network; in Iran the blocked
+  ///      names come back with "No address associated with hostname", a clean
+  ///      failure we fall through);
+  ///   3. DoH (defeats poisoning where a public resolver is reachable, and
+  ///      picks up IP rotation) — kept short so an unreachable endpoint can't
+  ///      eat the whole request timeout;
+  ///   4. a pinned Cloudflare edge IP of last resort, so a fully blocked DNS
+  ///      still connects.
+  /// The IP is only where we dial; [_dohClient] always presents the real [host]
+  /// as the TLS SNI, so TLS validates the true name whichever IP answered and a
+  /// stale/wrong pinned IP fails closed rather than trusting the wrong server.
+  static Future<InternetAddress> _resolveAddr(DohResolver doh, String host) async {
+    final InternetAddress? literal = InternetAddress.tryParse(host);
+    if (literal != null) return literal;
+    try {
+      final List<InternetAddress> sys = await InternetAddress
+          .lookup(host)
+          .timeout(const Duration(seconds: 4));
+      for (final InternetAddress a in sys) {
+        if (a.type == InternetAddressType.IPv4) return a;
       }
-      return Socket.startConnect(uri.host, port);
-    };
-    return io.IOClient(inner);
+    } catch (_) {
+      // No address / timed out; try DoH, then a pinned IP.
+    }
+    try {
+      final List<String> viaDoh =
+          await doh.resolveA(host).timeout(const Duration(seconds: 4));
+      if (viaDoh.isNotEmpty) return InternetAddress(viaDoh.first);
+    } catch (_) {
+      // DoH blocked; fall through to the pinned IP.
+    }
+    final List<String>? pinned = _pinnedIps[host];
+    if (pinned != null && pinned.isNotEmpty) return InternetAddress(pinned.first);
+    // Nothing pinned for this host: one last system attempt so a genuine
+    // failure surfaces as a real error (and the caller's proxy fallback runs).
+    final List<InternetAddress> again = await InternetAddress.lookup(host);
+    return again.firstWhere(
+        (InternetAddress a) => a.type == InternetAddressType.IPv4,
+        orElse: () => again.first);
   }
+
+  /// The real HTTP client: it dials every host the hardened way (see
+  /// [_resolveAddr]) while presenting the true hostname as the TLS SNI even when
+  /// the IP came from DoH or a pinned fallback. See [buildSecureClient] for why
+  /// the hand-rolled TLS is required (a plain factory socket ships plaintext).
+  static http.Client _dohClient(DohResolver doh) =>
+      buildSecureClient((Uri uri) => _resolveAddr(doh, uri.host));
 
   static const String _clientId = '54d11594-84e4-41aa-b438-e81b8fa78ee7';
   static const String _authUrl = 'https://dash.cloudflare.com/oauth2/auth';
