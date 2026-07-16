@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -222,16 +223,77 @@ class CloudflareController extends ChangeNotifier {
   }
 
   /// Set a fresh worker's panel password, then verify it.
+  ///
+  /// A just-deployed `*.workers.dev` subdomain often isn't serving its edge TLS
+  /// certificate yet: the worker is live (it shows in the list) but the panel
+  /// host answers the very first HTTPS ClientHello with a handshake failure (or
+  /// a Cloudflare 52x) for a few seconds up to about a minute until the cert
+  /// provisions. That is exactly why setting the password by hand in a browser a
+  /// moment later works. So ride out that warm-up window with a bounded retry
+  /// before giving up, and if it still fails, point the user at the browser path
+  /// that is known to work instead of dumping a raw handshake error on them.
   Future<bool> setupPassword(String workerUrl, String password) async {
-    try {
-      final bool configured = await _panel.installConfigured(workerUrl);
-      if (!configured) await _panel.installSet(workerUrl, password);
-      await _panel.login(workerUrl, password); // verify
-      return true;
-    } catch (e) {
-      _set(error: e.toString());
-      return false;
+    final Stopwatch sw = Stopwatch()..start();
+    const Duration budget = Duration(seconds: 45);
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final bool configured = await _panel.installConfigured(workerUrl);
+        if (!configured) await _panel.installSet(workerUrl, password);
+        await _panel.login(workerUrl, password); // verify
+        _set(error: '');
+        return true;
+      } catch (e) {
+        // A real answer from the panel (wrong password, 2FA, a 4xx) is final —
+        // retrying can't change it, so surface it right away.
+        if (!_isPanelWarmingUp(e)) {
+          _set(error: _friendlyPanelError(e));
+          return false;
+        }
+        // Transient: the edge isn't ready. Back off (capped) and try again
+        // until the budget runs out.
+        if (sw.elapsed >= budget) {
+          _set(
+              error:
+                  'Your panel is still coming online. Open $workerUrl in a '
+                  'browser to set the password, or come back and try again in '
+                  'a minute.');
+          return false;
+        }
+        final int ms = (500 * (1 << (attempt - 1))).clamp(500, 5000);
+        await Future<void>.delayed(Duration(milliseconds: ms));
+      }
     }
+  }
+
+  /// True when [e] looks like a not-ready-yet edge rather than a real panel
+  /// answer: a TLS handshake refusal, a dropped/again-refused socket, a timeout,
+  /// or a Cloudflare edge status a fresh subdomain returns before it settles.
+  bool _isPanelWarmingUp(Object e) {
+    if (e is HandshakeException || e is SocketException || e is TimeoutException) {
+      return true;
+    }
+    final String m = e.toString();
+    if (m.contains('Handshake') ||
+        m.contains('Connection closed') ||
+        m.contains('Connection reset') ||
+        m.contains('Connection refused')) {
+      return true;
+    }
+    // Cloudflare "edge can't reach origin / not ready" statuses.
+    return m.contains('(502)') ||
+        m.contains('(503)') ||
+        m.contains('(521)') ||
+        m.contains('(522)') ||
+        m.contains('(523)') ||
+        m.contains('(525)') ||
+        m.contains('(526)');
+  }
+
+  String _friendlyPanelError(Object e) {
+    if (e is PanelException) return e.message;
+    return 'Could not reach the panel to set the password. Please try again.';
   }
 
   /// Sign in to a worker's panel and return its importable subscription URL.

@@ -231,6 +231,10 @@ class _DeployScreenState extends State<DeployScreen> {
                 });
               },
             ),
+            if (!_panelSaved && cf.error.isNotEmpty) ...<Widget>[
+              const SizedBox(height: NovaSpace.md),
+              Text(cf.error, style: TextStyle(color: nova.danger)),
+            ],
           ],
           const SizedBox(height: NovaSpace.md),
           NovaButton(

@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+
+import 'secure_http.dart';
 
 /// Resolves A records over DNS-over-HTTPS.
 ///
@@ -13,11 +16,19 @@ import 'package:http/http.dart' as http;
 /// the real Cloudflare IPs, which we then connect to directly while TLS still
 /// validates the original hostname's certificate.
 ///
+/// The DoH endpoints themselves are pinned to known IPs (see [_endpointIps]):
+/// if we resolved cloudflare-dns.com / dns.google through the system resolver,
+/// a network that blocks all plaintext DNS would kill the DoH tier before it
+/// ever sends a query, leaving only the caller's static pinned IPs. Pinning the
+/// endpoints (with the real hostname as SNI, so TLS still validates) keeps DoH
+/// working as a live fallback even when system DNS is fully down.
+///
 /// Best-effort: if every DoH endpoint is unreachable this returns an empty
 /// list and the caller falls back to the system resolver, so behaviour on an
 /// open network is unchanged.
 class DohResolver {
-  DohResolver({http.Client? client}) : _client = client ?? http.Client();
+  DohResolver({http.Client? client})
+      : _client = client ?? buildSecureClient(_resolveEndpoint);
 
   final http.Client _client;
 
@@ -27,6 +38,38 @@ class DohResolver {
     'https://cloudflare-dns.com/dns-query',
     'https://dns.google/resolve',
   ];
+
+  // Pinned IPs for the DoH endpoints, so the query can be sent even when system
+  // DNS is fully blocked. TLS still validates the real endpoint hostname.
+  static const Map<String, List<String>> _endpointIps = <String, List<String>>{
+    'cloudflare-dns.com': <String>['104.16.248.249', '104.16.249.249'],
+    'dns.google': <String>['8.8.8.8', '8.8.4.4'],
+  };
+
+  /// Dial IP for a DoH endpoint request: system resolver first (an open network
+  /// stays exactly as before, and picks up IP rotation), then a pinned endpoint
+  /// IP so a blocked resolver still connects.
+  static Future<InternetAddress> _resolveEndpoint(Uri uri) async {
+    final InternetAddress? literal = InternetAddress.tryParse(uri.host);
+    if (literal != null) return literal;
+    try {
+      final List<InternetAddress> sys = await InternetAddress
+          .lookup(uri.host)
+          .timeout(const Duration(seconds: 3));
+      for (final InternetAddress a in sys) {
+        if (a.type == InternetAddressType.IPv4) return a;
+      }
+    } catch (_) {
+      // Blocked/slow; fall through to the pinned endpoint IP.
+    }
+    final List<String>? pinned = _endpointIps[uri.host];
+    if (pinned != null && pinned.isNotEmpty) return InternetAddress(pinned.first);
+    final List<InternetAddress> again = await InternetAddress.lookup(uri.host);
+    return again.firstWhere(
+        (InternetAddress a) => a.type == InternetAddressType.IPv4,
+        orElse: () => again.first);
+  }
+
   static const Duration _timeout = Duration(seconds: 6);
   static const Duration _cacheTtl = Duration(minutes: 5);
 
