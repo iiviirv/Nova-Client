@@ -803,8 +803,12 @@ class _ConfigDialogState extends State<_ConfigDialog> {
 ProxyKind? _detectKind(String raw) {
   final String s = raw.trim();
   final String l = s.toLowerCase();
+  if (l.startsWith('socks://') || l.startsWith('socks5://')) {
+    return ProxyKind.socks;
+  }
   if (l.startsWith('http://') || l.startsWith('https://')) {
-    return ProxyKind.subscription;
+    // An http(s) link with `user:pass@` is a proxy; without it, a subscription.
+    return s.contains('@') ? ProxyKind.http : ProxyKind.subscription;
   }
   if (l.startsWith('vless://')) return ProxyKind.vless;
   if (l.startsWith('trojan://')) return ProxyKind.trojan;

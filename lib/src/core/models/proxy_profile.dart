@@ -3,7 +3,16 @@ import 'dart:convert';
 /// The proxy protocols Nova Proxy speaks (mirrors the Nova Worker: VLESS,
 /// Trojan, Shadowsocks over WebSocket/gRPC/XHTTP) plus the subscription and
 /// local-config kinds Karing-style clients import.
-enum ProxyKind { vless, trojan, shadowsocks, subscription, singboxConfig, awg }
+enum ProxyKind {
+  vless,
+  trojan,
+  shadowsocks,
+  subscription,
+  singboxConfig,
+  awg,
+  socks,
+  http,
+}
 
 /// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
 /// from "clear it to null" (back to auto-select).
@@ -17,6 +26,8 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.subscription => 'Subscription',
         ProxyKind.singboxConfig => 'sing-box',
         ProxyKind.awg => 'AmneziaWG',
+        ProxyKind.socks => 'SOCKS',
+        ProxyKind.http => 'HTTP',
       };
 }
 

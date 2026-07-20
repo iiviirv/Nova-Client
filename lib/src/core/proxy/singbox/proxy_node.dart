@@ -10,7 +10,17 @@ import 'awg_config.dart';
 /// to real UDP/QUIC and higher speed. AmneziaWG (`awg`) is a WireGuard endpoint
 /// with junk-packet obfuscation, so it is carried as a sing-box endpoint, not an
 /// outbound; see [awgConf] and [SingboxConfig].
-enum NodeProtocol { vless, trojan, shadowsocks, vmess, hysteria2, tuic, awg }
+enum NodeProtocol {
+  vless,
+  trojan,
+  shadowsocks,
+  vmess,
+  hysteria2,
+  tuic,
+  awg,
+  socks,
+  http,
+}
 
 extension NodeProtocolName on NodeProtocol {
   /// The sing-box outbound (or endpoint) `type` for this protocol.
@@ -22,6 +32,8 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.hysteria2 => 'hysteria2',
         NodeProtocol.tuic => 'tuic',
         NodeProtocol.awg => 'awg',
+        NodeProtocol.socks => 'socks',
+        NodeProtocol.http => 'http',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -42,6 +54,8 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.hysteria2 => 'Hysteria2',
         NodeProtocol.tuic => 'TUIC',
         NodeProtocol.awg => 'AmneziaWG',
+        NodeProtocol.socks => 'SOCKS',
+        NodeProtocol.http => 'HTTP',
       };
 }
 
@@ -83,11 +97,12 @@ class ProxyNode {
   /// into the sing-box `awg` endpoint at build time.
   factory ProxyNode.fromAwgConf(String conf, {String? name}) {
     final AwgConfig c = AwgConfig.parseConf(conf);
+    final String dflt = c.isObfuscated ? 'AmneziaWG' : 'WireGuard';
     return ProxyNode(
       protocol: NodeProtocol.awg,
       server: c.peer.host,
       port: c.peer.port,
-      tag: (name == null || name.trim().isEmpty) ? 'AmneziaWG' : name.trim(),
+      tag: (name == null || name.trim().isEmpty) ? dflt : name.trim(),
       awgConf: conf,
     );
   }

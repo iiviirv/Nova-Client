@@ -43,6 +43,11 @@ ProxyNode? parseShareLink(String raw) {
       'hysteria2' || 'hy2' => _parseHysteria2(input),
       'tuic' => _parseTuic(input),
       'ss' => _parseShadowsocks(input),
+      'socks' || 'socks5' => _parseSocksHttp(input, NodeProtocol.socks),
+      // An http(s) proxy link. Gated on userinfo so a plain subscription URL
+      // (which never has `user:pass@`) is NOT mistaken for a proxy.
+      'http' || 'https' =>
+        input.contains('@') ? _parseSocksHttp(input, NodeProtocol.http) : null,
       _ => null,
     };
   } catch (_) {
@@ -250,6 +255,61 @@ ProxyNode? _parseShadowsocks(String input) {
   );
 }
 
+/// A SOCKS5 or HTTP proxy link:
+///   `socks://[base64(user:pass)@|user:pass@]host:port#name`  (also `socks5://`)
+///   `http(s)://user:pass@host:port#name`
+/// The username is carried in [ProxyNode.uuid] (a plain string slot; socks/http
+/// have no uuid), the password in [ProxyNode.password]. `https://` turns on TLS.
+ProxyNode? _parseSocksHttp(String input, NodeProtocol proto) {
+  final Uri uri = Uri.parse(input);
+  String host = uri.host;
+  int port = uri.port;
+  String? user;
+  String? pass;
+
+  final String rawUserInfo = uri.userInfo;
+  if (rawUserInfo.isNotEmpty) {
+    // May be base64(user:pass) (v2rayN socks style) or plain user:pass.
+    String creds = Uri.decodeComponent(rawUserInfo);
+    final String decoded = _tryBase64(rawUserInfo);
+    if (decoded.contains(':')) creds = decoded;
+    final int c = creds.indexOf(':');
+    if (c >= 0) {
+      user = creds.substring(0, c);
+      pass = creds.substring(c + 1);
+    } else {
+      user = creds;
+    }
+  }
+
+  // socks://base64(user:pass@host:port) form: no parseable host, so decode the
+  // whole tail and re-parse.
+  if (host.isEmpty) {
+    final int s = input.indexOf('://');
+    final String tail = input.substring(s + 3).split('#').first;
+    final String dec = _tryBase64(tail);
+    if (dec.contains('@')) {
+      final ProxyNode? n = _parseSocksHttp('socks://$dec', proto);
+      if (n != null) return n;
+    }
+    return null;
+  }
+
+  if (port == 0) port = proto == NodeProtocol.http ? 8080 : 1080;
+  final bool tls = proto == NodeProtocol.http &&
+      input.toLowerCase().startsWith('https://');
+  return ProxyNode(
+    protocol: proto,
+    server: host,
+    port: port,
+    tag: _name(uri, host),
+    uuid: (user == null || user.isEmpty) ? null : user,
+    password: (pass == null || pass.isEmpty) ? null : pass,
+    tls: tls,
+    sni: tls ? host : null,
+  );
+}
+
 String _name(Uri uri, String fallback) {
   final String fragment = uri.fragment;
   if (fragment.isEmpty) return fallback;
@@ -308,4 +368,14 @@ String _decodeBase64(String input) {
   final int mod = s.length % 4;
   if (mod != 0) s = s.padRight(s.length + (4 - mod), '=');
   return utf8.decode(base64.decode(s));
+}
+
+/// Like [_decodeBase64] but returns '' instead of throwing when [input] is not
+/// valid base64 (used where a field MIGHT be base64, e.g. socks userinfo).
+String _tryBase64(String input) {
+  try {
+    return _decodeBase64(input);
+  } catch (_) {
+    return '';
+  }
 }

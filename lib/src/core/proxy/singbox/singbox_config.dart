@@ -434,6 +434,13 @@ class SingboxConfig {
         o['password'] = n.password ?? '';
         o['congestion_control'] = n.congestionControl ?? 'bbr';
         o['udp_relay_mode'] = n.udpRelayMode ?? 'native';
+      case NodeProtocol.socks:
+        o['version'] = '5';
+        if (n.uuid != null) o['username'] = n.uuid; // uuid slot = username
+        if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.http:
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
       case NodeProtocol.awg:
         // AmneziaWG is a sing-box endpoint, not an outbound; callers must use
         // _endpoint(). Reaching here is a wiring bug.

@@ -300,6 +300,12 @@ Future<List<ProxyNode>> resolveProfileNodes(
 }) async {
   final String raw = _profilePayload(profile);
   if (raw.isEmpty) return const <ProxyNode>[];
+  // A SOCKS / HTTP proxy is a single link that starts with http(s)://socks://,
+  // so match it before the http-url fetch would treat it as a subscription.
+  if (profile.kind == ProxyKind.socks || profile.kind == ProxyKind.http) {
+    final ProxyNode? n = parseShareLink(raw);
+    return n == null ? const <ProxyNode>[] : <ProxyNode>[n];
+  }
   if (_isHttpUrl(raw)) {
     // Only the real network path is cached (tests pass a custom fetch).
     if (fetch == null && _nodeCache[raw] != null) return _nodeCache[raw]!;
