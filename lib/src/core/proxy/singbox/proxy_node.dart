@@ -1,3 +1,5 @@
+import 'awg_config.dart';
+
 /// A single proxy node parsed from a share link.
 ///
 /// This is the protocol-agnostic intermediate representation the sing-box
@@ -5,11 +7,13 @@
 /// Trojan / Shadowsocks over WS/gRPC + TLS, but the bundled sing-box core also
 /// runs VMess, Hysteria2, TUIC and VLESS-Reality — used when a subscription
 /// points at a real server (not just the Cloudflare Worker), which is the path
-/// to real UDP/QUIC and higher speed.
-enum NodeProtocol { vless, trojan, shadowsocks, vmess, hysteria2, tuic }
+/// to real UDP/QUIC and higher speed. AmneziaWG (`awg`) is a WireGuard endpoint
+/// with junk-packet obfuscation, so it is carried as a sing-box endpoint, not an
+/// outbound; see [awgConf] and [SingboxConfig].
+enum NodeProtocol { vless, trojan, shadowsocks, vmess, hysteria2, tuic, awg }
 
 extension NodeProtocolName on NodeProtocol {
-  /// The sing-box outbound `type` for this protocol.
+  /// The sing-box outbound (or endpoint) `type` for this protocol.
   String get singboxType => switch (this) {
         NodeProtocol.vless => 'vless',
         NodeProtocol.trojan => 'trojan',
@@ -17,12 +21,18 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.vmess => 'vmess',
         NodeProtocol.hysteria2 => 'hysteria2',
         NodeProtocol.tuic => 'tuic',
+        NodeProtocol.awg => 'awg',
       };
 
-  /// UDP-native protocols (QUIC-based). These carry UDP end to end, so unlike
-  /// the TCP-only worker exit they don't need QUIC blocked.
+  /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
+  /// unlike the TCP-only worker exit they don't need QUIC blocked.
   bool get isUdpNative =>
-      this == NodeProtocol.hysteria2 || this == NodeProtocol.tuic;
+      this == NodeProtocol.hysteria2 ||
+      this == NodeProtocol.tuic ||
+      this == NodeProtocol.awg;
+
+  /// AmneziaWG / WireGuard is a sing-box `endpoint`, not an `outbound`.
+  bool get isEndpoint => this == NodeProtocol.awg;
 
   String get label => switch (this) {
         NodeProtocol.vless => 'VLESS',
@@ -31,6 +41,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.vmess => 'VMess',
         NodeProtocol.hysteria2 => 'Hysteria2',
         NodeProtocol.tuic => 'TUIC',
+        NodeProtocol.awg => 'AmneziaWG',
       };
 }
 
@@ -61,7 +72,25 @@ class ProxyNode {
     this.obfsPassword,
     this.congestionControl,
     this.udpRelayMode,
+    this.hy2UpMbps,
+    this.hy2DownMbps,
+    this.awgConf,
   });
+
+  /// Build an AmneziaWG node from a raw `awg-quick` `.conf`. The peer endpoint
+  /// becomes [server]:[port] (so pinning, dedup, and clean-domain seeding work
+  /// like any other node); the full config text is kept in [awgConf] and parsed
+  /// into the sing-box `awg` endpoint at build time.
+  factory ProxyNode.fromAwgConf(String conf, {String? name}) {
+    final AwgConfig c = AwgConfig.parseConf(conf);
+    return ProxyNode(
+      protocol: NodeProtocol.awg,
+      server: c.peer.host,
+      port: c.peer.port,
+      tag: (name == null || name.trim().isEmpty) ? 'AmneziaWG' : name.trim(),
+      awgConf: conf,
+    );
+  }
 
   final NodeProtocol protocol;
   final String server;
@@ -101,9 +130,19 @@ class ProxyNode {
   final String? obfsType; // "salamander" when set
   final String? obfsPassword;
 
+  // Hysteria2 bandwidth hints (Mbps). When set, sing-box uses the Brutal
+  // congestion controller (fixed-rate, ignores loss) instead of BBR, which is
+  // the big throughput win on loss-throttled links. Absent => BBR (safe default).
+  final int? hy2UpMbps;
+  final int? hy2DownMbps;
+
   // TUIC (QUIC). Auth uses [uuid] + [password].
   final String? congestionControl; // "bbr" | "cubic" | "new_reno"
   final String? udpRelayMode; // "native" | "quic"
+
+  // AmneziaWG / WireGuard: the raw `.conf` text. Parsed to a sing-box `awg`
+  // endpoint (keys, address, peer, and the junk params) at config-build time.
+  final String? awgConf;
 
   bool get isReality =>
       (realityPublicKey != null && realityPublicKey!.isNotEmpty);
@@ -146,6 +185,9 @@ class ProxyNode {
       obfsPassword: obfsPassword,
       congestionControl: congestionControl,
       udpRelayMode: udpRelayMode,
+      hy2UpMbps: hy2UpMbps,
+      hy2DownMbps: hy2DownMbps,
+      awgConf: awgConf,
     );
   }
 }

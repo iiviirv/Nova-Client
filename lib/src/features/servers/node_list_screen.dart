@@ -607,6 +607,7 @@ class _ProtoBadge extends StatelessWidget {
         NodeProtocol.shadowsocks => nova.info,
         NodeProtocol.hysteria2 => nova.cyan,
         NodeProtocol.tuic => nova.violet,
+        NodeProtocol.awg => nova.success,
       };
 
   @override

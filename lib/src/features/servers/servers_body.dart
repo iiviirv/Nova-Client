@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/singbox/awg_config.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
 import '../../theme/nova_radii.dart';
@@ -628,6 +629,9 @@ Future<void> showAddServerDialog(BuildContext context,
       initialKind: detected,
       showKindPills: true,
       uriHint: s.serversUriHint,
+      // An AmneziaWG `.conf` is multi-line, so give it room instead of a
+      // one-line field that would flatten the pasted text.
+      uriMaxLines: detected == ProxyKind.awg ? 8 : 1,
     ),
   );
 
@@ -806,6 +810,12 @@ ProxyKind? _detectKind(String raw) {
   if (l.startsWith('trojan://')) return ProxyKind.trojan;
   if (l.startsWith('ss://')) return ProxyKind.shadowsocks;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
+  // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
+  if (l.startsWith('awg://') ||
+      l.startsWith('wireguard://') ||
+      AwgConfig.looksLikeConf(s)) {
+    return ProxyKind.awg;
+  }
   return null;
 }
 

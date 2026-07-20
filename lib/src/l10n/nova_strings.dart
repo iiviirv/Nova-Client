@@ -239,6 +239,9 @@ class NovaStrings {
   String get routeDns => t('route.dns');
   String get routeDnsSub => t('route.dnsSub');
   String get routeApplyNote => t('route.applyNote');
+  String get routeSpeedTitle => t('route.speedTitle');
+  String get routeSpeedSub => t('route.speedSub');
+  String get routeSpeedOff => t('route.speedOff');
 
   // ---- Servers ----
   String get serversSearch => t('servers.search');
@@ -758,6 +761,10 @@ class NovaStrings {
     'route.dns': 'DNS resolver',
     'route.dnsSub': 'Encrypted DNS over HTTPS, resolved through the tunnel.',
     'route.applyNote': 'Changes apply the next time you connect.',
+    'route.speedTitle': 'Speed boost (Hysteria2)',
+    'route.speedSub':
+        'Turns on Brutal mode for Hysteria2 nodes, which pushes through throttling that slows normal mode. Pick your REAL line speed. Setting it too high can make things worse, so if you are not sure, leave it Off.',
+    'route.speedOff': 'Off',
     'servers.search': 'Search servers',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
@@ -1281,6 +1288,10 @@ class NovaStrings {
     'route.dns': 'حل‌کنندهٔ DNS',
     'route.dnsSub': 'DNS رمزگذاری‌شده روی HTTPS که از طریق تونل حل می‌شود.',
     'route.applyNote': 'تغییرات در اتصال بعدی اعمال می‌شوند.',
+    'route.speedTitle': 'افزایش سرعت (Hysteria2)',
+    'route.speedSub':
+        'حالت Brutal را برای نودهای Hysteria2 روشن می‌کند که از محدودسازی سرعت (throttling) عبور می‌کند. سرعت واقعی خط اینترنتت را انتخاب کن. تنظیم خیلی زیاد می‌تواند بدترش کند، پس اگر مطمئن نیستی روی خاموش بگذار.',
+    'route.speedOff': 'خاموش',
     'servers.search': 'جستجوی سرورها',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',

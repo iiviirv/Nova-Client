@@ -21,6 +21,11 @@ String buildShareLink(ProxyNode node) {
     // Radar only ever stamps clean Cloudflare IPs into the worker's VLESS
     // template, so these never arise here: a VMess/Hysteria2/TUIC exit is a real
     // server, not a CF IP the scanner would find.
+    // AmneziaWG shares as its `.conf` text (what a QR encodes), not a URI.
+    NodeProtocol.awg => node.awgConf ?? '',
+    // Radar only ever stamps clean Cloudflare IPs into the worker's VLESS
+    // template, so these never arise here: a VMess/Hysteria2/TUIC exit is a real
+    // server, not a CF IP the scanner would find.
     NodeProtocol.shadowsocks ||
     NodeProtocol.vmess ||
     NodeProtocol.hysteria2 ||
