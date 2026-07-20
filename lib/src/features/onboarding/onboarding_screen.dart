@@ -15,7 +15,7 @@ class NovaOnboarding extends StatefulWidget {
   /// Apply the chosen locale immediately so the rest of the app follows.
   final void Function(String langCode) onPickLanguage;
 
-  /// action: 'deploy' | 'panel' | 'add' | null (skip).
+  /// action: 'deploy' | 'panel' | 'vps' | 'add' | null (skip).
   final void Function(String? action) onFinish;
 
   @override
@@ -123,6 +123,12 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             _t('Import from your panel', 'وارد کردن از پنل شما'),
             _t('Sign in and bring your configs', 'ورود و آوردن کانفیگ‌ها'),
             onTap: () => widget.onFinish('panel')),
+        const SizedBox(height: 12),
+        _choice(context, Icons.dns_outlined,
+            _t('Connect your VPS', 'اتصال سرور مجازی شما'),
+            _t('Run the Nova panel on your own server',
+                'پنل کامل نوا را روی سرور خودت اجرا کن'),
+            onTap: () => widget.onFinish('vps')),
         const SizedBox(height: 12),
         _choice(context, Icons.add,
             _t('Add a config', 'افزودن کانفیگ'),

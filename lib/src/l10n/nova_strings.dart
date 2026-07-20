@@ -130,9 +130,84 @@ class NovaStrings {
   String get setRadarSub => t('set.radarSub');
   String get setCloudflare => t('set.cloudflare');
   String get setCloudflareSub => t('set.cloudflareSub');
+  String get setRelay => t('set.relay');
+  String get setRelaySub => t('set.relaySub');
   String get modeSystem => t('mode.system');
   String get modeDark => t('mode.dark');
   String get modeLight => t('mode.light');
+
+  // ---- Google relay ----
+  String get relayTitle => t('relay.title');
+  String get relayIntro => t('relay.intro');
+  String get relayStatusActive => t('relay.statusActive');
+  String get relayStatusOff => t('relay.statusOff');
+  String get relaySection => t('relay.section');
+  String get relayUrlLabel => t('relay.urlLabel');
+  String get relayUrlHint => t('relay.urlHint');
+  String get relayUrlHelp => t('relay.urlHelp');
+  String get relayAuthLabel => t('relay.authLabel');
+  String get relayAuthHelp => t('relay.authHelp');
+  String get relayInsecureTitle => t('relay.insecureTitle');
+  String get relayInsecureSub => t('relay.insecureSub');
+  String get relayEnableTitle => t('relay.enableTitle');
+  String get relayEnableSub => t('relay.enableSub');
+  String get relayTest => t('relay.test');
+  String get relayTesting => t('relay.testing');
+  String get relayTestOk => t('relay.testOk');
+  String get relaySave => t('relay.save');
+  String get relaySaved => t('relay.saved');
+  String get relayRemove => t('relay.remove');
+  String get relayRemoveTitle => t('relay.removeTitle');
+  String get relayRemoveBody => t('relay.removeBody');
+  String get relayRemoved => t('relay.removed');
+  String get relayHowItWorks => t('relay.howItWorks');
+
+  // ---- Google relay guide ----
+  String get relayGuideTitle => t('relay.guideTitle');
+  String get relayGuideWhatTitle => t('relay.guideWhatTitle');
+  String get relayGuideWhatBody => t('relay.guideWhatBody');
+  String get relayGuideWhyTitle => t('relay.guideWhyTitle');
+  String get relayGuideWhyBody => t('relay.guideWhyBody');
+  String get relayGuideLimitTitle => t('relay.guideLimitTitle');
+  String get relayGuideLimitBody => t('relay.guideLimitBody');
+  String get relayGuideStepsTitle => t('relay.guideStepsTitle');
+  String get relayGuideStep1 => t('relay.guideStep1');
+  String get relayGuideStep2 => t('relay.guideStep2');
+  String get relayGuideStep3 => t('relay.guideStep3');
+  String get relayGuideStep4 => t('relay.guideStep4');
+
+  // ---- Relay: domain fronting (direct mode) ----
+  String get relayFrontTitle => t('relay.frontTitle');
+  String get relayFrontSub => t('relay.frontSub');
+  String get relayAdvanced => t('relay.advanced');
+  String get relayFrontSniLabel => t('relay.frontSniLabel');
+  String get relayFrontSniHelp => t('relay.frontSniHelp');
+  String get relayFrontIpLabel => t('relay.frontIpLabel');
+  String get relayFrontIpHelp => t('relay.frontIpHelp');
+  String get relayFrontAuto => t('relay.frontAuto');
+  String get relayFrontPicking => t('relay.frontPicking');
+  String get relayFrontPicked => t('relay.frontPicked');
+  String get relayFrontNone => t('relay.frontNone');
+  String get relayTestDirect => t('relay.testDirect');
+  String get relayFrontOk => t('relay.frontOk');
+
+  // ---- Relay: full tunnel mode ----
+  String get relayTunnelTitle => t('relay.tunnelTitle');
+  String get relayTunnelSub => t('relay.tunnelSub');
+  String get relayTunnelPortLabel => t('relay.tunnelPortLabel');
+  String get relayTunnelPortHelp => t('relay.tunnelPortHelp');
+  String get relayTunnelStart => t('relay.tunnelStart');
+  String get relayTunnelStop => t('relay.tunnelStop');
+  String get relayTunnelStarting => t('relay.tunnelStarting');
+  String get relayTunnelRunning => t('relay.tunnelRunning');
+  String get relayTunnelStopped => t('relay.tunnelStopped');
+  String get relayTunnelTest => t('relay.tunnelTest');
+  String get relayTunnelOk => t('relay.tunnelOk');
+  String get relayTunnelHint => t('relay.tunnelHint');
+  String get relayGuideFrontTitle => t('relay.guideFrontTitle');
+  String get relayGuideFrontBody => t('relay.guideFrontBody');
+  String get relayGuideTunnelTitle => t('relay.guideTunnelTitle');
+  String get relayGuideTunnelBody => t('relay.guideTunnelBody');
 
   // ---- Common ----
   String get save => t('common.save');
@@ -180,6 +255,268 @@ class NovaStrings {
   String get serversSignInSub => t('servers.signInSub');
   String get serversAddConfig => t('servers.addConfig');
   String get serversAddConfigSub => t('servers.addConfigSub');
+  String get serversConnectVps => t('servers.connectVps');
+  String get serversConnectVpsSub => t('servers.connectVpsSub');
+  // Connect-your-VPS flow.
+  String get vpsTitle => t('vps.title');
+  String get vpsSubtitle => t('vps.subtitle');
+  String get vpsManualCard => t('vps.manualCard');
+  String get vpsManualCardSub => t('vps.manualCardSub');
+  String get vpsSshCard => t('vps.sshCard');
+  String get vpsSshCardSub => t('vps.sshCardSub');
+  String get vpsManualStep1 => t('vps.manualStep1');
+  String get vpsManualStep1Sub => t('vps.manualStep1Sub');
+  String get vpsManualStep2 => t('vps.manualStep2');
+  String get vpsCopy => t('vps.copy');
+  String get vpsCopied => t('vps.copied');
+  String get vpsAddress => t('vps.address');
+  String get vpsAddressHint => t('vps.addressHint');
+  String get vpsAdminPassword => t('vps.adminPassword');
+  String get vpsNoDomain => t('vps.noDomain');
+  String get vpsNoDomainSub => t('vps.noDomainSub');
+  String get vpsConnect => t('vps.connect');
+  String get vpsHost => t('vps.host');
+  String get vpsHostHint => t('vps.hostHint');
+  String get vpsPort => t('vps.port');
+  String get vpsSshUser => t('vps.sshUser');
+  String get vpsAuthMethod => t('vps.authMethod');
+  String get vpsAuthPassword => t('vps.authPassword');
+  String get vpsAuthKey => t('vps.authKey');
+  String get vpsSshPassword => t('vps.sshPassword');
+  String get vpsPrivateKey => t('vps.privateKey');
+  String get vpsPrivateKeyHint => t('vps.privateKeyHint');
+  String get vpsPassphrase => t('vps.passphrase');
+  String get vpsSetAdminPassword => t('vps.setAdminPassword');
+  String get vpsSetAdminPasswordSub => t('vps.setAdminPasswordSub');
+  String get vpsDomainOptional => t('vps.domainOptional');
+  String get vpsSaveCreds => t('vps.saveCreds');
+  String get vpsSshWarning => t('vps.sshWarning');
+  String get vpsInstall => t('vps.install');
+  String get vpsPhaseSshConnecting => t('vps.phaseSshConnecting');
+  String get vpsPhaseInstalling => t('vps.phaseInstalling');
+  String get vpsPhaseWaiting => t('vps.phaseWaiting');
+  String get vpsPhaseLoggingIn => t('vps.phaseLoggingIn');
+  String get vpsPhaseImporting => t('vps.phaseImporting');
+  String get vpsDoneTitle => t('vps.doneTitle');
+  String get vpsDoneSub => t('vps.doneSub');
+  String get vpsOpenAdmin => t('vps.openAdmin');
+  String get vpsConnectNow => t('vps.connectNow');
+  String get vpsFailed => t('vps.failed');
+  String get vpsRetry => t('vps.retry');
+  // VPS admin panel (users, usage, settings) + manage-anytime.
+  String get vpsManage => t('vps.manage');
+  String get vpsYourPanels => t('vps.yourPanels');
+  String get vpsRemovePanel => t('vps.removePanel');
+  String get vpsRemovePanelConfirm => t('vps.removePanelConfirm');
+  String get vpsTabUsers => t('vps.tabUsers');
+  String get vpsTabSettings => t('vps.tabSettings');
+  String get vpsTabInfo => t('vps.tabInfo');
+  String get vpsUsers => t('vps.users');
+  String get vpsAddUser => t('vps.addUser');
+  String get vpsNoUsers => t('vps.noUsers');
+  String get vpsUserName => t('vps.userName');
+  String get vpsUserEnabled => t('vps.userEnabled');
+  String get vpsUserQuota => t('vps.userQuota');
+  String get vpsUserQuotaGb => t('vps.userQuotaGb');
+  String get vpsUserExpiry => t('vps.userExpiry');
+  String get vpsUnlimited => t('vps.unlimited');
+  String get vpsNoExpiry => t('vps.noExpiry');
+  String get vpsUserUsage => t('vps.userUsage');
+  String get vpsEditUser => t('vps.editUser');
+  String get vpsDeleteUser => t('vps.deleteUser');
+  String get vpsDeleteUserConfirm => t('vps.deleteUserConfirm');
+  String get vpsSave => t('vps.save');
+  String get vpsCancel => t('vps.cancel');
+  String get vpsDelete => t('vps.delete');
+  String get vpsShareLink => t('vps.shareLink');
+  String get vpsCopyLink => t('vps.copyLink');
+  String get vpsShowQr => t('vps.showQr');
+  String get vpsQrHint => t('vps.qrHint');
+  String get vpsProtocols => t('vps.protocols');
+  String get vpsProtocolsSub => t('vps.protocolsSub');
+  String get vpsProtoVless => t('vps.protoVless');
+  String get vpsProtoVmess => t('vps.protoVmess');
+  String get vpsProtoTrojan => t('vps.protoTrojan');
+  String get vpsProtoVlessSub => t('vps.protoVlessSub');
+  String get vpsProtoVmessSub => t('vps.protoVmessSub');
+  String get vpsProtoTrojanSub => t('vps.protoTrojanSub');
+  String get vpsProtoAlwaysOn => t('vps.protoAlwaysOn');
+  String get vpsSaved => t('vps.saved');
+  String get vpsLoadFailed => t('vps.loadFailed');
+  String get vpsDomainTitle => t('vps.domainTitle');
+  String get vpsDomainSub => t('vps.domainSub');
+  String vpsDomainSelfSigned(String host) =>
+      t('vps.domainSelfSigned').replaceFirst('{host}', host);
+  String vpsDomainTrusted(String host) =>
+      t('vps.domainTrusted').replaceFirst('{host}', host);
+  String get vpsDomainTrustedPill => t('vps.domainTrustedPill');
+  String get vpsDomainField => t('vps.domainField');
+  String get vpsDomainMethodAuto => t('vps.domainMethodAuto');
+  String get vpsDomainMethodAutoHelp => t('vps.domainMethodAutoHelp');
+  String get vpsDomainMethodOrigin => t('vps.domainMethodOrigin');
+  String get vpsDomainMethodOriginHelp => t('vps.domainMethodOriginHelp');
+  String get vpsDomainCert => t('vps.domainCert');
+  String get vpsDomainKey => t('vps.domainKey');
+  String get vpsDomainEmail => t('vps.domainEmail');
+  String get vpsDomainSetup => t('vps.domainSetup');
+  String get vpsDomainWorking => t('vps.domainWorking');
+  String get vpsDomainRemove => t('vps.domainRemove');
+  String get vpsDomainActive => t('vps.domainActive');
+  String get vpsDomainReconnectHint => t('vps.domainReconnectHint');
+  String get vpsDomainNeedDomain => t('vps.domainNeedDomain');
+  String get vpsDomainFailed => t('vps.domainFailed');
+
+  // ---- VPS overview ----
+  String get vpsTabOverview => t('vps.tabOverview');
+  String get vpsOvLocation => t('vps.ovLocation');
+  String get vpsOvOperational => t('vps.ovOperational');
+  String get vpsOvOffline => t('vps.ovOffline');
+  String get vpsOvCpu => t('vps.ovCpu');
+  String vpsOvCores(int n) => t('vps.ovCores').replaceFirst('{n}', '$n');
+  String get vpsOvMemory => t('vps.ovMemory');
+  String get vpsOvDisk => t('vps.ovDisk');
+  String get vpsOvUptime => t('vps.ovUptime');
+  String get vpsOvTraffic => t('vps.ovTraffic');
+  String vpsOvToday(String v) => t('vps.ovToday').replaceFirst('{v}', v);
+  String get vpsOvNa => t('vps.ovNa');
+
+  // ---- VPS users (extended) ----
+  String vpsOnlineCount(int n) =>
+      t('vps.onlineCount').replaceFirst('{n}', '$n');
+  String get vpsUserNote => t('vps.userNote');
+  String get vpsUserDeviceLimit => t('vps.userDeviceLimit');
+  String get vpsUserDeviceLimitHint => t('vps.userDeviceLimitHint');
+  String get vpsUserDataReset => t('vps.userDataReset');
+  String get vpsResetNone => t('vps.resetNone');
+  String get vpsResetDay => t('vps.resetDay');
+  String get vpsResetWeek => t('vps.resetWeek');
+  String get vpsResetMonth => t('vps.resetMonth');
+  String get vpsUserExpireDays => t('vps.userExpireDays');
+  String get vpsUserExpireDaysHint => t('vps.userExpireDaysHint');
+
+  // ---- VPS settings: routing / DNS / anti-censorship / limits ----
+  String get vpsRoutingTitle => t('vps.routingTitle');
+  String get vpsRouteBlockAds => t('vps.routeBlockAds');
+  String get vpsRouteBypassChina => t('vps.routeBypassChina');
+  String get vpsRouteBypassRussia => t('vps.routeBypassRussia');
+  String get vpsRouteBypassIran => t('vps.routeBypassIran');
+  String get vpsRouteBlockQuic => t('vps.routeBlockQuic');
+  String get vpsDnsTitle => t('vps.dnsTitle');
+  String get vpsDnsDoh => t('vps.dnsDoh');
+  String get vpsDnsProvider => t('vps.dnsProvider');
+  String get vpsDnsAntiSanction => t('vps.dnsAntiSanction');
+  String get vpsDnsAntiSanctionProvider => t('vps.dnsAntiSanctionProvider');
+  String get vpsDnsCustom => t('vps.dnsCustom');
+  String get vpsCensorTitle => t('vps.censorTitle');
+  String get vpsTlsFragment => t('vps.tlsFragment');
+  String get vpsTlsFragOff => t('vps.tlsFragOff');
+  String get vpsTlsFragCustom => t('vps.tlsFragCustom');
+  String get vpsFragLength => t('vps.fragLength');
+  String get vpsFragInterval => t('vps.fragInterval');
+  String get vpsFragPackets => t('vps.fragPackets');
+  String get vpsLimitsTitle => t('vps.limitsTitle');
+  String get vpsLimitMonthlyCap => t('vps.limitMonthlyCap');
+  String get vpsLimitSpeed => t('vps.limitSpeed');
+  String get vpsChainTitle => t('vps.chainTitle');
+  String get vpsChainSub => t('vps.chainSub');
+  String get vpsEnforceIpLimit => t('vps.enforceIpLimit');
+  String get vpsEnforceIpLimitHint => t('vps.enforceIpLimitHint');
+
+  // ---- VPS settings: WARP ----
+  String get vpsWarpTitle => t('vps.warpTitle');
+  String get vpsWarpSub => t('vps.warpSub');
+  String get vpsWarpRegister => t('vps.warpRegister');
+  String get vpsWarpRegistering => t('vps.warpRegistering');
+  String get vpsWarpRemove => t('vps.warpRemove');
+  String get vpsWarpRegistered => t('vps.warpRegistered');
+  String get vpsWarpNoAccount => t('vps.warpNoAccount');
+  String get vpsWarpEnable => t('vps.warpEnable');
+  String get vpsWarpCalls => t('vps.warpCalls');
+  String get vpsWarpMode => t('vps.warpMode');
+  String get vpsWarpEndpoint => t('vps.warpEndpoint');
+  String get vpsWarpNeedAccount => t('vps.warpNeedAccount');
+  String get vpsWarpRegisterFailed => t('vps.warpRegisterFailed');
+
+  // ---- VPS settings: backup & maintenance ----
+  String get vpsMaintTitle => t('vps.maintTitle');
+  String get vpsMaintSub => t('vps.maintSub');
+  String get vpsBackupDownload => t('vps.backupDownload');
+  String get vpsBackupCopied => t('vps.backupCopied');
+  String get vpsBackupFailed => t('vps.backupFailed');
+  String get vpsRestore => t('vps.restore');
+  String get vpsRestorePaste => t('vps.restorePaste');
+  String get vpsRestoreConfirm => t('vps.restoreConfirm');
+  String get vpsRestoreInvalid => t('vps.restoreInvalid');
+  String get vpsRestoreDone => t('vps.restoreDone');
+  String get vpsRestoreFailed => t('vps.restoreFailed');
+  String get vpsUpdateAgent => t('vps.updateAgent');
+  String get vpsUpdateAgentConfirm => t('vps.updateAgentConfirm');
+  String get vpsUpdateAgentStarted => t('vps.updateAgentStarted');
+  String get vpsUpdateAgentFailed => t('vps.updateAgentFailed');
+
+  // ---- VPS settings: Telegram alerts ----
+  String get vpsTgTitle => t('vps.tgTitle');
+  String get vpsTgSub => t('vps.tgSub');
+  String get vpsTgEnable => t('vps.tgEnable');
+  String get vpsTgToken => t('vps.tgToken');
+  String get vpsTgChatId => t('vps.tgChatId');
+  String get vpsTgTest => t('vps.tgTest');
+  String get vpsTgTestOk => t('vps.tgTestOk');
+  String get vpsTgTestFailed => t('vps.tgTestFailed');
+
+  // ---- VPS subscription formats ----
+  String get vpsSubTitle => t('vps.subTitle');
+  String get vpsSubSub => t('vps.subSub');
+  String get vpsSubBase => t('vps.subBase');
+  String get vpsSubClash => t('vps.subClash');
+  String get vpsSubSingbox => t('vps.subSingbox');
+  String get vpsSubCopied => t('vps.subCopied');
+
+  // ---- VPS inbounds ----
+  String get inbTab => t('inb.tab');
+  String get inbTitle => t('inb.title');
+  String get inbAdd => t('inb.add');
+  String get inbNone => t('inb.none');
+  String get inbPort => t('inb.port');
+  String get inbEdit => t('inb.edit');
+  String get inbDelete => t('inb.delete');
+  String get inbDeleteConfirm => t('inb.deleteConfirm');
+  String get inbEnabled => t('inb.enabled');
+  String get inbPublicKey => t('inb.publicKey');
+  String get inbCopyKey => t('inb.copyKey');
+  String get inbClose => t('inb.close');
+  String get inbSecReality => t('inb.secReality');
+  String get inbSecTls => t('inb.secTls');
+  String get inbSecNone => t('inb.secNone');
+  String get inbType => t('inb.type');
+  String get inbRemark => t('inb.remark');
+  String get inbSniBorrow => t('inb.sniBorrow');
+  String get inbSniReal => t('inb.sniReal');
+  String get inbSniSuggest => t('inb.sniSuggest');
+  String get inbServiceName => t('inb.serviceName');
+  String get inbPath => t('inb.path');
+  String get inbMode => t('inb.mode');
+  String get inbRecommended => t('inb.recommended');
+  String get inbKeysAutoNote => t('inb.keysAutoNote');
+  String get inbSsAutoNote => t('inb.ssAutoNote');
+  String get inbPortInvalid => t('inb.portInvalid');
+  String get inbNoteReality => t('inb.noteReality');
+  String get inbNoteTls => t('inb.noteTls');
+  String get inbNoteTlsInsecure => t('inb.noteTlsInsecure');
+  String get inbPublicKeyReady => t('inb.publicKeyReady');
+  String get inbPresetRealityVision => t('inb.presetRealityVision');
+  String get inbPresetTrojanReality => t('inb.presetTrojanReality');
+  String get inbPresetGrpcTls => t('inb.presetGrpcTls');
+  String get inbPresetXhttpTls => t('inb.presetXhttpTls');
+  String get inbPresetWsTls => t('inb.presetWsTls');
+  String get inbPresetSs2022 => t('inb.presetSs2022');
+  String get inbPresetRealityVisionSub => t('inb.presetRealityVisionSub');
+  String get inbPresetTrojanRealitySub => t('inb.presetTrojanRealitySub');
+  String get inbPresetGrpcTlsSub => t('inb.presetGrpcTlsSub');
+  String get inbPresetXhttpTlsSub => t('inb.presetXhttpTlsSub');
+  String get inbPresetWsTlsSub => t('inb.presetWsTlsSub');
+  String get inbPresetSs2022Sub => t('inb.presetSs2022Sub');
+
   String get serversName => t('servers.name');
   String get serversLink => t('servers.link');
   String get serversSubUrl => t('servers.subUrl');
@@ -252,7 +589,7 @@ class NovaStrings {
     'radar.scanned': 'Scanned',
     'radar.eta': 'ETA',
     'radar.results': 'Results',
-    'radar.noResults': 'No clean IPs yet — start a scan.',
+    'radar.noResults': 'No clean IPs yet. Start a scan.',
     'radar.sources': 'IP sources',
     'radar.ports': 'Ports',
     'radar.copyAll': 'Copy all',
@@ -299,6 +636,96 @@ class NovaStrings {
     'set.radarSub': 'Scan for clean Cloudflare IPs',
     'set.cloudflare': 'Cloudflare',
     'set.cloudflareSub': 'Deploy or sign in to your panel',
+    'set.relay': 'Google relay',
+    'set.relaySub': 'Reach your panel and subscription through Google when it is blocked',
+    'relay.title': 'Google relay',
+    'relay.intro':
+        'Fetch your subscription and reach your panel through Google when your panel\'s domain is blocked.',
+    'relay.statusActive': 'Active',
+    'relay.statusOff': 'Off',
+    'relay.section': 'Relay',
+    'relay.urlLabel': 'Relay URL',
+    'relay.urlHint': 'https://script.google.com/macros/s/.../exec',
+    'relay.urlHelp':
+        'The Apps Script /exec URL, or a self-hosted node /relay URL.',
+    'relay.authLabel': 'Auth key',
+    'relay.authHelp':
+        'Optional. The Apps Script usually injects it. Needed for a direct node /relay URL.',
+    'relay.insecureTitle': 'Allow insecure certificate',
+    'relay.insecureSub':
+        'Leave off for the Google relay, which has a valid certificate. Turn on only for a self-hosted node with a self-signed certificate.',
+    'relay.enableTitle': 'Enable relay',
+    'relay.enableSub':
+        'Route subscription and panel fetches through the relay.',
+    'relay.test': 'Test connection',
+    'relay.testing': 'Testing...',
+    'relay.testOk': 'Relay is working',
+    'relay.save': 'Save',
+    'relay.saved': 'Saved',
+    'relay.remove': 'Remove',
+    'relay.removeTitle': 'Remove the relay?',
+    'relay.removeBody':
+        'This clears the relay URL, key, and toggle from this device. You can set it up again anytime.',
+    'relay.removed': 'Relay removed',
+    'relay.howItWorks': 'How this works',
+    'relay.guideTitle': 'How the Google relay works',
+    'relay.guideWhatTitle': 'What it is',
+    'relay.guideWhatBody':
+        'The relay is a small Google Apps Script that sits in front of your panel. Your device talks to Google. The script forwards the fetch to your Nova worker exit, which fetches the real target and sends the answer back. To your ISP it all looks like ordinary Google traffic.',
+    'relay.guideWhyTitle': 'Why it helps',
+    'relay.guideWhyBody':
+        'If your panel\'s domain (for example a Cloudflare address) is blocked, you normally cannot fetch or refresh your subscription or open your admin panel. With the relay, those fetches go through Google, and Google reaches the blocked host from outside the country, so the config layer keeps working.',
+    'relay.guideLimitTitle': 'The honest limit',
+    'relay.guideLimitBody':
+        'The relay carries the config, not the VPN tunnel. Your actual connection still needs exit nodes that work under the block: a self-hosted VPS with Reality, or a direct IP. Plain Cloudflare-worker nodes still will not connect, even with the relay on. And nothing survives a full internet shutdown where Google is blocked too.',
+    'relay.guideStepsTitle': 'Setup steps',
+    'relay.guideStep1':
+        'In your Nova panel, open the Relay or Tunnel section, generate a key, and copy the Apps Script code.',
+    'relay.guideStep2':
+        'Deploy it as a Google Apps Script web app: New deployment, type Web app, execute as yourself, access Anyone. Then copy the /exec URL.',
+    'relay.guideStep3':
+        'Back here, paste the /exec URL (and the key if it asks for one), tap Test, then turn on Enable.',
+    'relay.guideStep4':
+        'Or point it at your own VPS node\'s /relay URL. Enable the relay in the node panel first. If the node uses a self-signed certificate, turn on Allow insecure certificate.',
+    // Domain fronting (direct mode)
+    'relay.frontTitle': 'Route via Google edge (domain fronting)',
+    'relay.frontSub':
+        'Reach the relay even if its own address is DPI-blocked. Nova connects to Google\'s edge and hides the real host inside the encrypted request, so your ISP only sees a connection to www.google.com.',
+    'relay.advanced': 'Advanced',
+    'relay.frontSniLabel': 'Front name (SNI)',
+    'relay.frontSniHelp':
+        'The name your ISP sees. www.google.com is safe: blocking it would break Google itself.',
+    'relay.frontIpLabel': 'Front edge IP',
+    'relay.frontIpHelp':
+        'A Google edge IP that routes by host. Leave blank and tap Auto to let Nova pick a live one.',
+    'relay.frontAuto': 'Auto-pick a live edge',
+    'relay.frontPicking': 'Finding a live Google edge…',
+    'relay.frontPicked': 'Front edge ready',
+    'relay.frontNone': 'No Google edge answered. Try again on a different network.',
+    'relay.testDirect': 'Test direct front',
+    'relay.frontOk': 'Domain fronting works',
+    // Full tunnel mode
+    'relay.tunnelTitle': 'Full tunnel through Google',
+    'relay.tunnelSub':
+        'Carry real traffic (not just the config) through Google to your own VPS exit. Nova opens a local proxy on this device; point apps or the browser at it. Slow but works when every node is blocked.',
+    'relay.tunnelPortLabel': 'Local SOCKS5 port',
+    'relay.tunnelPortHelp':
+        'Nova listens on 127.0.0.1 at this port. Set your app or system proxy to SOCKS5 127.0.0.1:<port>.',
+    'relay.tunnelStart': 'Start tunnel',
+    'relay.tunnelStop': 'Stop tunnel',
+    'relay.tunnelStarting': 'Starting…',
+    'relay.tunnelRunning': 'Tunnel running on 127.0.0.1:',
+    'relay.tunnelStopped': 'Tunnel stopped',
+    'relay.tunnelTest': 'Test tunnel',
+    'relay.tunnelOk': 'Tunnel is carrying traffic',
+    'relay.tunnelHint':
+        'Needs your VPS node with the tunnel exit enabled, plus the relay above set to a Google Apps Script that forwards to it. Expect low speed: every packet is a request through Google.',
+    'relay.guideFrontTitle': 'Direct (domain fronting)',
+    'relay.guideFrontBody':
+        'For Google-owned hosts and the Apps Script relay itself, Nova can connect straight to Google\'s edge with the name www.google.com while asking for the real host inside the encrypted stream. A DPI box that only allows www.google.com still lets it through, and there is no Apps Script quota on this path. This is what keeps the relay reachable even if script.google.com is blocked.',
+    'relay.guideTunnelTitle': 'Full tunnel (last resort)',
+    'relay.guideTunnelBody':
+        'The full tunnel turns the relay into a real connection: your device opens a local SOCKS5 proxy, and each TCP/UDP flow is carried as requests through Google to your own VPS exit, which talks to the internet. It looks like Google traffic to your ISP and can get you online when every normal node is blocked. It is slow by nature (each chunk is a round-trip through Google) and needs your own VPS with the tunnel exit turned on, so treat it as a last resort, not your daily driver.',
     'mode.system': 'System',
     'mode.dark': 'Dark',
     'mode.light': 'Light',
@@ -346,6 +773,276 @@ class NovaStrings {
     'servers.signInSub': 'Import configs from an existing panel',
     'servers.addConfig': 'Add a config',
     'servers.addConfigSub': 'Paste a vless:// link or subscription URL',
+    'servers.connectVps': 'Connect your VPS',
+    'servers.connectVpsSub': 'Run the Nova panel on your own server',
+    'vps.title': 'Connect your VPS',
+    'vps.subtitle': 'Run the full Nova panel on your own server and manage it '
+        'right here.',
+    'vps.manualCard': "I'll run the command myself",
+    'vps.manualCardSub': 'Paste one line on your VPS, then connect to it.',
+    'vps.sshCard': 'Install it for me',
+    'vps.sshCardSub': 'Nova connects over SSH and sets everything up.',
+    'vps.manualStep1': 'Run this on your VPS',
+    'vps.manualStep1Sub': 'Sign in to your server over SSH and paste this. It '
+        'installs the Nova agent.',
+    'vps.manualStep2': 'Then connect to it',
+    'vps.copy': 'Copy',
+    'vps.copied': 'Copied',
+    'vps.address': 'VPS address',
+    'vps.addressHint': 'domain or IP, e.g. node.example.com',
+    'vps.adminPassword': 'Admin password',
+    'vps.noDomain': 'My server has no domain',
+    'vps.noDomainSub': 'Connect straight to the IP with a self-signed '
+        'certificate.',
+    'vps.connect': 'Connect',
+    'vps.host': 'Server IP or host',
+    'vps.hostHint': 'e.g. 203.0.113.10 or node.example.com',
+    'vps.port': 'SSH port',
+    'vps.sshUser': 'SSH username',
+    'vps.authMethod': 'Authentication',
+    'vps.authPassword': 'Password',
+    'vps.authKey': 'SSH key',
+    'vps.sshPassword': 'SSH password',
+    'vps.privateKey': 'Private key (PEM)',
+    'vps.privateKeyHint': 'Paste the contents of your private key file',
+    'vps.passphrase': 'Key passphrase (optional)',
+    'vps.setAdminPassword': 'Panel admin password',
+    'vps.setAdminPasswordSub': "You'll use this to sign in to the panel.",
+    'vps.domainOptional': 'Domain (optional)',
+    'vps.saveCreds': 'Save these credentials on this device',
+    'vps.sshWarning': 'Your SSH credentials are used once to install the agent. '
+        'They are only kept if you choose to save them, and stay in this '
+        "device's secure storage.",
+    'vps.install': 'Install & connect',
+    'vps.phaseSshConnecting': 'Connecting over SSH…',
+    'vps.phaseInstalling': 'Installing the Nova agent…',
+    'vps.phaseWaiting': 'Waiting for the agent…',
+    'vps.phaseLoggingIn': 'Signing in to the panel…',
+    'vps.phaseImporting': 'Importing your node…',
+    'vps.doneTitle': 'Your VPS is connected',
+    'vps.doneSub': 'The node was added to your servers.',
+    'vps.openAdmin': 'Open admin panel',
+    'vps.connectNow': 'Connect now',
+    'vps.failed': 'Something went wrong',
+    'vps.retry': 'Try again',
+    'vps.manage': 'Manage',
+    'vps.yourPanels': 'Your VPS panels',
+    'vps.removePanel': 'Remove',
+    'vps.removePanelConfirm': 'Remove this VPS from the app? The server keeps '
+        'running; only the saved connection is forgotten here.',
+    'vps.tabUsers': 'Users',
+    'vps.tabSettings': 'Settings',
+    'vps.tabInfo': 'Info',
+    'vps.users': 'Users',
+    'vps.addUser': 'Add user',
+    'vps.noUsers': 'No users yet. Add one to share access.',
+    'vps.userName': 'Name',
+    'vps.userEnabled': 'Enabled',
+    'vps.userQuota': 'Data limit',
+    'vps.userQuotaGb': 'Data limit (GB, 0 = unlimited)',
+    'vps.userExpiry': 'Expiry date',
+    'vps.unlimited': 'Unlimited',
+    'vps.noExpiry': 'No expiry',
+    'vps.userUsage': 'Used',
+    'vps.editUser': 'Edit user',
+    'vps.deleteUser': 'Delete user',
+    'vps.deleteUserConfirm': 'Delete this user? Their access stops immediately.',
+    'vps.save': 'Save',
+    'vps.cancel': 'Cancel',
+    'vps.delete': 'Delete',
+    'vps.shareLink': 'Share link',
+    'vps.copyLink': 'Copy link',
+    'vps.showQr': 'QR code',
+    'vps.qrHint': 'Scan in the Nova app to import this user.',
+    'vps.protocols': 'Protocols',
+    'vps.protocolsSub': 'Which protocols this server offers. The app measures '
+        'them and auto-picks the fastest one that works.',
+    'vps.protoVless': 'VLESS',
+    'vps.protoVmess': 'VMess',
+    'vps.protoTrojan': 'Trojan',
+    'vps.protoVlessSub': 'Fast and modern',
+    'vps.protoVmessSub': 'Broad client compatibility',
+    'vps.protoTrojanSub': 'Blends in as normal HTTPS',
+    'vps.protoAlwaysOn': 'Always on',
+    'vps.saved': 'Saved',
+    'vps.loadFailed': 'Could not load. Pull to retry.',
+    'vps.domainTitle': 'Domain & TLS',
+    'vps.domainSub': 'Put this node on your own domain with a trusted '
+        'certificate, so clients connect without a security warning.',
+    'vps.domainSelfSigned':
+        'This node uses a self-signed certificate on {host}.',
+    'vps.domainTrusted': 'Trusted certificate active for {host}.',
+    'vps.domainTrustedPill': 'Trusted',
+    'vps.domainField': 'Domain',
+    'vps.domainMethodAuto': 'Automatic (Let\'s Encrypt)',
+    'vps.domainMethodAutoHelp': 'Needs port 80 open and this domain\'s DNS '
+        'pointing at the server.',
+    'vps.domainMethodOrigin': 'Paste Cloudflare Origin Certificate',
+    'vps.domainMethodOriginHelp':
+        'Use this when the domain sits behind Cloudflare.',
+    'vps.domainCert': 'Certificate',
+    'vps.domainKey': 'Private key',
+    'vps.domainEmail': 'Email (optional)',
+    'vps.domainSetup': 'Set up domain',
+    'vps.domainWorking': 'Working…',
+    'vps.domainRemove': 'Remove domain',
+    'vps.domainActive': 'Domain is active.',
+    'vps.domainReconnectHint':
+        'You may need to reconnect using the new address.',
+    'vps.domainNeedDomain': 'Enter a domain first.',
+    'vps.domainFailed': 'Could not set up the domain.',
+    'vps.tabOverview': 'Overview',
+    'vps.ovLocation': 'Location',
+    'vps.ovOperational': 'Operational',
+    'vps.ovOffline': 'Offline',
+    'vps.ovCpu': 'CPU',
+    'vps.ovCores': '{n} cores',
+    'vps.ovMemory': 'Memory',
+    'vps.ovDisk': 'Disk',
+    'vps.ovUptime': 'Uptime',
+    'vps.ovTraffic': 'Traffic',
+    'vps.ovToday': 'Today {v}',
+    'vps.ovNa': 'n/a',
+    'vps.onlineCount': '{n} online',
+    'vps.userNote': 'Note',
+    'vps.userDeviceLimit': 'Device limit',
+    'vps.userDeviceLimitHint': '0 = unlimited',
+    'vps.userDataReset': 'Data reset',
+    'vps.resetNone': 'None',
+    'vps.resetDay': 'Daily',
+    'vps.resetWeek': 'Weekly',
+    'vps.resetMonth': 'Monthly',
+    'vps.userExpireDays': 'Expire N days after first connect',
+    'vps.userExpireDaysHint': '0 = off',
+    'vps.routingTitle': 'Routing',
+    'vps.routeBlockAds': 'Block ads',
+    'vps.routeBypassChina': 'Bypass China',
+    'vps.routeBypassRussia': 'Bypass Russia',
+    'vps.routeBypassIran': 'Bypass Iran (domestic sites)',
+    'vps.routeBlockQuic': 'Block QUIC',
+    'vps.dnsTitle': 'Secure DNS',
+    'vps.dnsDoh': 'Encrypted DNS (DoH)',
+    'vps.dnsProvider': 'DoH provider',
+    'vps.dnsAntiSanction': 'Anti-sanction DNS',
+    'vps.dnsAntiSanctionProvider': 'Anti-sanction provider',
+    'vps.dnsCustom': 'Custom DNS',
+    'vps.censorTitle': 'Anti-censorship',
+    'vps.tlsFragment': 'TLS fragment',
+    'vps.tlsFragOff': 'Off',
+    'vps.tlsFragCustom': 'Custom',
+    'vps.fragLength': 'Fragment length',
+    'vps.fragInterval': 'Fragment interval',
+    'vps.fragPackets': 'Packets',
+    'vps.limitsTitle': 'Limits',
+    'vps.limitMonthlyCap': 'Monthly cap (GB, 0 = off)',
+    'vps.limitSpeed': 'Speed limit (KB/s, 0 = off)',
+    'vps.chainTitle': 'Chain proxy',
+    'vps.chainSub': 'Route exits through another proxy. One socks5://host:port '
+        'or http://host:port per line.',
+    'vps.enforceIpLimit': 'Enforce device limits',
+    'vps.enforceIpLimitHint': 'Over-limit users are briefly cut off.',
+    'vps.warpTitle': 'WARP',
+    'vps.warpSub': 'Route exits through Cloudflare WARP. Register a free '
+        'account first.',
+    'vps.warpRegister': 'Register free account',
+    'vps.warpRegistering': 'Registering, this can take a few seconds…',
+    'vps.warpRemove': 'Remove account',
+    'vps.warpRegistered': 'Account ready',
+    'vps.warpNoAccount': 'No account yet',
+    'vps.warpEnable': 'Use WARP',
+    'vps.warpCalls': 'WARP for calls',
+    'vps.warpMode': 'WARP mode',
+    'vps.warpEndpoint': 'Endpoint (optional)',
+    'vps.warpNeedAccount': 'Register a free WARP account before turning it on.',
+    'vps.warpRegisterFailed':
+        'Could not register a WARP account. Try again in a moment.',
+    'vps.maintTitle': 'Backup & maintenance',
+    'vps.maintSub': 'Copy a full settings backup, or restore one you saved '
+        'earlier.',
+    'vps.backupDownload': 'Copy backup',
+    'vps.backupCopied': 'Backup JSON copied to the clipboard.',
+    'vps.backupFailed': 'Could not create a backup.',
+    'vps.restore': 'Restore',
+    'vps.restorePaste': 'Paste backup JSON',
+    'vps.restoreConfirm':
+        'Restore from this backup? It replaces the current settings.',
+    'vps.restoreInvalid': 'That is not valid backup JSON.',
+    'vps.restoreDone': 'Backup restored.',
+    'vps.restoreFailed': 'Could not restore the backup.',
+    'vps.updateAgent': 'Update agent',
+    'vps.updateAgentConfirm':
+        'Update the node agent now? The node restarts briefly and reconnects.',
+    'vps.updateAgentStarted': 'Update started. The node will restart shortly.',
+    'vps.updateAgentFailed': 'Could not start the update.',
+    'vps.tgTitle': 'Telegram alerts',
+    'vps.tgSub': 'Get a Telegram message when a user hits their quota, expires, '
+        'or goes over the device limit.',
+    'vps.tgEnable': 'Enable Telegram alerts',
+    'vps.tgToken': 'Bot token',
+    'vps.tgChatId': 'Chat ID',
+    'vps.tgTest': 'Send test message',
+    'vps.tgTestOk': 'Test message sent.',
+    'vps.tgTestFailed': 'Could not send the test message.',
+    'vps.subTitle': 'Subscription',
+    'vps.subSub': 'Share this node with any client. Pick the format your client '
+        'uses.',
+    'vps.subBase': 'Base64 (default)',
+    'vps.subClash': 'Clash',
+    'vps.subSingbox': 'sing-box',
+    'vps.subCopied': 'Subscription link copied.',
+    'inb.tab': 'Inbounds',
+    'inb.title': 'Inbounds',
+    'inb.add': 'Add inbound',
+    'inb.none': 'No inbounds yet. Add one to offer advanced Xray protocols.',
+    'inb.port': 'Port',
+    'inb.edit': 'Edit inbound',
+    'inb.delete': 'Delete inbound',
+    'inb.deleteConfirm':
+        'Delete this inbound? Clients using it stop connecting.',
+    'inb.enabled': 'Enabled',
+    'inb.publicKey': 'Public key',
+    'inb.copyKey': 'Copy public key',
+    'inb.close': 'Close',
+    'inb.secReality': 'REALITY',
+    'inb.secTls': 'TLS',
+    'inb.secNone': 'none',
+    'inb.type': 'Type',
+    'inb.remark': 'Name (optional)',
+    'inb.sniBorrow': 'Borrow a site name (SNI)',
+    'inb.sniReal': 'SNI (your real domain)',
+    'inb.sniSuggest': 'Suggestions',
+    'inb.serviceName': 'gRPC service name',
+    'inb.path': 'Path',
+    'inb.mode': 'XHTTP mode',
+    'inb.recommended': 'Recommended',
+    'inb.keysAutoNote':
+        'Reality keys and a short ID are generated on the server. The public '
+            'key shows here after you save.',
+    'inb.ssAutoNote': 'The server password is generated automatically.',
+    'inb.portInvalid': 'Enter a port between 1 and 65535.',
+    'inb.noteReality':
+        'Reality works best on port 443, but the front already uses 443, so '
+            'this inbound runs on a different port. Some strict networks may '
+            'block non-443 ports.',
+    'inb.noteTls': 'TLS types need a real domain with a trusted certificate.',
+    'inb.noteTlsInsecure':
+        'This node uses a self-signed certificate, so clients will need to '
+            'allow insecure connections.',
+    'inb.publicKeyReady':
+        'Inbound saved. Share this Reality public key with clients.',
+    'inb.presetRealityVision': 'Reality + Vision',
+    'inb.presetTrojanReality': 'Trojan + Reality',
+    'inb.presetGrpcTls': 'gRPC + TLS',
+    'inb.presetXhttpTls': 'XHTTP + TLS',
+    'inb.presetWsTls': 'WebSocket + TLS',
+    'inb.presetSs2022': 'Shadowsocks-2022',
+    'inb.presetRealityVisionSub':
+        'Best all-round. Looks like a visit to a real HTTPS site.',
+    'inb.presetTrojanRealitySub': 'Trojan wrapped in Reality camouflage.',
+    'inb.presetGrpcTlsSub': 'gRPC transport over standard TLS.',
+    'inb.presetXhttpTlsSub': 'HTTP-based transport over TLS.',
+    'inb.presetWsTlsSub': 'WebSocket over TLS.',
+    'inb.presetSs2022Sub': 'Modern Shadowsocks with a strong cipher.',
     'servers.name': 'Name',
     'servers.link': 'Link',
     'servers.subUrl': 'Subscription URL',
@@ -416,7 +1113,7 @@ class NovaStrings {
     'radar.scanned': 'بررسی‌شده',
     'radar.eta': 'زمان باقی‌مانده',
     'radar.results': 'نتایج',
-    'radar.noResults': 'هنوز آی‌پی تمیزی نیست — اسکن را شروع کنید.',
+    'radar.noResults': 'هنوز آی‌پی تمیزی نیست. اسکن را شروع کنید.',
     'radar.sources': 'منابع آی‌پی',
     'radar.ports': 'پورت‌ها',
     'radar.copyAll': 'کپی همه',
@@ -463,6 +1160,95 @@ class NovaStrings {
     'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
     'set.cloudflare': 'کلودفلر',
     'set.cloudflareSub': 'استقرار یا ورود به پنل شما',
+    'set.relay': 'رله گوگل',
+    'set.relaySub': 'وقتی پنل و اشتراکتان مسدود است، از طریق گوگل به آن‌ها برسید',
+    'relay.title': 'رله گوگل',
+    'relay.intro':
+        'وقتی دامنه‌ی پنلتان مسدود است، اشتراک خود را از طریق گوگل بگیرید و به پنلتان برسید.',
+    'relay.statusActive': 'فعال',
+    'relay.statusOff': 'خاموش',
+    'relay.section': 'رله',
+    'relay.urlLabel': 'آدرس رله',
+    'relay.urlHint': 'https://script.google.com/macros/s/.../exec',
+    'relay.urlHelp':
+        'آدرس exec/ اسکریپت گوگل، یا آدرس relay/ یک نود خودمیزبان.',
+    'relay.authLabel': 'کلید احراز',
+    'relay.authHelp':
+        'اختیاری. اسکریپت گوگل معمولا خودش آن را تزریق می‌کند. برای آدرس relay/ مستقیم روی نود لازم است.',
+    'relay.insecureTitle': 'اجازه‌ی گواهی نامعتبر',
+    'relay.insecureSub':
+        'برای رله گوگل که گواهی معتبر دارد خاموش بگذارید. فقط برای نود خودمیزبان با گواهی خودامضا روشن کنید.',
+    'relay.enableTitle': 'فعال‌سازی رله',
+    'relay.enableSub': 'گرفتن اشتراک و ارتباط با پنل را از مسیر رله عبور بده.',
+    'relay.test': 'تست اتصال',
+    'relay.testing': 'در حال تست...',
+    'relay.testOk': 'رله کار می‌کند',
+    'relay.save': 'ذخیره',
+    'relay.saved': 'ذخیره شد',
+    'relay.remove': 'حذف',
+    'relay.removeTitle': 'رله حذف شود؟',
+    'relay.removeBody':
+        'این کار آدرس، کلید و کلید فعال‌سازی رله را از این دستگاه پاک می‌کند. هر وقت خواستید می‌توانید دوباره تنظیمش کنید.',
+    'relay.removed': 'رله حذف شد',
+    'relay.howItWorks': 'این چطور کار می‌کند',
+    'relay.guideTitle': 'رله گوگل چطور کار می‌کند',
+    'relay.guideWhatTitle': 'این چیست',
+    'relay.guideWhatBody':
+        'رله یک اسکریپت کوچک گوگل (Apps Script) است که جلوی پنل شما می‌نشیند. دستگاه شما فقط با گوگل حرف می‌زند. اسکریپت درخواست را به خروجی ورکر نوای شما می‌فرستد، و آن ورکر مقصد واقعی را می‌گیرد و پاسخ را برمی‌گرداند. برای اپراتور شما همه‌ی این‌ها مثل ترافیک عادی گوگل به نظر می‌رسد.',
+    'relay.guideWhyTitle': 'چرا کمک می‌کند',
+    'relay.guideWhyBody':
+        'اگر دامنه‌ی پنلتان (مثلا یک آدرس کلودفلر) مسدود باشد، معمولا نمی‌توانید اشتراک خود را بگیرید یا تازه کنید یا پنل مدیریت را باز کنید. با رله، این درخواست‌ها از مسیر گوگل عبور می‌کنند و گوگل از بیرون کشور به میزبان مسدودشده می‌رسد، پس لایه‌ی کانفیگ کار می‌کند.',
+    'relay.guideLimitTitle': 'محدودیت واقعی',
+    'relay.guideLimitBody':
+        'رله فقط کانفیگ را عبور می‌دهد، نه خود تونل وی‌پی‌ان. اتصال واقعی شما همچنان به نودهای خروجی نیاز دارد که زیر فیلترینگ کار کنند: یک وی‌پی‌اس خودمیزبان با Reality، یا یک آی‌پی مستقیم. نودهای ساده‌ی ورکر کلودفلر حتی با رله روشن هم وصل نمی‌شوند. و هیچ‌چیز از قطع کامل اینترنت که گوگل هم مسدود باشد جان سالم به در نمی‌برد.',
+    'relay.guideStepsTitle': 'مراحل راه‌اندازی',
+    'relay.guideStep1':
+        'در پنل نوای خود، بخش رله یا تونل را باز کنید، یک کلید بسازید و کد Apps Script را کپی کنید.',
+    'relay.guideStep2':
+        'آن را به عنوان وب‌اپ گوگل منتشر کنید: New deployment، نوع Web app، اجرا با حساب خودتان، دسترسی Anyone. سپس آدرس exec/ را کپی کنید.',
+    'relay.guideStep3':
+        'به اینجا برگردید، آدرس exec/ را (و اگر خواسته شد کلید را) بچسبانید، تست را بزنید، و بعد فعال‌سازی را روشن کنید.',
+    'relay.guideStep4':
+        'یا آن را به آدرس relay/ نود وی‌پی‌اس خودتان وصل کنید. اول رله را در پنل نود روشن کنید. اگر نود گواهی خودامضا دارد، اجازه‌ی گواهی نامعتبر را روشن کنید.',
+    // Domain fronting (direct mode)
+    'relay.frontTitle': 'عبور از لبه‌ی گوگل (Domain Fronting)',
+    'relay.frontSub':
+        'حتی اگر آدرس خود رله مسدود باشد به آن برس. نوا به لبه‌ی گوگل وصل می‌شود و میزبان واقعی را داخل درخواست رمزنگاری‌شده پنهان می‌کند، پس اپراتور فقط اتصال به www.google.com را می‌بیند.',
+    'relay.advanced': 'پیشرفته',
+    'relay.frontSniLabel': 'نام نمایشی (SNI)',
+    'relay.frontSniHelp':
+        'نامی که اپراتور می‌بیند. www.google.com امن است: مسدودکردنش کل گوگل را از کار می‌اندازد.',
+    'relay.frontIpLabel': 'آی‌پی لبه',
+    'relay.frontIpHelp':
+        'یک آی‌پی لبه‌ی گوگل که بر اساس میزبان مسیریابی می‌کند. خالی بگذارید و «انتخاب خودکار» را بزنید تا نوا یکی زنده پیدا کند.',
+    'relay.frontAuto': 'انتخاب خودکار لبه‌ی زنده',
+    'relay.frontPicking': 'در حال یافتن لبه‌ی زنده‌ی گوگل…',
+    'relay.frontPicked': 'لبه آماده شد',
+    'relay.frontNone': 'هیچ لبه‌ی گوگلی پاسخ نداد. روی شبکه‌ی دیگری امتحان کنید.',
+    'relay.testDirect': 'تست فرانتینگ مستقیم',
+    'relay.frontOk': 'دامین فرانتینگ کار می‌کند',
+    // Full tunnel mode
+    'relay.tunnelTitle': 'تونل کامل از مسیر گوگل',
+    'relay.tunnelSub':
+        'ترافیک واقعی (نه فقط کانفیگ) را از مسیر گوگل به خروجی وی‌پی‌اس خودتان ببر. نوا یک پراکسی محلی روی این دستگاه باز می‌کند؛ اپ‌ها یا مرورگر را به آن وصل کنید. کند است اما وقتی همه‌ی نودها مسدودند کار می‌کند.',
+    'relay.tunnelPortLabel': 'پورت SOCKS5 محلی',
+    'relay.tunnelPortHelp':
+        'نوا روی 127.0.0.1 و این پورت گوش می‌دهد. پراکسی اپ یا سیستم را روی SOCKS5 127.0.0.1:<port> بگذارید.',
+    'relay.tunnelStart': 'شروع تونل',
+    'relay.tunnelStop': 'توقف تونل',
+    'relay.tunnelStarting': 'در حال شروع…',
+    'relay.tunnelRunning': 'تونل روی 127.0.0.1: در حال اجراست',
+    'relay.tunnelStopped': 'تونل متوقف شد',
+    'relay.tunnelTest': 'تست تونل',
+    'relay.tunnelOk': 'تونل ترافیک را عبور می‌دهد',
+    'relay.tunnelHint':
+        'به نود وی‌پی‌اس شما با خروجی تونل روشن نیاز دارد، به‌علاوه‌ی رله‌ی بالا که به یک Apps Script گوگل وصل باشد و به آن فوروارد کند. سرعت پایین است: هر بسته یک درخواست از مسیر گوگل است.',
+    'relay.guideFrontTitle': 'مستقیم (دامین فرانتینگ)',
+    'relay.guideFrontBody':
+        'برای میزبان‌های متعلق به گوگل و خود رله‌ی Apps Script، نوا می‌تواند مستقیم با نام www.google.com به لبه‌ی گوگل وصل شود و میزبان واقعی را داخل جریان رمزنگاری‌شده بخواهد. جعبه‌ی DPI که فقط www.google.com را مجاز می‌داند باز هم اجازه‌ی عبور می‌دهد و روی این مسیر سهمیه‌ی Apps Script مصرف نمی‌شود. همین باعث می‌شود رله حتی وقتی script.google.com مسدود است در دسترس بماند.',
+    'relay.guideTunnelTitle': 'تونل کامل (آخرین راه‌حل)',
+    'relay.guideTunnelBody':
+        'تونل کامل رله را به یک اتصال واقعی تبدیل می‌کند: دستگاه شما یک پراکسی SOCKS5 محلی باز می‌کند و هر جریان TCP/UDP به‌صورت درخواست‌هایی از مسیر گوگل به خروجی وی‌پی‌اس خودتان حمل می‌شود و آن خروجی با اینترنت حرف می‌زند. برای اپراتور مثل ترافیک گوگل به نظر می‌رسد و می‌تواند وقتی همه‌ی نودهای معمول مسدودند شما را آنلاین کند. ذاتا کند است (هر تکه یک رفت‌وبرگشت از مسیر گوگل است) و به وی‌پی‌اس خودتان با خروجی تونل روشن نیاز دارد، پس آن را آخرین راه‌حل بدانید نه گزینه‌ی روزمره.',
     'mode.system': 'سیستم',
     'mode.dark': 'تیره',
     'mode.light': 'روشن',
@@ -510,6 +1296,273 @@ class NovaStrings {
     'servers.signInSub': 'پیکربندی‌ها را از یک پنل موجود وارد کنید',
     'servers.addConfig': 'افزودن پیکربندی',
     'servers.addConfigSub': 'یک لینک vless:// یا نشانی اشتراک را بچسبانید',
+    'servers.connectVps': 'اتصال سرور مجازی شما',
+    'servers.connectVpsSub': 'پنل کامل نوا را روی سرور خودت اجرا کن',
+    'vps.title': 'اتصال سرور مجازی شما',
+    'vps.subtitle': 'پنل کامل نوا را روی سرور خودت اجرا کن و همین‌جا مدیریتش کن.',
+    'vps.manualCard': 'خودم دستور را اجرا می‌کنم',
+    'vps.manualCardSub': 'یک خط را روی سرورت بچسبان، بعد وصل شو.',
+    'vps.sshCard': 'برایم نصبش کن',
+    'vps.sshCardSub': 'نوا از طریق SSH وصل می‌شود و همه‌چیز را راه می‌اندازد.',
+    'vps.manualStep1': 'این را روی سرورت اجرا کن',
+    'vps.manualStep1Sub':
+        'با SSH به سرورت وارد شو و این را بچسبان. عامل نوا را نصب می‌کند.',
+    'vps.manualStep2': 'بعد به آن وصل شو',
+    'vps.copy': 'کپی',
+    'vps.copied': 'کپی شد',
+    'vps.address': 'نشانی سرور',
+    'vps.addressHint': 'دامنه یا آی‌پی، مثل node.example.com',
+    'vps.adminPassword': 'رمز مدیر',
+    'vps.noDomain': 'سرورم دامنه ندارد',
+    'vps.noDomainSub': 'با گواهی خودامضا مستقیم به آی‌پی وصل شو.',
+    'vps.connect': 'اتصال',
+    'vps.host': 'آی‌پی یا هاست سرور',
+    'vps.hostHint': 'مثل 203.0.113.10 یا node.example.com',
+    'vps.port': 'پورت SSH',
+    'vps.sshUser': 'نام کاربری SSH',
+    'vps.authMethod': 'احراز هویت',
+    'vps.authPassword': 'رمز عبور',
+    'vps.authKey': 'کلید SSH',
+    'vps.sshPassword': 'رمز SSH',
+    'vps.privateKey': 'کلید خصوصی (PEM)',
+    'vps.privateKeyHint': 'محتوای فایل کلید خصوصی‌ات را بچسبان',
+    'vps.passphrase': 'عبارت عبور کلید (اختیاری)',
+    'vps.setAdminPassword': 'رمز مدیر پنل',
+    'vps.setAdminPasswordSub': 'با این رمز وارد پنل می‌شوی.',
+    'vps.domainOptional': 'دامنه (اختیاری)',
+    'vps.saveCreds': 'این اطلاعات ورود روی این دستگاه ذخیره شود',
+    'vps.sshWarning':
+        'اطلاعات SSH فقط یک‌بار برای نصب عامل استفاده می‌شود. تنها در صورت '
+        'انتخاب تو ذخیره می‌شود و در حافظهٔ امن همین دستگاه می‌ماند.',
+    'vps.install': 'نصب و اتصال',
+    'vps.phaseSshConnecting': 'در حال اتصال از طریق SSH…',
+    'vps.phaseInstalling': 'در حال نصب عامل نوا…',
+    'vps.phaseWaiting': 'در انتظار عامل…',
+    'vps.phaseLoggingIn': 'در حال ورود به پنل…',
+    'vps.phaseImporting': 'در حال وارد کردن نودت…',
+    'vps.doneTitle': 'سرور مجازی‌ات وصل شد',
+    'vps.doneSub': 'نود به فهرست سرورهایت اضافه شد.',
+    'vps.openAdmin': 'باز کردن پنل مدیریت',
+    'vps.connectNow': 'همین حالا وصل شو',
+    'vps.failed': 'مشکلی پیش آمد',
+    'vps.retry': 'دوباره تلاش کن',
+    'vps.manage': 'مدیریت',
+    'vps.yourPanels': 'پنل‌های سرور تو',
+    'vps.removePanel': 'حذف',
+    'vps.removePanelConfirm': 'این سرور از برنامه حذف شود؟ سرور همچنان کار '
+        'می‌کند؛ فقط اتصال ذخیره‌شده اینجا فراموش می‌شود.',
+    'vps.tabUsers': 'کاربران',
+    'vps.tabSettings': 'تنظیمات',
+    'vps.tabInfo': 'اطلاعات',
+    'vps.users': 'کاربران',
+    'vps.addUser': 'افزودن کاربر',
+    'vps.noUsers': 'هنوز کاربری نیست. یکی اضافه کن تا دسترسی را به اشتراک بگذاری.',
+    'vps.userName': 'نام',
+    'vps.userEnabled': 'فعال',
+    'vps.userQuota': 'محدودیت داده',
+    'vps.userQuotaGb': 'محدودیت داده (گیگابایت، ۰ = نامحدود)',
+    'vps.userExpiry': 'تاریخ انقضا',
+    'vps.unlimited': 'نامحدود',
+    'vps.noExpiry': 'بدون انقضا',
+    'vps.userUsage': 'مصرف‌شده',
+    'vps.editUser': 'ویرایش کاربر',
+    'vps.deleteUser': 'حذف کاربر',
+    'vps.deleteUserConfirm': 'این کاربر حذف شود؟ دسترسی‌اش فوراً قطع می‌شود.',
+    'vps.save': 'ذخیره',
+    'vps.cancel': 'لغو',
+    'vps.delete': 'حذف',
+    'vps.shareLink': 'لینک اشتراک',
+    'vps.copyLink': 'کپی لینک',
+    'vps.showQr': 'کد QR',
+    'vps.qrHint': 'برای وارد کردن این کاربر، در برنامهٔ نوا اسکن کن.',
+    'vps.protocols': 'پروتکل‌ها',
+    'vps.protocolsSub': 'این سرور چه پروتکل‌هایی ارائه می‌دهد. برنامه آن‌ها را '
+        'می‌سنجد و سریع‌ترین گزینهٔ کارآمد را خودکار انتخاب می‌کند.',
+    'vps.protoVless': 'VLESS',
+    'vps.protoVmess': 'VMess',
+    'vps.protoTrojan': 'Trojan',
+    'vps.protoVlessSub': 'سریع و مدرن',
+    'vps.protoVmessSub': 'سازگاری گسترده با کلاینت‌ها',
+    'vps.protoTrojanSub': 'شبیه HTTPS معمولی',
+    'vps.protoAlwaysOn': 'همیشه روشن',
+    'vps.saved': 'ذخیره شد',
+    'vps.loadFailed': 'بارگذاری نشد. برای تلاش دوباره بکش.',
+    'vps.domainTitle': 'دامنه و TLS',
+    'vps.domainSub': 'این نود را روی دامنهٔ خودت با گواهی معتبر بگذار تا '
+        'کلاینت‌ها بدون هشدار امنیتی وصل شوند.',
+    'vps.domainSelfSigned': 'این نود روی {host} از گواهی خودامضا استفاده می‌کند.',
+    'vps.domainTrusted': 'گواهی معتبر برای {host} فعال است.',
+    'vps.domainTrustedPill': 'معتبر',
+    'vps.domainField': 'دامنه',
+    'vps.domainMethodAuto': 'خودکار (Let\'s Encrypt)',
+    'vps.domainMethodAutoHelp': 'به پورت ۸۰ باز و اشاره‌کردن DNS این دامنه به '
+        'سرور نیاز دارد.',
+    'vps.domainMethodOrigin': 'چسباندن گواهی Origin کلادفلر',
+    'vps.domainMethodOriginHelp': 'زمانی که دامنه پشت کلادفلر است از این استفاده کن.',
+    'vps.domainCert': 'گواهی',
+    'vps.domainKey': 'کلید خصوصی',
+    'vps.domainEmail': 'ایمیل (اختیاری)',
+    'vps.domainSetup': 'راه‌اندازی دامنه',
+    'vps.domainWorking': 'در حال انجام…',
+    'vps.domainRemove': 'حذف دامنه',
+    'vps.domainActive': 'دامنه فعال است.',
+    'vps.domainReconnectHint': 'شاید لازم باشد با نشانی جدید دوباره وصل شوی.',
+    'vps.domainNeedDomain': 'ابتدا یک دامنه وارد کن.',
+    'vps.domainFailed': 'راه‌اندازی دامنه ممکن نشد.',
+    'vps.tabOverview': 'نمای کلی',
+    'vps.ovLocation': 'موقعیت',
+    'vps.ovOperational': 'در حال کار',
+    'vps.ovOffline': 'خاموش',
+    'vps.ovCpu': 'پردازنده',
+    'vps.ovCores': '{n} هسته',
+    'vps.ovMemory': 'حافظه',
+    'vps.ovDisk': 'دیسک',
+    'vps.ovUptime': 'مدت روشن‌بودن',
+    'vps.ovTraffic': 'ترافیک',
+    'vps.ovToday': 'امروز {v}',
+    'vps.ovNa': 'نامشخص',
+    'vps.onlineCount': '{n} آنلاین',
+    'vps.userNote': 'یادداشت',
+    'vps.userDeviceLimit': 'محدودیت دستگاه',
+    'vps.userDeviceLimitHint': '۰ = نامحدود',
+    'vps.userDataReset': 'بازنشانی داده',
+    'vps.resetNone': 'بدون',
+    'vps.resetDay': 'روزانه',
+    'vps.resetWeek': 'هفتگی',
+    'vps.resetMonth': 'ماهانه',
+    'vps.userExpireDays': 'انقضا N روز پس از اولین اتصال',
+    'vps.userExpireDaysHint': '۰ = خاموش',
+    'vps.routingTitle': 'مسیریابی',
+    'vps.routeBlockAds': 'مسدودکردن تبلیغات',
+    'vps.routeBypassChina': 'دورزدن چین',
+    'vps.routeBypassRussia': 'دورزدن روسیه',
+    'vps.routeBypassIran': 'دورزدن ایران (سایت‌های داخلی)',
+    'vps.routeBlockQuic': 'مسدودکردن QUIC',
+    'vps.dnsTitle': 'DNS امن',
+    'vps.dnsDoh': 'DNS رمزنگاری‌شده (DoH)',
+    'vps.dnsProvider': 'ارائه‌دهندهٔ DoH',
+    'vps.dnsAntiSanction': 'DNS ضدتحریم',
+    'vps.dnsAntiSanctionProvider': 'ارائه‌دهندهٔ ضدتحریم',
+    'vps.dnsCustom': 'DNS سفارشی',
+    'vps.censorTitle': 'ضدسانسور',
+    'vps.tlsFragment': 'تکه‌تکه‌کردن TLS',
+    'vps.tlsFragOff': 'خاموش',
+    'vps.tlsFragCustom': 'سفارشی',
+    'vps.fragLength': 'طول تکه',
+    'vps.fragInterval': 'فاصلهٔ تکه',
+    'vps.fragPackets': 'بسته‌ها',
+    'vps.limitsTitle': 'محدودیت‌ها',
+    'vps.limitMonthlyCap': 'سقف ماهانه (گیگابایت، ۰ = خاموش)',
+    'vps.limitSpeed': 'محدودیت سرعت (کیلوبایت بر ثانیه، ۰ = خاموش)',
+    'vps.chainTitle': 'پروکسی زنجیره‌ای',
+    'vps.chainSub': 'خروجی را از یک پروکسی دیگر عبور بده. در هر خط یک '
+        'socks5://host:port یا http://host:port.',
+    'vps.enforceIpLimit': 'اعمال محدودیت دستگاه',
+    'vps.enforceIpLimitHint': 'کاربران بیش از حد مجاز برای مدتی کوتاه قطع می‌شوند.',
+    'vps.warpTitle': 'WARP',
+    'vps.warpSub': 'خروجی را از Cloudflare WARP عبور بده. ابتدا یک حساب رایگان '
+        'ثبت کن.',
+    'vps.warpRegister': 'ثبت حساب رایگان',
+    'vps.warpRegistering': 'در حال ثبت، ممکن است چند ثانیه طول بکشد…',
+    'vps.warpRemove': 'حذف حساب',
+    'vps.warpRegistered': 'حساب آماده است',
+    'vps.warpNoAccount': 'هنوز حسابی نیست',
+    'vps.warpEnable': 'استفاده از WARP',
+    'vps.warpCalls': 'WARP برای تماس‌ها',
+    'vps.warpMode': 'حالت WARP',
+    'vps.warpEndpoint': 'نقطهٔ اتصال (اختیاری)',
+    'vps.warpNeedAccount': 'پیش از روشن‌کردن، یک حساب رایگان WARP ثبت کن.',
+    'vps.warpRegisterFailed':
+        'ثبت حساب WARP ممکن نشد. کمی بعد دوباره تلاش کن.',
+    'vps.maintTitle': 'پشتیبان‌گیری و نگهداری',
+    'vps.maintSub': 'یک پشتیبان کامل از تنظیمات را کپی کن، یا یکی را که قبلاً '
+        'ذخیره کرده‌ای بازگردان.',
+    'vps.backupDownload': 'کپی پشتیبان',
+    'vps.backupCopied': 'JSON پشتیبان در کلیپ‌بورد کپی شد.',
+    'vps.backupFailed': 'ساخت پشتیبان ممکن نشد.',
+    'vps.restore': 'بازگردانی',
+    'vps.restorePaste': 'JSON پشتیبان را بچسبان',
+    'vps.restoreConfirm':
+        'از این پشتیبان بازگردانی شود؟ تنظیمات فعلی جایگزین می‌شود.',
+    'vps.restoreInvalid': 'این یک JSON پشتیبان معتبر نیست.',
+    'vps.restoreDone': 'پشتیبان بازگردانده شد.',
+    'vps.restoreFailed': 'بازگردانی پشتیبان ممکن نشد.',
+    'vps.updateAgent': 'به‌روزرسانی عامل',
+    'vps.updateAgentConfirm':
+        'عامل نود همین حالا به‌روزرسانی شود؟ نود برای مدتی کوتاه راه‌اندازی مجدد '
+            'می‌شود و دوباره وصل می‌گردد.',
+    'vps.updateAgentStarted': 'به‌روزرسانی شروع شد. نود به‌زودی راه‌اندازی مجدد می‌شود.',
+    'vps.updateAgentFailed': 'شروع به‌روزرسانی ممکن نشد.',
+    'vps.tgTitle': 'هشدارهای تلگرام',
+    'vps.tgSub': 'وقتی کاربری به سقف مصرفش می‌رسد، منقضی می‌شود، یا از محدودیت '
+        'دستگاه عبور می‌کند، یک پیام تلگرام بگیر.',
+    'vps.tgEnable': 'روشن‌کردن هشدارهای تلگرام',
+    'vps.tgToken': 'توکن ربات',
+    'vps.tgChatId': 'شناسهٔ چت',
+    'vps.tgTest': 'ارسال پیام آزمایشی',
+    'vps.tgTestOk': 'پیام آزمایشی ارسال شد.',
+    'vps.tgTestFailed': 'ارسال پیام آزمایشی ممکن نشد.',
+    'vps.subTitle': 'اشتراک',
+    'vps.subSub': 'این نود را با هر کلاینتی به اشتراک بگذار. قالبی را که '
+        'کلاینتت استفاده می‌کند انتخاب کن.',
+    'vps.subBase': 'Base64 (پیش‌فرض)',
+    'vps.subClash': 'Clash',
+    'vps.subSingbox': 'sing-box',
+    'vps.subCopied': 'لینک اشتراک کپی شد.',
+    'inb.tab': 'ورودی‌ها',
+    'inb.title': 'ورودی‌ها',
+    'inb.add': 'افزودن ورودی',
+    'inb.none':
+        'هنوز ورودی‌ای نیست. یکی اضافه کن تا پروتکل‌های پیشرفتهٔ Xray را ارائه دهی.',
+    'inb.port': 'پورت',
+    'inb.edit': 'ویرایش ورودی',
+    'inb.delete': 'حذف ورودی',
+    'inb.deleteConfirm':
+        'این ورودی حذف شود؟ کلاینت‌هایی که از آن استفاده می‌کنند دیگر وصل نمی‌شوند.',
+    'inb.enabled': 'فعال',
+    'inb.publicKey': 'کلید عمومی',
+    'inb.copyKey': 'کپی کلید عمومی',
+    'inb.close': 'بستن',
+    'inb.secReality': 'REALITY',
+    'inb.secTls': 'TLS',
+    'inb.secNone': 'بدون',
+    'inb.type': 'نوع',
+    'inb.remark': 'نام (اختیاری)',
+    'inb.sniBorrow': 'قرض‌گرفتن نام یک سایت (SNI)',
+    'inb.sniReal': 'SNI (دامنهٔ واقعی تو)',
+    'inb.sniSuggest': 'پیشنهادها',
+    'inb.serviceName': 'نام سرویس gRPC',
+    'inb.path': 'مسیر',
+    'inb.mode': 'حالت XHTTP',
+    'inb.recommended': 'پیشنهادی',
+    'inb.keysAutoNote':
+        'کلیدهای Reality و یک shortID روی سرور ساخته می‌شوند. کلید عمومی پس از '
+            'ذخیره اینجا نشان داده می‌شود.',
+    'inb.ssAutoNote': 'رمز سرور به‌طور خودکار ساخته می‌شود.',
+    'inb.portInvalid': 'یک پورت بین ۱ تا ۶۵۵۳۵ وارد کن.',
+    'inb.noteReality':
+        'Reality روی پورت ۴۴۳ بهترین عملکرد را دارد، اما فرانت همین حالا ۴۴۳ را '
+            'گرفته، پس این ورودی روی پورت دیگری اجرا می‌شود. برخی شبکه‌های '
+            'سخت‌گیر ممکن است پورت‌های غیر ۴۴۳ را مسدود کنند.',
+    'inb.noteTls': 'نوع‌های TLS به یک دامنهٔ واقعی با گواهی معتبر نیاز دارند.',
+    'inb.noteTlsInsecure':
+        'این نود از گواهی خودامضا استفاده می‌کند، پس کلاینت‌ها باید اتصال ناامن '
+            'را مجاز کنند.',
+    'inb.publicKeyReady':
+        'ورودی ذخیره شد. این کلید عمومی Reality را با کلاینت‌ها به اشتراک بگذار.',
+    'inb.presetRealityVision': 'Reality + Vision',
+    'inb.presetTrojanReality': 'Trojan + Reality',
+    'inb.presetGrpcTls': 'gRPC + TLS',
+    'inb.presetXhttpTls': 'XHTTP + TLS',
+    'inb.presetWsTls': 'WebSocket + TLS',
+    'inb.presetSs2022': 'Shadowsocks-2022',
+    'inb.presetRealityVisionSub':
+        'بهترین گزینهٔ همه‌کاره. مثل بازدید از یک سایت واقعی HTTPS دیده می‌شود.',
+    'inb.presetTrojanRealitySub': 'تروجان پیچیده در استتار Reality.',
+    'inb.presetGrpcTlsSub': 'انتقال gRPC روی TLS استاندارد.',
+    'inb.presetXhttpTlsSub': 'انتقال مبتنی بر HTTP روی TLS.',
+    'inb.presetWsTlsSub': 'وب‌سوکت روی TLS.',
+    'inb.presetSs2022Sub': 'شادوساکس مدرن با رمز قوی.',
     'servers.name': 'نام',
     'servers.link': 'لینک',
     'servers.subUrl': 'نشانی اشتراک',

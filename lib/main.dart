@@ -12,7 +12,10 @@ import 'src/core/proxy/singbox_proxy_controller.dart';
 import 'src/features/cloudflare/cloudflare_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
+import 'src/features/relay/relay_controller.dart';
+import 'src/features/relay/tunnel_controller.dart';
 import 'src/features/settings/settings_controller.dart';
+import 'src/features/vps/vps_controller.dart';
 import 'src/theme/theme_controller.dart';
 
 Future<void> main() async {
@@ -25,6 +28,14 @@ Future<void> main() async {
   final RadarController radar = RadarController();
   final CloudflareController cloudflare = CloudflareController();
   final SettingsController settings = SettingsController();
+
+  // The Google relay: fetch subscriptions and reach the /admin API through a
+  // Google Apps Script front when the panel's own domain is blocked.
+  final RelayController relay = RelayController();
+
+  // The full tunnel: a local SOCKS5 that carries real traffic through a node
+  // /tunnel exit, riding the relay's fronted/insecure transport.
+  final TunnelController tunnel = TunnelController(relay.transportFor);
 
   // The data path is a modified sing-box core, bound per platform. Android ships
   // the VpnService + libbox host; desktop (macOS/Windows/Linux) runs the bundled
@@ -42,8 +53,15 @@ Future<void> main() async {
 
   final ConnInfoController connInfo = ConnInfoController(proxy);
 
+  // "Connect your VPS": installs/manages the Nova node agent on the user's own
+  // server and imports its node into the profile list.
+  final VpsController vps = VpsController(profiles, proxy, relay);
+
   // The host builds each config from the user's live routing/DNS choices.
   proxy.routeOptionsProvider = () => settings.routeOptions;
+
+  // Route subscription refresh through the relay when it is active.
+  proxy.subFetcherProvider = () => relay.subFetcher();
 
   // Let the controller persist a profile it mutates itself (clearing a dead
   // pinned exit during auto-failover) so the Servers list reflects the switch.
@@ -62,9 +80,14 @@ Future<void> main() async {
     radar: radar,
     cloudflare: cloudflare,
     settings: settings,
+    vps: vps,
+    relay: relay,
+    tunnel: tunnel,
   ));
 
   // Hydrate persisted preferences without blocking first paint.
+  relay.load();
+  tunnel.load();
   SharedPreferences.getInstance().then((prefs) {
     theme.attachPrefs(prefs);
     profiles.attachPrefs(prefs);

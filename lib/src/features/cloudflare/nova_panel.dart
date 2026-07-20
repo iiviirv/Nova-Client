@@ -163,6 +163,123 @@ class NovaPanel {
           PanelSession s, Map<String, dynamic> settings) =>
       _postJson(s, '/admin/network-settings.json', settings);
 
+  // --- domain & TLS (VPS node only) ---------------------------------------
+
+  /// Current TLS/domain status of a VPS node:
+  /// `{host, tls: "trusted"|"self-signed", state: "idle"|"provisioning"|
+  /// "active"|"error", error}`. Worker panels don't serve this and throw.
+  Future<Map<String, dynamic>> getDomainStatus(PanelSession s) =>
+      _getJson(s, '/admin/domain');
+
+  /// Move a VPS node onto a real domain with a trusted certificate.
+  /// [method] is "letsencrypt" (needs port 80 + DNS pointing at the node) or
+  /// "origin" (paste a Cloudflare Origin Certificate + [key]). Returns
+  /// immediately with `state: "provisioning"`; poll [getDomainStatus].
+  Future<Map<String, dynamic>> setDomain(
+    PanelSession s, {
+    required String domain,
+    String method = 'letsencrypt',
+    String? cert,
+    String? key,
+    String? email,
+  }) =>
+      _postJson(s, '/admin/domain', <String, dynamic>{
+        'domain': domain,
+        'method': method,
+        if (cert != null) 'cert': cert,
+        if (key != null) 'key': key,
+        if (email != null && email.isNotEmpty) 'email': email,
+      });
+
+  /// Revert a VPS node back to its IP + self-signed certificate.
+  Future<Map<String, dynamic>> clearDomain(PanelSession s, String host) =>
+      _postJson(s, '/admin/domain', <String, dynamic>{
+        'clear': true,
+        'host': host,
+      });
+
+  // --- inbounds (VPS node only): Reality/Vision, gRPC, XHTTP, Shadowsocks ---
+
+  /// The node's data-driven standalone inbounds. Each map carries protocol,
+  /// network, security, port, remark, reality{...}, etc. Worker panels do not
+  /// serve this endpoint and throw.
+  Future<List<Map<String, dynamic>>> getInbounds(PanelSession s) async {
+    final Map<String, dynamic> d = await _getJson(s, '/admin/inbounds');
+    final List<dynamic> arr = (d['inbounds'] as List<dynamic>?) ?? <dynamic>[];
+    return arr.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Create or update an inbound. The node auto-generates Reality keys/shortId/
+  /// dest and the Shadowsocks server password when omitted. Returns
+  /// `{ok, inbounds, saved}`; a port clash throws a [PanelException] (409).
+  Future<Map<String, dynamic>> saveInbound(
+    PanelSession s,
+    Map<String, dynamic> inbound, {
+    bool update = false,
+  }) =>
+      _postJson(s, '/admin/inbounds', <String, dynamic>{
+        'action': update ? 'update' : 'add',
+        'inbound': inbound,
+      });
+
+  Future<Map<String, dynamic>> deleteInbound(PanelSession s, String id) =>
+      _postJson(s, '/admin/inbounds', <String, dynamic>{'action': 'delete', 'id': id});
+
+  Future<Map<String, dynamic>> toggleInbound(PanelSession s, String id) =>
+      _postJson(s, '/admin/inbounds', <String, dynamic>{'action': 'toggle', 'id': id});
+
+  /// A fresh Reality x25519 keypair + shortId (`{privateKey, publicKey, shortId}`).
+  Future<Map<String, dynamic>> realityKeys(PanelSession s) =>
+      _postJson(s, '/admin/reality-keys', <String, dynamic>{});
+
+  // --- dashboard / stats / maintenance (VPS node only) --------------------
+
+  /// Live node dashboard: host, tls, system{cpu,mem,disk,uptime,geo,xray,singbox},
+  /// traffic{total,up,down,today,series}, counts, warp.
+  Future<Map<String, dynamic>> getDashboard(PanelSession s) =>
+      _getJson(s, '/admin/dashboard');
+
+  /// Recent admin activity (logins + changes), newest first.
+  Future<List<Map<String, dynamic>>> getActivity(PanelSession s) async {
+    final Map<String, dynamic> d = await _getJson(s, '/admin/activity');
+    final List<dynamic> a = (d['activity'] as List<dynamic>?) ?? <dynamic>[];
+    return a.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Live online-device counts per user id (`{ <id>: count }`).
+  Future<Map<String, dynamic>> getOnline(PanelSession s) async {
+    final Map<String, dynamic> d = await _getJson(s, '/admin/online');
+    return (d['online'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+  }
+
+  /// The full settings + WARP backup document (for export to a file).
+  Future<Map<String, dynamic>> backup(PanelSession s) =>
+      _getJson(s, '/admin/backup');
+
+  /// Restore a backup document (replaces settings, re-applies to xray).
+  Future<Map<String, dynamic>> restore(PanelSession s, Map<String, dynamic> dump) =>
+      _postJson(s, '/admin/restore', dump);
+
+  /// Pull the latest agent build and restart (the node briefly goes down).
+  Future<Map<String, dynamic>> selfUpdate(PanelSession s) =>
+      _postJson(s, '/admin/self-update', <String, dynamic>{});
+
+  // --- WARP (Cloudflare WireGuard) ----------------------------------------
+
+  Future<Map<String, dynamic>> getWarp(PanelSession s) => _getJson(s, '/admin/warp');
+
+  Future<Map<String, dynamic>> registerWarp(PanelSession s) =>
+      _postJson(s, '/admin/warp', <String, dynamic>{'action': 'register'});
+
+  Future<Map<String, dynamic>> clearWarp(PanelSession s) =>
+      _postJson(s, '/admin/warp', <String, dynamic>{'action': 'clear'});
+
+  // --- Telegram alerts ----------------------------------------------------
+
+  /// Send a Telegram test message with the saved bot token + chat id.
+  Future<Map<String, dynamic>> telegramTest(PanelSession s) =>
+      _postJson(s, '/admin/telegram/test', <String, dynamic>{});
+
   /// The worker's custom clean-IP list (ADD.txt), raw newline-separated text.
   Future<String> getIPs(PanelSession s) => _getText(s, '/admin/ADD.txt');
 
@@ -172,6 +289,37 @@ class NovaPanel {
   /// Usage data (per-day/route buckets) for the panel's usage graphs.
   Future<Map<String, dynamic>> usageData(PanelSession s) =>
       _getJson(s, '/admin/usage-data');
+
+  // --- panel users (VPS + worker) -----------------------------------------
+  // Users live inside the network-settings document as a `users[]` array; the
+  // panel reads/edits/saves the whole array so unknown keys are preserved.
+
+  /// The panel's users (id, uuid, email/name, enabled, quotaBytes, expiry).
+  Future<List<Map<String, dynamic>>> getUsers(PanelSession s) async {
+    final Map<String, dynamic> ns = await getNetworkSettings(s);
+    final List<dynamic> raw = (ns['users'] as List<dynamic>?) ?? <dynamic>[];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((Map<dynamic, dynamic> m) => m.cast<String, dynamic>())
+        .toList();
+  }
+
+  /// Replace the whole users array (add/edit/remove happen client-side).
+  Future<void> saveUsers(PanelSession s, List<Map<String, dynamic>> users) =>
+      saveNetworkSettings(s, <String, dynamic>{'users': users});
+
+  /// Per-user total bytes: { userId: bytes }.
+  Future<Map<String, int>> usageByUser(PanelSession s) async {
+    final Map<String, dynamic> d = await usageData(s);
+    final Map<String, dynamic> usage =
+        (d['usage'] as Map<String, dynamic>?) ?? d;
+    final Map<String, int> out = <String, int>{};
+    usage.forEach((String k, dynamic v) {
+      final int n = v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+      out[k] = n;
+    });
+    return out;
+  }
 
   // --- helpers -------------------------------------------------------------
 

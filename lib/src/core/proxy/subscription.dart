@@ -319,6 +319,11 @@ Future<List<ProxyNode>> resolveProfileNodes(
     if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
     return out;
   }
+  // Inline payload: one link, or several (a base64 / multi-line body embedded in
+  // the profile, e.g. a no-domain VPS whose self-signed cert makes a live /sub
+  // fetch impractical). Parse them all so the auto-selector still has a pool.
+  final List<ProxyNode> inline = parseSubscriptionBody(raw);
+  if (inline.isNotEmpty) return inline;
   final ProxyNode? node = parseShareLink(raw);
   return node == null ? const <ProxyNode>[] : <ProxyNode>[node];
 }

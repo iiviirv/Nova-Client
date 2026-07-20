@@ -285,7 +285,7 @@ class DesktopProxyController extends ProxyController {
       // subscription profile can connect instead of failing as an invalid link.
       // A subscription expands to its whole node list so the core auto-picks the
       // fastest via a urltest; a single link is just the one node.
-      final List<ProxyNode> nodes = await resolveProfileNodes(profile);
+      final List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
       if (nodes.isEmpty) throw emptyResolveMessage(profile);
       // Desktop uses BUNDLED local rule-sets. A remote rule-set that can't be
       // downloaded makes sing-box FATAL on startup ("initialize rule-set: i/o

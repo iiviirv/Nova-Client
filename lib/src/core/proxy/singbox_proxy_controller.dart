@@ -278,7 +278,7 @@ class SingboxProxyController extends ProxyController {
     // actually connect instead of failing as an "invalid profile link". A
     // subscription returns its whole node list so the core auto-picks the
     // fastest via a urltest; a single link is just the one node.
-    List<ProxyNode> nodes = await resolveProfileNodes(profile);
+    List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }

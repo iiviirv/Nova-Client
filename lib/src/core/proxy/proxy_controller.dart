@@ -112,6 +112,15 @@ abstract class ProxyController extends ChangeNotifier {
   SingboxRouteOptions get routeOptions =>
       routeOptionsProvider?.call() ?? const SingboxRouteOptions();
 
+  /// Supplies a subscription fetcher that routes through the Google relay when
+  /// it is active, so subscription refresh keeps working even if the panel's own
+  /// domain is blocked. Returns null when the relay is off (fetch directly).
+  /// Set once at startup from the relay controller.
+  Future<String> Function(Uri)? Function()? subFetcherProvider;
+
+  /// The subscription fetcher to resolve the next profile with (relay or direct).
+  Future<String> Function(Uri)? get subFetcher => subFetcherProvider?.call();
+
   /// A `HttpClient.findProxy`-style directive for reaching the exit through the
   /// tunnel, or null when no explicit proxying is needed.
   ///
