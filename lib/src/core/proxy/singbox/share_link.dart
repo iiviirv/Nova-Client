@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'awg_config.dart';
 import 'proxy_node.dart';
 
 /// Parses a proxy share link into a [ProxyNode].
@@ -19,6 +20,16 @@ import 'proxy_node.dart';
 ProxyNode? parseShareLink(String raw) {
   final String input = raw.trim();
   if (input.isEmpty) return null;
+
+  // An AmneziaWG / WireGuard `.conf` (e.g. decoded from a QR) has no `://`
+  // scheme, so match it first.
+  if (AwgConfig.looksLikeConf(input)) {
+    try {
+      return ProxyNode.fromAwgConf(input);
+    } catch (_) {
+      return null;
+    }
+  }
 
   final int schemeEnd = input.indexOf('://');
   if (schemeEnd < 0) return null;
@@ -133,6 +144,10 @@ ProxyNode? _parseHysteria2(String input) {
   final String password = Uri.decodeComponent(uri.userInfo);
   final Map<String, String> q = uri.queryParameters;
   final String obfs = (q['obfs'] ?? '').toLowerCase();
+  // Bandwidth hints enable the Brutal congestion controller. Accept both the
+  // sing-box (`up_mbps`) and common client (`upmbps`) spellings.
+  int? mbps(String a, String b) =>
+      int.tryParse(q[a] ?? '') ?? int.tryParse(q[b] ?? '');
   return ProxyNode(
     protocol: NodeProtocol.hysteria2,
     server: host,
@@ -145,6 +160,8 @@ ProxyNode? _parseHysteria2(String input) {
     alpn: _splitAlpn(q['alpn']),
     obfsType: obfs == 'salamander' ? 'salamander' : null,
     obfsPassword: (q['obfs-password'] ?? q['obfs_password']),
+    hy2UpMbps: mbps('up_mbps', 'upmbps'),
+    hy2DownMbps: mbps('down_mbps', 'downmbps'),
   );
 }
 

@@ -41,6 +41,8 @@ class SettingsController extends ChangeNotifier {
   static const String _kBypassLan = 'nova.route.bypassLan';
   static const String _kDns = 'nova.dns';
   static const String _kTunMode = 'nova.desktop.tun';
+  static const String _kHy2Down = 'nova.hy2.downMbps';
+  static const String _kHy2Up = 'nova.hy2.upMbps';
 
   SharedPreferences? _prefs;
 
@@ -67,6 +69,19 @@ class SettingsController extends ChangeNotifier {
   bool _tunMode = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   bool get tunMode => _tunMode;
 
+  /// Hysteria2 "speed boost": the user's line speed in Mbps. When >0 it turns on
+  /// the Brutal congestion controller for Hysteria2 nodes (fixed-rate, ignores
+  /// loss), which pushes through loss-based throttling that BBR can't. 0 = off =
+  /// BBR (the safe default). Set to the REAL line speed: too high floods, too
+  /// low caps.
+  int _hy2DownMbps = 0;
+  int get hy2DownMbps => _hy2DownMbps;
+
+  int _hy2UpMbps = 0;
+  int get hy2UpMbps => _hy2UpMbps;
+
+  bool get hy2BoostOn => _hy2DownMbps > 0 || _hy2UpMbps > 0;
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -74,6 +89,8 @@ class SettingsController extends ChangeNotifier {
         bypassIran: _bypassIran,
         bypassLan: _bypassLan,
         dns: _dns,
+        hy2UpMbps: _hy2UpMbps,
+        hy2DownMbps: _hy2DownMbps,
       );
 
   void _load() {
@@ -92,6 +109,8 @@ class SettingsController extends ChangeNotifier {
     _dns = p.getString(_kDns) ?? '';
     _tunMode = p.getBool(_kTunMode) ??
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    _hy2DownMbps = p.getInt(_kHy2Down) ?? 0;
+    _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -140,5 +159,19 @@ class SettingsController extends ChangeNotifier {
     _tunMode = v;
     notifyListeners();
     await _prefs?.setBool(_kTunMode, v);
+  }
+
+  /// Set the Hysteria2 line-speed hints (Mbps). Pass 0/0 to turn the boost off
+  /// (back to BBR). Clamped to a sane range so a fat-fingered value can't ask
+  /// Brutal to flood at absurd rates.
+  Future<void> setHy2Bandwidth({required int downMbps, required int upMbps}) async {
+    final int down = downMbps.clamp(0, 1000);
+    final int up = upMbps.clamp(0, 1000);
+    if (down == _hy2DownMbps && up == _hy2UpMbps) return;
+    _hy2DownMbps = down;
+    _hy2UpMbps = up;
+    notifyListeners();
+    await _prefs?.setInt(_kHy2Down, down);
+    await _prefs?.setInt(_kHy2Up, up);
   }
 }

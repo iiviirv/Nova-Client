@@ -149,6 +149,41 @@ class RoutingScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: NovaSpace.md),
+                // Hysteria2 "speed boost" = Brutal congestion control. Preset
+                // line-speed pills keep it safe (sane values) and simple.
+                NovaCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      NovaEyebrow(s.routeSpeedTitle),
+                      const SizedBox(height: NovaSpace.md),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          for (final ({int down, int up, String label}) p
+                              in _hy2Presets(s))
+                            NovaPill(
+                              label: p.label,
+                              selected: settings.hy2DownMbps == p.down &&
+                                  settings.hy2UpMbps == p.up,
+                              onTap: () => settings.setHy2Bandwidth(
+                                  downMbps: p.down, upMbps: p.up),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: NovaSpace.sm),
+                      Text(
+                        s.routeSpeedSub,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: nova.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: NovaSpace.md),
                 Container(
                   padding: const EdgeInsets.all(NovaSpace.md),
                   decoration: BoxDecoration(
@@ -181,6 +216,18 @@ class RoutingScreen extends StatelessWidget {
     );
   }
 }
+
+/// Safe line-speed presets for the Hysteria2 boost. Off = BBR; the rest set an
+/// asymmetric down/up (typical home links) so Brutal has sane values without a
+/// free-form field the user could set to an absurd rate.
+List<({int down, int up, String label})> _hy2Presets(NovaStrings s) =>
+    <({int down, int up, String label})>[
+      (down: 0, up: 0, label: s.routeSpeedOff),
+      (down: 25, up: 6, label: '25 Mbps'),
+      (down: 50, up: 12, label: '50 Mbps'),
+      (down: 100, up: 25, label: '100 Mbps'),
+      (down: 200, up: 50, label: '200 Mbps'),
+    ];
 
 extension _RouteModeMeta on SingboxMode {
   String label(NovaStrings s) => switch (this) {

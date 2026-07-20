@@ -13,6 +13,7 @@ import 'dart:io';
 
 import '../models/proxy_profile.dart';
 import 'fragment_proxy.dart';
+import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/share_link.dart';
 
@@ -312,12 +313,22 @@ Future<List<ProxyNode>> resolveProfileNodes(
     bool hasCredential(ProxyNode n) =>
         (n.uuid ?? '').isNotEmpty ||
         (n.password ?? '').isNotEmpty ||
-        (n.method ?? '').isNotEmpty;
+        (n.method ?? '').isNotEmpty ||
+        (n.awgConf ?? '').isNotEmpty; // AmneziaWG auth is keys, not uuid/password
     final List<ProxyNode> real =
         core.nodes.where(hasCredential).toList();
     final List<ProxyNode> out = real.isNotEmpty ? real : core.nodes;
     if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
     return out;
+  }
+  // A pasted AmneziaWG / WireGuard `.conf` is a single multi-line node (not a
+  // list of links), so handle it before the line-splitting body parser.
+  if (AwgConfig.looksLikeConf(raw)) {
+    try {
+      return <ProxyNode>[ProxyNode.fromAwgConf(raw, name: profile.name)];
+    } catch (_) {
+      return const <ProxyNode>[];
+    }
   }
   // Inline payload: one link, or several (a base64 / multi-line body embedded in
   // the profile, e.g. a no-domain VPS whose self-signed cert makes a live /sub
