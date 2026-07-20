@@ -230,6 +230,8 @@ class NovaStrings {
   String get routeModeDirectDesc => t('route.modeDirectDesc');
   String get routeBlockAds => t('route.blockAds');
   String get routeBlockAdsSub => t('route.blockAdsSub');
+  String get routeAutoIsp => t('route.autoIsp');
+  String get routeAutoIspSub => t('route.autoIspSub');
   String get routeDirectIran => t('route.directIran');
   String get routeDirectIranSub => t('route.directIranSub');
   String get routeBypassLan => t('route.bypassLan');
@@ -751,6 +753,9 @@ class NovaStrings {
     'route.modeDirectDesc': 'No proxying: everything goes direct.',
     'route.blockAds': 'Block ads & trackers',
     'route.blockAdsSub': 'Drops known ad/tracker domains',
+    'route.autoIsp': 'Auto-optimize for carrier',
+    'route.autoIspSub':
+        'Detects your mobile carrier and picks the best fingerprint and fragmentation for it',
     'route.directIran': 'Direct for Iran (GeoIP/GeoSite)',
     'route.directIranSub': 'Iranian destinations bypass the proxy',
     'route.bypassLan': 'Bypass LAN',
@@ -1278,6 +1283,9 @@ class NovaStrings {
     'route.modeDirectDesc': 'بدون پروکسی؛ همه‌چیز مستقیم می‌رود.',
     'route.blockAds': 'مسدودسازی تبلیغات و ردیاب‌ها',
     'route.blockAdsSub': 'دامنه‌های شناخته‌شدهٔ تبلیغ و ردیاب را حذف می‌کند',
+    'route.autoIsp': 'بهینه‌سازی خودکار برای اپراتور',
+    'route.autoIspSub':
+        'اپراتور همراه شما را تشخیص می‌دهد و بهترین اثر انگشت و تکه‌سازی را برای آن انتخاب می‌کند',
     'route.directIran': 'مستقیم برای ایران (GeoIP/GeoSite)',
     'route.directIranSub': 'مقصدهای ایرانی بدون پروکسی عبور می‌کنند',
     'route.bypassLan': 'عبور از شبکهٔ محلی',

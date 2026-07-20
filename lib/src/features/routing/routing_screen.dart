@@ -105,6 +105,19 @@ class RoutingScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (!_isDesktop) ...<Widget>[
+                  const SizedBox(height: NovaSpace.lg),
+                  NovaCard(
+                    padding: EdgeInsets.zero,
+                    child: _RuleSwitch(
+                      icon: Icons.speed_rounded,
+                      title: s.routeAutoIsp,
+                      subtitle: s.routeAutoIspSub,
+                      value: settings.autoOptimizeCarrier,
+                      onChanged: settings.setAutoOptimizeCarrier,
+                    ),
+                  ),
+                ],
                 if (_isDesktop) ...<Widget>[
                   const SizedBox(height: NovaSpace.lg),
                   NovaCard(
