@@ -148,20 +148,25 @@ class AwgConfig {
     return t.contains('[interface]') && t.contains('privatekey');
   }
 
-  /// The sing-box `awg` ENDPOINT object (matches hiddify `option/awg.go`
-  /// AwgEndpointOptions). [tag] names it for routing. Omits fields that are
-  /// absent so a plain-WG config produces a plain (no-junk) endpoint.
+  /// The sing-box endpoint object for this config. An obfuscated config emits an
+  /// `awg` endpoint (junk params; needs a core built with AmneziaWG); a plain
+  /// WireGuard config emits a `wireguard` endpoint, which the stock sing-box core
+  /// supports. The peer's pre-shared-key field name also differs between the two
+  /// (`preshared_key` for awg, `pre_shared_key` for wireguard). [tag] names it
+  /// for routing.
   Map<String, dynamic> toEndpoint(String tag) {
+    final bool obf = isObfuscated;
+    final String pskKey = obf ? 'preshared_key' : 'pre_shared_key';
     final Map<String, dynamic> peerObj = <String, dynamic>{
       'public_key': peer.publicKey,
       'address': peer.host,
       'port': peer.port,
       'allowed_ips': peer.allowedIps,
-      if (peer.presharedKey != null) 'preshared_key': peer.presharedKey,
+      if (peer.presharedKey != null) pskKey: peer.presharedKey,
       'persistent_keepalive_interval': peer.keepalive ?? 25,
     };
     return <String, dynamic>{
-      'type': 'awg',
+      'type': obf ? 'awg' : 'wireguard',
       'tag': tag,
       'private_key': privateKey,
       'address': address,

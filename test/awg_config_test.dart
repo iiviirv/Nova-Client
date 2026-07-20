@@ -83,10 +83,23 @@ AllowedIPs = 0.0.0.0/0
     expect(c.peer.host, '2606:4700::1'); // bracketed IPv6
     expect(c.peer.port, 2408);
     final Map<String, dynamic> ep = c.toEndpoint('wg');
-    expect(ep.containsKey('jc'), isFalse); // plain WG: no junk fields
+    // Plain WG => the `wireguard` endpoint type (which the stock core supports),
+    // not `awg`; peer uses `pre_shared_key`, and no junk fields.
+    expect(ep['type'], 'wireguard');
+    expect(ep.containsKey('jc'), isFalse);
     final Map<String, dynamic> peer =
         (ep['peers'] as List<dynamic>).first as Map<String, dynamic>;
-    expect(peer['preshared_key'], 'c2VjcmV0');
+    expect(peer['pre_shared_key'], 'c2VjcmV0');
+    expect(peer.containsKey('preshared_key'), isFalse);
+  });
+
+  test('an obfuscated config still emits the awg type', () {
+    final Map<String, dynamic> ep = AwgConfig.parseConf(_realConf).toEndpoint('x');
+    expect(ep['type'], 'awg');
+    final Map<String, dynamic> peer =
+        (ep['peers'] as List<dynamic>).first as Map<String, dynamic>;
+    // awg uses the no-underscore spelling; this config has no PSK anyway.
+    expect(peer.containsKey('pre_shared_key'), isFalse);
   });
 
   test('looksLikeConf detects a config vs a share link', () {
