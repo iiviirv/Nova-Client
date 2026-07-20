@@ -43,6 +43,7 @@ class SettingsController extends ChangeNotifier {
   static const String _kTunMode = 'nova.desktop.tun';
   static const String _kHy2Down = 'nova.hy2.downMbps';
   static const String _kHy2Up = 'nova.hy2.upMbps';
+  static const String _kAutoIsp = 'nova.isp.autoOptimize';
 
   SharedPreferences? _prefs;
 
@@ -82,6 +83,13 @@ class SettingsController extends ChangeNotifier {
 
   bool get hy2BoostOn => _hy2DownMbps > 0 || _hy2UpMbps > 0;
 
+  /// Auto-optimize per carrier: detect the phone's ISP (SIM MCC-MNC) and apply
+  /// the DPI-optimal uTLS fingerprint + fragmentation from the Nova server's
+  /// `/isp-profile` before connecting. Mobile only (desktop has no SIM). On by
+  /// default; the user can turn it off to keep each node's own fingerprint.
+  bool _autoOptimizeCarrier = true;
+  bool get autoOptimizeCarrier => _autoOptimizeCarrier;
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -91,6 +99,8 @@ class SettingsController extends ChangeNotifier {
         dns: _dns,
         hy2UpMbps: _hy2UpMbps,
         hy2DownMbps: _hy2DownMbps,
+        autoOptimizeCarrier: _autoOptimizeCarrier &&
+            (Platform.isAndroid || Platform.isIOS),
       );
 
   void _load() {
@@ -111,6 +121,7 @@ class SettingsController extends ChangeNotifier {
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
     _hy2DownMbps = p.getInt(_kHy2Down) ?? 0;
     _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
+    _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -131,6 +142,13 @@ class SettingsController extends ChangeNotifier {
     _blockAds = v;
     notifyListeners();
     await _prefs?.setBool(_kBlockAds, v);
+  }
+
+  Future<void> setAutoOptimizeCarrier(bool v) async {
+    if (v == _autoOptimizeCarrier) return;
+    _autoOptimizeCarrier = v;
+    notifyListeners();
+    await _prefs?.setBool(_kAutoIsp, v);
   }
 
   Future<void> setBypassIran(bool v) async {

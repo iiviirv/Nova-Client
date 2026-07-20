@@ -19,6 +19,8 @@ class SingboxRouteOptions {
     this.gvisorStack = false,
     this.hy2UpMbps = 0,
     this.hy2DownMbps = 0,
+    this.fingerprintOverride,
+    this.autoOptimizeCarrier = false,
   });
 
   final SingboxMode mode;
@@ -74,6 +76,19 @@ class SingboxRouteOptions {
   final int hy2UpMbps;
   final int hy2DownMbps;
 
+  /// Per-ISP uTLS fingerprint override. When set (non-empty), it wins over each
+  /// node's own pinned fingerprint and the Chrome default, so the app can hand
+  /// the DPI-optimal ClientHello for the user's carrier (e.g. Irancell -> chrome,
+  /// MCI -> randomized, Rightel -> firefox). Empty/null keeps the per-node value.
+  /// The matching `tlsFragment` toggle above is set from the same ISP profile.
+  final String? fingerprintOverride;
+
+  /// Whether to auto-apply the per-carrier profile (fingerprint + fragmentation)
+  /// at connect time. Set from the Routing setting; the controller runs the
+  /// [IspOptimizer] and folds the result back in via [copyWith]. Off on desktop
+  /// (no SIM) and whenever the user disables it.
+  final bool autoOptimizeCarrier;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -81,6 +96,8 @@ class SingboxRouteOptions {
     bool? gvisorStack,
     int? hy2UpMbps,
     int? hy2DownMbps,
+    String? fingerprintOverride,
+    bool? autoOptimizeCarrier,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -94,6 +111,8 @@ class SingboxRouteOptions {
         gvisorStack: gvisorStack ?? this.gvisorStack,
         hy2UpMbps: hy2UpMbps ?? this.hy2UpMbps,
         hy2DownMbps: hy2DownMbps ?? this.hy2DownMbps,
+        fingerprintOverride: fingerprintOverride ?? this.fingerprintOverride,
+        autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
       );
 }
 
@@ -144,7 +163,8 @@ class SingboxConfig {
           _outbound(node,
               fragment: options.tlsFragment,
               hy2Up: options.hy2UpMbps,
-              hy2Down: options.hy2DownMbps),
+              hy2Down: options.hy2DownMbps,
+              fingerprintOverride: options.fingerprintOverride),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
@@ -228,7 +248,8 @@ class SingboxConfig {
             tag: tag,
             fragment: options.tlsFragment,
             hy2Up: options.hy2UpMbps,
-            hy2Down: options.hy2DownMbps));
+            hy2Down: options.hy2DownMbps,
+            fingerprintOverride: options.fingerprintOverride));
       }
     }
     return <String, dynamic>{
@@ -394,6 +415,7 @@ class SingboxConfig {
     bool fragment = true,
     int hy2Up = 0,
     int hy2Down = 0,
+    String? fingerprintOverride,
   }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
@@ -446,7 +468,9 @@ class SingboxConfig {
         // _endpoint(). Reaching here is a wiring bug.
         throw StateError('awg is an endpoint, not an outbound');
     }
-    if (n.tls) o['tls'] = _tls(n, fragment: fragment);
+    if (n.tls) {
+      o['tls'] = _tls(n, fragment: fragment, fingerprintOverride: fingerprintOverride);
+    }
     // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
     if (!n.protocol.isUdpNative) {
       final Map<String, dynamic>? transport = _transport(n);
@@ -463,7 +487,11 @@ class SingboxConfig {
     return AwgConfig.parseConf(n.awgConf ?? '').toEndpoint(tag);
   }
 
-  static Map<String, dynamic> _tls(ProxyNode n, {bool fragment = true}) {
+  static Map<String, dynamic> _tls(
+    ProxyNode n, {
+    bool fragment = true,
+    String? fingerprintOverride,
+  }) {
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
@@ -473,10 +501,15 @@ class SingboxConfig {
     // iOS 1.12.x and Android 1.13.x cores now support it).
     // Reality already mandates uTLS, so this just makes every other TLS node
     // match that behaviour.
+    // Per-ISP override wins over the node's pinned fingerprint, which wins over
+    // the Chrome default. Reality keeps its own uTLS handshake, but the override
+    // still applies to it (it only swaps which browser profile is forged).
     final String fingerprint =
-        (n.fingerprint != null && n.fingerprint!.isNotEmpty)
-            ? n.fingerprint!
-            : 'chrome';
+        (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
+            ? fingerprintOverride
+            : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
+                ? n.fingerprint!
+                : 'chrome';
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,
