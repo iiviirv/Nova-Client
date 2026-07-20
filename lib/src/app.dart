@@ -7,6 +7,9 @@ import 'features/cloudflare/cloudflare_controller.dart';
 import 'features/profiles/profiles_controller.dart';
 import 'features/radar/radar_controller.dart';
 import 'features/settings/settings_controller.dart';
+import 'features/relay/relay_controller.dart';
+import 'features/relay/tunnel_controller.dart';
+import 'features/vps/vps_controller.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'l10n/nova_strings.dart';
 import 'theme/nova_theme.dart';
@@ -28,6 +31,9 @@ class NovaApp extends StatelessWidget {
     required this.radar,
     required this.cloudflare,
     required this.settings,
+    required this.vps,
+    required this.relay,
+    required this.tunnel,
   });
 
   final ThemeController theme;
@@ -37,6 +43,9 @@ class NovaApp extends StatelessWidget {
   final RadarController radar;
   final CloudflareController cloudflare;
   final SettingsController settings;
+  final VpsController vps;
+  final RelayController relay;
+  final TunnelController tunnel;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +57,9 @@ class NovaApp extends StatelessWidget {
       radar: radar,
       cloudflare: cloudflare,
       settings: settings,
+      vps: vps,
+      relay: relay,
+      tunnel: tunnel,
       child: ListenableBuilder(
         listenable: theme,
         builder: (context, _) {

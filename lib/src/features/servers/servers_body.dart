@@ -19,6 +19,8 @@ import '../../widgets/nova_scope.dart';
 import '../profiles/profiles_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
+import '../vps/connect_vps_screen.dart';
+import '../vps/vps_controller.dart';
 import 'node_list_screen.dart';
 
 /// The scrollable Servers content — search, protocol filters, and the list of
@@ -40,6 +42,62 @@ class ServersBody extends StatefulWidget {
 class _ServersBodyState extends State<ServersBody> {
   String _query = '';
   ProxyKind? _filter; // null = All
+
+  // Saved VPS panels, so a row backed by a connected VPS gets a "Manage" action
+  // that opens its admin panel.
+  List<VpsPanel> _vpsPanels = <VpsPanel>[];
+  VpsController? _vps;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final VpsController vps = NovaScope.of(context).vps;
+    if (!identical(vps, _vps)) {
+      _vps?.removeListener(_loadPanels);
+      _vps = vps;
+      _vps!.addListener(_loadPanels);
+      _loadPanels();
+    }
+  }
+
+  @override
+  void dispose() {
+    _vps?.removeListener(_loadPanels);
+    super.dispose();
+  }
+
+  Future<void> _loadPanels() async {
+    final List<VpsPanel> panels =
+        await (_vps?.loadPanels() ?? Future<List<VpsPanel>>.value(<VpsPanel>[]));
+    if (mounted) setState(() => _vpsPanels = panels);
+  }
+
+  /// The saved VPS panel whose host matches this profile, or null.
+  VpsPanel? _panelFor(ProxyProfile p) {
+    final String host = _hostOf(p);
+    if (host.isEmpty) return null;
+    for (final VpsPanel panel in _vpsPanels) {
+      final String ph = Uri.tryParse(panel.baseUrl)?.host ?? panel.id;
+      if (ph == host || panel.id == host) return panel;
+    }
+    return null;
+  }
+
+  static String _hostOf(ProxyProfile p) {
+    final String? sub = p.subscriptionUrl;
+    if (sub != null && sub.isNotEmpty) {
+      final String h = Uri.tryParse(sub)?.host ?? '';
+      if (h.isNotEmpty) return h;
+    }
+    // vless://uuid@host:port?...
+    final int at = p.uri.indexOf('@');
+    if (at >= 0) {
+      final String rest = p.uri.substring(at + 1);
+      final Match? m = RegExp(r'[:/?#]').firstMatch(rest);
+      return m != null ? rest.substring(0, m.start) : rest;
+    }
+    return Uri.tryParse(p.uri)?.host ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +144,9 @@ class _ServersBodyState extends State<ServersBody> {
                 onExtract: () => _openNodes(context, p),
                 onEdit: () => _editProfile(context, profiles, p),
                 onDelete: () => profiles.remove(p.id),
+                onManage: _panelFor(p) == null
+                    ? null
+                    : () => _vps!.openAdminFor(context, _panelFor(p)!),
               ),
             ),
         ];
@@ -250,6 +311,7 @@ class _ServerRow extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onExtract,
+    this.onManage,
   });
 
   final ProxyProfile profile;
@@ -259,6 +321,9 @@ class _ServerRow extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onExtract;
+
+  /// Non-null when this row is backed by a connected VPS, opens its panel.
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +402,8 @@ class _ServerRow extends StatelessWidget {
                 switch (v) {
                   case 'select':
                     onSelect();
+                  case 'manage':
+                    onManage?.call();
                   case 'extract':
                     onExtract();
                   case 'edit':
@@ -355,6 +422,16 @@ class _ServerRow extends StatelessWidget {
                     title: Text(s.serversSelect),
                   ),
                 ),
+                if (onManage != null)
+                  PopupMenuItem<String>(
+                    value: 'manage',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.dns_rounded),
+                      title: Text(s.vpsManage),
+                    ),
+                  ),
                 if (profile.isSubscription)
                   PopupMenuItem<String>(
                     value: 'extract',
@@ -442,6 +519,15 @@ class _EmptyState extends StatelessWidget {
           subtitle: s.serversSignInSub,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _EmptyAction(
+          icon: Icons.dns_rounded,
+          title: s.serversConnectVps,
+          subtitle: s.serversConnectVpsSub,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ConnectVpsScreen()),
           ),
         ),
         const SizedBox(height: 10),
@@ -752,6 +838,20 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               ),
             ),
             const SizedBox(height: 6),
+            _AddOption(
+              icon: Icons.dns_rounded,
+              color: nova.cyan,
+              title: s.serversConnectVps,
+              subtitle: s.serversConnectVpsSub,
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ConnectVpsScreen(),
+                  ),
+                );
+              },
+            ),
             if (canScan)
               _AddOption(
                 icon: Icons.qr_code_scanner_rounded,

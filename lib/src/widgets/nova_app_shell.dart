@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/proxy/proxy_controller.dart';
 import '../features/cloudflare/cloudflare_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/vps/connect_vps_screen.dart';
 import '../features/servers/servers_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/stats/stats_screen.dart';
@@ -21,7 +22,8 @@ import 'nova_scope.dart';
 class NovaAppShell extends StatefulWidget {
   const NovaAppShell({super.key, this.startAction});
 
-  /// One-time action picked during onboarding: 'deploy' | 'panel' | 'add'.
+  /// One-time action picked during onboarding: 'deploy' | 'panel' | 'vps' |
+  /// 'add'.
   final String? startAction;
 
   @override
@@ -100,6 +102,13 @@ class _NovaAppShellState extends State<NovaAppShell> {
         if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
+        );
+      });
+    } else if (action == 'vps') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const ConnectVpsScreen()),
         );
       });
     }

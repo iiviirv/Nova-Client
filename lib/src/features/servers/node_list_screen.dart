@@ -46,7 +46,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
   bool _loading = true;
   String? _error;
 
-  String _key(ProxyNode n) => '${n.server}:${n.port}';
+  // Include protocol + ws path so one host offered over several protocols
+  // (VLESS / VMess / Trojan on the same :443, different paths) shows as
+  // distinct selectable nodes instead of collapsing to one. Matches the
+  // tunnel's own de-dupe key (server:port:wsPath).
+  String _key(ProxyNode n) =>
+      '${n.server}:${n.port}:${n.protocol.name}:${n.wsPath ?? ''}';
 
   @override
   void initState() {
