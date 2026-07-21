@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import '../../core/proxy/isp_optimizer.dart';
 import '../../core/proxy/singbox/singbox_config.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -131,6 +132,8 @@ class RoutingScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+                const SizedBox(height: NovaSpace.lg),
+                const _ConnectionTuningCard(),
                 const SizedBox(height: NovaSpace.lg),
                 NovaCard(
                   child: Column(
@@ -287,5 +290,248 @@ class _RuleSwitch extends StatelessWidget {
           style:
               Theme.of(context).textTheme.bodySmall?.copyWith(color: nova.muted)),
     );
+  }
+}
+
+/// Latin brand labels for the uTLS fingerprints. Brand names stay Latin in both
+/// locales; only 'Auto' and 'Randomized' are localized (handled in [_fpLabel]).
+const Map<String, String> _kFpBrand = <String, String>{
+  'chrome': 'Chrome',
+  'firefox': 'Firefox',
+  'safari': 'Safari',
+  'ios': 'iOS',
+  'edge': 'Edge',
+};
+
+String _fpLabel(String choice, NovaStrings s) {
+  if (choice.isEmpty) return s.routeTuneAuto;
+  if (choice == 'randomized') return s.routeTuneRandomized;
+  return _kFpBrand[choice] ??
+      (choice.isEmpty
+          ? choice
+          : '${choice[0].toUpperCase()}${choice.substring(1)}');
+}
+
+/// "Connection tuning" / anti-censorship section: surfaces which uTLS
+/// fingerprint is protecting the user right now, and lets them override the
+/// automatic per-carrier pick. Stateful only so it can run [IspOptimizer.resolve]
+/// (async) and cache the result for the status readout.
+class _ConnectionTuningCard extends StatefulWidget {
+  const _ConnectionTuningCard();
+
+  @override
+  State<_ConnectionTuningCard> createState() => _ConnectionTuningCardState();
+}
+
+class _ConnectionTuningCardState extends State<_ConnectionTuningCard> {
+  SettingsController? _settings;
+  IspMatch? _match;
+
+  // The last enabled state we resolved for, so a rebuild that did not flip the
+  // auto-optimize toggle does not kick off a redundant carrier lookup.
+  bool? _resolvedFor;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final SettingsController s = NovaScope.of(context).settings;
+    if (!identical(s, _settings)) {
+      _settings?.removeListener(_onSettingsChanged);
+      _settings = s;
+      s.addListener(_onSettingsChanged);
+    }
+    _resolve();
+  }
+
+  void _onSettingsChanged() {
+    // Rebuild so the picker selection + manual/auto status reflect a fingerprint
+    // change immediately; _resolve() only re-detects the carrier when the
+    // auto-optimize toggle actually flips (its own guard).
+    if (mounted) setState(() {});
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    final SettingsController? s = _settings;
+    if (s == null) return;
+    final bool enabled = s.autoOptimizeCarrier;
+    // The carrier readout only depends on the toggle; the manual fingerprint is
+    // read straight from settings in build(), so skip re-detecting for it.
+    if (_match != null && enabled == _resolvedFor) return;
+    _resolvedFor = enabled;
+    final IspMatch m =
+        await IspOptimizer.instance.resolve(enabled: enabled, host: null);
+    if (!mounted) return;
+    setState(() => _match = m);
+  }
+
+  @override
+  void dispose() {
+    _settings?.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    final SettingsController settings = NovaScope.of(context).settings;
+
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          NovaEyebrow(s.routeTuneTitle),
+          const SizedBox(height: NovaSpace.sm),
+          Text(
+            s.routeTuneSubtitle,
+            style: text.bodySmall?.copyWith(color: nova.muted),
+          ),
+          const SizedBox(height: NovaSpace.lg),
+          _buildStatus(context, s, settings),
+          const SizedBox(height: NovaSpace.lg),
+          Text(
+            s.routeTunePickerLabel,
+            style: text.labelMedium
+                ?.copyWith(color: nova.text, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: NovaSpace.md),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final String choice in kFingerprintChoices)
+                NovaPill(
+                  label: _fpLabel(choice, s),
+                  icon: choice.isEmpty ? Icons.auto_awesome : null,
+                  selected: settings.fingerprint == choice,
+                  onTap: () => settings.setFingerprint(choice),
+                ),
+            ],
+          ),
+          const SizedBox(height: NovaSpace.sm),
+          Text(
+            s.routeTunePickerHint,
+            style: text.bodySmall?.copyWith(color: nova.muted),
+          ),
+          const SizedBox(height: NovaSpace.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(Icons.speed_rounded, size: 16, color: nova.muted),
+              const SizedBox(width: NovaSpace.sm),
+              Expanded(
+                child: Text(
+                  s.routeTuneTestHint,
+                  style: text.bodySmall?.copyWith(color: nova.muted),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The security "posture" panel: a tinted, hairline-bordered container (same
+  /// treatment as the info-note at the bottom of the screen) whose accent turns
+  /// green when a specific fingerprint is actively being applied.
+  Widget _buildStatus(
+      BuildContext context, NovaStrings s, SettingsController settings) {
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    final IspMatch? match = _match;
+
+    // Decide the readout from: manual override -> live carrier match -> default.
+    final bool manual = settings.fingerprint.isNotEmpty;
+    final bool carrier = !manual &&
+        settings.autoOptimizeCarrier &&
+        match != null &&
+        match.source == 'carrier';
+
+    final bool active = manual || carrier;
+    final Color accent = active ? nova.successStrong : nova.info;
+    final IconData icon =
+        active ? Icons.verified_user_outlined : Icons.shield_outlined;
+
+    final String headlineTemplate;
+    final String emphasis;
+    final String detail;
+    if (manual) {
+      headlineTemplate = s.routeTuneStatusManual;
+      emphasis = _fpLabel(settings.fingerprint, s);
+      detail = s.routeTuneStatusManualSub;
+    } else if (carrier) {
+      headlineTemplate = s.routeTuneStatusCarrier;
+      emphasis = match.label;
+      final String fp = _fpLabel(match.fingerprint ?? 'chrome', s);
+      final String frag = (match.tlsFragment ?? false)
+          ? s.routeTuneFragOn
+          : s.routeTuneFragOff;
+      detail = s.routeTuneStatusCarrierSub
+          .replaceFirst('%s', fp)
+          .replaceFirst('%s', frag);
+    } else {
+      headlineTemplate = s.routeTuneStatusDefault;
+      emphasis = '';
+      detail = s.routeTuneStatusDefaultSub;
+    }
+
+    final TextStyle baseStyle =
+        text.bodyMedium?.copyWith(color: nova.text, fontWeight: FontWeight.w600) ??
+            const TextStyle();
+    final TextStyle emphStyle = baseStyle.copyWith(color: accent);
+
+    return Container(
+      padding: const EdgeInsets.all(NovaSpace.md),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: NovaRadii.smR,
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(icon, size: 20, color: accent),
+          const SizedBox(width: NovaSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text.rich(
+                  TextSpan(
+                    children:
+                        _headlineSpans(headlineTemplate, emphasis, emphStyle),
+                  ),
+                  style: baseStyle,
+                ),
+                const SizedBox(height: 2),
+                Text(detail, style: text.bodySmall?.copyWith(color: nova.muted)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Splits a "%s" template so the single emphasized token (carrier or
+  /// fingerprint name) can carry the accent color. Templates with no token
+  /// render as one plain span.
+  List<InlineSpan> _headlineSpans(
+      String template, String token, TextStyle emph) {
+    if (token.isEmpty || !template.contains('%s')) {
+      return <InlineSpan>[TextSpan(text: template)];
+    }
+    final List<String> parts = template.split('%s');
+    final List<InlineSpan> spans = <InlineSpan>[];
+    for (int i = 0; i < parts.length; i++) {
+      if (parts[i].isNotEmpty) spans.add(TextSpan(text: parts[i]));
+      if (i < parts.length - 1) {
+        spans.add(TextSpan(text: token, style: emph));
+      }
+    }
+    return spans;
   }
 }

@@ -269,6 +269,21 @@ class NovaStrings {
   String get routeSpeedTitle => t('route.speedTitle');
   String get routeSpeedSub => t('route.speedSub');
   String get routeSpeedOff => t('route.speedOff');
+  String get routeTuneTitle => t('route.tuneTitle');
+  String get routeTuneSubtitle => t('route.tuneSubtitle');
+  String get routeTuneStatusManual => t('route.tuneStatusManual');
+  String get routeTuneStatusManualSub => t('route.tuneStatusManualSub');
+  String get routeTuneStatusCarrier => t('route.tuneStatusCarrier');
+  String get routeTuneStatusCarrierSub => t('route.tuneStatusCarrierSub');
+  String get routeTuneStatusDefault => t('route.tuneStatusDefault');
+  String get routeTuneStatusDefaultSub => t('route.tuneStatusDefaultSub');
+  String get routeTuneFragOn => t('route.tuneFragOn');
+  String get routeTuneFragOff => t('route.tuneFragOff');
+  String get routeTunePickerLabel => t('route.tunePickerLabel');
+  String get routeTuneAuto => t('route.tuneAuto');
+  String get routeTuneRandomized => t('route.tuneRandomized');
+  String get routeTunePickerHint => t('route.tunePickerHint');
+  String get routeTuneTestHint => t('route.tuneTestHint');
 
   // ---- Servers ----
   String get serversSearch => t('servers.search');
@@ -822,6 +837,24 @@ class NovaStrings {
     'route.speedSub':
         'Turns on Brutal mode for Hysteria2 nodes, which pushes through throttling that slows normal mode. Pick your REAL line speed. Setting it too high can make things worse, so if you are not sure, leave it Off.',
     'route.speedOff': 'Off',
+    'route.tuneTitle': 'Anti-censorship (uTLS)',
+    'route.tuneSubtitle':
+        'The TLS fingerprint your connection wears so it blends in with ordinary web traffic.',
+    'route.tuneStatusManual': 'Fingerprint locked to %s',
+    'route.tuneStatusManualSub': 'Manual override, used on every network.',
+    'route.tuneStatusCarrier': 'Tuned for %s',
+    'route.tuneStatusCarrierSub': '%s fingerprint, fragmentation %s.',
+    'route.tuneStatusDefault': 'Standard protection',
+    'route.tuneStatusDefaultSub': 'Chrome fingerprint, fragmentation on.',
+    'route.tuneFragOn': 'on',
+    'route.tuneFragOff': 'off',
+    'route.tunePickerLabel': 'Override fingerprint',
+    'route.tuneAuto': 'Auto',
+    'route.tuneRandomized': 'Randomized',
+    'route.tunePickerHint':
+        'A specific choice overrides the automatic per-carrier pick. Leave it on Auto unless you are testing.',
+    'route.tuneTestHint':
+        'Not sure which is fastest? Connect, then run a Speed test in the Stats tab with each option.',
     'servers.search': 'Search servers',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
@@ -1379,6 +1412,24 @@ class NovaStrings {
     'route.speedSub':
         'حالت Brutal را برای نودهای Hysteria2 روشن می‌کند که از محدودسازی سرعت (throttling) عبور می‌کند. سرعت واقعی خط اینترنتت را انتخاب کن. تنظیم خیلی زیاد می‌تواند بدترش کند، پس اگر مطمئن نیستی روی خاموش بگذار.',
     'route.speedOff': 'خاموش',
+    'route.tuneTitle': 'ضد سانسور (uTLS)',
+    'route.tuneSubtitle':
+        'اثر انگشت TLS که اتصال شما به تن می‌کند تا میان ترافیک عادی وب دیده نشود.',
+    'route.tuneStatusManual': 'اثر انگشت روی %s قفل شده',
+    'route.tuneStatusManualSub': 'انتخاب دستی، روی همهٔ شبکه‌ها اعمال می‌شود.',
+    'route.tuneStatusCarrier': 'تنظیم‌شده برای %s',
+    'route.tuneStatusCarrierSub': 'اثر انگشت %s، تکه‌سازی %s.',
+    'route.tuneStatusDefault': 'محافظت استاندارد',
+    'route.tuneStatusDefaultSub': 'اثر انگشت Chrome، تکه‌سازی روشن.',
+    'route.tuneFragOn': 'روشن',
+    'route.tuneFragOff': 'خاموش',
+    'route.tunePickerLabel': 'بازنویسی اثر انگشت',
+    'route.tuneAuto': 'خودکار',
+    'route.tuneRandomized': 'تصادفی',
+    'route.tunePickerHint':
+        'انتخاب یک گزینهٔ مشخص، انتخاب خودکار بر اساس اپراتور را کنار می‌گذارد. اگر در حال آزمایش نیستی، روی خودکار بگذار.',
+    'route.tuneTestHint':
+        'مطمئن نیستی کدام سریع‌تر است؟ وصل شو و در تب آمار با هر گزینه یک تست سرعت بگیر.',
     'servers.search': 'جستجوی سرورها',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',

@@ -25,6 +25,19 @@ const List<NovaDnsChoice> kNovaDnsChoices = <NovaDnsChoice>[
   NovaDnsChoice('AdGuard', '94.140.14.14'),
 ];
 
+/// The uTLS ClientHello fingerprints a user can force. Empty string = Auto (let
+/// the per-carrier ISP profile pick). These are the sing-box utls names that
+/// matter for Iran DPI; 'randomized' rotates a fresh fingerprint each handshake.
+const List<String> kFingerprintChoices = <String>[
+  '', // Auto
+  'chrome',
+  'firefox',
+  'safari',
+  'ios',
+  'edge',
+  'randomized',
+];
+
 /// Holds the connection-affecting options the user controls (routing mode, the
 /// rule toggles, and the DNS resolver) and persists them. The proxy controllers
 /// read [routeOptions] when they build the next sing-box config, so these are
@@ -44,6 +57,7 @@ class SettingsController extends ChangeNotifier {
   static const String _kHy2Down = 'nova.hy2.downMbps';
   static const String _kHy2Up = 'nova.hy2.upMbps';
   static const String _kAutoIsp = 'nova.isp.autoOptimize';
+  static const String _kFingerprint = 'nova.tls.fingerprint';
 
   SharedPreferences? _prefs;
 
@@ -90,6 +104,12 @@ class SettingsController extends ChangeNotifier {
   bool _autoOptimizeCarrier = true;
   bool get autoOptimizeCarrier => _autoOptimizeCarrier;
 
+  /// A user-forced uTLS fingerprint (empty = Auto). When set it WINS over the
+  /// per-carrier profile and each node's own value, so a user can experiment or
+  /// lock in what the tuner found best for their network.
+  String _fingerprint = '';
+  String get fingerprint => _fingerprint;
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -101,6 +121,9 @@ class SettingsController extends ChangeNotifier {
         hy2DownMbps: _hy2DownMbps,
         autoOptimizeCarrier: _autoOptimizeCarrier &&
             (Platform.isAndroid || Platform.isIOS),
+        // A manual choice pre-fills the override; the ISP resolver leaves it
+        // alone (see SingboxProxyController), so manual always wins.
+        fingerprintOverride: _fingerprint.isEmpty ? null : _fingerprint,
       );
 
   void _load() {
@@ -122,6 +145,7 @@ class SettingsController extends ChangeNotifier {
     _hy2DownMbps = p.getInt(_kHy2Down) ?? 0;
     _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
     _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
+    _fingerprint = p.getString(_kFingerprint) ?? '';
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -149,6 +173,15 @@ class SettingsController extends ChangeNotifier {
     _autoOptimizeCarrier = v;
     notifyListeners();
     await _prefs?.setBool(_kAutoIsp, v);
+  }
+
+  /// Force a uTLS fingerprint (empty = Auto). Persisted so it survives restarts;
+  /// the tuner calls this to lock in the winner.
+  Future<void> setFingerprint(String fp) async {
+    if (fp == _fingerprint) return;
+    _fingerprint = fp;
+    notifyListeners();
+    await _prefs?.setString(_kFingerprint, fp);
   }
 
   Future<void> setBypassIran(bool v) async {
