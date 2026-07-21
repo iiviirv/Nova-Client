@@ -11,6 +11,7 @@ import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
+import '../../widgets/nova_button.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
 import '../../widgets/nova_logo.dart';
@@ -21,6 +22,7 @@ import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
 import '../radar/radar_screen.dart';
 import '../servers/servers_body.dart';
+import '../tuner/fix_connection_screen.dart';
 
 /// The home screen — a faithful port of the native Android dashboard:
 /// a Summary/Configs segmented header, a Cloudflare chip, the connect orb with
@@ -266,6 +268,13 @@ class _SummaryViewState extends State<_SummaryView> {
       children: <Widget>[
         const SizedBox(height: 6),
         _ConnectHero(proxy: proxy, hasProfile: hasProfile),
+        // When the tunnel is up but no traffic is getting through the exit, the
+        // usual setup is being blocked. Offer the setup finder right here, this
+        // is where users hit the wall.
+        if (proxy.exitUnreachable) ...<Widget>[
+          const SizedBox(height: 18),
+          const _FindSetupPrompt(),
+        ],
         SizedBox(height: proxy.state.isActive ? 20 : 24),
         _MetricsBlock(proxy: proxy),
         if (hasProfile) ...<Widget>[
@@ -382,6 +391,58 @@ class _ConnectHero extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Shown under the hero when the exit is unreachable: a calm, non-alarming
+/// prompt that hands the user off to the setup finder.
+class _FindSetupPrompt extends StatelessWidget {
+  const _FindSetupPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final s = NovaStrings.of(context);
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(NovaSpace.md),
+      decoration: BoxDecoration(
+        color: nova.warning.withValues(alpha: 0.12),
+        borderRadius: NovaRadii.heroR,
+        border: Border.all(color: nova.warning.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(Icons.travel_explore_rounded, size: 18, color: nova.warning),
+              const SizedBox(width: NovaSpace.sm),
+              Expanded(
+                child: Text(
+                  s.fixDashPrompt,
+                  style: text.bodySmall
+                      ?.copyWith(color: nova.muted, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: NovaSpace.md),
+          NovaButton(
+            label: s.fixTitle,
+            icon: Icons.travel_explore_rounded,
+            variant: NovaButtonVariant.secondary,
+            expand: true,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                  builder: (_) => const FixConnectionScreen()),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

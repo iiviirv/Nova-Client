@@ -32,9 +32,11 @@ android {
         applicationId = "online.novaproxy.nova_client"
         // libbox.aar (main variant) is built with androidapi 23, so minSdk >= 23.
         minSdk = 24
-        // Target 33 to keep the foreground-service / VPN flow simple for this
-        // sideloaded test build (avoids the Android 14 FGS-type requirements).
-        targetSdk = 33
+        // Google Play requires targetSdk 35 (Android 15) for new releases. The
+        // VpnService runs as a "systemExempted" foreground service, which on
+        // Android 14+ needs the FOREGROUND_SERVICE_SYSTEM_EXEMPTED permission
+        // (declared in the manifest), matching the sing-box-for-android core.
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

@@ -1,8 +1,10 @@
 package online.novaproxy.nova_client
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.telephony.TelephonyManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -54,6 +56,25 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "status" -> result.success(NovaProxyBridge.state)
+
+                // Carrier identity for per-ISP optimization. networkOperator is
+                // the MCC+MNC of the network the phone is registered on (falls
+                // back to the SIM's home operator); neither needs a runtime
+                // permission. Empty on Wi-Fi-only / no SIM, which the Dart side
+                // treats as "use the default profile".
+                "networkInfo" -> {
+                    val tm = getSystemService(Context.TELEPHONY_SERVICE)
+                        as? TelephonyManager
+                    val info = HashMap<String, String>()
+                    if (tm != null) {
+                        val net = tm.networkOperator ?: ""
+                        val sim = tm.simOperator ?: ""
+                        info["mccMnc"] = if (net.isNotEmpty()) net else sim
+                        info["sim"] = sim
+                        info["name"] = tm.networkOperatorName ?: ""
+                    }
+                    result.success(info)
+                }
 
                 else -> result.notImplemented()
             }

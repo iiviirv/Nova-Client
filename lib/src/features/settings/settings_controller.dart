@@ -25,6 +25,19 @@ const List<NovaDnsChoice> kNovaDnsChoices = <NovaDnsChoice>[
   NovaDnsChoice('AdGuard', '94.140.14.14'),
 ];
 
+/// The uTLS ClientHello fingerprints a user can force. Empty string = Auto (let
+/// the per-carrier ISP profile pick). These are the sing-box utls names that
+/// matter for Iran DPI; 'randomized' rotates a fresh fingerprint each handshake.
+const List<String> kFingerprintChoices = <String>[
+  '', // Auto
+  'chrome',
+  'firefox',
+  'safari',
+  'ios',
+  'edge',
+  'randomized',
+];
+
 /// Holds the connection-affecting options the user controls (routing mode, the
 /// rule toggles, and the DNS resolver) and persists them. The proxy controllers
 /// read [routeOptions] when they build the next sing-box config, so these are
@@ -41,6 +54,10 @@ class SettingsController extends ChangeNotifier {
   static const String _kBypassLan = 'nova.route.bypassLan';
   static const String _kDns = 'nova.dns';
   static const String _kTunMode = 'nova.desktop.tun';
+  static const String _kHy2Down = 'nova.hy2.downMbps';
+  static const String _kHy2Up = 'nova.hy2.upMbps';
+  static const String _kAutoIsp = 'nova.isp.autoOptimize';
+  static const String _kFingerprint = 'nova.tls.fingerprint';
 
   SharedPreferences? _prefs;
 
@@ -67,6 +84,32 @@ class SettingsController extends ChangeNotifier {
   bool _tunMode = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   bool get tunMode => _tunMode;
 
+  /// Hysteria2 "speed boost": the user's line speed in Mbps. When >0 it turns on
+  /// the Brutal congestion controller for Hysteria2 nodes (fixed-rate, ignores
+  /// loss), which pushes through loss-based throttling that BBR can't. 0 = off =
+  /// BBR (the safe default). Set to the REAL line speed: too high floods, too
+  /// low caps.
+  int _hy2DownMbps = 0;
+  int get hy2DownMbps => _hy2DownMbps;
+
+  int _hy2UpMbps = 0;
+  int get hy2UpMbps => _hy2UpMbps;
+
+  bool get hy2BoostOn => _hy2DownMbps > 0 || _hy2UpMbps > 0;
+
+  /// Auto-optimize per carrier: detect the phone's ISP (SIM MCC-MNC) and apply
+  /// the DPI-optimal uTLS fingerprint + fragmentation from the Nova server's
+  /// `/isp-profile` before connecting. Mobile only (desktop has no SIM). On by
+  /// default; the user can turn it off to keep each node's own fingerprint.
+  bool _autoOptimizeCarrier = true;
+  bool get autoOptimizeCarrier => _autoOptimizeCarrier;
+
+  /// A user-forced uTLS fingerprint (empty = Auto). When set it WINS over the
+  /// per-carrier profile and each node's own value, so a user can experiment or
+  /// lock in what the tuner found best for their network.
+  String _fingerprint = '';
+  String get fingerprint => _fingerprint;
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -74,6 +117,13 @@ class SettingsController extends ChangeNotifier {
         bypassIran: _bypassIran,
         bypassLan: _bypassLan,
         dns: _dns,
+        hy2UpMbps: _hy2UpMbps,
+        hy2DownMbps: _hy2DownMbps,
+        autoOptimizeCarrier: _autoOptimizeCarrier &&
+            (Platform.isAndroid || Platform.isIOS),
+        // A manual choice pre-fills the override; the ISP resolver leaves it
+        // alone (see SingboxProxyController), so manual always wins.
+        fingerprintOverride: _fingerprint.isEmpty ? null : _fingerprint,
       );
 
   void _load() {
@@ -92,6 +142,10 @@ class SettingsController extends ChangeNotifier {
     _dns = p.getString(_kDns) ?? '';
     _tunMode = p.getBool(_kTunMode) ??
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    _hy2DownMbps = p.getInt(_kHy2Down) ?? 0;
+    _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
+    _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
+    _fingerprint = p.getString(_kFingerprint) ?? '';
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -112,6 +166,22 @@ class SettingsController extends ChangeNotifier {
     _blockAds = v;
     notifyListeners();
     await _prefs?.setBool(_kBlockAds, v);
+  }
+
+  Future<void> setAutoOptimizeCarrier(bool v) async {
+    if (v == _autoOptimizeCarrier) return;
+    _autoOptimizeCarrier = v;
+    notifyListeners();
+    await _prefs?.setBool(_kAutoIsp, v);
+  }
+
+  /// Force a uTLS fingerprint (empty = Auto). Persisted so it survives restarts;
+  /// the tuner calls this to lock in the winner.
+  Future<void> setFingerprint(String fp) async {
+    if (fp == _fingerprint) return;
+    _fingerprint = fp;
+    notifyListeners();
+    await _prefs?.setString(_kFingerprint, fp);
   }
 
   Future<void> setBypassIran(bool v) async {
@@ -140,5 +210,19 @@ class SettingsController extends ChangeNotifier {
     _tunMode = v;
     notifyListeners();
     await _prefs?.setBool(_kTunMode, v);
+  }
+
+  /// Set the Hysteria2 line-speed hints (Mbps). Pass 0/0 to turn the boost off
+  /// (back to BBR). Clamped to a sane range so a fat-fingered value can't ask
+  /// Brutal to flood at absurd rates.
+  Future<void> setHy2Bandwidth({required int downMbps, required int upMbps}) async {
+    final int down = downMbps.clamp(0, 1000);
+    final int up = upMbps.clamp(0, 1000);
+    if (down == _hy2DownMbps && up == _hy2UpMbps) return;
+    _hy2DownMbps = down;
+    _hy2UpMbps = up;
+    notifyListeners();
+    await _prefs?.setInt(_kHy2Down, down);
+    await _prefs?.setInt(_kHy2Up, up);
   }
 }

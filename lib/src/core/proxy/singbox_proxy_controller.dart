@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/proxy_profile.dart';
+import 'isp_optimizer.dart';
 import 'proxy_controller.dart';
 import 'singbox/node_probe.dart';
 import 'singbox/proxy_node.dart';
@@ -278,7 +279,7 @@ class SingboxProxyController extends ProxyController {
     // actually connect instead of failing as an "invalid profile link". A
     // subscription returns its whole node list so the core auto-picks the
     // fastest via a urltest; a single link is just the one node.
-    List<ProxyNode> nodes = await resolveProfileNodes(profile);
+    List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }
@@ -332,9 +333,36 @@ class SingboxProxyController extends ProxyController {
       // clamps fine). tlsFragment stays ON (Iran anti-DPI).
       gvisorStack: Platform.isAndroid,
     );
+    // Per-ISP optimization: detect the phone's carrier and fold in the DPI-best
+    // uTLS fingerprint + fragmentation for it. Best-effort and time-boxed - any
+    // failure leaves `opts` as-is (each node keeps its own fingerprint), so a
+    // connect is never blocked on this.
+    SingboxRouteOptions tuned = opts;
+    if (opts.autoOptimizeCarrier) {
+      try {
+        final IspMatch m = await IspOptimizer.instance
+            .resolve(enabled: true, host: nodes.first.server)
+            .timeout(const Duration(seconds: 8));
+        // Only a specific carrier match may flip fragmentation (that is a
+        // deliberate per-carrier choice). For an unknown carrier or Wi-Fi we keep
+        // the app's fragment-on default so anti-DPI never silently regresses; we
+        // still apply the fingerprint (its default is Chrome, same as today).
+        // A user's manual fingerprint (already in opts.fingerprintOverride) wins
+        // over the carrier profile; otherwise take the carrier's pick.
+        final bool manual = (opts.fingerprintOverride ?? '').isNotEmpty;
+        tuned = opts.copyWith(
+          fingerprintOverride: manual ? opts.fingerprintOverride : m.fingerprint,
+          tlsFragment: m.source == 'carrier'
+              ? (m.tlsFragment ?? opts.tlsFragment)
+              : opts.tlsFragment,
+        );
+      } catch (_) {
+        tuned = opts;
+      }
+    }
     final String config = nodes.length == 1
-        ? SingboxConfig.build(nodes.first, options: opts)
-        : SingboxConfig.buildMulti(nodes, options: opts);
+        ? SingboxConfig.build(nodes.first, options: tuned)
+        : SingboxConfig.buildMulti(nodes, options: tuned);
     if (Platform.isAndroid) {
       final String base = await _extractRuleSets();
       return config.replaceAll(SingboxConfig.ruleSetBaseToken, base);

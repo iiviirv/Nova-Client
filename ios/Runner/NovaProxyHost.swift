@@ -2,6 +2,7 @@ import Flutter
 import Foundation
 import Novacore
 import NetworkExtension
+import CoreTelephony
 
 /// iOS implementation of the `nova.proxy/control` MethodChannel + `nova.proxy/events`
 /// EventChannel that the Flutter `SingboxProxyController` drives. It manages the
@@ -55,9 +56,38 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         if status == .connected { self.startStatusClient() }
         result(self.stateName(status))
       }
+    case "networkInfo":
+      result(Self.networkInfo())
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  /// Carrier identity for per-ISP optimization, mirroring the Android
+  /// `networkInfo` method: `{ mccMnc, sim, name }`.
+  ///
+  /// Apple deprecated CTCarrier in iOS 16 and it now reports "65535" (or nil) for
+  /// mobile country/network codes on modern devices, with a carrier name of "--".
+  /// There is no replacement API. We filter those sentinel values out and return
+  /// an empty map, which the Dart side treats as "no carrier -> use the default
+  /// profile". So this yields a real match only on older iOS / where the OS still
+  /// reports it, and degrades cleanly everywhere else (no regression).
+  private static func networkInfo() -> [String: String] {
+    let net = CTTelephonyNetworkInfo()
+    let providers = net.serviceSubscriberCellularProviders
+    func usable(_ c: CTCarrier) -> Bool {
+      guard let mcc = c.mobileCountryCode, let mnc = c.mobileNetworkCode else {
+        return false
+      }
+      return !mcc.isEmpty && mcc != "65535" && !mnc.isEmpty && mnc != "65535"
+    }
+    let carrier = providers?.values.first(where: usable)
+    guard let c = carrier, let mcc = c.mobileCountryCode,
+          let mnc = c.mobileNetworkCode else {
+      return [:]
+    }
+    let code = mcc + mnc
+    return ["mccMnc": code, "sim": code, "name": c.carrierName ?? ""]
   }
 
   /// The token the Dart config uses in local rule-set paths; replaced with the

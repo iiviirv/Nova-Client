@@ -12,6 +12,7 @@ import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../radar/radar_screen.dart';
+import '../relay/relay_screen.dart';
 import '../routing/routing_screen.dart';
 
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
@@ -19,7 +20,7 @@ import '../routing/routing_screen.dart';
 const String kNovaVersion = '0.2.0';
 const String kNovaBuild = '62';
 
-/// App settings — grouped cards (General · Appearance · Community · About) in
+/// App settings, grouped cards (General, Appearance, Community, About) in
 /// the native Android style, with colored leading icon chips and chevrons.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -71,6 +72,14 @@ class SettingsScreen extends StatelessWidget {
                         title: s.setCloudflare,
                         subtitle: s.setCloudflareSub,
                         onTap: () => _push(context, const CloudflareScreen()),
+                      ),
+                      _div(nova.border),
+                      _NavRow(
+                        icon: Icons.hub_rounded,
+                        color: nova.info,
+                        title: s.setRelay,
+                        subtitle: s.setRelaySub,
+                        onTap: () => _push(context, const RelayScreen()),
                       ),
                     ],
                   ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/nova_theme.dart';
+import '../vps/insecure_http.dart';
 import 'nova_panel.dart';
 
 /// Full panel admin editor for a deployed worker: connection info, the editable
@@ -13,18 +14,23 @@ class PanelAdminScreen extends StatefulWidget {
     required this.workerUrl,
     required this.password,
     required this.title,
+    this.allowInsecure = false,
   });
 
   final String workerUrl;
   final String password;
   final String title;
 
+  /// True for a no-domain VPS agent that serves a self-signed certificate.
+  final bool allowInsecure;
+
   @override
   State<PanelAdminScreen> createState() => _PanelAdminScreenState();
 }
 
 class _PanelAdminScreenState extends State<PanelAdminScreen> {
-  final NovaPanel _panel = NovaPanel();
+  late final NovaPanel _panel =
+      NovaPanel(client: widget.allowInsecure ? buildInsecureClient() : null);
   PanelSession? _session;
   Whoami? _whoami;
   Map<String, dynamic> _config = <String, dynamic>{};

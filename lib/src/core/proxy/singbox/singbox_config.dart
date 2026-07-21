@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'awg_config.dart';
 import 'proxy_node.dart';
 
 /// Routing behaviour, mapping onto the controls on the Routing screen.
@@ -16,6 +17,10 @@ class SingboxRouteOptions {
     this.localRuleSets = false,
     this.tlsFragment = true,
     this.gvisorStack = false,
+    this.hy2UpMbps = 0,
+    this.hy2DownMbps = 0,
+    this.fingerprintOverride,
+    this.autoOptimizeCarrier = false,
   });
 
   final SingboxMode mode;
@@ -63,11 +68,36 @@ class SingboxRouteOptions {
   /// sets this too. Desktop keeps the system stack (its host handles MSS fine).
   final bool gvisorStack;
 
+  /// The user's line speed in Mbps. When >0 it turns on Hysteria2's Brutal
+  /// congestion control (fixed-rate, loss-tolerant) at these rates, the big
+  /// throughput win on throttled links. A node link's own bandwidth wins over
+  /// this. 0 = off = BBR (the safe default). Set to the user's REAL line speed:
+  /// too high floods and induces loss, too low caps.
+  final int hy2UpMbps;
+  final int hy2DownMbps;
+
+  /// Per-ISP uTLS fingerprint override. When set (non-empty), it wins over each
+  /// node's own pinned fingerprint and the Chrome default, so the app can hand
+  /// the DPI-optimal ClientHello for the user's carrier (e.g. Irancell -> chrome,
+  /// MCI -> randomized, Rightel -> firefox). Empty/null keeps the per-node value.
+  /// The matching `tlsFragment` toggle above is set from the same ISP profile.
+  final String? fingerprintOverride;
+
+  /// Whether to auto-apply the per-carrier profile (fingerprint + fragmentation)
+  /// at connect time. Set from the Routing setting; the controller runs the
+  /// [IspOptimizer] and folds the result back in via [copyWith]. Off on desktop
+  /// (no SIM) and whenever the user disables it.
+  final bool autoOptimizeCarrier;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
     bool? tlsFragment,
     bool? gvisorStack,
+    int? hy2UpMbps,
+    int? hy2DownMbps,
+    String? fingerprintOverride,
+    bool? autoOptimizeCarrier,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -79,6 +109,10 @@ class SingboxRouteOptions {
         localRuleSets: localRuleSets ?? this.localRuleSets,
         tlsFragment: tlsFragment ?? this.tlsFragment,
         gvisorStack: gvisorStack ?? this.gvisorStack,
+        hy2UpMbps: hy2UpMbps ?? this.hy2UpMbps,
+        hy2DownMbps: hy2DownMbps ?? this.hy2DownMbps,
+        fingerprintOverride: fingerprintOverride ?? this.fingerprintOverride,
+        autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
       );
 }
 
@@ -123,13 +157,24 @@ class SingboxConfig {
           }),
       'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
       'outbounds': <Map<String, dynamic>>[
-        _outbound(node, fragment: options.tlsFragment),
+        // AmneziaWG is an endpoint (below), so the proxy slot is only filled by a
+        // real outbound protocol; awg keeps just direct/block here.
+        if (!node.protocol.isEndpoint)
+          _outbound(node,
+              fragment: options.tlsFragment,
+              hy2Up: options.hy2UpMbps,
+              hy2Down: options.hy2DownMbps,
+              fingerprintOverride: options.fingerprintOverride),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
         // core). DNS is hijacked to the DNS module via a route rule action
         // instead (see _route), which works on both 1.12 (iOS) and 1.13.
       ],
+      // sing-box carries WireGuard/AmneziaWG as an endpoint. Tagged 'proxy' so
+      // route.final / dns.detour reach it with no other change.
+      if (node.protocol.isEndpoint)
+        'endpoints': <Map<String, dynamic>>[_endpoint(node, tag: 'proxy')],
       'route': _route(options, blockQuic: !node.protocol.isUdpNative),
     };
   }
@@ -189,12 +234,23 @@ class SingboxConfig {
       );
     }
     final List<Map<String, dynamic>> nodeOutbounds = <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> nodeEndpoints = <Map<String, dynamic>>[];
     final List<String> tags = <String>[];
     for (int i = 0; i < picked.length; i++) {
       final String tag = 'node-$i';
       tags.add(tag);
-      nodeOutbounds
-          .add(_outbound(picked[i], tag: tag, fragment: options.tlsFragment));
+      // AmneziaWG nodes are endpoints; the urltest still lists their tag, so the
+      // auto-selector measures and picks them alongside outbound nodes.
+      if (picked[i].protocol.isEndpoint) {
+        nodeEndpoints.add(_endpoint(picked[i], tag: tag));
+      } else {
+        nodeOutbounds.add(_outbound(picked[i],
+            tag: tag,
+            fragment: options.tlsFragment,
+            hy2Up: options.hy2UpMbps,
+            hy2Down: options.hy2DownMbps,
+            fingerprintOverride: options.fingerprintOverride));
+      }
     }
     return <String, dynamic>{
       'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
@@ -238,8 +294,9 @@ class SingboxConfig {
         // No 'dns' outbound (removed in sing-box 1.13); DNS is hijacked via a
         // route rule action instead (see _route).
       ],
-      // If any exit in the pool is UDP-native (Hysteria2/TUIC), let QUIC flow;
-      // otherwise (an all-worker pool) keep blocking it so apps fall back to TCP.
+      if (nodeEndpoints.isNotEmpty) 'endpoints': nodeEndpoints,
+      // If any exit in the pool is UDP-native (Hysteria2/TUIC/AmneziaWG), let
+      // QUIC flow; otherwise (an all-worker pool) keep blocking it.
       'route': _route(options,
           blockQuic: !picked.any((ProxyNode n) => n.protocol.isUdpNative)),
     };
@@ -356,6 +413,9 @@ class SingboxConfig {
     ProxyNode n, {
     String tag = 'proxy',
     bool fragment = true,
+    int hy2Up = 0,
+    int hy2Down = 0,
+    String? fingerprintOverride,
   }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
@@ -384,13 +444,33 @@ class SingboxConfig {
             'password': n.obfsPassword ?? '',
           };
         }
+        // Bandwidth hints => Brutal congestion control (fixed-rate, loss-tolerant),
+        // the throughput win on throttled links. The node link's own value wins;
+        // else the user's app-wide line-speed setting. Omitted => BBR.
+        final int up = (n.hy2UpMbps ?? 0) > 0 ? n.hy2UpMbps! : hy2Up;
+        final int down = (n.hy2DownMbps ?? 0) > 0 ? n.hy2DownMbps! : hy2Down;
+        if (up > 0) o['up_mbps'] = up;
+        if (down > 0) o['down_mbps'] = down;
       case NodeProtocol.tuic:
         o['uuid'] = n.uuid;
         o['password'] = n.password ?? '';
         o['congestion_control'] = n.congestionControl ?? 'bbr';
         o['udp_relay_mode'] = n.udpRelayMode ?? 'native';
+      case NodeProtocol.socks:
+        o['version'] = '5';
+        if (n.uuid != null) o['username'] = n.uuid; // uuid slot = username
+        if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.http:
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.awg:
+        // AmneziaWG is a sing-box endpoint, not an outbound; callers must use
+        // _endpoint(). Reaching here is a wiring bug.
+        throw StateError('awg is an endpoint, not an outbound');
     }
-    if (n.tls) o['tls'] = _tls(n, fragment: fragment);
+    if (n.tls) {
+      o['tls'] = _tls(n, fragment: fragment, fingerprintOverride: fingerprintOverride);
+    }
     // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
     if (!n.protocol.isUdpNative) {
       final Map<String, dynamic>? transport = _transport(n);
@@ -399,7 +479,19 @@ class SingboxConfig {
     return o;
   }
 
-  static Map<String, dynamic> _tls(ProxyNode n, {bool fragment = true}) {
+  /// The sing-box `awg` endpoint for an AmneziaWG node, tagged so routing (which
+  /// always targets tag strings, never types) reaches it exactly like a proxy
+  /// outbound. The junk params (jc/jmin/jmax/s1-4/h1-4) and peer come straight
+  /// from the stored `.conf`.
+  static Map<String, dynamic> _endpoint(ProxyNode n, {String tag = 'proxy'}) {
+    return AwgConfig.parseConf(n.awgConf ?? '').toEndpoint(tag);
+  }
+
+  static Map<String, dynamic> _tls(
+    ProxyNode n, {
+    bool fragment = true,
+    String? fingerprintOverride,
+  }) {
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
@@ -409,10 +501,15 @@ class SingboxConfig {
     // iOS 1.12.x and Android 1.13.x cores now support it).
     // Reality already mandates uTLS, so this just makes every other TLS node
     // match that behaviour.
+    // Per-ISP override wins over the node's pinned fingerprint, which wins over
+    // the Chrome default. Reality keeps its own uTLS handshake, but the override
+    // still applies to it (it only swaps which browser profile is forged).
     final String fingerprint =
-        (n.fingerprint != null && n.fingerprint!.isNotEmpty)
-            ? n.fingerprint!
-            : 'chrome';
+        (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
+            ? fingerprintOverride
+            : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
+                ? n.fingerprint!
+                : 'chrome';
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,

@@ -4,7 +4,7 @@ description: >-
   fork) with the Nova Radar Cloudflare clean-IP scanner built in. Follows the
   Nova Proxy design language.
 publish_to: "none"
-version: 0.2.0+63
+version: 0.3.3+70
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -37,6 +37,16 @@ dependencies:
   # Cloudflare OAuth (PKCE) + the Workers deploy multipart upload.
   crypto: ^3.0.0
   http_parser: ^4.0.0
+
+  # "Connect your VPS": SSH into the user's server to install the Nova node
+  # agent (pure-Dart SSH/SFTP client, works on iOS + Android), and store the
+  # optional saved SSH credentials in the iOS Keychain / Android Keystore.
+  dartssh2: ^2.9.0
+  flutter_secure_storage: ^9.2.2
+
+  # Render per-user share links as QR codes in the VPS admin panel (pure Dart,
+  # no native code, so no CocoaPods entry needed).
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

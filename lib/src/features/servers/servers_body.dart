@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/singbox/awg_config.dart';
+import '../relay/relay_link.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
 import '../../theme/nova_radii.dart';
@@ -19,6 +21,8 @@ import '../../widgets/nova_scope.dart';
 import '../profiles/profiles_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
+import '../vps/connect_vps_screen.dart';
+import '../vps/vps_controller.dart';
 import 'node_list_screen.dart';
 
 /// The scrollable Servers content — search, protocol filters, and the list of
@@ -40,6 +44,62 @@ class ServersBody extends StatefulWidget {
 class _ServersBodyState extends State<ServersBody> {
   String _query = '';
   ProxyKind? _filter; // null = All
+
+  // Saved VPS panels, so a row backed by a connected VPS gets a "Manage" action
+  // that opens its admin panel.
+  List<VpsPanel> _vpsPanels = <VpsPanel>[];
+  VpsController? _vps;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final VpsController vps = NovaScope.of(context).vps;
+    if (!identical(vps, _vps)) {
+      _vps?.removeListener(_loadPanels);
+      _vps = vps;
+      _vps!.addListener(_loadPanels);
+      _loadPanels();
+    }
+  }
+
+  @override
+  void dispose() {
+    _vps?.removeListener(_loadPanels);
+    super.dispose();
+  }
+
+  Future<void> _loadPanels() async {
+    final List<VpsPanel> panels =
+        await (_vps?.loadPanels() ?? Future<List<VpsPanel>>.value(<VpsPanel>[]));
+    if (mounted) setState(() => _vpsPanels = panels);
+  }
+
+  /// The saved VPS panel whose host matches this profile, or null.
+  VpsPanel? _panelFor(ProxyProfile p) {
+    final String host = _hostOf(p);
+    if (host.isEmpty) return null;
+    for (final VpsPanel panel in _vpsPanels) {
+      final String ph = Uri.tryParse(panel.baseUrl)?.host ?? panel.id;
+      if (ph == host || panel.id == host) return panel;
+    }
+    return null;
+  }
+
+  static String _hostOf(ProxyProfile p) {
+    final String? sub = p.subscriptionUrl;
+    if (sub != null && sub.isNotEmpty) {
+      final String h = Uri.tryParse(sub)?.host ?? '';
+      if (h.isNotEmpty) return h;
+    }
+    // vless://uuid@host:port?...
+    final int at = p.uri.indexOf('@');
+    if (at >= 0) {
+      final String rest = p.uri.substring(at + 1);
+      final Match? m = RegExp(r'[:/?#]').firstMatch(rest);
+      return m != null ? rest.substring(0, m.start) : rest;
+    }
+    return Uri.tryParse(p.uri)?.host ?? '';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +146,9 @@ class _ServersBodyState extends State<ServersBody> {
                 onExtract: () => _openNodes(context, p),
                 onEdit: () => _editProfile(context, profiles, p),
                 onDelete: () => profiles.remove(p.id),
+                onManage: _panelFor(p) == null
+                    ? null
+                    : () => _vps!.openAdminFor(context, _panelFor(p)!),
               ),
             ),
         ];
@@ -250,6 +313,7 @@ class _ServerRow extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onExtract,
+    this.onManage,
   });
 
   final ProxyProfile profile;
@@ -259,6 +323,9 @@ class _ServerRow extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onExtract;
+
+  /// Non-null when this row is backed by a connected VPS, opens its panel.
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +404,8 @@ class _ServerRow extends StatelessWidget {
                 switch (v) {
                   case 'select':
                     onSelect();
+                  case 'manage':
+                    onManage?.call();
                   case 'extract':
                     onExtract();
                   case 'edit':
@@ -355,6 +424,16 @@ class _ServerRow extends StatelessWidget {
                     title: Text(s.serversSelect),
                   ),
                 ),
+                if (onManage != null)
+                  PopupMenuItem<String>(
+                    value: 'manage',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.dns_rounded),
+                      title: Text(s.vpsManage),
+                    ),
+                  ),
                 if (profile.isSubscription)
                   PopupMenuItem<String>(
                     value: 'extract',
@@ -446,6 +525,15 @@ class _EmptyState extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _EmptyAction(
+          icon: Icons.dns_rounded,
+          title: s.serversConnectVps,
+          subtitle: s.serversConnectVpsSub,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ConnectVpsScreen()),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _EmptyAction(
           icon: Icons.add_rounded,
           title: s.serversAddConfig,
           subtitle: s.serversAddConfigSub,
@@ -530,8 +618,24 @@ class _EmptyAction extends StatelessWidget {
 /// the Servers screen header and the empty state.
 Future<void> showAddServerDialog(BuildContext context,
     {String? prefill}) async {
-  final profiles = NovaScope.of(context).profiles;
+  final NovaScope scope = NovaScope.of(context);
+  final profiles = scope.profiles;
   final s = NovaStrings.of(context);
+
+  // A `nova-relay://` link is a relay setup, not a proxy config: apply it to the
+  // relay (and tunnel) and stop, so it never becomes a bogus server entry.
+  final RelayLinkData? relayLink = RelayLinkData.decode(prefill ?? '');
+  if (relayLink != null) {
+    await scope.relay.applyLink(relayLink);
+    await scope.tunnel.applyLink(relayLink);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.relayImportedOk)),
+      );
+    }
+    return;
+  }
+
   final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
@@ -542,6 +646,9 @@ Future<void> showAddServerDialog(BuildContext context,
       initialKind: detected,
       showKindPills: true,
       uriHint: s.serversUriHint,
+      // An AmneziaWG `.conf` is multi-line, so give it room instead of a
+      // one-line field that would flatten the pasted text.
+      uriMaxLines: detected == ProxyKind.awg ? 8 : 1,
     ),
   );
 
@@ -713,13 +820,23 @@ class _ConfigDialogState extends State<_ConfigDialog> {
 ProxyKind? _detectKind(String raw) {
   final String s = raw.trim();
   final String l = s.toLowerCase();
+  if (l.startsWith('socks://') || l.startsWith('socks5://')) {
+    return ProxyKind.socks;
+  }
   if (l.startsWith('http://') || l.startsWith('https://')) {
-    return ProxyKind.subscription;
+    // An http(s) link with `user:pass@` is a proxy; without it, a subscription.
+    return s.contains('@') ? ProxyKind.http : ProxyKind.subscription;
   }
   if (l.startsWith('vless://')) return ProxyKind.vless;
   if (l.startsWith('trojan://')) return ProxyKind.trojan;
   if (l.startsWith('ss://')) return ProxyKind.shadowsocks;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
+  // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
+  if (l.startsWith('awg://') ||
+      l.startsWith('wireguard://') ||
+      AwgConfig.looksLikeConf(s)) {
+    return ProxyKind.awg;
+  }
   return null;
 }
 
@@ -752,6 +869,20 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               ),
             ),
             const SizedBox(height: 6),
+            _AddOption(
+              icon: Icons.dns_rounded,
+              color: nova.cyan,
+              title: s.serversConnectVps,
+              subtitle: s.serversConnectVpsSub,
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ConnectVpsScreen(),
+                  ),
+                );
+              },
+            ),
             if (canScan)
               _AddOption(
                 icon: Icons.qr_code_scanner_rounded,
