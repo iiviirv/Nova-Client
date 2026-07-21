@@ -105,9 +105,16 @@ jobs:
           path: dist/nova-client.apk
           if-no-files-found: error
 
-      - name: Attach APK to GitHub Release
+      # Public releases live in the IRNova/Nova-Client repo (binaries only, no
+      # source). Publishing there needs a PAT with release-write on that repo,
+      # stored as the IRNOVA_TOKEN secret; the default GITHUB_TOKEN only reaches
+      # this source repo. Auto-notes are off because that repo has no source
+      # history to derive them from; use the tag/CHANGELOG for notes.
+      - name: Attach APK to the IRNova release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          repository: IRNova/Nova-Client
+          token: ${{ secrets.IRNOVA_TOKEN }}
           files: dist/nova-client.apk
-          generate_release_notes: true
+          generate_release_notes: false
