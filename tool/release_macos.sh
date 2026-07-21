@@ -27,8 +27,14 @@ echo "core bundled: $(ls -lh "$APP/Contents/Resources/sing-box-macos-arm64" | aw
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
 security unlock-keychain -p novakc "$KC"
 security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"') >/dev/null 2>&1
-for fw in objective_c FlutterMacOS App; do
-  codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$APP/Contents/Frameworks/$fw.framework" 2>&1 | tail -1
+# Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
+# (e.g. flutter_secure_storage_macos) left with its build-time signature fails
+# notarization ("not signed with a valid Developer ID certificate").
+for dylib in "$APP"/Contents/Frameworks/*.dylib(N); do
+  codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$dylib" 2>&1 | tail -1
+done
+for fw in "$APP"/Contents/Frameworks/*.framework(N); do
+  codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$fw" 2>&1 | tail -1
 done
 codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$APP/Contents/Resources/sing-box-macos-arm64" 2>&1 | tail -1
 codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" --keychain "$KC" "$APP" 2>&1 | tail -1
