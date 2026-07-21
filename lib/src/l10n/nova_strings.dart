@@ -161,6 +161,31 @@ class NovaStrings {
   String get relayRemoveBody => t('relay.removeBody');
   String get relayRemoved => t('relay.removed');
   String get relayHowItWorks => t('relay.howItWorks');
+  String get relayImport => t('relay.import');
+  String get relayShare => t('relay.share');
+  String get relayImportedOk => t('relay.importedOk');
+  String get relayImportNone => t('relay.importNone');
+  String get relayLinkCopied => t('relay.linkCopied');
+  String get relayShareTitle => t('relay.shareTitle');
+  String get relayShareSub => t('relay.shareSub');
+  String get relayNeedUrlToShare => t('relay.needUrlToShare');
+
+  // ---- Speed test ----
+  String get speedTitle => t('speed.title');
+  String get speedThroughTunnel => t('speed.throughTunnel');
+  String get speedDirect => t('speed.direct');
+  String get speedDownload => t('speed.download');
+  String get speedUpload => t('speed.upload');
+  String get speedPing => t('speed.ping');
+  String get speedRun => t('speed.run');
+  String get speedAgain => t('speed.again');
+  String get speedRunning => t('speed.running');
+  String get speedPhasePing => t('speed.phasePing');
+  String get speedPhaseDown => t('speed.phaseDown');
+  String get speedPhaseUp => t('speed.phaseUp');
+  String get speedNote => t('speed.note');
+  String get speedTest => t('speed.test');
+  String get speedTestSub => t('speed.testSub');
 
   // ---- Google relay guide ----
   String get relayGuideTitle => t('relay.guideTitle');
@@ -673,6 +698,33 @@ class NovaStrings {
         'This clears the relay URL, key, and toggle from this device. You can set it up again anytime.',
     'relay.removed': 'Relay removed',
     'relay.howItWorks': 'How this works',
+    'relay.import': 'Import from link',
+    'relay.share': 'Share setup',
+    'relay.importedOk': 'Relay setup imported',
+    'relay.importNone': 'No relay link found on the clipboard',
+    'relay.linkCopied': 'Relay link copied',
+    'relay.shareTitle': 'Share this relay setup',
+    'relay.shareSub':
+        'Scan this QR or share the copied link. Anyone who imports it gets your relay URL and key filled in automatically.',
+    'relay.needUrlToShare': 'Set the relay URL first, then share it.',
+    'speed.title': 'Speed test',
+    'speed.throughTunnel':
+        'Connected: this measures your real speed through the current config.',
+    'speed.direct':
+        'Not connected: this measures your direct line. Connect to a config first to test that config.',
+    'speed.download': 'Download',
+    'speed.upload': 'Upload',
+    'speed.ping': 'Ping',
+    'speed.run': 'Run test',
+    'speed.again': 'Test again',
+    'speed.running': 'Testing…',
+    'speed.phasePing': 'Pinging…',
+    'speed.phaseDown': 'Downloading…',
+    'speed.phaseUp': 'Uploading…',
+    'speed.note':
+        'Tip: connect through one config, test, then switch config (or turn on Speed boost) and test again to see which is fastest on your network.',
+    'speed.test': 'Speed test',
+    'speed.testSub': 'Measure your real download/upload speed',
     'relay.guideTitle': 'How the Google relay works',
     'relay.guideWhatTitle': 'What it is',
     'relay.guideWhatBody':
@@ -1203,6 +1255,33 @@ class NovaStrings {
         'این کار آدرس، کلید و کلید فعال‌سازی رله را از این دستگاه پاک می‌کند. هر وقت خواستید می‌توانید دوباره تنظیمش کنید.',
     'relay.removed': 'رله حذف شد',
     'relay.howItWorks': 'این چطور کار می‌کند',
+    'relay.import': 'وارد کردن از لینک',
+    'relay.share': 'اشتراک‌گذاری تنظیمات',
+    'relay.importedOk': 'تنظیمات رله وارد شد',
+    'relay.importNone': 'لینک رله‌ای در کلیپ‌بورد پیدا نشد',
+    'relay.linkCopied': 'لینک رله کپی شد',
+    'relay.shareTitle': 'این تنظیمات رله را به اشتراک بگذار',
+    'relay.shareSub':
+        'این QR را اسکن کن یا لینک کپی‌شده را بفرست. هرکس آن را وارد کند، آدرس و کلید رله‌ات خودکار پر می‌شود.',
+    'relay.needUrlToShare': 'اول آدرس رله را وارد کن، بعد به اشتراک بگذار.',
+    'speed.title': 'تست سرعت',
+    'speed.throughTunnel':
+        'متصل هستی: این سرعت واقعی تو را از مسیر کانفیگ فعلی اندازه می‌گیرد.',
+    'speed.direct':
+        'متصل نیستی: این سرعت خط مستقیم تو را می‌سنجد. اول به یک کانفیگ وصل شو تا آن را تست کنی.',
+    'speed.download': 'دانلود',
+    'speed.upload': 'آپلود',
+    'speed.ping': 'پینگ',
+    'speed.run': 'اجرای تست',
+    'speed.again': 'تست دوباره',
+    'speed.running': 'در حال تست…',
+    'speed.phasePing': 'در حال پینگ…',
+    'speed.phaseDown': 'در حال دانلود…',
+    'speed.phaseUp': 'در حال آپلود…',
+    'speed.note':
+        'نکته: به یک کانفیگ وصل شو و تست بگیر، بعد کانفیگ را عوض کن (یا افزایش سرعت را روشن کن) و دوباره تست بگیر تا ببینی کدام روی شبکه‌ات سریع‌تر است.',
+    'speed.test': 'تست سرعت',
+    'speed.testSub': 'سرعت واقعی دانلود/آپلودت را بسنج',
     'relay.guideTitle': 'رله گوگل چطور کار می‌کند',
     'relay.guideWhatTitle': 'این چیست',
     'relay.guideWhatBody':

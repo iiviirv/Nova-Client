@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -9,6 +11,7 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 import 'relay_client.dart';
 import 'relay_controller.dart';
+import 'relay_link.dart';
 import 'tunnel_client.dart';
 import 'tunnel_controller.dart';
 
@@ -253,6 +256,99 @@ class _RelayScreenState extends State<RelayScreen> {
     _toast(s.relayRemoved);
   }
 
+  /// Import a `nova-relay://` link from the clipboard: fill and enable the relay
+  /// (and tunnel, if the link carries one) with no hand-typing.
+  Future<void> _importFromClipboard() async {
+    final NovaStrings s = NovaStrings.of(context);
+    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    final RelayLinkData? d = RelayLinkData.decode((data?.text ?? '').trim());
+    if (d == null) {
+      _toast(s.relayImportNone);
+      return;
+    }
+    await _relay.applyLink(d);
+    await _tunnel.applyLink(d);
+    if (!mounted) return;
+    setState(() {
+      _url.text = _relay.execUrl;
+      _auth.text = _relay.authKey;
+      _frontSni.text = _relay.frontSni;
+      _frontIp.text = _relay.frontIp;
+      _allowInsecure = _relay.allowInsecure;
+      _enabled = _relay.enabled;
+      _frontEnabled = _relay.frontEnabled;
+      _tunnelUrl.text = _tunnel.url;
+      _tunnelKey.text = _tunnel.authKey;
+      _tunnelPort.text = _tunnel.port.toString();
+    });
+    _toast(s.relayImportedOk);
+  }
+
+  /// Export the current setup as a `nova-relay://` link: copy it and show a QR
+  /// so it can be handed to another device or user.
+  Future<void> _share() async {
+    final NovaStrings s = NovaStrings.of(context);
+    if (_url.text.trim().isEmpty) {
+      _toast(s.relayNeedUrlToShare);
+      return;
+    }
+    final String link = RelayLinkData(
+      execUrl: _url.text.trim(),
+      authKey: _auth.text.trim(),
+      allowInsecure: _allowInsecure,
+      frontEnabled: _frontEnabled,
+      frontSni: _frontSni.text.trim(),
+      frontIp: _frontIp.text.trim(),
+      tunnelUrl: _tunnelUrl.text.trim(),
+      tunnelKey: _tunnelKey.text.trim(),
+      tunnelPort: int.tryParse(_tunnelPort.text.trim()),
+    ).encode();
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) return;
+    _toast(s.relayLinkCopied);
+    final nova = context.nova;
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(s.relayShareTitle),
+        content: SizedBox(
+          width: 260,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 244,
+                height: 244,
+                padding: const EdgeInsets.all(NovaSpace.md),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: NovaRadii.smR,
+                ),
+                child: QrImageView(
+                  data: link,
+                  size: 212,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: NovaSpace.md),
+              Text(s.relayShareSub,
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: nova.muted)),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(s.cancel),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openGuide() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const RelayGuideScreen()),
@@ -313,6 +409,30 @@ class _RelayScreenState extends State<RelayScreen> {
                   Text(
                     s.relayIntro,
                     style: text.bodyMedium?.copyWith(color: nova.muted),
+                  ),
+                  const SizedBox(height: NovaSpace.md),
+
+                  // ---- Import / Share the whole setup in one link ----
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: NovaButton(
+                          label: s.relayImport,
+                          icon: Icons.download_rounded,
+                          variant: NovaButtonVariant.secondary,
+                          onPressed: _importFromClipboard,
+                        ),
+                      ),
+                      const SizedBox(width: NovaSpace.sm),
+                      Expanded(
+                        child: NovaButton(
+                          label: s.relayShare,
+                          icon: Icons.ios_share_rounded,
+                          variant: NovaButtonVariant.secondary,
+                          onPressed: _share,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: NovaSpace.lg),
 

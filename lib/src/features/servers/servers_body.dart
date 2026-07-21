@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
+import '../relay/relay_link.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
 import '../../theme/nova_radii.dart';
@@ -617,8 +618,24 @@ class _EmptyAction extends StatelessWidget {
 /// the Servers screen header and the empty state.
 Future<void> showAddServerDialog(BuildContext context,
     {String? prefill}) async {
-  final profiles = NovaScope.of(context).profiles;
+  final NovaScope scope = NovaScope.of(context);
+  final profiles = scope.profiles;
   final s = NovaStrings.of(context);
+
+  // A `nova-relay://` link is a relay setup, not a proxy config: apply it to the
+  // relay (and tunnel) and stop, so it never becomes a bogus server entry.
+  final RelayLinkData? relayLink = RelayLinkData.decode(prefill ?? '');
+  if (relayLink != null) {
+    await scope.relay.applyLink(relayLink);
+    await scope.tunnel.applyLink(relayLink);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.relayImportedOk)),
+      );
+    }
+    return;
+  }
+
   final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(

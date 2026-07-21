@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'relay_link.dart';
 import 'tunnel_client.dart';
 
 /// Owns the "full tunnel through Google" data path: a local SOCKS5 proxy on this
@@ -79,6 +80,17 @@ class TunnelController extends ChangeNotifier {
     _port = defaultPort;
     await _secure.delete(key: _key);
     notifyListeners();
+  }
+
+  /// Apply the tunnel half of an imported relay link, if it carries one. Leaves
+  /// the tunnel OFF (the user starts it explicitly); only stores URL/key/port.
+  Future<void> applyLink(RelayLinkData d) async {
+    if (!d.hasTunnel) return;
+    await save(
+      url: d.tunnelUrl,
+      authKey: d.tunnelKey,
+      port: d.tunnelPort ?? defaultPort,
+    );
   }
 
   RelayTunnel _mkTunnel() =>
