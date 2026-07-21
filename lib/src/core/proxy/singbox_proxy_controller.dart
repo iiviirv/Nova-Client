@@ -347,8 +347,11 @@ class SingboxProxyController extends ProxyController {
         // deliberate per-carrier choice). For an unknown carrier or Wi-Fi we keep
         // the app's fragment-on default so anti-DPI never silently regresses; we
         // still apply the fingerprint (its default is Chrome, same as today).
+        // A user's manual fingerprint (already in opts.fingerprintOverride) wins
+        // over the carrier profile; otherwise take the carrier's pick.
+        final bool manual = (opts.fingerprintOverride ?? '').isNotEmpty;
         tuned = opts.copyWith(
-          fingerprintOverride: m.fingerprint,
+          fingerprintOverride: manual ? opts.fingerprintOverride : m.fingerprint,
           tlsFragment: m.source == 'carrier'
               ? (m.tlsFragment ?? opts.tlsFragment)
               : opts.tlsFragment,
