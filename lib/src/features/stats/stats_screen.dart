@@ -10,11 +10,13 @@ import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
+import '../../widgets/nova_card.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
 import '../../widgets/nova_usage_bar_chart.dart';
 import '../cloudflare/cloudflare_controller.dart';
+import '../speedtest/speed_test_screen.dart';
 
 /// The Stats tab — session traffic at a glance: a total card with a live
 /// throughput chart, per-direction stat cards, and a realtime live section.
@@ -147,6 +149,41 @@ class _StatsScreenState extends State<StatsScreen> {
                 Text(s.navStats,
                     style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 14),
+                // Real download/upload measurement, for comparing configs.
+                NovaCard(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const SpeedTestScreen()),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.speed_rounded, color: context.nova.cyan),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(s.speedTest,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(fontWeight: FontWeight.w600)),
+                            Text(s.speedTestSub,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: context.nova.muted)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          color: context.nova.muted),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 NovaSegmentedTabs(
                   compact: true,
                   selected: _range,

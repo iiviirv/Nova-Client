@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../vps/insecure_http.dart';
 import 'fronted_http.dart';
 import 'relay_client.dart';
+import 'relay_link.dart';
 
 /// Holds the Google relay configuration and hands out a [RelayClient] when it is
 /// enabled. The relay lets the app fetch its subscription and reach the /admin
@@ -162,6 +163,41 @@ class RelayController extends ChangeNotifier {
     return _build(
         _execUrl, _authKey, _allowInsecure, _frontEnabled, frontSni, frontIp);
   }
+
+  /// Apply an imported [RelayLinkData] to the relay config and turn it on, so a
+  /// scanned/pasted setup works with no hand-typing.
+  Future<void> applyLink(RelayLinkData d) async {
+    await save(
+      enabled: true,
+      execUrl: d.execUrl,
+      authKey: d.authKey,
+      allowInsecure: d.allowInsecure,
+      frontEnabled: d.frontEnabled,
+      frontSni: d.frontSni.isEmpty ? _frontSni : d.frontSni,
+      frontIp: d.frontIp,
+    );
+  }
+
+  /// The current relay config as [RelayLinkData], for exporting a share link.
+  /// Tunnel fields are threaded in by the caller (they live on TunnelController).
+  RelayLinkData toLinkData({
+    String tunnelUrl = '',
+    String tunnelKey = '',
+    int? tunnelPort,
+    String name = '',
+  }) =>
+      RelayLinkData(
+        execUrl: _execUrl,
+        authKey: _authKey,
+        allowInsecure: _allowInsecure,
+        frontEnabled: _frontEnabled,
+        frontSni: _frontSni,
+        frontIp: _frontIp,
+        tunnelUrl: tunnelUrl,
+        tunnelKey: tunnelKey,
+        tunnelPort: tunnelPort,
+        name: name,
+      );
 
   /// Probe the built-in Google front pool and persist the first live edge IP as
   /// [frontIp]. Returns the chosen IP, or null if none answered. Called from the
