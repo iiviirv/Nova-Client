@@ -11,6 +11,7 @@ import '../../widgets/nova_card.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../settings/settings_controller.dart';
+import '../tuner/fix_connection_screen.dart';
 
 /// Whether the full-device TUN option applies (it is a desktop-only data path).
 final bool _isDesktop =
@@ -428,6 +429,39 @@ class _ConnectionTuningCardState extends State<_ConnectionTuningCard> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: NovaSpace.md),
+          Divider(height: 1, color: nova.border),
+          const SizedBox(height: NovaSpace.sm),
+          // Calm, secondary hand-off to the setup finder for anyone who wants
+          // Nova to test the fingerprints and pick the best automatically.
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: InkWell(
+              borderRadius: NovaRadii.smR,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                    builder: (_) => const FixConnectionScreen()),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.travel_explore_rounded,
+                        size: 16, color: nova.cyan),
+                    const SizedBox(width: NovaSpace.sm),
+                    Text(
+                      s.fixTitle,
+                      style: text.labelLarge?.copyWith(
+                        color: nova.cyan,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),

@@ -187,6 +187,41 @@ class NovaStrings {
   String get speedTest => t('speed.test');
   String get speedTestSub => t('speed.testSub');
 
+  // ---- Find a working setup (connection fixer) ----
+  String get fixTitle => t('fix.title');
+  String get fixIntroEyebrow => t('fix.introEyebrow');
+  String get fixIntroTitle => t('fix.introTitle');
+  String get fixIntroBody => t('fix.introBody');
+  String get fixNoticeTitle => t('fix.noticeTitle');
+  String get fixNoticeBody => t('fix.noticeBody');
+  String get fixEstimateLabel => t('fix.estimateLabel');
+  String fixEstimateMinutes(int m) =>
+      t('fix.estimateMinutes').replaceFirst('%d', '$m');
+  String get fixStart => t('fix.start');
+  String fixTrying(String fp) => t('fix.trying').replaceFirst('%s', fp);
+  String fixApplying(String fp) => t('fix.applying').replaceFirst('%s', fp);
+  String fixStepOf(int i, int n) =>
+      t('fix.stepOf').replaceFirst('%s', '$i').replaceFirst('%s', '$n');
+  String get fixPhaseConnecting => t('fix.phaseConnecting');
+  String get fixPhaseChecking => t('fix.phaseChecking');
+  String get fixKeepOpen => t('fix.keepOpen');
+  String get fixCancel => t('fix.cancel');
+  String get fixCancelling => t('fix.cancelling');
+  String get fixStepActive => t('fix.stepActive');
+  String get fixStepPending => t('fix.stepPending');
+  String get fixStepBlocked => t('fix.stepBlocked');
+  String get fixTestedEyebrow => t('fix.testedEyebrow');
+  String get fixWinnerBadge => t('fix.winnerBadge');
+  String get fixSuccessTitle => t('fix.successTitle');
+  String get fixSuccessBody => t('fix.successBody');
+  String get fixDone => t('fix.done');
+  String get fixFailTitle => t('fix.failTitle');
+  String get fixFailBody => t('fix.failBody');
+  String get fixTryAgain => t('fix.tryAgain');
+  String get fixClose => t('fix.close');
+  String get fixFpRandomized => t('fix.fpRandomized');
+  String get fixDashPrompt => t('fix.dashPrompt');
+
   // ---- Google relay guide ----
   String get relayGuideTitle => t('relay.guideTitle');
   String get relayGuideWhatTitle => t('relay.guideWhatTitle');
@@ -740,6 +775,41 @@ class NovaStrings {
         'Tip: connect through one config, test, then switch config (or turn on Speed boost) and test again to see which is fastest on your network.',
     'speed.test': 'Speed test',
     'speed.testSub': 'Measure your real download/upload speed',
+    'fix.title': 'Find a working setup',
+    'fix.introEyebrow': 'Connection helper',
+    'fix.introTitle': 'Test each setup and keep the fastest',
+    'fix.introBody':
+        'When the block stops your usual setup, Nova tries several TLS fingerprints, measures which ones actually reach the internet, and keeps the fastest.',
+    'fix.noticeTitle': 'This can take a few minutes',
+    'fix.noticeBody':
+        'Nova will reconnect several times while it tests each setup. Keep the app open until it finishes.',
+    'fix.estimateLabel': 'Estimated time',
+    'fix.estimateMinutes': 'about %d minutes',
+    'fix.start': 'Test setups & find the best',
+    'fix.trying': 'Testing %s',
+    'fix.applying': 'Applying %s…',
+    'fix.stepOf': 'Setup %s of %s',
+    'fix.phaseConnecting': 'Connecting…',
+    'fix.phaseChecking': 'Checking if it gets through…',
+    'fix.keepOpen': 'Keep the app open. Nova will reconnect a few times.',
+    'fix.cancel': 'Cancel',
+    'fix.cancelling': 'Cancelling…',
+    'fix.stepActive': 'Testing…',
+    'fix.stepPending': 'Waiting',
+    'fix.stepBlocked': "Didn't get through",
+    'fix.testedEyebrow': 'All setups tested',
+    'fix.winnerBadge': 'Best',
+    'fix.successTitle': 'Best on your network',
+    'fix.successBody': 'Nova will keep using it.',
+    'fix.done': 'Done',
+    'fix.failTitle': 'No setup got through',
+    'fix.failBody':
+        'None of the setups got through right now. Try a different server, or set up the Google relay.',
+    'fix.tryAgain': 'Try again',
+    'fix.close': 'Close',
+    'fix.fpRandomized': 'Randomized',
+    'fix.dashPrompt':
+        "Can't get through? Test the setups and let Nova keep the one that works best.",
     'relay.guideTitle': 'How the Google relay works',
     'relay.guideWhatTitle': 'What it is',
     'relay.guideWhatBody':
@@ -1315,6 +1385,41 @@ class NovaStrings {
         'نکته: به یک کانفیگ وصل شو و تست بگیر، بعد کانفیگ را عوض کن (یا افزایش سرعت را روشن کن) و دوباره تست بگیر تا ببینی کدام روی شبکه‌ات سریع‌تر است.',
     'speed.test': 'تست سرعت',
     'speed.testSub': 'سرعت واقعی دانلود/آپلودت را بسنج',
+    'fix.title': 'یافتن یک روش کارآمد',
+    'fix.introEyebrow': 'دستیار اتصال',
+    'fix.introTitle': 'همه روش‌ها را بسنج و سریع‌ترین را نگه دار',
+    'fix.introBody':
+        'وقتی فیلترینگ جلوی روش همیشگی‌ات را می‌گیرد، نوا چند اثرانگشت TLS را امتحان می‌کند، می‌سنجد کدام‌ها واقعاً به اینترنت می‌رسند و سریع‌ترین را نگه می‌دارد.',
+    'fix.noticeTitle': 'این کار ممکن است چند دقیقه طول بکشد',
+    'fix.noticeBody':
+        'نوا هنگام آزمایش هر روش چند بار دوباره وصل می‌شود. تا پایان کار، برنامه را باز نگه دار.',
+    'fix.estimateLabel': 'زمان تقریبی',
+    'fix.estimateMinutes': 'حدود %d دقیقه',
+    'fix.start': 'آزمایش روش‌ها و یافتن بهترین',
+    'fix.trying': 'در حال آزمایش %s',
+    'fix.applying': 'در حال اعمال %s…',
+    'fix.stepOf': 'روش %s از %s',
+    'fix.phaseConnecting': 'در حال اتصال…',
+    'fix.phaseChecking': 'بررسی عبور از فیلترینگ…',
+    'fix.keepOpen': 'برنامه را باز نگه دار. نوا چند بار دوباره وصل می‌شود.',
+    'fix.cancel': 'لغو',
+    'fix.cancelling': 'در حال لغو…',
+    'fix.stepActive': 'در حال تست…',
+    'fix.stepPending': 'در نوبت',
+    'fix.stepBlocked': 'عبور نکرد',
+    'fix.testedEyebrow': 'همه روش‌ها آزمایش شد',
+    'fix.winnerBadge': 'بهترین',
+    'fix.successTitle': 'بهترین روش روی شبکه‌ات',
+    'fix.successBody': 'نوا از همین استفاده می‌کند.',
+    'fix.done': 'تمام',
+    'fix.failTitle': 'هیچ روشی عبور نکرد',
+    'fix.failBody':
+        'در حال حاضر هیچ‌کدام از روش‌ها عبور نکردند. یک سرور دیگر را امتحان کن، یا رله گوگل را راه‌اندازی کن.',
+    'fix.tryAgain': 'تلاش دوباره',
+    'fix.close': 'بستن',
+    'fix.fpRandomized': 'تصادفی',
+    'fix.dashPrompt':
+        'عبور نمی‌کنی؟ روش‌ها را بسنج و بگذار نوا بهترینی که جواب می‌دهد را نگه دارد.',
     'relay.guideTitle': 'رله گوگل چطور کار می‌کند',
     'relay.guideWhatTitle': 'این چیست',
     'relay.guideWhatBody':
