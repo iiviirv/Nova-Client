@@ -130,4 +130,38 @@ void main() {
     expect(servers, containsAll(<String>['104.17.214.82', '104.18.0.9', '104.19.0.7']),
         reason: 'VLESS, Trojan and Shadowsocks nodes must all survive');
   });
+
+  // A no-domain node's subscription is served off a bare IP with a self-signed
+  // cert. The relay (which validates TLS) can't read it, so fetchCoreConfig must
+  // fall back to a direct fetch for a bare-IP host. Here we only assert that a
+  // supplied fetcher (the relay, or this mock) still wins when it succeeds, so a
+  // working relay/mock is never needlessly bypassed and the test never touches
+  // the network. The self-signed fallback itself is exercised live (it needs a
+  // real self-signed endpoint), verified end-to-end on the emulator.
+  test('bare-IP subscription still uses a working fetcher (relay/mock) when it succeeds',
+      () async {
+    const String node =
+        'vless://b90f8c50-b795-4a6d-84dd-d057e87c7f3a@45.32.100.50:443'
+        '?security=tls&type=ws&path=/nova&host=45.32.100.50&sni=45.32.100.50'
+        '&allowInsecure=1#me';
+    final ProxyProfile profile = ProxyProfile(
+      id: 't',
+      name: 'no-domain',
+      kind: ProxyKind.subscription,
+      uri: '',
+      subscriptionUrl: 'https://45.32.100.50/sub?token=abc',
+    );
+    Uri? seen;
+    final nodes = await resolveProfileNodes(
+      profile,
+      fetch: (Uri url) async {
+        seen = url;
+        return base64.encode(utf8.encode(node));
+      },
+    );
+    expect(seen?.host, '45.32.100.50',
+        reason: 'a succeeding fetcher must be used, not bypassed');
+    expect(nodes, hasLength(1));
+    expect(nodes.first.server, '45.32.100.50');
+  });
 }

@@ -174,8 +174,34 @@ Future<NovaCoreConfig?> fetchCoreConfig(
   String url, {
   SubscriptionFetcher? fetch,
 }) async {
-  final String body = await (fetch ?? _httpFetch)(Uri.parse(url));
+  final Uri uri = Uri.parse(url);
+  // A subscription served straight off a bare IP is the "no domain" Nova node:
+  // it presents a self-signed certificate, so the relay (whose worker exit
+  // validates TLS and returns 502) and the default validating client both fail
+  // on it. Such a node also isn't domain-blocked, so it never needs the
+  // censorship relay. So: prefer the supplied fetcher (the relay, or a test
+  // mock), but for a bare-IP host fall back to a direct fetch that accepts the
+  // self-signed cert, exactly as the tunnel links already do with
+  // allowInsecure=1. A domain host keeps the normal path and surfaces relay
+  // errors as before.
+  final bool bareIp = _isBareIpHost(uri);
+  String? body;
+  if (fetch != null) {
+    try {
+      body = await fetch(uri);
+    } catch (_) {
+      if (!bareIp) rethrow; // a real relay/transport error for a domain host
+    }
+  }
+  body ??= await _httpFetch(uri, insecure: bareIp);
   return NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+}
+
+/// Whether [uri]'s host is a bare IP literal (IPv4/IPv6) rather than a domain.
+/// A self-signed Nova node is always reached by IP, so this cleanly identifies
+/// the "no domain" case without a separate flag.
+bool _isBareIpHost(Uri uri) {
+  return InternetAddress.tryParse(uri.host) != null;
 }
 
 /// If [body] isn't already plaintext links, try to base64-decode it (tolerating
@@ -352,18 +378,22 @@ Future<List<ProxyNode>> resolveProfileNodes(
 /// (common in Iran) often times out where a second, warmed-up connection gets
 /// through. A real HTTP status (non-200) is not retried, since that won't
 /// change on a second try.
-Future<String> _httpFetch(Uri url) async {
+Future<String> _httpFetch(Uri url, {bool insecure = false}) async {
   // Fast path: a direct fetch, retried once for a transient hiccup. A bad HTTP
   // status means we reached the server (not a block), so surface it as-is.
   for (int attempt = 0; attempt < 2; attempt++) {
     try {
-      return await _httpFetchOnce(url);
+      return await _httpFetchOnce(url, insecure: insecure);
     } on HttpException {
       rethrow;
     } catch (_) {
       if (attempt >= 1) break;
     }
   }
+  // A bare-IP self-signed node is reached directly; the SNI-fragment fallback is
+  // for a domain being SNI-blocked, which doesn't apply, so don't attempt it
+  // (and it would re-validate the cert anyway).
+  if (insecure) return await _httpFetchOnce(url, insecure: true);
   // The direct fetch failed at the connection level, which is exactly what a
   // plaintext-SNI block on workers.dev looks like from Iran. Retry through a
   // local fragment proxy that splits the TLS ClientHello so the censor can't
@@ -377,9 +407,16 @@ Future<String> _httpFetch(Uri url) async {
   }
 }
 
-Future<String> _httpFetchOnce(Uri url, {String? proxyAuthority}) async {
+Future<String> _httpFetchOnce(Uri url,
+    {String? proxyAuthority, bool insecure = false}) async {
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
+  if (insecure) {
+    // Accept the node's self-signed certificate (the "no domain" case). Scoped
+    // to this one request; the default validating client is used everywhere else.
+    client.badCertificateCallback =
+        (X509Certificate cert, String host, int port) => true;
+  }
   if (proxyAuthority != null) {
     // Route this request through the loopback fragment proxy: HttpClient issues
     // CONNECT <host>:443 to it, then does TLS end to end through the tunnel, so
