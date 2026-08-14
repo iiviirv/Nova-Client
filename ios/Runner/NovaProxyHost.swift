@@ -16,6 +16,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private var eventSink: FlutterEventSink?
   private var manager: NETunnelProviderManager?
   private var statusClient: NovacoreCommandClient?
+  private var logClient: NovacoreCommandClient?
   private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -53,7 +54,10 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       loadManagerIfNeeded { [weak self] in
         guard let self else { result("disconnected"); return }
         let status = self.manager?.connection.status ?? .invalid
-        if status == .connected { self.startStatusClient() }
+        if status == .connected {
+          self.startStatusClient()
+          self.startLogClient()
+        }
         result(self.stateName(status))
       }
     case "networkInfo":
@@ -191,8 +195,10 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     switch status {
     case .connected:
       startStatusClient()
+      startLogClient()
     default:
       stopStatusClient()
+      stopLogClient()
     }
   }
 
@@ -261,6 +267,58 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     }
   }
 
+  /// Attaches a second command client for the core's log stream, which backs
+  /// Settings -> Logs. Separate from the status client on purpose: the status
+  /// stream drives the dashboard's live speed meter and must not depend on the
+  /// log subscription's lifecycle. How much this carries is decided by the
+  /// config's `log.level`, which the Dart side raises to `info` only when the
+  /// user turns on detailed logs.
+  private func startLogClient() {
+    statusQueue.async { [weak self] in
+      guard let self, self.logClient == nil else { return }
+      self.ensureNovacoreSetup()
+      let options = NovacoreCommandClientOptions()
+      options.addCommand(NovacoreCommandLog)
+      guard let client = NovacoreNewCommandClient(LogHandler(host: self), options)
+      else { return }
+      self.logClient = client
+      self.connectLogClientLocked(client, attempt: 0)
+    }
+  }
+
+  /// Runs on `statusQueue`.
+  private func connectLogClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
+    do {
+      try client.connect()
+    } catch {
+      guard logClient === client, attempt < 5 else { return }
+      statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        guard let self, self.logClient === client else { return }
+        self.connectLogClientLocked(client, attempt: attempt + 1)
+      }
+    }
+  }
+
+  private func stopLogClient() {
+    statusQueue.async { [weak self] in
+      guard let self, let client = self.logClient else { return }
+      self.logClient = nil
+      try? client.disconnect()
+    }
+  }
+
+  /// Forwards a batch of core log lines. Batched because the core emits them in
+  /// bursts and each event is a hop to the main thread.
+  fileprivate func onLogs(_ list: NovacoreLogIteratorProtocol) {
+    var batch: [[String: Any]] = []
+    while list.hasNext() {
+      guard let entry = list.next() else { continue }
+      batch.append(["level": entry.level, "message": entry.message])
+    }
+    guard !batch.isEmpty else { return }
+    emit(["type": "log", "lines": batch])
+  }
+
   fileprivate func onStatus(_ message: NovacoreStatusMessage) {
     emit([
       "type": "traffic",
@@ -317,5 +375,27 @@ private final class StatusHandler: NSObject, NovacoreCommandClientHandlerProtoco
   func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
   // Added in sing-box 1.13's command-client handler; we drive log level from the
   // config, so this is a no-op.
+  func setDefaultLogLevel(_ level: Int32) {}
+}
+
+/// Receives the libbox log stream and forwards it to the host. Every other
+/// callback is a required-but-unused protocol stub.
+private final class LogHandler: NSObject, NovacoreCommandClientHandlerProtocol {
+  private weak var host: NovaProxyHost?
+  init(host: NovaProxyHost) { self.host = host }
+
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {
+    guard let messageList else { return }
+    host?.onLogs(messageList)
+  }
+
+  func writeStatus(_ message: NovacoreStatusMessage?) {}
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {}
   func setDefaultLogLevel(_ level: Int32) {}
 }

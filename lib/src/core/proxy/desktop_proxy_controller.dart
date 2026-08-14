@@ -7,7 +7,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
+import 'core_features.dart';
 import 'proxy_controller.dart';
 import 'subscription.dart';
 import 'singbox/proxy_node.dart';
@@ -118,6 +120,19 @@ class DesktopProxyController extends ProxyController {
     _setState(ProxyConnectionState.connecting);
     try {
       final String config = await _buildConfig(profile);
+      // The desktop cores in assets/bin are stock sing-box, which has no
+      // AmneziaWG (verified: zero occurrences of the `jmin` config key in
+      // either binary). Handing them an `awg` endpoint gets the document
+      // refused, or worse, a core that appears to start and carries nothing.
+      // Say so instead. See docs/core-amneziawg.md; when a desktop core is
+      // rebuilt with AmneziaWG this becomes the same probe the Android host
+      // answers.
+      if (CoreFeatures.usesAwg(config)) {
+        _fail("This desktop build's VPN core has no AmneziaWG support, so an "
+            'AmneziaWG server cannot be used here. Use the Android app for '
+            "this server, or one of the server's other protocols.");
+        return;
+      }
       final String binary = await _ensureBinary();
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');
@@ -517,6 +532,16 @@ class DesktopProxyController extends ProxyController {
   }
 
   /// Tee a core output stream to the rolling tail, the log file, and debugPrint.
+  /// sing-box writes its level as a word in the line; the desktop core is a
+  /// process rather than libbox, so there is no numeric level to read.
+  NovaLogLevel _coreLineLevel(String line) {
+    final String l = line.toUpperCase();
+    if (l.contains('FATAL') || l.contains('ERROR')) return NovaLogLevel.error;
+    if (l.contains('WARN')) return NovaLogLevel.warn;
+    if (l.contains('DEBUG') || l.contains('TRACE')) return NovaLogLevel.debug;
+    return NovaLogLevel.info;
+  }
+
   void _pipeCore(Stream<List<int>> stream, String label) {
     stream
         .transform(utf8.decoder)
@@ -528,6 +553,9 @@ class DesktopProxyController extends ProxyController {
           raw.replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '').trim();
       if (line.isEmpty) return;
       debugPrint('[sing-box:$label] $line');
+      // Feed the in-app log too, so the desktop builds have the same Settings ->
+      // Logs view as mobile instead of only a file on disk.
+      NovaLog.instance.writeCore(line, level: _coreLineLevel(line));
       _coreTail.add(line);
       if (_coreTail.length > 40) _coreTail.removeAt(0);
       try {

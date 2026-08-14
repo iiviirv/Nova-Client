@@ -7,6 +7,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
+import '../../core/proxy/singbox/node_probe.dart';
+import '../../core/proxy/singbox/proxy_node.dart';
 import '../relay/relay_link.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
@@ -24,6 +26,10 @@ import '../cloudflare/deploy_screen.dart';
 import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
 import 'node_list_screen.dart';
+
+/// Probe every profile once per app launch. [ServersBody] exists in both the
+/// Home and Servers tabs, so this shared guard prevents duplicate network work.
+final Set<String> _profileMetadataScheduled = <String>{};
 
 /// The scrollable Servers content — search, protocol filters, and the list of
 /// configs styled as native server rows (flag/icon, name, protocol badge,
@@ -69,8 +75,8 @@ class _ServersBodyState extends State<ServersBody> {
   }
 
   Future<void> _loadPanels() async {
-    final List<VpsPanel> panels =
-        await (_vps?.loadPanels() ?? Future<List<VpsPanel>>.value(<VpsPanel>[]));
+    final List<VpsPanel> panels = await (_vps?.loadPanels() ??
+        Future<List<VpsPanel>>.value(<VpsPanel>[]));
     if (mounted) setState(() => _vpsPanels = panels);
   }
 
@@ -109,6 +115,9 @@ class _ServersBodyState extends State<ServersBody> {
       listenable: profiles,
       builder: (context, _) {
         final List<ProxyProfile> all = profiles.profiles;
+        for (final ProxyProfile profile in all) {
+          _scheduleProfileMetadata(profiles, profile);
+        }
         final List<ProxyProfile> shown = all.where((p) {
           if (_filter != null && p.kind != _filter) return false;
           if (_query.isEmpty) return true;
@@ -119,8 +128,7 @@ class _ServersBodyState extends State<ServersBody> {
           return _EmptyState(compact: widget.compact);
         }
 
-        final List<ProxyKind> kinds =
-            all.map((p) => p.kind).toSet().toList();
+        final List<ProxyKind> kinds = all.map((p) => p.kind).toSet().toList();
 
         final List<Widget> children = <Widget>[
           if (!widget.compact) ...<Widget>[
@@ -229,13 +237,18 @@ class _ServersBodyState extends State<ServersBody> {
     if (res == null) return;
     final String name = res.name;
     final String url = res.uri;
-    profiles.update(p.copyWith(
+    final ProxyProfile updated = p.copyWith(
       name: name.isEmpty ? p.name : name,
       subscriptionUrl: isSub ? url : null,
       uri: isSub ? p.uri : url,
-    ));
+      lastLatencyMs: null,
+      fastNodes: const <String>[],
+    );
+    profiles.update(updated);
     // The source may have changed; drop cached nodes so the next resolve refetches.
     clearSubscriptionCache();
+    _profileMetadataScheduled.remove(p.id);
+    _scheduleProfileMetadata(profiles, updated);
   }
 }
 
@@ -364,17 +377,19 @@ class _ServerRow extends StatelessWidget {
                           ?.copyWith(fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
                     children: <Widget>[
                       NovaProtocolBadge(
                         label: profile.kind.label,
                         color: nova.cyan,
                       ),
-                      if (profile.isSubscription) ...<Widget>[
-                        const SizedBox(width: 8),
+                      if (profile.isSubscription)
                         Text('${profile.nodeCount} nodes',
-                            style: text.labelSmall?.copyWith(color: nova.muted)),
-                      ],
+                            style:
+                                text.labelSmall?.copyWith(color: nova.muted)),
                     ],
                   ),
                 ],
@@ -458,8 +473,10 @@ class _ServerRow extends StatelessWidget {
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline_rounded, color: nova.danger),
-                    title: Text(s.serversDelete, style: TextStyle(color: nova.danger)),
+                    leading:
+                        Icon(Icons.delete_outline_rounded, color: nova.danger),
+                    title: Text(s.serversDelete,
+                        style: TextStyle(color: nova.danger)),
                   ),
                 ),
               ],
@@ -493,7 +510,8 @@ class _EmptyState extends StatelessWidget {
               gradient: NovaGradients.logo,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 30),
+            child:
+                const Icon(Icons.bolt_rounded, color: Colors.white, size: 30),
           ),
         ),
         const SizedBox(height: 16),
@@ -636,7 +654,8 @@ Future<void> showAddServerDialog(BuildContext context,
     return;
   }
 
-  final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
+  final ProxyKind detected =
+      _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
     context: context,
@@ -670,28 +689,70 @@ Future<void> showAddServerDialog(BuildContext context,
       updatedAt: DateTime.now(),
     );
     profiles.add(profile);
-    // Resolve a subscription's real node count right away so the card shows,
-    // e.g., "17 nodes" instead of the default placeholder "1 nodes". Without
-    // this the count only updated when the user opened the node list, which
-    // read as "I can only see one config" even though all nodes were there.
-    // Fire-and-forget: a slow or failed fetch must not block adding the config.
-    if (isSub) {
-      unawaited(_resolveNodeCount(profiles, profile));
-    }
+    // Resolve metadata and a live ping right away. Fire-and-forget: a slow or
+    // failed endpoint must not block adding the config.
+    _scheduleProfileMetadata(profiles, profile);
   }
 }
 
-/// Best-effort background resolve of a subscription's node count, updating the
-/// stored profile so the servers card reflects the true number.
-Future<void> _resolveNodeCount(
-    ProfilesController profiles, ProxyProfile profile) async {
+void _scheduleProfileMetadata(
+    ProfilesController profiles, ProxyProfile profile) {
+  if (!_profileMetadataScheduled.add(profile.id)) return;
+  unawaited(_resolveProfileMetadata(profiles, profile));
+}
+
+/// Resolves the real node count and measures a representative live latency for
+/// the Servers/Home cards. A bounded sample keeps large subscriptions cheap;
+/// opening the node list still measures up to 80 exits in detail.
+Future<void> _resolveProfileMetadata(
+    ProfilesController profiles, ProxyProfile snapshot) async {
   try {
-    final nodes = await resolveProfileNodes(profile);
-    if (nodes.isNotEmpty) {
-      profiles.update(profile.copyWith(nodeCount: nodes.length));
+    final List<ProxyNode> nodes = await resolveProfileNodes(snapshot);
+    if (nodes.isEmpty) return;
+
+    final measured = await Future.wait(
+      nodes.take(12).map((ProxyNode node) async => (
+            node: node,
+            probe: await probeNode(
+              node,
+              timeout: const Duration(seconds: 5),
+            ),
+          )),
+    );
+    // Only nodes a probe could actually prove are worth putting on a card or
+    // seeding auto-select with; a TCP connect that proved nothing used to land
+    // here as a latency.
+    final reachable = measured.where((result) => result.probe.ok).toList()
+      ..sort((a, b) => a.probe.sortKey.compareTo(b.probe.sortKey));
+
+    ProxyProfile? current;
+    for (final ProxyProfile candidate in profiles.profiles) {
+      if (candidate.id == snapshot.id) {
+        current = candidate;
+        break;
+      }
     }
+    if (current == null ||
+        current.uri != snapshot.uri ||
+        current.subscriptionUrl != snapshot.subscriptionUrl) {
+      return;
+    }
+
+    profiles.update(current.copyWith(
+      nodeCount: nodes.length,
+      lastLatencyMs: reachable.isEmpty
+          ? current.lastLatencyMs
+          : reachable.first.probe.latencyMs,
+      fastNodes: reachable.isEmpty
+          ? current.fastNodes
+          : reachable
+              .take(24)
+              .map((result) => proxyNodeKey(result.node))
+              .toList(),
+    ));
   } catch (_) {
-    // Leave the placeholder count; the node list will resolve it on open.
+    // Keep the existing metadata; a later app launch or node-list refresh will
+    // try again.
   }
 }
 
@@ -765,8 +826,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
         children: <Widget>[
           TextField(
             controller: _nameCtrl,
-            decoration:
-                InputDecoration(hintText: s.serversName, labelText: s.serversName),
+            decoration: InputDecoration(
+                hintText: s.serversName, labelText: s.serversName),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -846,8 +907,7 @@ ProxyKind? _detectKind(String raw) {
 Future<void> showAddConfigSheet(BuildContext context) async {
   final nova = context.nova;
   final s = NovaStrings.of(context);
-  final bool canScan =
-      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+  final bool canScan = Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: nova.bgAlt,
@@ -891,8 +951,7 @@ Future<void> showAddConfigSheet(BuildContext context) async {
                 subtitle: s.serversScanQrSub,
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  final String? code =
-                      await Navigator.of(context).push<String>(
+                  final String? code = await Navigator.of(context).push<String>(
                     MaterialPageRoute<String>(
                         builder: (_) => const QrScanScreen()),
                   );
@@ -964,8 +1023,8 @@ class _AddOption extends StatelessWidget {
       leading: NovaIconChip(icon: icon, color: color, size: 38, radius: 11),
       title: Text(title,
           style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle,
-          style: text.bodySmall?.copyWith(color: nova.muted)),
+      subtitle:
+          Text(subtitle, style: text.bodySmall?.copyWith(color: nova.muted)),
       onTap: onTap,
     );
   }

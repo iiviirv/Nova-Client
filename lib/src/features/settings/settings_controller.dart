@@ -58,6 +58,7 @@ class SettingsController extends ChangeNotifier {
   static const String _kHy2Up = 'nova.hy2.upMbps';
   static const String _kAutoIsp = 'nova.isp.autoOptimize';
   static const String _kFingerprint = 'nova.tls.fingerprint';
+  static const String _kVerboseLog = 'nova.log.verboseCore';
 
   SharedPreferences? _prefs;
 
@@ -110,6 +111,13 @@ class SettingsController extends ChangeNotifier {
   String _fingerprint = '';
   String get fingerprint => _fingerprint;
 
+  /// Run the core at `info` instead of `warn`, so the Logs screen shows what it
+  /// is doing rather than only what it is complaining about. Off by default:
+  /// `info` logs every routed connection, which is real work on a phone for a
+  /// screen that is usually closed. Takes effect on the next connect.
+  bool _verboseCoreLog = false;
+  bool get verboseCoreLog => _verboseCoreLog;
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -124,6 +132,7 @@ class SettingsController extends ChangeNotifier {
         // A manual choice pre-fills the override; the ISP resolver leaves it
         // alone (see SingboxProxyController), so manual always wins.
         fingerprintOverride: _fingerprint.isEmpty ? null : _fingerprint,
+        verboseCoreLog: _verboseCoreLog,
       );
 
   void _load() {
@@ -146,6 +155,7 @@ class SettingsController extends ChangeNotifier {
     _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
     _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
     _fingerprint = p.getString(_kFingerprint) ?? '';
+    _verboseCoreLog = p.getBool(_kVerboseLog) ?? false;
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -182,6 +192,15 @@ class SettingsController extends ChangeNotifier {
     _fingerprint = fp;
     notifyListeners();
     await _prefs?.setString(_kFingerprint, fp);
+  }
+
+  /// Turn detailed core logging on or off. Applies to the next connection: the
+  /// level is baked into the config handed to the core when the tunnel starts.
+  Future<void> setVerboseCoreLog(bool v) async {
+    if (v == _verboseCoreLog) return;
+    _verboseCoreLog = v;
+    notifyListeners();
+    await _prefs?.setBool(_kVerboseLog, v);
   }
 
   Future<void> setBypassIran(bool v) async {

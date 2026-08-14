@@ -48,7 +48,19 @@ class TrafficStats {
 enum ProxyNotice {
   /// A manually pinned server was dead, so Nova failed over to the fastest
   /// working one.
+  ///
+  /// No longer fired: an explicit choice is never overridden silently. Kept so
+  /// older persisted state and tests that name it still compile.
   failoverToWorkingServer,
+
+  /// The server the user picked came up but is not passing traffic. Nova keeps
+  /// the choice (it is the user's) and says so, instead of quietly connecting
+  /// through a different server than the one shown as selected.
+  pinnedExitNoTraffic,
+
+  /// The pinned server is no longer in the subscription (panels rotate clean
+  /// IPs), so this session had to auto-select. Announced rather than silent.
+  pinnedExitGone,
 
   /// The tunnel is up but repeated probes (and one full rebuild) never got any
   /// traffic through: "connected but no internet". Fired once, when the

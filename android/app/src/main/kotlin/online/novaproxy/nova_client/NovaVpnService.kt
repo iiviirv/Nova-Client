@@ -30,12 +30,10 @@ import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
-import java.io.File
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JavaNetworkInterface
 import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
@@ -54,9 +52,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     companion object {
         const val EXTRA_CONFIG = "config"
         const val ACTION_STOP = "online.novaproxy.nova_client.STOP"
-
-        @Volatile
-        private var libboxSetup = false
     }
 
     private val connectivity by lazy {
@@ -65,6 +60,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private var commandServer: CommandServer? = null
     private var statusClient: CommandClient? = null
+    private var logClient: CommandClient? = null
     private var pfd: ParcelFileDescriptor? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -107,24 +103,14 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private fun startBox(config: String) {
         try {
-            if (!libboxSetup) {
-                val working = File(filesDir, "working").apply { mkdirs() }
-                Libbox.setup(
-                    SetupOptions().apply {
-                        setBasePath(filesDir.absolutePath)
-                        setWorkingPath(working.absolutePath)
-                        setTempPath(cacheDir.absolutePath)
-                        setCommandServerListenPort(0)
-                    },
-                )
-                libboxSetup = true
-            }
+            NovaCore.ensureSetup(this)
             val server = CommandServer(this, this)
             server.start()
             commandServer = server
             server.startOrReloadService(config, OverrideOptions())
             NovaProxyBridge.emitState("connected")
             startStatusClient()
+            startLogClient()
         } catch (e: Exception) {
             running = false
             NovaProxyBridge.emitError(e.message)
@@ -188,6 +174,40 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { client.disconnect() }
     }
 
+    /// Subscribe to the core's log stream and forward it to Flutter, where it
+    /// backs Settings -> Logs. A SECOND client on purpose: the status client is
+    /// what feeds the dashboard's live speed meter, and adding a command to it
+    /// would put that at the mercy of the log subscription's lifecycle. Two
+    /// clients are cheap (a local socket each) and fail independently.
+    ///
+    /// How much this carries is set by the config's `log.level`, which the Dart
+    /// side raises from `warn` to `info` only when the user asks for detailed
+    /// logs.
+    private fun startLogClient() {
+        runCatching {
+            val options = CommandClientOptions().apply {
+                addCommand(Libbox.CommandLog)
+            }
+            val client = CommandClient(LogHandler(), options)
+            logClient = client
+            // Same race as the status client: the command server's socket may
+            // not be accepting the instant startOrReloadService returns.
+            Thread {
+                for (attempt in 0 until 10) {
+                    if (logClient !== client) return@Thread
+                    if (runCatching { client.connect() }.isSuccess) return@Thread
+                    Thread.sleep(300)
+                }
+            }.start()
+        }
+    }
+
+    private fun stopLogClient() {
+        val client = logClient ?: return
+        logClient = null
+        runCatching { client.disconnect() }
+    }
+
     /// Receives the core's status callbacks. Only [writeStatus] carries traffic;
     /// the rest are required interface methods and stay no-ops (Nova doesn't use
     /// the log/groups/clash streams here).
@@ -212,7 +232,37 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun updateClashMode(newMode: String) {}
     }
 
+    /// Receives the core's log stream. Only [writeLogs] carries anything; the
+    /// rest are required interface methods.
+    private inner class LogHandler : CommandClientHandler {
+        override fun writeLogs(messageList: LogIterator?) {
+            val list = messageList ?: return
+            val batch = ArrayList<Map<String, Any>>()
+            while (list.hasNext()) {
+                val entry = list.next() ?: continue
+                batch.add(
+                    mapOf(
+                        "level" to entry.level,
+                        "message" to (entry.message ?: ""),
+                    )
+                )
+            }
+            if (batch.isNotEmpty()) NovaProxyBridge.emitLog(batch)
+        }
+
+        override fun writeStatus(message: StatusMessage) {}
+        override fun connected() {}
+        override fun disconnected(message: String?) {}
+        override fun clearLogs() {}
+        override fun writeGroups(message: OutboundGroupIterator?) {}
+        override fun writeConnectionEvents(events: ConnectionEvents?) {}
+        override fun setDefaultLogLevel(level: Int) {}
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
+        override fun updateClashMode(newMode: String) {}
+    }
+
     private fun cleanup() {
+        stopLogClient()
         stopStatusClient()
         runCatching { commandServer?.closeService() }
         runCatching { commandServer?.close() }
@@ -362,6 +412,30 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 else ->
                     connectivity.registerDefaultNetworkCallback(callback)
             }
+        }
+        // Report the network we can already see, synchronously. Every
+        // registration above delivers its first onAvailable on a handler, so on
+        // a fast start the core reaches the stage that opens its own sockets
+        // before that callback arrives, and anything binding to the default
+        // interface (the AmneziaWG and WireGuard endpoints both do) fails with
+        // "no available network interface" on a device that is perfectly
+        // online. Reproduced as an intermittent connect failure; there is
+        // nothing emulator-specific about the race.
+        // The VPN's own interface is skipped for the reason in
+        // [defaultNetworkRequest]: reporting tun0 as the uplink makes the direct
+        // outbound loop back into the tunnel.
+        runCatching {
+            val current = connectivity.activeNetwork ?: return@runCatching
+            val caps = connectivity.getNetworkCapabilities(current) ?: return@runCatching
+            // The same predicate [defaultNetworkRequest] uses, so this shortcut
+            // can never report a network the callback path would have rejected.
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@runCatching
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+            ) {
+                return@runCatching
+            }
+            report(listener, current)
         }
     }
 

@@ -61,13 +61,15 @@ class _NovaAppShellState extends State<NovaAppShell> {
     final NovaStrings s = NovaStrings.of(context);
     final String message = switch (code) {
       ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
+      ProxyNotice.pinnedExitNoTraffic => s.pinnedExitNoTraffic,
+      ProxyNotice.pinnedExitGone => s.pinnedExitGone,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,
     };
-    // The no-internet verdict carries instructions (Radar, other network), so
-    // give it longer on screen than the informational failover note.
-    final Duration duration = code == ProxyNotice.tunnelHasNoInternet
-        ? const Duration(seconds: 8)
-        : const Duration(seconds: 4);
+    // Verdicts that carry instructions (Radar, another server, another network)
+    // get longer on screen than a purely informational note.
+    final Duration duration = code == ProxyNotice.failoverToWorkingServer
+        ? const Duration(seconds: 4)
+        : const Duration(seconds: 8);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(

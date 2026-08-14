@@ -21,6 +21,7 @@ class SingboxRouteOptions {
     this.hy2DownMbps = 0,
     this.fingerprintOverride,
     this.autoOptimizeCarrier = false,
+    this.verboseCoreLog = false,
   });
 
   final SingboxMode mode;
@@ -89,6 +90,19 @@ class SingboxRouteOptions {
   /// (no SIM) and whenever the user disables it.
   final bool autoOptimizeCarrier;
 
+  /// Raise the core's log level from `warn` to `info` so the Logs screen shows
+  /// what the core is doing per connection, not just its complaints.
+  ///
+  /// Off by default and deliberately opt-in: at `info` sing-box logs a line for
+  /// every connection it routes, which on a phone is a steady stream of work
+  /// (formatting, the command socket, the ring buffer) for a screen nobody has
+  /// open. A user who is diagnosing something turns it on; everyone else pays
+  /// nothing for it.
+  final bool verboseCoreLog;
+
+  /// The `log.level` this produces.
+  String get logLevel => verboseCoreLog ? 'info' : 'warn';
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -98,6 +112,7 @@ class SingboxRouteOptions {
     int? hy2DownMbps,
     String? fingerprintOverride,
     bool? autoOptimizeCarrier,
+    bool? verboseCoreLog,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -113,6 +128,7 @@ class SingboxRouteOptions {
         hy2DownMbps: hy2DownMbps ?? this.hy2DownMbps,
         fingerprintOverride: fingerprintOverride ?? this.fingerprintOverride,
         autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
+        verboseCoreLog: verboseCoreLog ?? this.verboseCoreLog,
       );
 }
 
@@ -147,8 +163,19 @@ class SingboxConfig {
     ProxyNode node, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
+    // xhttp / SplitHTTP is Xray-only; sing-box has no implementation, so
+    // _transport() would return null and the node would be built as plain TCP,
+    // which connects nowhere. buildMultiMap filters these out of the auto pool,
+    // but a single pinned node lands here directly. Fail with something the user
+    // can act on (connect() surfaces a FormatException message verbatim) rather
+    // than handing the core a config that silently cannot work.
+    if (node.network == 'xhttp') {
+      throw const FormatException(
+          'This node uses the xhttp transport, which Nova cannot run. '
+          'Ask for a ws, gRPC, httpupgrade, or Reality config instead.');
+    }
     return <String, dynamic>{
-      'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
       'dns': _dns(options,
           directDomains: <String>{
             ..._directDomains(<ProxyNode>[node]),
@@ -225,13 +252,17 @@ class SingboxConfig {
       ...usable.where((ProxyNode n) => n.network != 'grpc'),
       ...usable.where((ProxyNode n) => n.network == 'grpc'),
     ];
-    final List<ProxyNode> picked =
-        _dedupe(ordered.isEmpty ? nodes : ordered).take(cap).toList();
-    if (picked.length <= 1) {
-      return buildMap(
-        picked.isEmpty ? nodes.first : picked.first,
-        options: options,
-      );
+    // NB: never fall back to the unfiltered `nodes` here. Doing so reintroduced
+    // the xhttp nodes this method just dropped, and they were then built as
+    // plain TCP exits that could not connect.
+    final List<ProxyNode> picked = _dedupe(ordered).take(cap).toList();
+    if (picked.isEmpty) {
+      throw const FormatException(
+          'None of this subscription\'s nodes use a transport Nova can run '
+          '(they are all xhttp). Ask for ws, gRPC, httpupgrade, or Reality.');
+    }
+    if (picked.length == 1) {
+      return buildMap(picked.first, options: options);
     }
     final List<Map<String, dynamic>> nodeOutbounds = <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> nodeEndpoints = <Map<String, dynamic>>[];
@@ -253,7 +284,7 @@ class SingboxConfig {
       }
     }
     return <String, dynamic>{
-      'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
       'dns': _dns(options,
           directDomains: <String>{
             ..._directDomains(picked),

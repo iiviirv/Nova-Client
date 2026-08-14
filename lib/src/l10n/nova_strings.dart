@@ -31,6 +31,14 @@ class NovaStrings {
   /// auto-switches to the fastest working one.
   String get failoverSwitched => t('notice.failoverSwitched');
 
+  /// Shown when the server the user picked connects but carries no traffic.
+  /// Nova keeps their choice and tells them, rather than switching behind them.
+  String get pinnedExitNoTraffic => t('notice.pinnedExitNoTraffic');
+
+  /// Shown when the pinned server has disappeared from the subscription, so
+  /// this session had to auto-select.
+  String get pinnedExitGone => t('notice.pinnedExitGone');
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -624,9 +632,39 @@ class NovaStrings {
   String get nodeCommunity => t('node.community');
   String nodeCount(int n) => t('node.count').replaceFirst('{n}', '$n');
 
+  /// Verdict on a node whose server never answered.
+  String get nodeBlocked => t('node.blocked');
+
+  /// Verdict on a node that cannot be judged without connecting to it.
+  String get nodeUntested => t('node.untested');
+
+  // ---- Logs ----
+  String get logsTitle => t('logs.title');
+  String get logsSubtitle => t('logs.subtitle');
+  String get logsTabApp => t('logs.tabApp');
+  String get logsTabCore => t('logs.tabCore');
+  String get logsEmptyApp => t('logs.emptyApp');
+  String get logsEmptyCore => t('logs.emptyCore');
+  String get logsCopy => t('logs.copy');
+  String get logsCopied => t('logs.copied');
+  String get logsClear => t('logs.clear');
+  String get logsFollow => t('logs.follow');
+  String get logsRedactNote => t('logs.redactNote');
+  String get logsVerbose => t('logs.verbose');
+  String get logsVerboseSub => t('logs.verboseSub');
+  String logsLineCount(int n) =>
+      t('logs.lineCount').replaceFirst('{n}', '$n');
+
   static const Map<String, String> _en = <String, String>{
     'notice.failoverSwitched':
         'That server was not responding, so Nova switched to the fastest working one.',
+    'notice.pinnedExitNoTraffic':
+        'The server you picked is connected but no traffic is getting through. '
+            'Nova is staying on your choice: pick another server, or switch to '
+            'Auto, in the server list.',
+    'notice.pinnedExitGone':
+        'The server you had picked is no longer in this subscription, so Nova '
+            'auto-selected one. Open the server list to choose again.',
     'notice.tunnelNoInternet':
         'The tunnel is up but no traffic is getting through. Your network may '
             'be blocking this config; scan a clean IP in Radar or try another '
@@ -1233,11 +1271,42 @@ class NovaStrings {
         'Never pay anyone for these configs. Nova is a free service, share it with friends.',
     'node.community': 'Follow Nova',
     'node.count': '{n} nodes',
+    'node.blocked': 'blocked',
+    'node.untested': 'not testable',
+    'logs.title': 'Logs',
+    'logs.subtitle': 'What Nova and the VPN core are doing',
+    'logs.tabApp': 'Nova',
+    'logs.tabCore': 'Core',
+    'logs.emptyApp':
+        'Nothing yet. Connect once and the steps Nova takes appear here.',
+    'logs.emptyCore':
+        'Nothing yet. The core writes here while the tunnel is running.',
+    'logs.copy': 'Copy',
+    'logs.copied': 'Copied. Credentials were removed.',
+    'logs.clear': 'Clear',
+    'logs.follow': 'Follow new lines',
+    'logs.redactNote':
+        'Passwords, UUIDs and subscription tokens are removed when you copy. '
+            'Server addresses are kept, because they are usually what the '
+            'problem turns on.',
+    'logs.verbose': 'Detailed core log',
+    'logs.verboseSub':
+        'Log every connection the core routes, not just its warnings. Uses more '
+            'battery, and starts with your next connection.',
+    'logs.lineCount': '{n} lines',
   };
 
   static const Map<String, String> _fa = <String, String>{
     'notice.failoverSwitched':
         'این سرور پاسخ نمی‌داد؛ Nova به سریع‌ترین سرور فعال تغییر کرد.',
+    'notice.pinnedExitNoTraffic':
+        'سروری که انتخاب کرده‌اید وصل شده ولی هیچ ترافیکی عبور نمی‌کند. '
+            '\u2066Nova\u2069 روی انتخاب شما می‌ماند: از فهرست سرورها سرور '
+            'دیگری را انتخاب کنید یا حالت خودکار را بزنید.',
+    'notice.pinnedExitGone':
+        'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
+            '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '
+            'دوباره فهرست سرورها را باز کنید.',
     'notice.tunnelNoInternet':
         'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
             'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '
@@ -1840,6 +1909,29 @@ class NovaStrings {
         'برای این کانفیگ‌ها به کسی پول ندهید. نوا یک سرویس رایگان است، آن را با دوستانتان به اشتراک بگذارید.',
     'node.community': 'نوا را دنبال کنید',
     'node.count': '{n} سرور',
+    'node.blocked': 'مسدود',
+    'node.untested': 'قابل تست نیست',
+    'logs.title': 'گزارش‌ها',
+    'logs.subtitle': 'آنچه نوا و هسته‌ی VPN انجام می‌دهند',
+    'logs.tabApp': 'نوا',
+    'logs.tabCore': 'هسته',
+    'logs.emptyApp':
+        'هنوز چیزی نیست. یک بار وصل شوید تا کارهایی که نوا انجام می‌دهد '
+            'اینجا بیاید.',
+    'logs.emptyCore':
+        'هنوز چیزی نیست. هسته تا وقتی تونل روشن است اینجا می‌نویسد.',
+    'logs.copy': 'کپی',
+    'logs.copied': 'کپی شد. اطلاعات محرمانه حذف شد.',
+    'logs.clear': 'پاک کردن',
+    'logs.follow': 'دنبال‌کردن خط‌های تازه',
+    'logs.redactNote':
+        'رمزها، \u2066UUID\u2069 و توکن اشتراک هنگام کپی حذف می‌شوند. '
+            'آدرس سرورها می‌ماند، چون معمولا مشکل به همان‌ها برمی‌گردد.',
+    'logs.verbose': 'گزارش کامل هسته',
+    'logs.verboseSub':
+        'هر اتصالی که هسته مسیریابی می‌کند ثبت شود، نه فقط هشدارها. مصرف '
+            'باتری بیشتر می‌شود و از اتصال بعدی اعمال می‌شود.',
+    'logs.lineCount': '{n} خط',
   };
 }
 

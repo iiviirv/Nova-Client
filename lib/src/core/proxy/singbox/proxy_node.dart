@@ -139,7 +139,8 @@ class ProxyNode {
 
   // VMess.
   final int vmessAlterId; // "aid" (0 for AEAD)
-  final String? vmessSecurity; // "scy": auto | aes-128-gcm | chacha20-poly1305 | none
+  final String?
+      vmessSecurity; // "scy": auto | aes-128-gcm | chacha20-poly1305 | none
 
   // Hysteria2 (QUIC). Auth uses [password]; salamander obfuscation is optional.
   final String? obfsType; // "salamander" when set
@@ -206,3 +207,15 @@ class ProxyNode {
     );
   }
 }
+
+/// Stable identity for selecting and latency-ranking a node.
+///
+/// A subscription can expose several protocols or WebSocket paths on the same
+/// address and port, so `server:port` alone is ambiguous.
+String proxyNodeKey(ProxyNode node) =>
+    '${node.server}:${node.port}:${node.protocol.name}:${node.wsPath ?? ''}';
+
+/// Accept the full key used by current builds and the old `server:port` key
+/// already persisted by earlier releases.
+bool proxyNodeMatchesKey(ProxyNode node, String key) =>
+    key == proxyNodeKey(node) || key == '${node.server}:${node.port}';

@@ -14,6 +14,8 @@ import 'proxy_node.dart';
 ///   * `tuic://uuid:password@host:port?sni=..&congestion_control=bbr&udp_relay_mode=native#name`
 ///   * `ss://base64(method:password)@host:port#name`  (SIP002)
 ///   * `ss://base64(method:password@host:port)#name`  (legacy)
+///   * `wireguard://privateKey@host:port?publickey=..&address=..&mtu=..#name`
+///     (also `awg://`, which additionally carries the AmneziaWG junk params)
 ///
 /// Returns `null` for unsupported schemes or malformed links rather than
 /// throwing, so callers can surface a friendly error.
@@ -43,6 +45,7 @@ ProxyNode? parseShareLink(String raw) {
       'hysteria2' || 'hy2' => _parseHysteria2(input),
       'tuic' => _parseTuic(input),
       'ss' => _parseShadowsocks(input),
+      'wireguard' || 'awg' => _parseWireguard(input),
       'socks' || 'socks5' => _parseSocksHttp(input, NodeProtocol.socks),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
@@ -85,7 +88,7 @@ ProxyNode? _parseUserInfoLink(String input, NodeProtocol protocol) {
     password: protocol == NodeProtocol.trojan ? credential : null,
     tls: tls,
     sni: q['sni'] ?? q['peer'] ?? (tls ? host : null),
-    allowInsecure: q['allowInsecure'] == '1' || q['allow_insecure'] == 'true',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']),
     fingerprint: (q['fp'] ?? '').isNotEmpty
         ? q['fp']
@@ -130,6 +133,9 @@ ProxyNode? _parseVmess(String input) {
     vmessSecurity: s('scy').isEmpty ? 'auto' : s('scy'),
     tls: tls,
     sni: tls ? (sni.isEmpty ? host : sni) : null,
+    // Nova's node panel writes this into the vmess JSON as "allowInsecure":"1"
+    // for a self-signed (no-domain) node. Without it the handshake fails.
+    allowInsecure: _insecureFlag(s),
     alpn: _splitAlpn(s('alpn')),
     fingerprint: s('fp').isEmpty ? null : s('fp'),
     network: network,
@@ -161,7 +167,7 @@ ProxyNode? _parseHysteria2(String input) {
     password: password.isEmpty ? null : password,
     tls: true,
     sni: q['sni'] ?? q['peer'] ?? host,
-    allowInsecure: q['insecure'] == '1' || q['allowInsecure'] == '1',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']),
     obfsType: obfs == 'salamander' ? 'salamander' : null,
     obfsPassword: (q['obfs-password'] ?? q['obfs_password']),
@@ -192,7 +198,7 @@ ProxyNode? _parseTuic(String input) {
     password: password,
     tls: true,
     sni: q['sni'] ?? q['peer'] ?? host,
-    allowInsecure: q['allow_insecure'] == '1' || q['insecure'] == '1',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']?.isNotEmpty == true ? q['alpn'] : 'h3'),
     congestionControl:
         (q['congestion_control'] ?? '').isEmpty ? 'bbr' : q['congestion_control'],
@@ -309,6 +315,106 @@ ProxyNode? _parseSocksHttp(String input, NodeProtocol proto) {
     sni: tls ? host : null,
   );
 }
+
+/// A WireGuard or AmneziaWG link:
+///   `wireguard://privateKey@host:port?publickey=..&address=10.7.0.2/32&mtu=1420#name`
+/// An `awg://` link (or a `wireguard://` one carrying junk params) additionally
+/// supplies `jc`/`jmin`/`jmax`, `s1`-`s4`, `h1`-`h4` and `i1`-`i5`.
+///
+/// Nova's node panel emits the `wireguard://` form with the private key
+/// percent-encoded, because a raw `/` in a base64 key would break the authority.
+/// Rather than duplicate the endpoint logic, this rebuilds the equivalent
+/// `.conf` and hands it to the parser the `.conf` import path already uses, so a
+/// plain link yields a stock `wireguard` endpoint (which every shipped core can
+/// run) and a junk-bearing one yields an `awg` endpoint.
+ProxyNode? _parseWireguard(String input) {
+  final Uri uri = Uri.parse(input);
+  final String host = uri.host;
+  final int port = uri.port == 0 ? 51820 : uri.port;
+  final String privateKey = Uri.decodeComponent(uri.userInfo);
+  if (host.isEmpty || privateKey.isEmpty) return null;
+  // Values below are interpolated into INI text, and Uri decodes %0A to a real
+  // newline, so a control character (or a stray section header) could inject or
+  // override keys the link never named. Reject rather than sanitize: these are
+  // base64 keys, addresses, and integers, none of which contain these.
+  if (_hasIniControlChars(privateKey)) return null;
+
+  // Clients disagree on separators and casing (`public_key` vs `publickey`), so
+  // normalize once and look up the flattened form.
+  final Map<String, String> q = <String, String>{};
+  uri.queryParameters.forEach((String k, String v) {
+    q[k.toLowerCase().replaceAll('_', '').replaceAll('-', '')] = v;
+  });
+  String? pick(List<String> keys) {
+    for (final String k in keys) {
+      final String? v = q[k];
+      if (v == null) continue;
+      final String t = v.trim();
+      if (t.isNotEmpty && !_hasIniControlChars(t)) return t;
+    }
+    return null;
+  }
+
+  final String? publicKey = pick(<String>['publickey', 'peerpublickey', 'pbk']);
+  if (publicKey == null) return null;
+
+  final StringBuffer conf = StringBuffer()
+    ..writeln('[Interface]')
+    ..writeln('PrivateKey = $privateKey')
+    ..writeln('Address = ${pick(<String>['address', 'addr', 'ip']) ?? '10.7.0.2/32'}');
+  final String? dns = pick(<String>['dns']);
+  if (dns != null) conf.writeln('DNS = $dns');
+  final String? mtu = pick(<String>['mtu']);
+  if (mtu != null) conf.writeln('MTU = $mtu');
+  for (final String k in const <String>[
+    'jc', 'jmin', 'jmax',
+    's1', 's2', 's3', 's4',
+    'h1', 'h2', 'h3', 'h4',
+    'i1', 'i2', 'i3', 'i4', 'i5',
+  ]) {
+    final String? v = pick(<String>[k]);
+    if (v != null) conf.writeln('$k = $v');
+  }
+  conf
+    ..writeln()
+    ..writeln('[Peer]')
+    ..writeln('PublicKey = $publicKey')
+    ..writeln('Endpoint = $host:$port')
+    ..writeln('AllowedIPs = ${pick(<String>['allowedips']) ?? '0.0.0.0/0, ::/0'}');
+  final String? psk = pick(<String>['presharedkey', 'psk']);
+  if (psk != null) conf.writeln('PresharedKey = $psk');
+  conf.writeln(
+      'PersistentKeepalive = ${pick(<String>['persistentkeepalive', 'keepalive']) ?? '25'}');
+
+  final String label =
+      uri.fragment.isEmpty ? '' : Uri.decodeComponent(uri.fragment);
+  try {
+    return ProxyNode.fromAwgConf(conf.toString(),
+        name: label.isEmpty ? null : label);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// True if [v] contains anything that would change the shape of the INI text
+/// [_parseWireguard] synthesizes: a line break, or a section header bracket.
+bool _hasIniControlChars(String v) =>
+    v.contains('\n') || v.contains('\r') || v.contains('[') || v.contains(']');
+
+bool _truthy(String? v) {
+  final String s = (v ?? '').trim().toLowerCase();
+  return s == '1' || s == 'true';
+}
+
+/// Reads the "skip certificate verification" flag, which every client spells
+/// differently. Nova's server emits `allowInsecure=1` on URIs and
+/// `"allowInsecure":"1"` inside vmess JSON, while Hysteria2 and TUIC links in the
+/// wild use `insecure` or `allow_insecure`. Accept all three, as `1` or `true`,
+/// so a self-signed node works no matter which spelling produced the link.
+bool _insecureFlag(String? Function(String key) get) =>
+    _truthy(get('allowInsecure')) ||
+    _truthy(get('allow_insecure')) ||
+    _truthy(get('insecure'));
 
 String _name(Uri uri, String fallback) {
   final String fragment = uri.fragment;

@@ -11,14 +11,15 @@ import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../cloudflare/cloudflare_screen.dart';
+import '../logs/log_screen.dart';
 import '../radar/radar_screen.dart';
 import '../relay/relay_screen.dart';
 import '../routing/routing_screen.dart';
 
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
-const String kNovaVersion = '0.2.0';
-const String kNovaBuild = '62';
+const String kNovaVersion = '0.3.3';
+const String kNovaBuild = '72';
 
 /// App settings, grouped cards (General, Appearance, Community, About) in
 /// the native Android style, with colored leading icon chips and chevrons.
@@ -80,6 +81,14 @@ class SettingsScreen extends StatelessWidget {
                         title: s.setRelay,
                         subtitle: s.setRelaySub,
                         onTap: () => _push(context, const RelayScreen()),
+                      ),
+                      _div(nova.border),
+                      _NavRow(
+                        icon: Icons.terminal_rounded,
+                        color: nova.success,
+                        title: s.logsTitle,
+                        subtitle: s.logsSubtitle,
+                        onTap: () => _push(context, const LogScreen()),
                       ),
                     ],
                   ),

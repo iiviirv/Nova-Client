@@ -76,6 +76,24 @@ class MainActivity : FlutterActivity() {
                     result.success(info)
                 }
 
+                // What the bundled core can actually do. The Dart config layer
+                // emits AmneziaWG endpoints, and a core built without AmneziaWG
+                // takes them and does nothing visible with them, so the Dart
+                // side asks before it hands one over. The probe builds a small
+                // userspace stack, so it runs off the main thread.
+                "coreFeatures" -> {
+                    Thread {
+                        val supported = NovaCore.supportsAwg(applicationContext)
+                        val info = HashMap<String, Any>()
+                        // Left out entirely when the probe could not answer, so
+                        // the Dart side records "unknown" instead of a verdict.
+                        if (supported != null) info["amneziawg"] = supported
+                        info["coreVersion"] = NovaCore.version()
+                        NovaCore.awgFailureReason()?.let { info["amneziawgReason"] = it }
+                        runOnUiThread { result.success(info) }
+                    }.start()
+                }
+
                 else -> result.notImplemented()
             }
         }

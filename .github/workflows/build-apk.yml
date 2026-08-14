@@ -2,11 +2,20 @@ name: Build APK
 
 # Builds the real, working Nova Client APK: compiles the sing-box core to an
 # Android library (libbox.aar) via gomobile, then assembles the Flutter APK with
-# it. The AAR is cached (keyed on the sing-box version), so the slow gomobile
-# build only runs once.
+# it. The AAR is cached (keyed on the core's inputs), so the slow gomobile build
+# only runs once.
 #
-# arm64-v8a only for now (covers virtually all modern phones) to keep build time
-# reasonable; add more ABIs later by widening the -platform list.
+# The core is NOT stock sing-box. tool/core/build-libbox.sh applies
+# tool/core/amneziawg.patch, which adds the AmneziaWG endpoint the app's config
+# layer has always emitted, and fails the build if the resulting native
+# libraries do not contain it. See docs/core-amneziawg.md for the pinning
+# record.
+#
+# The core is built for every ABI the APK runs on (arm64-v8a, armeabi-v7a,
+# x86_64). A shipped APK that installs on an ABI with no core in it is an app
+# that connects to nothing, which is the same defect as shipping a core without
+# AmneziaWG, so the two lists are never allowed to disagree: the check at the
+# end of this file fails the build if any runnable ABI has no core.
 
 on:
   workflow_dispatch:
@@ -46,12 +55,21 @@ jobs:
           channel: stable
           cache: true
 
+      # The patch's hash is part of the key on purpose: editing the core patch
+      # must not silently reuse a cached AAR built from the previous one.
+      # A tag build never uses the cache at all: the pins that make this core
+      # trustworthy (the upstream commit, the patch hash, the module hashes) are
+      # all checked inside the build step, and a restored AAR skips every one of
+      # them. Anything a release publishes is built from the pins.
       - name: Cache libbox.aar
         id: libbox-cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache@v4
         with:
           path: android/app/libs/libbox.aar
-          key: libbox-${{ env.SINGBOX_VERSION }}-ndk${{ env.NDK_VERSION }}-arm64-v1
+          key: >-
+            libbox-${{ env.SINGBOX_VERSION }}-ndk${{ env.NDK_VERSION }}-3abi-awg-${{
+            hashFiles('tool/core/amneziawg.patch', 'tool/core/build-libbox.sh') }}
 
       - name: Install Android NDK ${{ env.NDK_VERSION }}
         if: steps.libbox-cache.outputs.cache-hit != 'true'
@@ -63,33 +81,71 @@ jobs:
           test -d "$ANDROID_HOME/ndk/${NDK_VERSION}"
           echo "NDK installed at $ANDROID_HOME/ndk/${NDK_VERSION}"
 
-      - name: Build libbox.aar (sing-box ${{ env.SINGBOX_VERSION }})
+      - name: Build libbox.aar with AmneziaWG (sing-box ${{ env.SINGBOX_VERSION }})
         if: steps.libbox-cache.outputs.cache-hit != 'true'
         run: |
           set -euxo pipefail
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/${NDK_VERSION}"
-          export NDK="$ANDROID_NDK_HOME"
-          git clone --branch "$SINGBOX_VERSION" --depth 1 https://github.com/SagerNet/sing-box /tmp/sing-box
-          cd /tmp/sing-box
-          make lib_install
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          # Builds libbox.aar (api23) + libbox-legacy.aar (api21); we keep the main one.
-          go run ./cmd/internal/build_libbox -target android -platform android/arm64
-          ls -lh libbox.aar
-          mkdir -p "$GITHUB_WORKSPACE/android/app/libs"
-          cp libbox.aar "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
+          bash tool/core/build-libbox.sh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
 
-      - name: Verify libbox.aar is present
+      # Runs on a cache hit too. A cached AAR from before the core carried
+      # AmneziaWG would otherwise ship, which is exactly the failure this whole
+      # change exists to make impossible.
+      - name: Verify the bundled core carries AmneziaWG
         run: |
-          set -eux
+          set -euo pipefail
           test -f android/app/libs/libbox.aar
           ls -lh android/app/libs/libbox.aar
+          shasum -a 256 android/app/libs/libbox.aar
+          rm -rf /tmp/libbox-check && mkdir -p /tmp/libbox-check
+          unzip -q android/app/libs/libbox.aar -d /tmp/libbox-check
+          found=0
+          for so in /tmp/libbox-check/jni/*/libbox.so; do
+            count="$(strings -a "$so" | grep -c jmin || true)"
+            echo "$(basename "$(dirname "$so")") jmin=$count"
+            if [ "$count" -lt 1 ]; then
+              echo "core for $(basename "$(dirname "$so")") has no AmneziaWG in it" >&2
+              exit 1
+            fi
+            found=$((found + 1))
+          done
+          [ "$found" -gt 0 ] || { echo "no native libraries in the AAR" >&2; exit 1; }
 
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      # Flutter's default ABI list (armeabi-v7a, arm64-v8a, x86_64), matched by
+      # PLATFORMS in tool/core/build-libbox.sh so every one of them has a core.
+      # 32-bit ARM is not a rounding error in this app's user base. Narrowing
+      # this list without narrowing PLATFORMS, or the other way round, ships an
+      # app that installs on a device it cannot serve; the next step refuses it.
       - name: Build release APK
         run: flutter build apk --release
+
+      # An ABI can run the app only if libflutter.so is in it, so those are the
+      # ABIs that must also carry a core. Plugin libraries for ABIs without
+      # libflutter.so cannot reach a running app.
+      - name: Verify every runnable ABI carries the core
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          # Listed once into a file, then read from the file. Piping unzip into
+          # `grep -q` looks equivalent and is not: grep exits at the first match,
+          # unzip dies of SIGPIPE, and under `pipefail` the pipeline reports
+          # failure for a library that is present. Measured, not guessed.
+          unzip -l "$apk" > /tmp/apk-listing.txt
+          grep "lib/" /tmp/apk-listing.txt || true
+          runnable="$(awk '/lib\/.*\/libflutter\.so/ {split($4, p, "/"); print p[2]}' /tmp/apk-listing.txt | sort -u)"
+          echo "runnable ABIs: $runnable"
+          test -n "$runnable"
+          for abi in $runnable; do
+            if grep -q "lib/$abi/libbox.so" /tmp/apk-listing.txt; then
+              echo "$abi: core present"
+            else
+              echo "APK can run on $abi with no core for it" >&2
+              exit 1
+            fi
+          done
 
       - name: Stage APK
         run: |
@@ -105,11 +161,19 @@ jobs:
           path: dist/nova-client.apk
           if-no-files-found: error
 
+      # Release notes come from the CHANGELOG.md section matching the tag, so the
+      # public release body is written from our own notes (the IRNova repo has no
+      # source history to auto-generate from). Both the APK and Windows jobs
+      # extract the same section, so whichever runs last writes identical text.
+      - name: Build release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        run: bash tool/release_notes.sh "${GITHUB_REF_NAME}" CHANGELOG.md > notes.md
+
       # Public releases live in the IRNova/Nova-Client repo (binaries only, no
       # source). Publishing there needs a PAT with release-write on that repo,
       # stored as the IRNOVA_TOKEN secret; the default GITHUB_TOKEN only reaches
       # this source repo. Auto-notes are off because that repo has no source
-      # history to derive them from; use the tag/CHANGELOG for notes.
+      # history to derive them from; the body comes from body_path (CHANGELOG).
       - name: Attach APK to the IRNova release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -117,4 +181,5 @@ jobs:
           repository: IRNova/Nova-Client
           token: ${{ secrets.IRNOVA_TOKEN }}
           files: dist/nova-client.apk
+          body_path: notes.md
           generate_release_notes: false

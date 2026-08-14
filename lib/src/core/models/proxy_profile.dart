@@ -82,7 +82,7 @@ class ProxyProfile {
     String? uri,
     String? subscriptionUrl,
     int? nodeCount,
-    int? lastLatencyMs,
+    Object? lastLatencyMs = _unset,
     DateTime? updatedAt,
     Object? pinnedNode = _unset,
     List<String>? fastNodes,
@@ -94,7 +94,8 @@ class ProxyProfile {
       uri: uri ?? this.uri,
       subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       nodeCount: nodeCount ?? this.nodeCount,
-      lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
+      lastLatencyMs:
+          lastLatencyMs == _unset ? this.lastLatencyMs : lastLatencyMs as int?,
       updatedAt: updatedAt ?? this.updatedAt,
       pinnedNode:
           pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,

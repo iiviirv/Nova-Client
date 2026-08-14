@@ -47,6 +47,13 @@ object NovaProxyBridge {
         )
     }
 
+    /// Forwards a batch of core log lines. Batched rather than one event per
+    /// line because the core emits them in bursts and each event is a hop to the
+    /// main thread; the Dart side unpacks the list.
+    fun emitLog(lines: List<Map<String, Any>>) {
+        post(mapOf("type" to "log", "lines" to lines))
+    }
+
     private fun post(event: Map<String, Any?>) {
         val sink = eventSink ?: return
         mainHandler.post { runCatching { sink.success(event) } }

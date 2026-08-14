@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
+import 'core_features.dart';
 import 'isp_optimizer.dart';
 import 'proxy_controller.dart';
 import 'singbox/node_probe.dart';
@@ -42,13 +44,16 @@ class SingboxProxyController extends ProxyController {
   SingboxProxyController({
     MethodChannel? control,
     EventChannel? events,
+    CoreFeatures? features,
   })  : _control = control ?? const MethodChannel('nova.proxy/control'),
-        _events = events ?? const EventChannel('nova.proxy/events') {
+        _events = events ?? const EventChannel('nova.proxy/events'),
+        _features = features ?? CoreFeatures.instance {
     _subscribe();
   }
 
   final MethodChannel _control;
   final EventChannel _events;
+  final CoreFeatures _features;
   StreamSubscription<dynamic>? _eventSub;
 
   /// If the tunnel never reports "connected" within this window the start has
@@ -97,12 +102,36 @@ class SingboxProxyController extends ProxyController {
   void _onEvent(dynamic event) {
     if (event is! Map) return;
     switch (event['type']) {
+      case 'log':
+        // One line, or a batch, straight from the core. The host sends
+        // `{ "type": "log", "lines": [ { "level": int, "message": String } ] }`.
+        //
+        // The level is filtered HERE rather than trusted from the config.
+        // libbox's log stream carries everything the core produces regardless of
+        // `log.level` (measured on a device: TRACE and DEBUG arrived with the
+        // config set to `warn`), so leaving it to the config meant the Detailed
+        // switch did nothing and every user got a firehose. Gating on the
+        // setting makes the switch true whatever the core decides to emit.
+        final bool verbose = routeOptions.verboseCoreLog;
+        final Object? lines = event['lines'];
+        if (lines is List) {
+          for (final Object? line in lines) {
+            if (line is! Map) continue;
+            final NovaLogLevel level =
+                novaLogLevelFromCore((line['level'] as num?)?.toInt() ?? 4);
+            // Quiet means what `log.level: warn` was supposed to mean: the core's
+            // complaints, not a line per routed connection.
+            if (!verbose && level.index < NovaLogLevel.warn.index) continue;
+            NovaLog.instance.writeCore('${line['message']}', level: level);
+          }
+        }
       case 'state':
         final ProxyConnectionState prev = _state;
         _state = ProxyConnectionState.values.firstWhere(
           (s) => s.name == event['value'],
           orElse: () => _state,
         );
+        if (_state != prev) NovaLog.instance.write('State: ${_state.name}');
         // Any settled state clears the connect watchdog.
         if (_state != ProxyConnectionState.connecting) {
           _watchdog?.cancel();
@@ -130,6 +159,8 @@ class SingboxProxyController extends ProxyController {
         notifyListeners();
       case 'error':
         _lastError = event['message'] as String?;
+        NovaLog.instance
+            .write('Error: $_lastError', level: NovaLogLevel.error);
         _state = ProxyConnectionState.error;
         notifyListeners();
     }
@@ -182,6 +213,10 @@ class SingboxProxyController extends ProxyController {
     exitUnreachable = false;
     _state = ProxyConnectionState.connecting;
     _lastError = null;
+    NovaLog.instance.write(
+      'Connecting with "${profile.name}" '
+      '(${profile.pinnedNode != null ? 'server chosen by you' : 'auto-select'})',
+    );
     notifyListeners();
 
     final String config;
@@ -197,6 +232,20 @@ class SingboxProxyController extends ProxyController {
       _state = ProxyConnectionState.error;
       notifyListeners();
       return;
+    }
+
+    // An AmneziaWG config handed to a core built without it produces a tunnel
+    // that comes up and carries nothing, which reads as a broken server. Ask
+    // the core first and say what is actually wrong. An unmeasurable host
+    // leaves the verdict unknown and the connect proceeds unchanged.
+    if (CoreFeatures.usesAwg(config)) {
+      await _features.load();
+      if (_features.awgUnsupported) {
+        _lastError = _features.awgUnsupportedMessage;
+        _state = ProxyConnectionState.error;
+        notifyListeners();
+        return;
+      }
     }
 
     try {
@@ -279,7 +328,8 @@ class SingboxProxyController extends ProxyController {
     // actually connect instead of failing as an "invalid profile link". A
     // subscription returns its whole node list so the core auto-picks the
     // fastest via a urltest; a single link is just the one node.
-    List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
+    List<ProxyNode> nodes =
+        await resolveProfileNodes(profile, fetch: subFetcher);
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }
@@ -288,11 +338,34 @@ class SingboxProxyController extends ProxyController {
     // subscription.
     final String? pin = profile.pinnedNode;
     if (pin != null) {
+      bool honoured = false;
       for (final ProxyNode n in nodes) {
-        if ('${n.server}:${n.port}' == pin) {
+        if (proxyNodeMatchesKey(n, pin)) {
+          // An xhttp node cannot be built at all (sing-box has no such
+          // transport), and the pin self-heal only runs after a successful
+          // connect, so honouring the pin here would leave the profile
+          // permanently unconnectable with no way back. Treat it like a pin that
+          // is no longer in the subscription and fall through to auto.
+          if (n.network == 'xhttp') break;
           nodes = <ProxyNode>[n];
+          honoured = true;
+          NovaLog.instance.write(
+              'Using your chosen server ${n.server}:${n.port} '
+              '(${n.protocol.label})');
           break;
         }
+      }
+      // The pinned server is gone from the subscription (a panel rotating its
+      // clean IPs changes the address, which changes the key). Auto-select is the
+      // only thing left to do, but say so: connecting through a different server
+      // than the one the list shows as selected must never be silent.
+      if (!honoured) {
+        NovaLog.instance.write(
+          'The server you chose is no longer in this subscription; '
+          'auto-selecting instead',
+          level: NovaLogLevel.warn,
+        );
+        notice.value = ProxyNotice.pinnedExitGone;
       }
     } else if (profile.fastNodes.isNotEmpty) {
       // Auto-select: front-load the nodes the picker measured as fastest so the
@@ -303,8 +376,12 @@ class SingboxProxyController extends ProxyController {
           profile.fastNodes[i]: i,
       };
       nodes = <ProxyNode>[...nodes]..sort((ProxyNode a, ProxyNode b) {
-          final int ra = rank['${a.server}:${a.port}'] ?? 1 << 30;
-          final int rb = rank['${b.server}:${b.port}'] ?? 1 << 30;
+          int nodeRank(ProxyNode node) =>
+              rank[proxyNodeKey(node)] ??
+              rank['${node.server}:${node.port}'] ??
+              1 << 30;
+          final int ra = nodeRank(a);
+          final int rb = nodeRank(b);
           return ra.compareTo(rb);
         });
     } else if (nodes.length > 1) {
@@ -351,12 +428,22 @@ class SingboxProxyController extends ProxyController {
         // over the carrier profile; otherwise take the carrier's pick.
         final bool manual = (opts.fingerprintOverride ?? '').isNotEmpty;
         tuned = opts.copyWith(
-          fingerprintOverride: manual ? opts.fingerprintOverride : m.fingerprint,
+          fingerprintOverride:
+              manual ? opts.fingerprintOverride : m.fingerprint,
           tlsFragment: m.source == 'carrier'
               ? (m.tlsFragment ?? opts.tlsFragment)
               : opts.tlsFragment,
         );
-      } catch (_) {
+        NovaLog.instance.write(
+          'Carrier profile: ${m.source} -> fingerprint '
+          '${tuned.fingerprintOverride ?? 'default'}, '
+          'fragmentation ${tuned.tlsFragment ? 'on' : 'off'}',
+        );
+      } catch (e) {
+        NovaLog.instance.write(
+          'Carrier profile unavailable, keeping the current settings ($e)',
+          level: NovaLogLevel.warn,
+        );
         tuned = opts;
       }
     }
@@ -397,9 +484,15 @@ class SingboxProxyController extends ProxyController {
   /// After coming up on a manually pinned exit, confirm the exit really carries
   /// traffic. A pinned node builds a single-outbound config, so a dead exit still
   /// "connects" (Cloudflare's anycast IP accepts the TCP handshake) while nothing
-  /// actually loads. If the probe fails, drop the pin so the urltest auto-picks
-  /// the fastest LIVE node, tell the user, and switch. No loop: the cleared pin
-  /// means the reconnect won't re-enter this path (auto already self-heals).
+  /// actually loads.
+  ///
+  /// A pin is the user's explicit choice, so a failed probe **reports** and does
+  /// not switch. Nova used to clear the pin here and let the urltest auto-pick
+  /// another node, which meant the config the Servers list showed as selected was
+  /// not the one carrying traffic, i.e. the app silently overriding the user. It
+  /// fired on a false negative (the probe endpoint being unreachable for its own
+  /// reasons), throwing away a working choice. Now the pin stands, the dashboard
+  /// says the exit is not passing traffic, and switching stays a tap away.
   Future<void> _verifyPinnedConnectivity() async {
     final ProxyProfile? profile = _active;
     if (profile == null || profile.pinnedNode == null) return;
@@ -410,14 +503,35 @@ class SingboxProxyController extends ProxyController {
         _active?.pinnedNode != profile.pinnedNode) {
       return;
     }
-    if (await _probeInternet()) return; // exit is healthy
-    final ProxyProfile cleared = profile.copyWith(pinnedNode: null);
-    _active = cleared;
-    // Persist the un-pin so the Servers list stops showing the dead exit as the
-    // selected one (otherwise the change is in-memory only and the UI drifts).
-    await persistProfile?.call(cleared);
-    notice.value = ProxyNotice.failoverToWorkingServer;
-    await reconnect();
+    // Retry a few times before calling it: a tunnel that has just come up can
+    // need a couple of seconds more than the settle delay, and one missed probe
+    // is not evidence the exit is dead.
+    for (int attempt = 0; attempt < 3; attempt++) {
+      if (await _probeInternet()) {
+        if (exitUnreachable) {
+          exitUnreachable = false;
+          notifyListeners();
+        }
+        return; // exit is healthy
+      }
+      if (_state != ProxyConnectionState.connected ||
+          _active?.pinnedNode != profile.pinnedNode) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+    if (_state != ProxyConnectionState.connected ||
+        _active?.pinnedNode != profile.pinnedNode) {
+      return;
+    }
+    NovaLog.instance.write(
+      'The server you chose connected but carried no traffic. Keeping your '
+      'choice; switch server or use Auto to change it.',
+      level: NovaLogLevel.warn,
+    );
+    exitUnreachable = true;
+    notice.value = ProxyNotice.pinnedExitNoTraffic;
+    notifyListeners();
   }
 
   /// After an auto (subscription) tunnel comes up, confirm traffic really flows.
@@ -431,7 +545,9 @@ class SingboxProxyController extends ProxyController {
   /// can't loop; the honest "Verifying…" subtitle keeps the UI truthful meanwhile.
   Future<void> _verifyAutoConnectivity() async {
     final ProxyProfile? profile = _active;
-    if (profile == null || !profile.isSubscription || profile.pinnedNode != null) {
+    if (profile == null ||
+        !profile.isSubscription ||
+        profile.pinnedNode != null) {
       return;
     }
     // Probe periodically over ~18s, giving urltest time to converge on a live
@@ -460,12 +576,21 @@ class SingboxProxyController extends ProxyController {
     // pretending to verify and say so, once.
     if (_autoHealTried) {
       if (!exitUnreachable) {
+        NovaLog.instance.write(
+          'The tunnel is up but nothing is getting through, and the one '
+          'rebuild did not help.',
+          level: NovaLogLevel.error,
+        );
         exitUnreachable = true;
         notice.value = ProxyNotice.tunnelHasNoInternet;
         notifyListeners();
       }
       return;
     }
+    NovaLog.instance.write(
+      'No traffic after ~18s on auto-select; rebuilding the tunnel once.',
+      level: NovaLogLevel.warn,
+    );
     _autoHealTried = true;
     _healing = true;
     try {
@@ -495,8 +620,7 @@ class SingboxProxyController extends ProxyController {
       try {
         for (final String url in urls) {
           try {
-            final HttpClientRequest req =
-                await client.getUrl(Uri.parse(url));
+            final HttpClientRequest req = await client.getUrl(Uri.parse(url));
             req.followRedirects = false;
             final HttpClientResponse resp =
                 await req.close().timeout(const Duration(seconds: 5));
@@ -544,16 +668,18 @@ class SingboxProxyController extends ProxyController {
     }
     final Map<ProxyNode, int> ping = <ProxyNode, int>{};
     await Future.wait(sample.map((ProxyNode n) async {
-      // TLS-handshake probe with the node's SNI (see node_probe.dart): a bare
-      // TCP connect ranks DPI-blocked Cloudflare nodes as "fast", front-loading
-      // the urltest pool with exits that can never carry traffic.
-      final int? ms =
-          await probeNodeMs(n, timeout: const Duration(milliseconds: 1500));
-      ping[n] = ms ?? 1 << 30; // unreachable -> sort last
+      // Protocol-level probe (see node_probe.dart): a bare TCP connect ranks
+      // DPI-blocked Cloudflare nodes as "fast", front-loading the urltest pool
+      // with exits that can never carry traffic. `deep` is off here: this runs
+      // before every connect, so it stops at the node's own handshake instead of
+      // spending a round trip to the open internet per node.
+      final NodeProbeResult r = await probeNode(n,
+          timeout: const Duration(milliseconds: 1500), deep: false);
+      ping[n] = r.sortKey;
     }));
-    final List<ProxyNode> ranked = <ProxyNode>[...sample]
-      ..sort((ProxyNode a, ProxyNode b) =>
-          (ping[a] ?? 1 << 30).compareTo(ping[b] ?? 1 << 30));
+    final List<ProxyNode> ranked = <ProxyNode>[...sample]..sort(
+        (ProxyNode a, ProxyNode b) =>
+            (ping[a] ?? 1 << 30).compareTo(ping[b] ?? 1 << 30));
     // Append any nodes we didn't sample so the pool can still grow if needed.
     final Set<ProxyNode> inRanked = ranked.toSet();
     ranked.addAll(nodes.where((ProxyNode n) => !inRanked.contains(n)));

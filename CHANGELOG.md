@@ -1,0 +1,80 @@
+# Changelog
+
+## v1.3.0-beta (2026-08-14)
+
+An honesty update, by the Nova team. Nova now tells you what it actually knows
+about your servers instead of guessing, and shows you what it and the VPN core
+are doing.
+
+- The server you pick is the server you get. If the one you chose connects but
+  carries no traffic, Nova now tells you and stays on your choice instead of
+  quietly connecting through a different one while the list still showed yours
+  as selected. If your server has disappeared from the subscription, it says
+  that too, rather than switching in silence.
+- Ping numbers are real now. Nova used to show the time it took to open a
+  connection, which succeeds against Cloudflare's network for any address at
+  all, so every config looked healthy even on a network where none of them
+  worked. Each server is now tested by actually talking to it, and where
+  possible by sending a real request through it and waiting for the answer. A
+  server that cannot be tested from outside says so instead of borrowing a
+  number it did not earn.
+- Server locations are honest. A config sent with a clean Cloudflare address
+  used to be labelled with wherever that address happened to resolve, which is
+  not where your traffic comes out. Those now show the name the panel gave them
+  and say they are fronted, and configs that use a domain get a real flag,
+  which they never used to.
+- New Logs screen in Settings, with Nova's own log and the VPN core's log kept
+  separate. Copying strips passwords, UUIDs and subscription tokens first, so a
+  log is safe to send to support. Detailed core logging is a switch on that
+  screen, off by default.
+- AmneziaWG now actually works in Nova. The app has been building correct
+  AmneziaWG configurations all along and handing them to a core that did not
+  have the protocol in it, so a server's AmneziaWG worked in the official
+  Amnezia apps and not here. Nova's core is now built with AmneziaWG.
+- Nova also checks its own core before it tries. If a build ever ships without
+  AmneziaWG again, it says so instead of connecting to nothing.
+- The VPN core is now included for every processor type the app runs on. Older
+  32-bit phones and x86 devices were installing an app that had no core for
+  them, so they could open Nova and never connect. The download is larger
+  because of it.
+
+## v1.2.0-beta (2026-07-21)
+
+A big anti-censorship update, by the Nova team.
+
+- More protocols: SOCKS, HTTP, and plain WireGuard join VLESS, VMess, Trojan, Shadowsocks (including 2022), Hysteria2, and AmneziaWG import.
+- Google relay upgrades: import your whole relay setup from one link or QR, a domain-fronting mode that reaches Google's edge even when the relay's own address is blocked, and a full-tunnel option that carries real traffic through Google to your own VPS when everything else is down.
+- Find a working setup: when the block stops your usual setup, Nova tests each TLS fingerprint on your real network, measures which get through, and keeps the fastest.
+- Anti-censorship tuning you can see: the Routing screen shows which TLS fingerprint is protecting you and lets you override it (Chrome, Firefox, Safari, iOS, Edge, Randomized) or leave it on Auto.
+- Speed test: measure your real download and upload speed in the Stats tab.
+- Hysteria2 speed boost (Brutal) for better throughput on throttled networks; set your line speed in Routing.
+- Now targets Android 15.
+- Builds: Android APK, macOS (Apple Silicon) DMG and zip, and Windows portable ZIP.
+
+## v1.1.1-beta (2026-07-16)
+
+Connectivity and panel fixes, by the Nova team.
+
+- Cloudflare connect fixed: the in-app Cloudflare sign-in and API calls could fail with a TLS handshake error. Requests now run real TLS with the correct hostname, so connecting and deploying a panel work reliably.
+- Panel password now saves in the app: right after deploying a new panel, setting the admin password could fail because the fresh worker was not serving its certificate yet. Nova now waits out that warm-up and retries, and if it still cannot reach the panel it tells you to finish setup in a browser.
+- Android VPN routing fixed: outbound sockets were binding to the tunnel interface on Android 9 and newer, which broke Cloudflare-direct calls and slowed browsing. Traffic now uses the real Wi-Fi or cellular link.
+- Android live speed meter: the dashboard now shows real upload and download speeds instead of staying at 0.
+- Builds: Android and macOS (Apple Silicon) refreshed for this release. The Windows build carries over from v1.1.0-beta pending a fresh Windows build.
+
+## v1.1.0-beta (2026-07-13)
+
+- Redesigned node list with per-node location, SNI, and TLS fingerprint
+- Search your nodes by name, country, protocol, address, or SNI
+- Free-service header and community links
+- Route every .ir domain direct so Iranian sites always load
+- Farsi localization for the Routing and Servers screens
+
+## v1.0.0-beta (2026-07-10)
+
+First public beta of Nova Client.
+
+- Proxy client with profiles, subscriptions, and routing controls, powered by a sing-box core
+- Nova Radar: built-in Cloudflare clean-IP scanner (fetch, scan, TCP + TLS verify, latency sort, one-tap apply)
+- Bilingual UI: English and Farsi (RTL)
+- Dark-first Nova design language
+- Builds: Android APK, macOS (Apple Silicon) DMG and zip, Windows zip

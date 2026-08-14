@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
@@ -34,11 +35,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
   static const int _maxShown = 80;
 
   List<ProxyNode> _nodes = <ProxyNode>[];
-  final Map<String, int> _ping = <String, int>{}; // key -> ms (-1 = unreachable)
-  final Map<String, String> _cc = <String, String>{}; // key -> ISO country code
-  final Map<String, String> _ccByIp = <String, String>{}; // ip -> cc cache
-  final Map<String, String> _place = <String, String>{}; // key -> "Country · City"
-  final Map<String, String> _placeByIp = <String, String>{}; // ip -> place cache
+
+  /// key -> what the probe could actually prove about the node.
+  final Map<String, NodeProbeResult> _probe = <String, NodeProbeResult>{};
+
+  /// key -> where the node really is, when that is knowable at all.
+  final Map<String, _Geo> _geo = <String, _Geo>{};
+
+  /// host -> resolved geo, so the many nodes sharing one address (a panel hands
+  /// out the same clean IP for every protocol) cost one lookup.
+  final Map<String, _Geo> _geoByHost = <String, _Geo>{};
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5);
   final TextEditingController _search = TextEditingController();
@@ -50,8 +56,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
   // (VLESS / VMess / Trojan on the same :443, different paths) shows as
   // distinct selectable nodes instead of collapsing to one. Matches the
   // tunnel's own de-dupe key (server:port:wsPath).
-  String _key(ProxyNode n) =>
-      '${n.server}:${n.port}:${n.protocol.name}:${n.wsPath ?? ''}';
+  String _key(ProxyNode n) => proxyNodeKey(n);
 
   @override
   void initState() {
@@ -79,7 +84,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
       n.tag,
       n.protocol.label,
       '${n.server}:${n.port}',
-      _place[_key(n)] ?? '',
+      _geo[_key(n)]?.place ?? '',
       n.sni ?? '',
     ].join(' ').toLowerCase();
     return hay.contains(q);
@@ -138,66 +143,124 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (!mounted) return;
       setState(() {});
     }
+    _logSummary();
     _saveFastNodes();
   }
 
-  /// Persist the fastest reachable nodes so Auto-select builds its urltest pool
-  /// from these instead of the subscription's arbitrary first few.
+  /// One line in the app log for the whole sweep. Per-node lines would drown
+  /// everything else for an 80-node subscription, but the shape of the result
+  /// is exactly what a support conversation needs: "all blocked" and "all
+  /// answered but none proven" are different problems with different answers.
+  void _logSummary() {
+    final Map<NodeProbeQuality, int> tally = <NodeProbeQuality, int>{};
+    for (final ProxyNode n in _nodes) {
+      final NodeProbeResult? r = _probe[_key(n)];
+      if (r == null) continue;
+      tally[r.quality] = (tally[r.quality] ?? 0) + 1;
+    }
+    NovaLog.instance.write(
+      'Tested ${_nodes.length} servers: '
+      '${tally[NodeProbeQuality.proxied] ?? 0} carried a test request, '
+      '${tally[NodeProbeQuality.handshake] ?? 0} answered, '
+      '${tally[NodeProbeQuality.unreachable] ?? 0} blocked, '
+      '${tally[NodeProbeQuality.untestable] ?? 0} not testable',
+    );
+  }
+
+  /// Persist the nodes a probe actually proved, fastest first, so Auto-select
+  /// builds its urltest pool from these instead of the subscription's arbitrary
+  /// first few. Nodes that only completed a TCP or TLS handshake are no longer
+  /// eligible: seeding the pool with them is what put dead exits at the front.
   void _saveFastNodes() {
     final profile = _profile;
     if (profile == null) return;
-    final reachable = _nodes
+    final proven = _nodes
         .map(_key)
-        .where((k) => (_ping[k] ?? -1) >= 0)
+        .where((k) => _probe[k]?.ok ?? false)
         .toList()
-      ..sort((a, b) => _ping[a]!.compareTo(_ping[b]!));
-    if (reachable.isEmpty) return;
-    NovaScope.of(context)
-        .profiles
-        .update(profile.copyWith(fastNodes: reachable.take(24).toList()));
+      ..sort((a, b) => _probe[a]!.sortKey.compareTo(_probe[b]!.sortKey));
+    if (proven.isEmpty) return;
+    NovaScope.of(context).profiles.update(profile.copyWith(
+          lastLatencyMs: _probe[proven.first]!.latencyMs,
+          fastNodes: proven.take(24).toList(),
+        ));
   }
 
   Future<void> _pingOne(ProxyNode n) async {
-    // Full TLS-handshake probe, not a bare TCP connect: Cloudflare's edge
-    // accepts any TCP handshake, so a plain connect showed every node green
-    // even on networks where the SNI is DPI-blocked and nothing would work.
-    _ping[_key(n)] = await probeNodeMs(n) ?? -1;
+    // A real end-to-end test, not a bare TCP connect: Cloudflare's edge accepts
+    // any TCP handshake, so a plain connect showed every node green even on
+    // networks where nothing would ever get through. See node_probe.dart for
+    // what each tier proves.
+    _probe[_key(n)] = await probeNode(n);
     await _geoOne(n);
   }
 
-  /// Geo-locate a node's host so the row can show a country flag. Cached per IP
-  /// (many nodes share Cloudflare IPs), best-effort over HTTPS.
+  /// Works out where a node really is, when that is knowable at all.
+  ///
+  /// The address a panel hands out is frequently a Cloudflare clean IP, which
+  /// belongs to an anycast edge and is announced from wherever the user happens
+  /// to be. Geo-locating it produced a confident, wrong country for nodes whose
+  /// real exit is somewhere else entirely. Those are reported as fronted instead
+  /// of guessed at. A domain is resolved first so real servers behind a hostname
+  /// get a flag too, which they never used to.
   Future<void> _geoOne(ProxyNode n) async {
     final String host = n.server;
-    if (_ccByIp.containsKey(host)) {
-      _cc[_key(n)] = _ccByIp[host]!;
-      if ((_placeByIp[host] ?? '').isNotEmpty) _place[_key(n)] = _placeByIp[host]!;
+    final _Geo? cached = _geoByHost[host];
+    if (cached != null) {
+      _geo[_key(n)] = cached;
       return;
     }
     try {
-      final req = await _http.getUrl(Uri.parse('https://ipwho.is/$host'));
+      final String target = await _resolveHost(host);
+      final req = await _http.getUrl(Uri.parse('https://ipwho.is/$target'));
       final resp = await req.close().timeout(const Duration(seconds: 5));
       final body = await resp.transform(utf8.decoder).join();
       final j = jsonDecode(body) as Map<String, dynamic>;
-      final cc = (j['country_code'] as String?)?.toUpperCase() ?? '';
-      final country = (j['country'] as String?) ?? '';
-      final city = (j['city'] as String?) ?? '';
-      // Lead with the city (the distinguishing part; the flag already shows the
-      // country), kept short with the country code. Fall back to country name.
-      final String place = city.isNotEmpty
-          ? (cc.isNotEmpty ? '$city, $cc' : city)
-          : country;
-      _ccByIp[host] = cc;
-      _placeByIp[host] = place;
-      if (cc.isNotEmpty) _cc[_key(n)] = cc;
-      if (place.isNotEmpty) _place[_key(n)] = place;
-    } catch (_) {/* leave flag blank */}
+      if (j['success'] == false) return;
+      final connection = (j['connection'] as Map<String, dynamic>?) ?? const {};
+      final String network = <String>[
+        (connection['org'] as String?) ?? '',
+        (connection['isp'] as String?) ?? '',
+      ].join(' ');
+      final String? front = _cdnName(network, (connection['asn'] as num?)?.toInt());
+      final _Geo g;
+      if (front != null) {
+        g = _Geo.fronted(front);
+      } else {
+        final cc = (j['country_code'] as String?)?.toUpperCase() ?? '';
+        final country = (j['country'] as String?) ?? '';
+        final city = (j['city'] as String?) ?? '';
+        // Lead with the city (the distinguishing part; the flag already shows
+        // the country), kept short with the country code. Fall back to country.
+        final String place =
+            city.isNotEmpty ? (cc.isNotEmpty ? '$city, $cc' : city) : country;
+        g = _Geo(countryCode: cc, place: place);
+      }
+      _geoByHost[host] = g;
+      _geo[_key(n)] = g;
+    } catch (_) {/* leave the row on its name */}
+  }
+
+  /// The address to look up: an IP literal as-is, a hostname resolved first.
+  Future<String> _resolveHost(String host) async {
+    if (InternetAddress.tryParse(host) != null) return host;
+    try {
+      final List<InternetAddress> found = await InternetAddress.lookup(host)
+          .timeout(const Duration(seconds: 4));
+      if (found.isNotEmpty) return found.first.address;
+    } catch (_) {
+      // Fall through: ipwho.is resolves hostnames itself, so the raw host is
+      // still a usable query when the device cannot resolve it.
+    }
+    return host;
   }
 
   Future<void> _pin(String? key) async {
     final scope = NovaScope.of(context);
     final profile = _profile;
     if (profile == null) return;
+    NovaLog.instance.write(
+        key == null ? 'You chose Auto' : 'You chose the server $key');
     final updated = profile.copyWith(pinnedNode: key);
     scope.profiles.update(updated);
     scope.profiles.setActive(updated.id);
@@ -212,12 +275,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
     final profile = _profile;
+    // Proven nodes first, then fastest. A node still being measured keeps its
+    // place until its verdict lands, so rows don't jump while the list fills in.
     final sorted = <ProxyNode>[..._nodes]..sort((a, b) {
-        final pa = _ping[_key(a)] ?? 9999;
-        final pb = _ping[_key(b)] ?? 9999;
-        final na = pa < 0 ? 100000 : pa;
-        final nb = pb < 0 ? 100000 : pb;
-        return na.compareTo(nb);
+        final int ka = _probe[_key(a)]?.sortKey ?? 1500000;
+        final int kb = _probe[_key(b)]?.sortKey ?? 1500000;
+        return ka.compareTo(kb);
       });
     final visible = sorted.where(_matches).toList();
     final pinned = profile?.pinnedNode;
@@ -231,7 +294,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: () {
                 clearSubscriptionCache();
-                _ping.clear();
+                _probe.clear();
                 setState(() => _loading = true);
                 _load();
               },
@@ -266,9 +329,8 @@ class _NodeListScreenState extends State<NodeListScreen> {
                       for (final n in visible)
                         _NodeRow(
                           node: n,
-                          ms: _ping[_key(n)],
-                          countryCode: _cc[_key(n)],
-                          place: _place[_key(n)],
+                          probe: _probe[_key(n)],
+                          geo: _geo[_key(n)],
                           selected: pinned == _key(n),
                           onTap: () => _pin(_key(n)),
                         ),
@@ -464,7 +526,8 @@ String _cleanNodeName(ProxyNode n) {
   String s = n.tag;
   s = s.replaceAll(RegExp(r'\[[^\]]*\]'), ' '); // [VLESS] etc.
   s = s.replaceAll('${n.server}:${n.port}', ' ').replaceAll(n.server, ' ');
-  s = s.replaceAll(RegExp(r'\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b'), ' '); // any ip:port
+  s = s.replaceAll(
+      RegExp(r'\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b'), ' '); // any ip:port
   s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
   s = s.replaceAll(RegExp(r'^[\-·•|:]+|[\-·•|:]+$'), '').trim();
   return s;
@@ -507,17 +570,19 @@ String _nodeDetail(ProxyNode n) {
 class _NodeRow extends StatelessWidget {
   const _NodeRow({
     required this.node,
-    required this.ms,
-    required this.countryCode,
-    required this.place,
+    required this.probe,
+    required this.geo,
     required this.selected,
     required this.onTap,
   });
 
   final ProxyNode node;
-  final int? ms;
-  final String? countryCode;
-  final String? place; // "Country · City" once geo resolves
+
+  /// Null while the node is still being measured.
+  final NodeProbeResult? probe;
+
+  /// Null until the location resolves, and location-free for fronted addresses.
+  final _Geo? geo;
   final bool selected;
   final VoidCallback onTap;
 
@@ -525,16 +590,25 @@ class _NodeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
-    final String cc = countryCode ?? '';
+    final String cc = geo?.countryCode ?? '';
     final String addr = '${node.server}:${node.port}';
     final String clean = _cleanNodeName(node);
-    // Lead with the location so rows are distinguishable; fall back to the
-    // (cleaned) node name, then the address, while geo is still resolving.
-    final String location = place ?? '';
+    // Lead with a real location when there is one. A fronted address has no
+    // location to show, so the row falls back to the name the panel gave it
+    // rather than printing the CDN edge's country as if it were the exit.
+    final String location = geo?.place ?? '';
     final String primary =
         location.isNotEmpty ? location : (clean.isNotEmpty ? clean : addr);
-    final List<String> transport = _transportTags(node);
-    final String detail = _nodeDetail(node);
+    final List<String> transport = <String>[
+      ..._transportTags(node),
+      if (geo?.frontedBy != null) geo!.frontedBy!,
+    ];
+    // The probe's own verdict is the most useful thing on the row when it is
+    // anything other than a plain number, so it leads the detail line.
+    final String detail = <String>[
+      if ((probe?.reason ?? '').isNotEmpty) probe!.reason!,
+      if (_nodeDetail(node).isNotEmpty) _nodeDetail(node),
+    ].join('   ·   ');
     return ListTile(
       isThreeLine: detail.isNotEmpty,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -562,8 +636,7 @@ class _NodeRow extends StatelessWidget {
             spacing: 6,
             runSpacing: 4,
             children: <Widget>[
-              Text(addr,
-                  style: text.bodySmall?.copyWith(color: nova.muted)),
+              Text(addr, style: text.bodySmall?.copyWith(color: nova.muted)),
               for (final String t in transport) _MiniTag(text: t),
             ],
           ),
@@ -582,7 +655,7 @@ class _NodeRow extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _PingBadge(ms: ms),
+          _PingBadge(probe: probe),
           if (selected) ...<Widget>[
             const SizedBox(width: 10),
             Icon(Icons.check_circle, color: nova.indigo, size: 20),
@@ -653,25 +726,84 @@ class _MiniTag extends StatelessWidget {
   }
 }
 
+/// The measured verdict for a node.
+///
+/// A number appears only when something was actually proven, and it says which:
+/// a node whose traffic reached the internet is marked, one that only answered
+/// its own handshake is not, and one that cannot be judged from outside a tunnel
+/// says so instead of borrowing a number it did not earn.
 class _PingBadge extends StatelessWidget {
-  const _PingBadge({required this.ms});
-  final int? ms;
+  const _PingBadge({required this.probe});
+  final NodeProbeResult? probe;
 
   @override
   Widget build(BuildContext context) {
-    if (ms == null) {
+    final NovaStrings s = NovaStrings.of(context);
+    final NodeProbeResult? p = probe;
+    if (p == null) {
       return const SizedBox(
         width: 14,
         height: 14,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     }
-    if (ms! < 0) {
-      return Text('timeout',
-          style: TextStyle(color: NovaSemantics.red, fontSize: 12));
+    switch (p.quality) {
+      case NodeProbeQuality.unreachable:
+        return Text(s.nodeBlocked,
+            style: TextStyle(color: NovaSemantics.red, fontSize: 12));
+      case NodeProbeQuality.untestable:
+        return Text(s.nodeUntested,
+            style: TextStyle(color: context.nova.muted, fontSize: 12));
+      case NodeProbeQuality.proxied:
+      case NodeProbeQuality.handshake:
+        final int ms = p.latencyMs ?? 0;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (p.quality == NodeProbeQuality.proxied) ...<Widget>[
+              Icon(Icons.verified_rounded,
+                  size: 14, color: NovaSemantics.ping(ms)),
+              const SizedBox(width: 4),
+            ],
+            Text('$ms ms',
+                style: TextStyle(
+                    color: NovaSemantics.ping(ms),
+                    fontWeight: FontWeight.w600)),
+          ],
+        );
     }
-    return Text('$ms ms',
-        style: TextStyle(
-            color: NovaSemantics.ping(ms), fontWeight: FontWeight.w600));
   }
+}
+
+/// Where a node is, or why that cannot be said.
+class _Geo {
+  const _Geo({this.countryCode = '', this.place = ''}) : frontedBy = null;
+
+  /// An address that belongs to a CDN's anycast edge. The country such an
+  /// address resolves to is the edge the *lookup* landed on, not where the
+  /// node's traffic comes out, so no location is claimed at all.
+  const _Geo.fronted(String cdn)
+      : countryCode = '',
+        place = '',
+        frontedBy = cdn;
+
+  final String countryCode;
+  final String place;
+  final String? frontedBy;
+}
+
+/// Names the CDN an address belongs to, or null for an ordinary host.
+///
+/// Matching on the network's name as well as its number keeps this working as
+/// providers add ranges: Cloudflare alone announces from several ASNs, and a
+/// panel's "clean IP" is by definition one of those the operator just found.
+String? _cdnName(String network, int? asn) {
+  final String n = network.toLowerCase();
+  if (n.contains('cloudflare') || asn == 13335 || asn == 209242) {
+    return 'Cloudflare';
+  }
+  if (n.contains('fastly') || asn == 54113) return 'Fastly';
+  if (n.contains('akamai') || asn == 20940 || asn == 16625) return 'Akamai';
+  if (n.contains('cloudfront')) return 'CloudFront';
+  return null;
 }
