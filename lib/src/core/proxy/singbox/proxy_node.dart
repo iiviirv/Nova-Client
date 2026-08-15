@@ -20,6 +20,13 @@ enum NodeProtocol {
   awg,
   socks,
   http,
+
+  /// NaiveProxy: HTTP/2 CONNECT inside TLS, with padding that makes the
+  /// request/response sizes look like ordinary browsing. Nova Server has always
+  /// been able to create a Naive inbound, and the mobile cores are built with
+  /// `with_naive_outbound`, but the app could not read the `naive+https://`
+  /// link, so an operator who made one watched it appear in no client at all.
+  naive,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -34,6 +41,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.awg => 'awg',
         NodeProtocol.socks => 'socks',
         NodeProtocol.http => 'http',
+        NodeProtocol.naive => 'naive',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -56,6 +64,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.awg => 'AmneziaWG',
         NodeProtocol.socks => 'SOCKS',
         NodeProtocol.http => 'HTTP',
+        NodeProtocol.naive => 'NaiveProxy',
       };
 }
 

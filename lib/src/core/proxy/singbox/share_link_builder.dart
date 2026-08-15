@@ -31,6 +31,7 @@ String buildShareLink(ProxyNode node) {
     NodeProtocol.hysteria2 ||
     NodeProtocol.tuic ||
     NodeProtocol.socks ||
+    NodeProtocol.naive ||
     NodeProtocol.http =>
       throw UnsupportedError(
         'Share-link building for ${node.protocol.label} is not supported',

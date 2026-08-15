@@ -106,11 +106,51 @@ class NovaCoreConfig {
   }
 }
 
+/// What a subscription contained that Nova could not turn into a node.
+///
+/// A dropped line used to vanish without a word, which is how an operator who
+/// created a NaiveProxy or mieru inbound found it "appeared in no client at
+/// all": the app knew it had skipped something and said nothing. Counting the
+/// schemes lets the UI name them.
+class SkippedLinks {
+  SkippedLinks(this.byScheme);
+
+  /// Lowercased scheme (`mieru`, `naive+quic`, …) to how many lines used it.
+  /// `?` collects lines with no scheme Nova could read at all.
+  final Map<String, int> byScheme;
+
+  int get total => byScheme.values.fold(0, (int a, int b) => a + b);
+  bool get isEmpty => byScheme.isEmpty;
+
+  /// The schemes, most common first, for a short human list.
+  List<String> get schemes {
+    final List<MapEntry<String, int>> e = byScheme.entries.toList()
+      ..sort((MapEntry<String, int> a, MapEntry<String, int> b) =>
+          b.value.compareTo(a.value));
+    return e.map((MapEntry<String, int> x) => x.key).toList();
+  }
+}
+
+/// The schemes skipped by the most recent [parseSubscriptionBody] call.
+///
+/// Deliberately a side channel rather than a changed return type: every caller
+/// wants the nodes, and only the node list wants to explain the gaps.
+SkippedLinks lastSkippedLinks = SkippedLinks(<String, int>{});
+
 /// Parses a subscription body (base64 or plaintext newline-separated links)
 /// into nodes, skipping anything that doesn't parse.
 List<ProxyNode> parseSubscriptionBody(String body) {
   final String text = _maybeBase64Decode(body.trim());
   final List<ProxyNode> nodes = <ProxyNode>[];
+  final Map<String, int> skipped = <String, int>{};
+  void note(String line) {
+    final int at = line.indexOf('://');
+    // Cap the length so a malformed line cannot become the label.
+    final String scheme =
+        at > 0 && at <= 24 ? line.substring(0, at).toLowerCase() : '?';
+    skipped[scheme] = (skipped[scheme] ?? 0) + 1;
+  }
+
   for (final String raw in const LineSplitter().convert(text)) {
     final String line = raw.trim();
     if (line.isEmpty) continue;
@@ -129,11 +169,20 @@ List<ProxyNode> parseSubscriptionBody(String body) {
     final String? decoded = _decodeBase64Line(line);
     if (decoded != null) {
       for (final String inner in const LineSplitter().convert(decoded)) {
-        final ProxyNode? n = parseShareLink(inner.trim());
-        if (n != null && !_isPlaceholderNode(n)) nodes.add(n);
+        final String innerLine = inner.trim();
+        if (innerLine.isEmpty) continue;
+        final ProxyNode? n = parseShareLink(innerLine);
+        if (n != null) {
+          if (!_isPlaceholderNode(n)) nodes.add(n);
+        } else {
+          note(innerLine);
+        }
       }
+      continue;
     }
+    note(line);
   }
+  lastSkippedLinks = SkippedLinks(skipped);
   return nodes;
 }
 

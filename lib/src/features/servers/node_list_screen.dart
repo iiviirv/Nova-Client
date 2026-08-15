@@ -45,6 +45,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// host -> resolved geo, so the many nodes sharing one address (a panel hands
   /// out the same clean IP for every protocol) cost one lookup.
   final Map<String, _Geo> _geoByHost = <String, _Geo>{};
+
+  /// What the subscription carried that Nova cannot run, so the list can say
+  /// why it is shorter than the panel's own count.
+  SkippedLinks _skipped = SkippedLinks(<String, int>{});
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5);
   final TextEditingController _search = TextEditingController();
@@ -110,6 +114,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
     try {
       final all = await resolveProfileNodes(profile);
+      // Whatever the subscription carried that Nova cannot run. Captured right
+      // after the parse, before anything else can overwrite the side channel.
+      _skipped = lastSkippedLinks;
+      if (!_skipped.isEmpty) {
+        NovaLog.instance.write(
+          'Subscription had ${_skipped.total} entries Nova cannot run: '
+          '${_skipped.byScheme.entries.map((MapEntry<String, int> e) => '${e.key} x${e.value}').join(', ')}',
+          level: NovaLogLevel.warn,
+        );
+      }
       // Dedupe by server:port and cap.
       final seen = <String>{};
       final deduped = <ProxyNode>[];
@@ -308,6 +322,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
               : ListView(
                   children: <Widget>[
                     const _FreeBanner(),
+                    if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
                     const _SocialRow(),
                     const Divider(height: 1),
                     _AutoRow(
@@ -428,6 +443,55 @@ class _FreeBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Names what the subscription carried that Nova cannot run.
+///
+/// Without this the list is simply shorter than the panel says it should be,
+/// and the user has no way to tell a server Nova skipped from one the operator
+/// never created. Deliberately muted rather than alarming: nothing is broken,
+/// there is just less here than the server offered.
+class _SkippedNote extends StatelessWidget {
+  const _SkippedNote({required this.skipped});
+
+  final SkippedLinks skipped;
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    // Two names is enough to be actionable; a long tail would push the real
+    // list off the screen.
+    final List<String> shown = skipped.schemes.take(2).toList();
+    final String names = shown.join(', ');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: nova.surface,
+          border: Border.all(color: nova.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.info_outline_rounded, size: 18, color: nova.muted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                s.nodeSkipped(skipped.total, names),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: nova.muted),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -683,6 +747,7 @@ class _ProtoBadge extends StatelessWidget {
         NodeProtocol.awg => nova.success,
         NodeProtocol.socks => nova.muted,
         NodeProtocol.http => nova.muted,
+        NodeProtocol.naive => nova.info,
       };
 
   @override

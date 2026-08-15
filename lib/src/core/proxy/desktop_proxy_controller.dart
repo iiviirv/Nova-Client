@@ -133,6 +133,18 @@ class DesktopProxyController extends ProxyController {
             "this server, or one of the server's other protocols.");
         return;
       }
+      // Same split for NaiveProxy, and this one is measured rather than
+      // assumed: the bundled desktop binary answers `sing-box check` with
+      // "naive outbound is not included in this build, rebuild with -tags
+      // with_naive_outbound", while the Android and Apple cores are built with
+      // that tag. Without this the core exits at startup and the user is told
+      // only that it "did not come up in time".
+      if (CoreFeatures.usesNaive(config)) {
+        _fail("This desktop build's VPN core has no NaiveProxy support, so a "
+            'NaiveProxy server cannot be used here. Use the phone app for this '
+            "server, or one of the server's other protocols.");
+        return;
+      }
       final String binary = await _ensureBinary();
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');

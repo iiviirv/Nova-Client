@@ -47,6 +47,9 @@ ProxyNode? parseShareLink(String raw) {
       'ss' => _parseShadowsocks(input),
       'wireguard' || 'awg' => _parseWireguard(input),
       'socks' || 'socks5' => _parseSocksHttp(input, NodeProtocol.socks),
+      // NaiveProxy. The scheme names the transport it runs over, and only the
+      // https (HTTP/2 over TLS) form is one the core can dial.
+      'naive+https' => _parseNaive(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -313,6 +316,54 @@ ProxyNode? _parseSocksHttp(String input, NodeProtocol proto) {
     password: (pass == null || pass.isEmpty) ? null : pass,
     tls: tls,
     sni: tls ? host : null,
+  );
+}
+
+/// A NaiveProxy link, as Nova Server writes it:
+///   `naive+https://user:pass@host:port?security=tls&insecure=0#name`
+///
+/// The authority host is also the TLS name: Naive carries no separate SNI, so
+/// there is nothing to front it with and the link never has one. `insecure` (or
+/// `allowInsecure`) follows the node's real certificate, which is the difference
+/// between a self-signed node that works and one that cannot complete a
+/// handshake, so it is read rather than assumed.
+///
+/// Only `naive+https` reaches here. The `naive+quic` form exists in the wild and
+/// sing-box cannot dial it, so it is left to fall through as unsupported instead
+/// of being silently downgraded to TLS.
+ProxyNode? _parseNaive(String input) {
+  // Uri cannot parse a `+` scheme reliably across platforms, so normalise it to
+  // https:// and read the standard authority from that.
+  final int schemeEnd = input.indexOf('://');
+  final Uri uri = Uri.parse('https://${input.substring(schemeEnd + 3)}');
+  final String host = uri.host;
+  final int port = uri.port == 0 ? 443 : uri.port;
+  if (host.isEmpty) return null;
+
+  final String rawUserInfo = uri.userInfo;
+  if (rawUserInfo.isEmpty) return null;
+  final int c = rawUserInfo.indexOf(':');
+  if (c < 0) return null;
+  final String user = Uri.decodeComponent(rawUserInfo.substring(0, c));
+  final String pass = Uri.decodeComponent(rawUserInfo.substring(c + 1));
+  if (user.isEmpty || pass.isEmpty) return null;
+
+  final Map<String, String> q = uri.queryParameters;
+  final String insecure =
+      (q['insecure'] ?? q['allowInsecure'] ?? '0').toLowerCase();
+
+  return ProxyNode(
+    protocol: NodeProtocol.naive,
+    server: host,
+    port: port,
+    tag: _name(uri, host),
+    uuid: user,
+    password: pass,
+    // Naive is HTTP/2 CONNECT inside TLS; the TLS is not optional.
+    tls: true,
+    sni: host,
+    allowInsecure: insecure == '1' || insecure == 'true',
+    alpn: const <String>['h2'],
   );
 }
 

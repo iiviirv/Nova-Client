@@ -89,7 +89,12 @@ class CoreFeatures {
   /// True when [configJson] asks for an AmneziaWG endpoint. Reads the document
   /// the core is about to be given, rather than re-deriving the decision from
   /// the node, so a config assembled by any path is covered.
-  static bool usesAwg(String configJson) {
+  static bool usesAwg(String configJson) => _usesType(configJson, 'awg');
+
+  /// True when [configJson] asks for a NaiveProxy outbound.
+  static bool usesNaive(String configJson) => _usesType(configJson, 'naive');
+
+  static bool _usesType(String configJson, String type) {
     try {
       final Object? doc = jsonDecode(configJson);
       if (doc is! Map) return false;
@@ -97,7 +102,7 @@ class CoreFeatures {
         final Object? list = doc[key];
         if (list is! List) continue;
         for (final Object? entry in list) {
-          if (entry is Map && entry['type'] == 'awg') return true;
+          if (entry is Map && entry['type'] == type) return true;
         }
       }
       return false;
@@ -105,4 +110,16 @@ class CoreFeatures {
       return false;
     }
   }
+
+  /// The message shown when a config needs NaiveProxy and the core has none.
+  ///
+  /// This is a real, shipped split rather than a hypothetical: the Android and
+  /// Apple cores are built with `with_naive_outbound`, and the bundled desktop
+  /// sing-box binary is not (it answers `sing-box check` with "naive outbound is
+  /// not included in this build"). Without this the desktop core simply refuses
+  /// to start and the user sees "the core did not come up in time".
+  String get naiveUnsupportedMessage =>
+      "This build's VPN core has no NaiveProxy support, so a NaiveProxy server "
+      'cannot be used here. Use one of this server\'s other protocols, or '
+      'connect from the phone app.';
 }

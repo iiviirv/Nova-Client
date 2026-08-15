@@ -134,11 +134,45 @@ Future<NodeProbeResult> _probe(
     case NodeProtocol.http:
       return _probeHttpProxy(n, timeout, deep: deep);
 
+    case NodeProtocol.naive:
+      // Naive is HTTP/2 CONNECT inside TLS. The h2 settings exchange proves the
+      // real server answered; driving CONNECT further would need the padding
+      // scheme, which is not worth reimplementing for a measurement.
+      return _probeNaive(n, timeout);
+
     case NodeProtocol.vless:
     case NodeProtocol.vmess:
     case NodeProtocol.trojan:
     case NodeProtocol.shadowsocks:
       return _probeStreamNode(n, timeout, deep: deep);
+  }
+}
+
+Future<NodeProbeResult> _probeNaive(ProxyNode n, Duration timeout) async {
+  final Stopwatch sw = Stopwatch()..start();
+  Socket? raw;
+  try {
+    raw = await Socket.connect(n.server, n.port, timeout: timeout);
+    final Socket stream = await _wrapTls(raw, n, timeout);
+    final _Reader reader = _Reader(stream);
+    try {
+      if (!await _h2Settings(stream, reader, timeout)) {
+        return const NodeProbeResult.unreachable(
+            reason: 'no HTTP/2 response');
+      }
+      return NodeProbeResult(NodeProbeQuality.handshake,
+          latencyMs: sw.elapsedMilliseconds);
+    } finally {
+      reader.cancel();
+    }
+  } on SocketException catch (e) {
+    return NodeProbeResult.unreachable(reason: _short(e));
+  } on HandshakeException catch (e) {
+    return NodeProbeResult.unreachable(reason: _short(e));
+  } on TimeoutException {
+    return const NodeProbeResult.unreachable(reason: 'timed out');
+  } finally {
+    raw?.destroy();
   }
 }
 
@@ -265,11 +299,13 @@ Future<Socket> _wrapTls(Socket raw, ProxyNode n, Duration timeout) async {
   // ALPN is pinned to what the probe itself speaks, not to what the node
   // advertises: a node offering h2 would otherwise negotiate it and then answer
   // our HTTP/1.1 upgrade with a protocol error, reading as a dead server.
-  final List<String> alpn = switch (n.network.toLowerCase()) {
-    'grpc' => const <String>['h2'],
-    'ws' || 'httpupgrade' => const <String>['http/1.1'],
-    _ => n.alpn,
-  };
+  final List<String> alpn = n.protocol == NodeProtocol.naive
+      ? const <String>['h2']
+      : switch (n.network.toLowerCase()) {
+          'grpc' => const <String>['h2'],
+          'ws' || 'httpupgrade' => const <String>['http/1.1'],
+          _ => n.alpn,
+        };
   return SecureSocket.secure(
     raw,
     host: host,
@@ -440,6 +476,9 @@ List<int>? _requestHeader(ProxyNode n) {
     case NodeProtocol.awg:
     case NodeProtocol.socks:
     case NodeProtocol.http:
+    // Naive's CONNECT rides inside HTTP/2 with a padding scheme; it has no
+    // plain header to write, so it stops at the handshake tier.
+    case NodeProtocol.naive:
       return null;
   }
 }

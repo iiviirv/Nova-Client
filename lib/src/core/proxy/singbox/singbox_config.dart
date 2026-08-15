@@ -494,6 +494,13 @@ class SingboxConfig {
       case NodeProtocol.http:
         if (n.uuid != null) o['username'] = n.uuid;
         if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.naive:
+        // HTTP/2 CONNECT inside TLS. The credentials are a plain username and
+        // password (the parser puts the username in the uuid slot, as socks and
+        // http already do), and the transport is fixed: naive has no ws/grpc
+        // variant, so the transport block below must not add one.
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
       case NodeProtocol.awg:
         // AmneziaWG is a sing-box endpoint, not an outbound; callers must use
         // _endpoint(). Reaching here is a wiring bug.
@@ -502,8 +509,11 @@ class SingboxConfig {
     if (n.tls) {
       o['tls'] = _tls(n, fragment: fragment, fingerprintOverride: fingerprintOverride);
     }
-    // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
-    if (!n.protocol.isUdpNative) {
+    // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport, and
+    // naive's transport is fixed by the protocol (HTTP/2 over TLS): a `type=tcp`
+    // in the link is v2rayN filling in a field naive does not have, and emitting
+    // a transport block for it makes the outbound invalid.
+    if (!n.protocol.isUdpNative && n.protocol != NodeProtocol.naive) {
       final Map<String, dynamic>? transport = _transport(n);
       if (transport != null) o['transport'] = transport;
     }

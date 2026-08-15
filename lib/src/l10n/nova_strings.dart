@@ -638,6 +638,11 @@ class NovaStrings {
   /// Verdict on a node that cannot be judged without connecting to it.
   String get nodeUntested => t('node.untested');
 
+  /// Shown when a subscription contained servers Nova cannot run, so the user
+  /// learns why the count is short instead of assuming configs went missing.
+  String nodeSkipped(int n, String schemes) =>
+      t('node.skipped').replaceFirst('{n}', '$n').replaceFirst('{s}', schemes);
+
   // ---- Logs ----
   String get logsTitle => t('logs.title');
   String get logsSubtitle => t('logs.subtitle');
@@ -1273,6 +1278,8 @@ class NovaStrings {
     'node.count': '{n} nodes',
     'node.blocked': 'blocked',
     'node.untested': 'not testable',
+    'node.skipped':
+        '{n} server(s) in this subscription use something Nova cannot run ({s}), so they are not listed.',
     'logs.title': 'Logs',
     'logs.subtitle': 'What Nova and the VPN core are doing',
     'logs.tabApp': 'Nova',
@@ -1911,6 +1918,8 @@ class NovaStrings {
     'node.count': '{n} سرور',
     'node.blocked': 'مسدود',
     'node.untested': 'قابل تست نیست',
+    'node.skipped':
+        '{n} سرور در این اشتراک از چیزی استفاده می‌کنند که نوا نمی‌تواند اجرا کند (\u2066{s}\u2069)، پس فهرست نشده‌اند.',
     'logs.title': 'گزارش‌ها',
     'logs.subtitle': 'آنچه نوا و هسته‌ی VPN انجام می‌دهند',
     'logs.tabApp': 'نوا',
