@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## v1.4.0-beta (2026-08-15)
 
+Every platform on the same code, and a cleaner app, by the Nova team.
+
+- A modernized interface. The dashboard, server list, node list, settings and
+  first-run screens were reworked around one clear focus per screen, with
+  colour reserved for state and the measured verdict the most legible thing on
+  a server row. Nothing animates while the app is idle any more, which is a
+  real battery win: the connect orb used to repaint sixty times a second all
+  day.
 - Windows and macOS get the same VPN core as the phone. The desktop core had
   been an older stock build with no WireGuard, no NaiveProxy and no AmneziaWG in
   it, so those servers failed on desktop while working on Android. Both desktop
