@@ -174,6 +174,17 @@ class SingboxConfig {
           'This node uses the xhttp transport, which Nova cannot run. '
           'Ask for a ws, gRPC, httpupgrade, or Reality config instead.');
     }
+    // A NaiveProxy server on a self-signed certificate cannot be dialed by this
+    // core: the naive outbound has no `insecure` option (cronet validates the
+    // certificate itself and there is no way to tell it not to). Building the
+    // config anyway produces a core that starts and then fails every dial with
+    // a certificate error, which reads as a dead server. Say the real reason.
+    if (node.protocol == NodeProtocol.naive && node.allowInsecure) {
+      throw const FormatException(
+          'This NaiveProxy server uses a self-signed certificate, which the '
+          'VPN core cannot accept for NaiveProxy. Ask for a NaiveProxy config '
+          'on a real domain, or use one of the server\'s other protocols.');
+    }
     return <String, dynamic>{
       'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
       'dns': _dns(options,
@@ -239,8 +250,14 @@ class SingboxConfig {
     final int cap = options.lean ? 12 : kMaxAutoNodes;
     // Drop transports the sing-box core can't carry at all (xhttp / SplitHTTP is
     // Xray only) so they never sit in the urltest pool as dead exits.
-    final List<ProxyNode> usable =
-        nodes.where((ProxyNode n) => n.network != 'xhttp').toList();
+    final List<ProxyNode> usable = nodes
+        .where((ProxyNode n) =>
+            n.network != 'xhttp' &&
+            // Same reason as buildMap: the naive outbound cannot skip
+            // certificate validation, so a self-signed naive server would sit
+            // in the pool as a dead exit.
+            !(n.protocol == NodeProtocol.naive && n.allowInsecure))
+        .toList();
     // gRPC is a softer case: sing-box speaks standard gRPC (a real external gRPC
     // server works), but the Nova worker's gRPC is Xray "gun" framing that
     // sing-box can't talk to, so Nova gRPC nodes fail to connect. We can't tell
@@ -551,6 +568,17 @@ class SingboxConfig {
             : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
                 ? n.fingerprint!
                 : 'chrome';
+    // NaiveProxy's TLS belongs to cronet (Chromium's network stack), not to
+    // sing-box: measured against the 1.13.13 core, the naive outbound rejects
+    // `alpn`, `utls`, `fragment` AND `insecure` outright ("<x> is not supported
+    // on naive outbound"), so its block is the bare minimum. Chromium's own
+    // ClientHello is the fingerprint, which is the point of the protocol.
+    if (n.protocol == NodeProtocol.naive) {
+      return <String, dynamic>{
+        'enabled': true,
+        'server_name': n.sni ?? n.server,
+      };
+    }
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,
@@ -667,6 +695,7 @@ class SingboxConfig {
         if (leanRuleSets.isNotEmpty) 'rule_set': leanRuleSets,
         'final': o.mode == SingboxMode.direct ? 'direct' : 'proxy',
         'auto_detect_interface': true,
+        'default_domain_resolver': _defaultDomainResolver,
       };
     }
 
@@ -719,8 +748,23 @@ class SingboxConfig {
       if (ruleSets.isNotEmpty) 'rule_set': ruleSets,
       'final': finalOutbound,
       'auto_detect_interface': true,
+      'default_domain_resolver': _defaultDomainResolver,
     };
   }
+
+  /// How an outbound resolves its own server hostname (sing-box 1.12+).
+  ///
+  /// The DNS rules already send every proxy server's name to the `local`
+  /// (direct) resolver, so this states the same intent where the 1.13 core now
+  /// insists on it. Without it the CLI core refuses to start ("missing
+  /// `route.default_domain_resolver` ... will be removed in sing-box 1.14.0"),
+  /// and the NaiveProxy outbound refuses independently ("missing domain
+  /// resolver for domain server address") because cronet does its own dialing.
+  /// libbox on the phones only warned, which is why Android and iOS kept
+  /// working; the desktop binary is the CLI and it does not. Every shipped core
+  /// is 1.13, so this is safe everywhere.
+  static const Map<String, dynamic> _defaultDomainResolver =
+      <String, dynamic>{'server': 'local'};
 
   /// The hosts the remote rule-sets are fetched from. They resolve via the
   /// direct DNS (see [_dns]) so the download never waits on the proxy.

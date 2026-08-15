@@ -120,32 +120,29 @@ class DesktopProxyController extends ProxyController {
     _setState(ProxyConnectionState.connecting);
     try {
       final String config = await _buildConfig(profile);
-      // The desktop cores in assets/bin are stock sing-box, which has no
-      // AmneziaWG (verified: zero occurrences of the `jmin` config key in
-      // either binary). Handing them an `awg` endpoint gets the document
-      // refused, or worse, a core that appears to start and carries nothing.
-      // Say so instead. See docs/core-amneziawg.md; when a desktop core is
-      // rebuilt with AmneziaWG this becomes the same probe the Android host
-      // answers.
-      if (CoreFeatures.usesAwg(config)) {
-        _fail("This desktop build's VPN core has no AmneziaWG support, so an "
-            'AmneziaWG server cannot be used here. Use the Android app for '
-            "this server, or one of the server's other protocols.");
-        return;
-      }
-      // Same split for NaiveProxy, and this one is measured rather than
-      // assumed: the bundled desktop binary answers `sing-box check` with
-      // "naive outbound is not included in this build, rebuild with -tags
-      // with_naive_outbound", while the Android and Apple cores are built with
-      // that tag. Without this the core exits at startup and the user is told
-      // only that it "did not come up in time".
-      if (CoreFeatures.usesNaive(config)) {
-        _fail("This desktop build's VPN core has no NaiveProxy support, so a "
-            'NaiveProxy server cannot be used here. Use the phone app for this '
-            "server, or one of the server's other protocols.");
-        return;
-      }
       final String binary = await _ensureBinary();
+      // Ask the bundled core what it can run, the way the Android host asks
+      // libbox, instead of assuming. The desktop cores now ship from the same
+      // pinned source and patch as Android (tool/core/build-desktop.sh) with
+      // WireGuard, AmneziaWG and NaiveProxy in them, but a swapped or stale
+      // binary would silently undo that, and the symptom of handing such a core
+      // an `awg` endpoint is a process that exits at startup with the user told
+      // only that it "did not come up in time". A `check` on a tiny probe
+      // document surfaces "<x> is not included in this build" in under a
+      // second, and the answer is cached per binary.
+      if (CoreFeatures.usesAwg(config) && !await _coreSupports(binary, 'awg')) {
+        _fail("This build's VPN core has no AmneziaWG support, so an AmneziaWG "
+            "server cannot be used here. Use one of the server's other "
+            'protocols, or update Nova.');
+        return;
+      }
+      if (CoreFeatures.usesNaive(config) &&
+          !await _coreSupports(binary, 'naive')) {
+        _fail("This build's VPN core has no NaiveProxy support, so a NaiveProxy "
+            "server cannot be used here. Use one of the server's other "
+            'protocols, or update Nova.');
+        return;
+      }
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');
       await cfgFile.writeAsString(config);
@@ -171,7 +168,8 @@ class DesktopProxyController extends ProxyController {
         await _killStaleCores(cfgFile.path);
 
         _process =
-            await Process.start(binary, <String>['run', '-c', cfgFile.path]);
+            await Process.start(binary, <String>['run', '-c', cfgFile.path],
+                environment: _coreEnv);
         // Capture BOTH streams into the rolling tail and the log file, so a
         // startup FATAL is visible in release builds (not just debugPrint).
         _pipeCore(_process!.stdout, 'out');
@@ -383,6 +381,21 @@ class DesktopProxyController extends ProxyController {
     return dir.path.replaceAll(r'\', '/');
   }
 
+  /// Environment the core process runs with.
+  ///
+  /// The desktop core is the sing-box CLI, and unlike libbox on the phones the
+  /// CLI enforces deprecations: on 1.13 it refuses to start on the legacy DNS
+  /// server format the app still emits ("to continuing using this feature, set
+  /// environment variable ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true"). The
+  /// phones only get a warning for the same document, which is why this never
+  /// showed up there. The proper fix is migrating `dns.servers` to the 1.12
+  /// typed format for every platform, and that has to happen before a 1.14
+  /// core, which removes the legacy form outright. Until then this keeps the
+  /// desktop core starting.
+  static const Map<String, String> _coreEnv = <String, String>{
+    'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS': 'true',
+  };
+
   /// Copy the bundled core binary to a writable, executable path (cached).
   ///
   /// The core is shipped next to the app executable (see [_bundledBinary]), not
@@ -409,6 +422,11 @@ class DesktopProxyController extends ProxyController {
       // packages it) and mirror it into the run dir. Proxy mode doesn't use it,
       // so a missing dll only affects TUN mode.
       await _ensureWintun(dir);
+      // NaiveProxy on Windows: the core is built with purego and loads
+      // Chromium's cronet from libcronet.dll in its own directory (see
+      // tool/core/build-desktop.sh). Lazily, so a user who never opens a Naive
+      // server never touches it; but when they do, it has to be next to the exe.
+      await _ensureSideDll(dir, 'libcronet.dll');
     }
     return out.path;
   }
@@ -428,6 +446,75 @@ class DesktopProxyController extends ProxyController {
     if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
       await src.copy(out.path);
     }
+  }
+
+  /// Mirror a DLL that ships beside the core into the run directory, so the
+  /// core finds it in its own directory at load time. No-op when it was not
+  /// shipped (an older bundle), which just leaves the matching feature off.
+  Future<void> _ensureSideDll(Directory dir, String name) async {
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    final File src = <File>[
+      File('${exeDir.path}\\$name'),
+      File('assets/bin/$name'),
+    ].firstWhere((File f) => f.existsSync(),
+        orElse: () => File('${exeDir.path}\\$name'));
+    if (!src.existsSync()) return;
+    final File out = File('${dir.path}/$name');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+    }
+  }
+
+  /// What the staged core said it can run, keyed by `binary path|type`, so
+  /// the probe runs once per binary and type for the life of the process.
+  final Map<String, bool> _coreSupportCache = <String, bool>{};
+
+  /// True when the bundled core can build a [type] (`awg` endpoint or `naive`
+  /// outbound), measured by running `check` on a minimal document. Unreadable
+  /// answers (the binary would not run at all) count as supported: this gate is
+  /// for naming a missing protocol clearly, not for blocking a connect on a
+  /// probe failure the real start would report anyway.
+  Future<bool> _coreSupports(String binary, String type) async {
+    final String key = '$binary|$type';
+    final bool? cached = _coreSupportCache[key];
+    if (cached != null) return cached;
+    final Directory dir = await getApplicationSupportDirectory();
+    final File probe = File('${dir.path}/nova-probe-$type.json');
+    // Loopback peers and throwaway keys: nothing here is dialed by `check`.
+    final String doc = type == 'awg'
+        ? '{"log":{"level":"error"},"endpoints":[{"type":"awg","tag":"p",'
+            '"address":["10.9.0.2/32"],'
+            '"private_key":"yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",'
+            '"peers":[{"address":"127.0.0.1","port":1,'
+            '"public_key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",'
+            '"allowed_ips":["0.0.0.0/0"]}],'
+            '"jc":4,"jmin":40,"jmax":70,"s1":0,"s2":0,"h1":1,"h2":2,"h3":3,"h4":4}]}'
+        : '{"log":{"level":"error"},"outbounds":[{"type":"naive","tag":"p",'
+            '"server":"127.0.0.1","server_port":1,"username":"u","password":"p",'
+            '"tls":{"enabled":true,"server_name":"example.invalid"}}]}';
+    bool ok = true;
+    try {
+      await probe.writeAsString(doc);
+      final ProcessResult r = await Process.run(
+        binary,
+        <String>['check', '-c', probe.path],
+        environment: _coreEnv,
+      ).timeout(const Duration(seconds: 8));
+      final String out = '${r.stdout}\n${r.stderr}'.toLowerCase();
+      if (out.contains('not included in this build') ||
+          out.contains('library not found')) {
+        ok = false;
+      }
+    } catch (_) {
+      ok = true;
+    } finally {
+      try {
+        if (probe.existsSync()) probe.deleteSync();
+      } catch (_) {/* best effort */}
+    }
+    _coreSupportCache[key] = ok;
+    NovaLog.instance.write('Core capability: $type ${ok ? 'yes' : 'NO'}');
+    return ok;
   }
 
   /// Locates the core binary shipped alongside the app executable:
@@ -632,6 +719,7 @@ class DesktopProxyController extends ProxyController {
       // then stop it. `-Verb RunAs` raises the single UAC prompt.
       final File wrapper = File('${dir.path}/nova-tun.ps1');
       await wrapper.writeAsString(
+        "${_coreEnv.entries.map((MapEntry<String, String> e) => "\$env:${e.key}='${e.value}'").join('\n')}\n"
         "\$p = Start-Process -FilePath '$binary' "
         "-ArgumentList @('run','-c','${cfgFile.path}') "
         "-WindowStyle Hidden -PassThru\n"
@@ -651,8 +739,11 @@ class DesktopProxyController extends ProxyController {
     }
 
     // macOS / Linux: run via an admin AppleScript (macOS) so the core gets root.
+    final String envPrefix = _coreEnv.entries
+        .map((MapEntry<String, String> e) => '${e.key}=${_shq(e.value)}')
+        .join(' ');
     final String cmd =
-        '${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
+        '$envPrefix ${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
         'SB=\$!; while [ -e ${_shq(flag.path)} ]; do sleep 1; done; '
         'kill \$SB 2>/dev/null';
     if (Platform.isMacOS) {

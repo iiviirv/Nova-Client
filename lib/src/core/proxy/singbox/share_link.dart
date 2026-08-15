@@ -359,11 +359,13 @@ ProxyNode? _parseNaive(String input) {
     tag: _name(uri, host),
     uuid: user,
     password: pass,
-    // Naive is HTTP/2 CONNECT inside TLS; the TLS is not optional.
+    // Naive is HTTP/2 CONNECT inside TLS; the TLS is not optional. No alpn is
+    // set on purpose: sing-box rejects the outbound with "alpn is not supported
+    // on naive outbound" (cronet negotiates it itself). The reachability probe
+    // pins h2 on its own TLS handshake independently of this node field.
     tls: true,
     sni: host,
     allowInsecure: insecure == '1' || insecure == 'true',
-    alpn: const <String>['h2'],
   );
 }
 

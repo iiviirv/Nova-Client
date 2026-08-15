@@ -249,3 +249,50 @@ recorded as unknown and never blocks a connection. That is not a claim those
 cores support AmneziaWG: **the Windows core is still the stock
 `assets/bin/sing-box-windows-amd64.exe` and the Apple cores are still stock**,
 so AmneziaWG on those platforms remains unbuilt, not merely unmeasured.
+
+## The desktop cores
+
+Until v1.3.0-beta the macOS and Windows binaries in `assets/bin` were **stock
+sing-box, built with `with_gvisor,with_quic,with_utls,with_clash_api,with_grpc`
+and nothing else** (read from the `-tags=` string Go embeds in the binary). No
+`with_wireguard`, so a plain WireGuard config made the desktop core exit with
+"WireGuard is not included in this build"; no `with_naive_outbound`, so a
+NaiveProxy server did the same; and no AmneziaWG at all. The app's config layer
+had emitted all three for months. `tool/core/build-desktop.sh` now builds both
+from the same pinned tag and patch as `build-libbox.sh`:
+
+| Target | Link model | Tags |
+| --- | --- | --- |
+| macOS arm64 | cgo, cronet linked statically (`lib/darwin_arm64/libcronet.a`), so it must be built on a Mac | the Android set plus `with_grpc` |
+| Windows amd64 | `CGO_ENABLED=0`, cross-compiled, plus `with_purego`; cronet is loaded at runtime from `libcronet.dll` beside the exe (shipped in `assets/bin`, mirrored into the run directory by the desktop controller, bundled by the Windows workflow) | the same, plus `with_purego` |
+
+`sing-box version` on either reports `1.13.13-nova`. The script runs `check` on
+a probe document carrying an `awg` endpoint and a `naive` outbound and refuses
+to hand back a core that answers "not included in this build" (on the Windows
+binary, which cannot execute here, it falls back to the same string evidence as
+the Android build).
+
+Two things the desktop CLI enforces that libbox on the phones only warns about,
+both found by running `check` on the app's real output:
+
+- **The legacy DNS server format** the app still emits is a fatal on the 1.13
+  CLI unless `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true`. The desktop
+  controller sets it for every launch path (plain, elevated macOS, elevated
+  Windows). The real fix is migrating `dns.servers` to the 1.12 typed format on
+  every platform, and that must land before any 1.14 core, which removes the
+  legacy form.
+- **`route.default_domain_resolver`** is required, and independently required by
+  the NaiveProxy outbound because cronet does its own dialing. The config layer
+  now emits `{"server": "local"}` for every platform, which restates what the
+  DNS rules already did with every proxy server's hostname.
+
+NaiveProxy's TLS block is bare on purpose: the outbound rejects `alpn`, `utls`,
+`fragment` and `insecure` ("<x> is not supported on naive outbound"). The last
+of those means a NaiveProxy server on a self-signed certificate cannot be dialed
+by this core at all; the app refuses such a node with the reason instead of
+starting a core that fails every dial.
+
+At connect the desktop controller no longer assumes what its core can do: it
+runs the same probe document through `check` once per binary and type, and
+gates AmneziaWG and NaiveProxy on the answer, so a swapped or stale binary is
+named rather than guessed at.

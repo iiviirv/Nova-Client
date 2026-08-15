@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Windows and macOS get the same VPN core as the phone. The desktop core had
+  been an older stock build with no WireGuard, no NaiveProxy and no AmneziaWG in
+  it, so those servers failed on desktop while working on Android. Both desktop
+  cores are now built from the same source and patch as the Android one.
+- iOS now requires iOS 15 or later, ahead of Apple's 2027 requirement.
 - NaiveProxy servers work now. Nova Server has always been able to create one,
   and the phone app's VPN core could always run it, but the app could not read
   the link, so a NaiveProxy server appeared in no client at all. On desktop it
