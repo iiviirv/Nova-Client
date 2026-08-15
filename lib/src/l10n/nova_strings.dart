@@ -132,6 +132,22 @@ class NovaStrings {
   String get homeData => t('home.data');
   String get homeExpiry => t('home.expiry');
   String get homeSingleConfig => t('home.singleConfig');
+
+  /// Small banner shown on the dashboard when a newer release exists.
+  String get updateAvailable => t('home.updateAvailable');
+
+  /// The action on that banner and in Settings.
+  String get updateGet => t('home.updateGet');
+
+  /// The Settings row that re-checks for a new version.
+  String get updateCheck => t('settings.checkUpdates');
+
+  /// Label before the address of the server currently carrying traffic.
+  String get homeConnectedVia => t('home.connectedVia');
+
+  /// Shown as the connected exit when the auto-selector has not settled on a
+  /// specific node yet.
+  String get homeConnectedAuto => t('home.connectedAuto');
   String get cfConnectedTo => t('cf.connectedTo');
   String get cfConnect => t('cf.connect');
   String get toolDeploy => t('tool.deploy');
@@ -779,6 +795,11 @@ class NovaStrings {
     'dash.error': 'Error',
     'home.time': 'Time',
     'home.data': 'Data',
+    'home.updateAvailable': 'A new version of Nova is available',
+    'home.updateGet': 'Get it',
+    'settings.checkUpdates': 'Check for updates',
+    'home.connectedVia': 'Connected via',
+    'home.connectedAuto': 'Auto (picking the fastest)',
     'home.expiry': 'Expiry',
     'home.singleConfig': 'Single config',
     'cf.connectedTo': 'Connected to Cloudflare',
@@ -1443,6 +1464,11 @@ class NovaStrings {
     'dash.error': 'خطا',
     'home.time': 'زمان',
     'home.data': 'داده',
+    'home.updateAvailable': 'نسخه‌ی جدید نوا در دسترس است',
+    'home.updateGet': 'دریافت',
+    'settings.checkUpdates': 'بررسی بروزرسانی',
+    'home.connectedVia': 'متصل از طریق',
+    'home.connectedAuto': 'خودکار (انتخاب سریع‌ترین)',
     'home.expiry': 'انقضا',
     'home.singleConfig': 'پیکربندی تکی',
     'cf.connectedTo': 'متصل به کلودفلر',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/update/update_checker.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
@@ -20,6 +21,8 @@ import '../routing/routing_screen.dart';
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
 const String kNovaVersion = '0.3.3';
 const String kNovaBuild = '77';
+// The release tag this build shipped as lives in update_checker.dart
+// (kNovaReleaseTag); bump it there in step with kNovaBuild on every release.
 
 /// App settings: grouped cards (General, Appearance, Community, About) with
 /// an eyebrow over each group, coloured leading icon chips and chevrons.
@@ -217,6 +220,12 @@ class SettingsScreen extends StatelessWidget {
                           icon: Icons.code_rounded,
                           title: 'GitHub - IRNova',
                           url: 'https://github.com/IRNova',
+                        ),
+                        _div(nova.border),
+                        _LinkTile(
+                          icon: Icons.system_update_rounded,
+                          title: s.updateCheck,
+                          url: kNovaReleasesUrl,
                         ),
                       ],
                     ),

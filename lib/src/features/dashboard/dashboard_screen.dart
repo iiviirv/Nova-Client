@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/conn_info_controller.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/subscription.dart';
+import '../../core/update/update_checker.dart';
 import '../../core/util/format.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -33,6 +35,12 @@ import '../tuner/fix_connection_screen.dart';
 /// while connected (traffic samples), so nothing above the hero listens to it:
 /// the header, tabs and Cloudflare line only rebuild for their own reasons, and
 /// each block below listens to exactly the controllers it reads.
+/// Temporarily hidden from the dashboard pending a product decision, kept fully
+/// wired so re-enabling is a one-line flip. Mutable (not `const`) on purpose so
+/// the widgets they gate still count as referenced.
+bool kShowCloudflareLine = false; // the "Connect Cloudflare" row above the hero
+bool kShowDashboardTools = false; // the Radar / Deploy / Panel strip
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, this.resetToSummary});
 
@@ -103,8 +111,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(height: NovaSpace.xs),
-            const _CloudflareLine(),
-            const SizedBox(height: NovaSpace.sm),
+            const _UpdateBanner(),
+            if (kShowCloudflareLine) ...<Widget>[
+              const _CloudflareLine(),
+              const SizedBox(height: NovaSpace.sm),
+            ],
             if (_tab == 0)
               const _SummaryView()
             else
@@ -218,6 +229,71 @@ class _CloudflareLine extends StatelessWidget {
   }
 }
 
+/// A quiet "update available" prompt, shown only when the daily check found a
+/// newer release than this build. Tapping it opens the releases page. Driven by
+/// the global [novaUpdateTag] so it needs no controller wiring.
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return ValueListenableBuilder<String?>(
+      valueListenable: novaUpdateTag,
+      builder: (context, tag, _) {
+        if (tag == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: NovaSpace.sm),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: NovaRadii.cardR,
+              onTap: () => launchUrl(Uri.parse(kNovaReleasesUrl),
+                  mode: LaunchMode.externalApplication),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: NovaSpace.md, vertical: NovaSpace.sm),
+                decoration: BoxDecoration(
+                  borderRadius: NovaRadii.cardR,
+                  gradient: LinearGradient(
+                    colors: <Color>[
+                      nova.cyan.withValues(alpha: 0.14),
+                      nova.violet.withValues(alpha: 0.14),
+                    ],
+                  ),
+                  border: Border.all(color: nova.cyan.withValues(alpha: 0.30)),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.system_update_rounded,
+                        size: 18, color: nova.cyan),
+                    const SizedBox(width: NovaSpace.sm),
+                    Expanded(
+                      child: Text('${s.updateAvailable} ($tag)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.labelMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: NovaSpace.sm),
+                    Text(s.updateGet,
+                        style: text.labelMedium?.copyWith(
+                            color: nova.cyan, fontWeight: FontWeight.w700)),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 18, color: nova.cyan),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// The Summary tab. A plain column of independently listening blocks, so a
 /// traffic sample repaints the hero and the connection panel and nothing else.
 class _SummaryView extends StatelessWidget {
@@ -225,17 +301,19 @@ class _SummaryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _ProfileSync(),
-        SizedBox(height: NovaSpace.sm),
-        _ConnectHero(),
-        SizedBox(height: NovaSpace.xl),
-        _ConnectionPanel(),
-        _ConfigCard(),
-        SizedBox(height: NovaSpace.md),
-        _ToolsStrip(),
+        const _ProfileSync(),
+        const SizedBox(height: NovaSpace.sm),
+        const _ConnectHero(),
+        const SizedBox(height: NovaSpace.xl),
+        const _ConnectionPanel(),
+        const _ConfigCard(),
+        if (kShowDashboardTools) ...<Widget>[
+          const SizedBox(height: NovaSpace.md),
+          const _ToolsStrip(),
+        ],
       ],
     );
   }
@@ -860,6 +938,9 @@ class _ConfigCardBody extends StatelessWidget {
               ],
             ],
           ),
+          // The live "connected via" line: which server is actually carrying
+          // traffic right now, kept accurate through every auto or manual switch.
+          _ActiveExitLine(active: active),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: NovaSpace.md),
             child: Divider(height: 1, color: nova.border),
@@ -887,6 +968,84 @@ class _ConfigCardBody extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The server currently carrying traffic, shown only while connected. It
+/// listens to the proxy state and the core's live health, so it stays accurate
+/// through every switch: the auto-selector moving to a faster exit, a manual
+/// pin, or a reconnect. The address comes from the core's selected node (or the
+/// pinned node), so it is what is really on the wire, not a stale label.
+class _ActiveExitLine extends StatelessWidget {
+  const _ActiveExitLine({required this.active});
+  final ProxyProfile active;
+
+  /// The `server:port` out of a [proxyNodeKey] (`server:port:proto:path`), for a
+  /// compact, honest address. Hostname and IPv4 keys split cleanly; anything odd
+  /// falls back to the whole key rather than guessing.
+  String _addr(String key) {
+    final List<String> p = key.split(':');
+    return p.length >= 2 ? '${p[0]}:${p[1]}' : key;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return ListenableBuilder(
+      listenable: scope.proxy,
+      builder: (context, _) {
+        if (!scope.proxy.state.isActive) return const SizedBox.shrink();
+        return ValueListenableBuilder<CoreNodeHealth>(
+          valueListenable: scope.proxy.coreHealth,
+          builder: (context, health, __) {
+            final String? key = health.selectedKey ?? active.pinnedNode;
+            // An address is wrapped in LRI/PDI isolates so it reads left-to-right
+            // even inside Farsi RTL copy; the "Auto" fallback follows the locale.
+            final String value =
+                key != null ? '⁦${_addr(key)}⁩' : s.homeConnectedAuto;
+            return Padding(
+              padding: const EdgeInsets.only(top: NovaSpace.sm),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                        color: NovaSemantics.connectGreen,
+                        shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: NovaSpace.sm),
+                  // One ellipsizing line so a long address or a large text scale
+                  // can never overflow the card.
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: <InlineSpan>[
+                        TextSpan(
+                          text: '${s.homeConnectedVia} ',
+                          style: text.labelSmall?.copyWith(color: nova.muted),
+                        ),
+                        TextSpan(
+                          text: value,
+                          style: text.labelSmall?.copyWith(
+                            color: nova.text,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -68,6 +68,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// still usable; the note just explains why the list may be a little old.
   bool _stale = false;
 
+  /// A live refresh is in flight (the list may already be showing cached servers
+  /// underneath). Drives the small spinner on the refresh button.
+  bool _refreshing = false;
+
   // Include protocol + ws path so one host offered over several protocols
   // (VLESS / VMess / Trojan on the same :443, different paths) shows as
   // distinct selectable nodes instead of collapsing to one. Matches the
@@ -115,7 +119,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
   }
 
   Future<void> _load() async {
-    final profiles = NovaScope.of(context).profiles;
     final profile = _profile;
     if (profile == null) {
       setState(() {
@@ -124,53 +127,103 @@ class _NodeListScreenState extends State<NodeListScreen> {
       });
       return;
     }
+    // Show whatever is already saved, instantly. A filtered subscription URL
+    // takes tens of seconds to time out, and blocking the list on that is what
+    // left the user staring at a spinner. The saved servers still work, so put
+    // them up now and refresh live in the background.
+    final List<ProxyNode> cached = await cachedProfileNodes(profile);
+    if (cached.isNotEmpty && mounted) {
+      _applyNodes(cached, profile, stale: false);
+    }
+    await _refresh(profile, hadCache: cached.isNotEmpty);
+  }
+
+  /// Fetches the subscription live and updates the list, keeping whatever is on
+  /// screen if the fetch fails. Shared by the initial load and the manual
+  /// refresh button. [hadCache] means the list is already populated, so a
+  /// failure is a soft "stale" note rather than a fatal error.
+  Future<void> _refresh(ProxyProfile profile,
+      {required bool hadCache, bool forcePing = false}) async {
+    if (mounted) setState(() => _refreshing = true);
     try {
-      final all = await resolveProfileNodes(profile);
-      // The refresh could not reach the panel (workers.dev blocked) and these
-      // came from the saved body instead. Surface it as a soft note, never a
-      // failure: the servers still work and the user can still connect.
-      _stale = lastResolveWasStale;
-      // Whatever the subscription carried that Nova cannot run. Captured right
-      // after the parse, before anything else can overwrite the side channel.
-      _skipped = lastSkippedLinks;
-      if (!_skipped.isEmpty) {
-        NovaLog.instance.write(
-          'Subscription had ${_skipped.total} entries Nova cannot run: '
-          '${_skipped.byScheme.entries.map((MapEntry<String, int> e) => '${e.key} x${e.value}').join(', ')}',
-          level: NovaLogLevel.warn,
-        );
-      }
-      // Dedupe by server:port and cap.
-      final seen = <String>{};
-      final deduped = <ProxyNode>[];
-      for (final n in all) {
-        if (seen.add(_key(n))) deduped.add(n);
-        if (deduped.length >= _maxShown) break;
-      }
-      // Keep the real node count on the profile so the cards stop saying "1".
-      profiles.update(profile.copyWith(nodeCount: all.length));
+      final List<ProxyNode> all = await resolveProfileNodes(profile);
       if (!mounted) return;
-      setState(() {
-        _nodes = deduped;
-        _loading = false;
-      });
-      _pingAll();
+      _applyNodes(all, profile, stale: lastResolveWasStale, forcePing: forcePing);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        // Never wipe a list the user already has over a failed refresh: if there
-        // are servers on screen (from this session or the saved body), keep them
-        // and show a soft "couldn't refresh" note instead of a fatal error that
-        // would leave the user with nothing to connect to. The hard error is
-        // only for the genuine first-run case where nothing was ever loaded.
-        if (_nodes.isNotEmpty) {
+        _refreshing = false;
+        // Never wipe a list the user already has over a failed refresh. The hard
+        // error is only for the genuine first-run case with nothing saved yet.
+        if (_nodes.isNotEmpty || hadCache) {
           _stale = true;
         } else {
           _error = 'Could not load nodes: $e';
         }
       });
     }
+  }
+
+  /// Applies a resolved node list to the screen: dedupe + cap, record skipped
+  /// entries and the real count, and (re)ping only when the set actually changed
+  /// so a background refresh that returns the same servers doesn't re-probe.
+  void _applyNodes(List<ProxyNode> all, ProxyProfile profile,
+      {required bool stale, bool forcePing = false}) {
+    final profiles = NovaScope.of(context).profiles;
+    _stale = stale;
+    // Captured right after the parse, before anything else overwrites the side
+    // channel. A background refresh with an empty result (all cached) leaves the
+    // previous skipped tally untouched.
+    if (all.isNotEmpty) _skipped = lastSkippedLinks;
+    if (!_skipped.isEmpty) {
+      NovaLog.instance.write(
+        'Subscription had ${_skipped.total} entries Nova cannot run: '
+        '${_skipped.byScheme.entries.map((MapEntry<String, int> e) => '${e.key} x${e.value}').join(', ')}',
+        level: NovaLogLevel.warn,
+      );
+    }
+    final Set<String> seen = <String>{};
+    final List<ProxyNode> deduped = <ProxyNode>[];
+    for (final ProxyNode n in all) {
+      if (seen.add(_key(n))) deduped.add(n);
+      if (deduped.length >= _maxShown) break;
+    }
+    final bool changed = !_sameKeys(deduped, _nodes);
+    // Keep the real node count on the profile so the cards stop saying "1".
+    profiles.update(profile.copyWith(nodeCount: all.length));
+    setState(() {
+      _nodes = deduped;
+      _loading = false;
+      _refreshing = false;
+    });
+    if (changed || forcePing) _pingAll();
+  }
+
+  /// The refresh button: re-fetch the subscription now, re-probe, and if this
+  /// profile is the live tunnel, reconnect so the freshest list's best node is
+  /// the one carrying traffic. Keeps the servers on screen the whole time.
+  Future<void> _manualRefresh() async {
+    final ProxyProfile? profile = _profile;
+    if (profile == null || _refreshing) return;
+    clearSubscriptionCache();
+    _probe.clear();
+    await _refresh(profile, hadCache: _nodes.isNotEmpty, forcePing: true);
+    if (!mounted) return;
+    final scope = NovaScope.of(context);
+    if (scope.proxy.state.isActive &&
+        scope.proxy.activeProfile?.id == profile.id) {
+      NovaLog.instance.write('Manual refresh: reconnecting to the best server');
+      await scope.proxy.reconnect();
+    }
+  }
+
+  bool _sameKeys(List<ProxyNode> a, List<ProxyNode> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (_key(a[i]) != _key(b[i])) return false;
+    }
+    return true;
   }
 
   Future<void> _pingAll() async {
@@ -372,13 +425,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
           if (!_loading)
             IconButton(
               tooltip: s.nodeRefresh,
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                clearSubscriptionCache();
-                _probe.clear();
-                setState(() => _loading = true);
-                _load();
-              },
+              icon: _refreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              onPressed: _refreshing ? null : _manualRefresh,
             ),
         ],
       ),
@@ -402,7 +456,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
   Widget _list(NovaStrings s, List<ProxyNode> visible, String? pinned,
       CoreNodeHealth health) {
     final List<Widget> header = <Widget>[
-      const _FreeBanner(),
       if (_stale) const _StaleNote(),
       if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
       const _SocialRow(),
@@ -495,62 +548,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
             borderSide: BorderSide(color: nova.border),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Anti-resale banner: Nova is free, so anyone who was sold these configs sees
-/// they should never have paid. Shown at the top of every node list.
-class _FreeBanner extends StatelessWidget {
-  const _FreeBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = NovaStrings.of(context);
-    final nova = context.nova;
-    final text = Theme.of(context).textTheme;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-          NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.sm),
-      padding: const EdgeInsets.all(NovaSpace.md + 2),
-      decoration: BoxDecoration(
-        borderRadius: NovaRadii.cardR,
-        gradient: LinearGradient(
-          colors: <Color>[
-            nova.cyan.withValues(alpha: 0.12),
-            nova.violet.withValues(alpha: 0.12),
-          ],
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-        ),
-        border: Border.all(color: nova.cyan.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          NovaIconChip(
-            icon: Icons.volunteer_activism_rounded,
-            color: nova.cyan,
-            size: 36,
-            radius: 10,
-            iconScale: 0.56,
-          ),
-          const SizedBox(width: NovaSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(s.nodeFreeTitle,
-                    style:
-                        text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(s.nodeFreeBody,
-                    style: text.bodySmall?.copyWith(color: nova.muted)),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nova_client/src/app.dart';
@@ -59,7 +60,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    // The Servers screen exposes an Add action.
-    expect(find.text('Add'), findsWidgets);
+    // The Servers screen exposes an Add action: now a small floating + button
+    // over the list rather than a labelled header button.
+    expect(find.byIcon(Icons.add_rounded), findsWidgets);
   });
 }

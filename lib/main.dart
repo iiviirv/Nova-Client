@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import 'src/core/proxy/proxy_controller.dart';
 import 'src/core/proxy/singbox_proxy_controller.dart';
 import 'src/core/proxy/subscription.dart';
 import 'src/core/proxy/subscription_body_store.dart';
+import 'src/core/update/update_checker.dart';
 import 'src/features/cloudflare/cloudflare_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
@@ -101,6 +103,11 @@ Future<void> main() async {
     // (workers.dev filtered) serves the saved servers instead of wiping the
     // list and stranding the user with nothing to connect to.
     subscriptionBodyStore = PrefsSubscriptionBodyStore(prefs);
+
+    // Once-a-day best-effort check for a newer release; a hit shows a small
+    // banner on the dashboard. Never blocks startup and swallows any failure.
+    unawaited(checkForNovaUpdate(prefs,
+        nowMs: DateTime.now().millisecondsSinceEpoch));
 
     // If a subscription is active, bind it to the Radar in the background so
     // scans export ready-to-import nodes without the user lifting a finger.

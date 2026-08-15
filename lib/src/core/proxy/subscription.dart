@@ -430,6 +430,22 @@ Future<void> _saveBody(String url, String body) async {
   }
 }
 
+/// The nodes for [profile] that are already available with NO network at all:
+/// the in-memory session cache, or the persisted last-good body. Returns empty
+/// when nothing is saved yet (a genuine first run).
+///
+/// This is what lets the server list appear instantly instead of sitting on a
+/// spinner for the ~40s a filtered subscription URL takes to time out. The list
+/// shows these first, then refreshes live in the background.
+Future<List<ProxyNode>> cachedProfileNodes(ProxyProfile profile) async {
+  final String raw = _profilePayload(profile);
+  if (raw.isEmpty || !_isHttpUrl(raw)) return const <ProxyNode>[];
+  if (_nodeCache[raw] != null) return _nodeCache[raw]!;
+  final String? saved = await _loadSavedBody(raw);
+  if (saved == null) return const <ProxyNode>[];
+  return _expandSubscriptionBody(saved);
+}
+
 Future<List<ProxyNode>> resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
@@ -533,7 +549,10 @@ Future<String> _httpFetch(Uri url, {bool insecure = false}) async {
 Future<String> _httpFetchOnce(Uri url,
     {String? proxyAuthority, bool insecure = false}) async {
   final HttpClient client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 20);
+    // Kept short: on a filtered subscription URL the connect just hangs, and the
+    // whole point is to fail fast through to the SNI-fragment fallback (and, if
+    // that fails too, to the saved list) rather than sit on a spinner.
+    ..connectionTimeout = const Duration(seconds: 8);
   if (insecure) {
     // Accept the node's self-signed certificate (the "no domain" case). Scoped
     // to this one request; the default validating client is used everywhere else.
@@ -550,7 +569,7 @@ Future<String> _httpFetchOnce(Uri url,
     final HttpClientRequest req = await client.getUrl(url);
     req.headers.set(HttpHeaders.userAgentHeader, 'NovaClient');
     final HttpClientResponse resp =
-        await req.close().timeout(const Duration(seconds: 25));
+        await req.close().timeout(const Duration(seconds: 12));
     if (resp.statusCode != HttpStatus.ok) {
       throw HttpException('Subscription HTTP ${resp.statusCode}', uri: url);
     }
@@ -560,7 +579,7 @@ Future<String> _httpFetchOnce(Uri url,
     return await resp
         .transform(utf8.decoder)
         .join()
-        .timeout(const Duration(seconds: 25));
+        .timeout(const Duration(seconds: 12));
   } finally {
     client.close(force: true);
   }

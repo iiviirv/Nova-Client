@@ -40,6 +40,7 @@ class ConnInfo {
 class ConnInfoController extends ChangeNotifier {
   ConnInfoController(this._proxy) {
     _proxy.addListener(_onProxyChanged);
+    _proxy.coreHealth.addListener(_onCoreHealth);
     _client = _makeClient();
   }
 
@@ -70,6 +71,18 @@ class ConnInfoController extends ChangeNotifier {
   bool _wasActive = false;
   late HttpClient _client;
 
+  /// The core just proved a node actually carries traffic (a real urltest delay
+  /// on the selected exit). That means the tunnel is routing NOW, so probe
+  /// immediately rather than waiting for the next warmup tick, which is what
+  /// makes the hero flip to "Secure" seconds sooner instead of sitting on the
+  /// amber "Verifying".
+  void _onCoreHealth() {
+    if (!_wasActive || _info.reachable) return;
+    final CoreNodeHealth h = _proxy.coreHealth.value;
+    final String? sel = h.selectedKey;
+    if (sel != null && h.delayMsByKey[sel] != null) _refresh();
+  }
+
   void _onProxyChanged() {
     final bool active = _proxy.state.isActive;
     if (active && !_wasActive) {
@@ -97,7 +110,10 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   void _scheduleWarmup() {
-    const List<int> delays = <int>[1500, 3000, 5000, 8000];
+    // Front-loaded so "Secure" flips as soon as the tunnel routes, which with the
+    // forced urltest is usually within a second or two. The [_onCoreHealth] hook
+    // fires the instant the core proves a node, so these are just the fallback.
+    const List<int> delays = <int>[700, 1400, 2500, 4000, 6500];
     for (final int ms in delays) {
       Timer(Duration(milliseconds: ms), () {
         if (_wasActive && !_info.reachable) _refresh();
@@ -231,6 +247,7 @@ class ConnInfoController extends ChangeNotifier {
   @override
   void dispose() {
     _proxy.removeListener(_onProxyChanged);
+    _proxy.coreHealth.removeListener(_onCoreHealth);
     _timer?.cancel();
     _client.close(force: true);
     super.dispose();

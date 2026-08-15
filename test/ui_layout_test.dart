@@ -156,11 +156,13 @@ void main() {
       await _teardown(tester);
     });
 
-    testWidgets('idle without a profile shows tools and no config card',
+    testWidgets('idle without a profile shows no config card, tools hidden',
         (WidgetTester tester) async {
       await _pump(tester, const DashboardScreen());
       expect(tester.takeException(), isNull);
-      expect(find.text('Radar'), findsOneWidget);
+      // The Radar/Deploy/Panel strip is intentionally hidden for now
+      // (kShowDashboardTools), and with no profile there is no config card.
+      expect(find.text('Radar'), findsNothing);
       expect(find.text('Single config'), findsNothing);
       await _teardown(tester);
     });
