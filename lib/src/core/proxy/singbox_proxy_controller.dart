@@ -727,7 +727,9 @@ class SingboxProxyController extends ProxyController {
       // before every connect, so it stops at the node's own handshake instead of
       // spending a round trip to the open internet per node.
       final NodeProbeResult r = await probeNode(n,
-          timeout: const Duration(milliseconds: 1500), deep: false);
+          timeout: const Duration(milliseconds: 1500),
+          deep: false,
+          bypass: _active?.hardenTls ?? false);
       ping[n] = r.sortKey;
     }));
     final List<ProxyNode> ranked = <ProxyNode>[...sample]..sort(

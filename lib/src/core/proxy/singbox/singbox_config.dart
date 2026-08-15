@@ -23,6 +23,7 @@ class SingboxRouteOptions {
     this.autoOptimizeCarrier = false,
     this.verboseCoreLog = false,
     this.hardenTls = false,
+    this.hardenPacketFragment = true,
   });
 
   final SingboxMode mode;
@@ -117,6 +118,19 @@ class SingboxRouteOptions {
   /// it failed to carry traffic, and the user can force it either way.
   final bool hardenTls;
 
+  /// Whether the SNI-block bypass includes the TCP-segment fragment stage (the
+  /// recipe's second stage) on top of the TLS-record split.
+  ///
+  /// True everywhere except Windows. On Windows sing-box implements per-segment
+  /// fragmentation with a "wait for the ACK" step that goes through the TCP
+  /// EStats API (winiphlpapi), which an unelevated core cannot drive, so the
+  /// handshake stalls and the connection never comes up: exactly the "Windows
+  /// never connects with the bypass on" report. The TLS-record split, which is
+  /// the part that stops DPI matching the SNI in one packet, uses a different
+  /// path with no ACK-wait and works. So Windows keeps the record split and
+  /// drops the segment split; the desktop controller sets this.
+  final bool hardenPacketFragment;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -128,6 +142,7 @@ class SingboxRouteOptions {
     bool? autoOptimizeCarrier,
     bool? verboseCoreLog,
     bool? hardenTls,
+    bool? hardenPacketFragment,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -145,6 +160,8 @@ class SingboxRouteOptions {
         autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
         verboseCoreLog: verboseCoreLog ?? this.verboseCoreLog,
         hardenTls: hardenTls ?? this.hardenTls,
+        hardenPacketFragment:
+            hardenPacketFragment ?? this.hardenPacketFragment,
       );
 }
 
@@ -219,7 +236,8 @@ class SingboxConfig {
               fragment: options.tlsFragment,
               hy2Up: options.hy2UpMbps,
               hy2Down: options.hy2DownMbps,
-              fingerprintOverride: options.fingerprintOverride),
+              fingerprintOverride: options.fingerprintOverride,
+              hardenPacketFragment: options.hardenPacketFragment),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
@@ -316,7 +334,8 @@ class SingboxConfig {
             fragment: options.tlsFragment,
             hy2Up: options.hy2UpMbps,
             hy2Down: options.hy2DownMbps,
-            fingerprintOverride: options.fingerprintOverride));
+            fingerprintOverride: options.fingerprintOverride,
+            hardenPacketFragment: options.hardenPacketFragment));
       }
     }
     return <String, dynamic>{
@@ -483,6 +502,7 @@ class SingboxConfig {
     int hy2Up = 0,
     int hy2Down = 0,
     String? fingerprintOverride,
+    bool hardenPacketFragment = true,
   }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
@@ -543,7 +563,10 @@ class SingboxConfig {
         throw StateError('awg is an endpoint, not an outbound');
     }
     if (n.tls) {
-      o['tls'] = _tls(n, fragment: fragment, fingerprintOverride: fingerprintOverride);
+      o['tls'] = _tls(n,
+          fragment: fragment,
+          fingerprintOverride: fingerprintOverride,
+          hardenPacketFragment: hardenPacketFragment);
     }
     // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport, and
     // naive's transport is fixed by the protocol (HTTP/2 over TLS): a `type=tcp`
@@ -568,6 +591,7 @@ class SingboxConfig {
     ProxyNode n, {
     bool fragment = true,
     String? fingerprintOverride,
+    bool hardenPacketFragment = true,
   }) {
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
@@ -600,12 +624,13 @@ class SingboxConfig {
     }
     // The SNI-block bypass profile. `fp=unsafe` in Xray means no browser
     // fingerprint at all: Go's own TLS with the given cipher list. So uTLS is
-    // off, the cipher list is what the link (or the app's default) says, and
-    // both of sing-box's fragmenters are on. `record_fragment` is the closest
-    // this core has to the recipe's first stage (ClientHello split into many
-    // TLS records) and `fragment` to its second (the first write split into
-    // small TCP segments); the exact 5/94/1-byte record and 109/1-byte segment
-    // sizes are not expressible here, which is the one known gap against the
+    // off, the cipher list is what the link (or the app's default) says.
+    // `record_fragment` (the recipe's first stage: the ClientHello split into
+    // many TLS records) is always on, since that is what stops DPI matching the
+    // SNI in one packet. The `fragment` TCP-segment split (its second stage) is
+    // gated on [hardenPacketFragment] because its ACK-wait breaks on an
+    // unelevated Windows core. The exact 5/94/1-byte record and 109/1-byte
+    // segment sizes are not expressible here, which is the known gap against the
     // field-tested PattNG configuration. Reality keeps its own handshake.
     if (n.isHardenedTls && !n.isReality) {
       final List<String> suites =
@@ -618,9 +643,13 @@ class SingboxConfig {
         if (n.allowInsecure) 'insecure': true,
         if (n.alpn.isNotEmpty) 'alpn': n.alpn,
         if (suites.isNotEmpty) 'cipher_suites': suites,
-        'fragment': true,
-        'fragment_fallback_delay': '500ms',
+        // The TLS-record split (recipe stage one) always; the TCP-segment split
+        // (stage two) only where its ACK-wait works. See hardenPacketFragment.
         'record_fragment': true,
+        if (hardenPacketFragment) ...<String, dynamic>{
+          'fragment': true,
+          'fragment_fallback_delay': '500ms',
+        },
         'utls': <String, dynamic>{'enabled': false},
       };
     }

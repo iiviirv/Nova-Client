@@ -254,7 +254,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // any TCP handshake, so a plain connect showed every node green even on
     // networks where nothing would ever get through. See node_probe.dart for
     // what each tier proves.
-    _probe[_key(n)] = await probeNode(n);
+    _probe[_key(n)] = await probeNode(n, bypass: _profile?.hardenTls ?? false);
     await _geoOne(n);
   }
 

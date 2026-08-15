@@ -109,6 +109,21 @@ void main() {
       expect((tls['cipher_suites'] as List<dynamic>).length, 11);
     });
 
+    test('Windows keeps the record split but drops the packet fragment', () {
+      // The TCP-segment fragmenter's ACK-wait breaks on an unelevated Windows
+      // core, so that stage is dropped there while the record split, which is
+      // what defeats the SNI match, stays.
+      final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(
+        parseShareLink(kPattLink)!,
+        options:
+            const SingboxRouteOptions(hardenPacketFragment: false),
+      ));
+      expect(tls['record_fragment'], isTrue);
+      expect(tls.containsKey('fragment'), isFalse);
+      expect(tls.containsKey('fragment_fallback_delay'), isFalse);
+      expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse);
+    });
+
     test('hardenTls leaves a domain-addressed node alone', () {
       final ProxyNode domain = parseShareLink(
         'vless://00000000-0000-4000-8000-000000000000@node.example.com:443'

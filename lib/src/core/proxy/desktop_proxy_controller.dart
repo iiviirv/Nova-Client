@@ -349,6 +349,10 @@ class DesktopProxyController extends ProxyController {
         localRuleSets: true,
         // The SNI-block bypass, per profile (see the mobile controller).
         hardenTls: profile.hardenTls,
+        // Windows: keep the bypass's TLS-record split but drop its TCP-segment
+        // split, whose ACK-wait an unelevated Windows core cannot drive (see
+        // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.
+        hardenPacketFragment: !Platform.isWindows,
       );
       cfg = nodes.length == 1
           ? SingboxConfig.buildMap(nodes.first, options: opts)

@@ -95,7 +95,19 @@ Future<NodeProbeResult> probeNode(
   ProxyNode n, {
   Duration timeout = const Duration(seconds: 5),
   bool deep = true,
+  bool bypass = false,
 }) async {
+  // When the SNI-block bypass is on for this profile, a clean-IP fronted node's
+  // real handshake carries a fragmented ClientHello with a fixed cipher list
+  // that only the core can produce. This probe uses the platform's own TLS,
+  // which cannot, so on exactly the networks the bypass is for it would read
+  // every such node as blocked while the tunnel connects fine. Say the probe
+  // cannot judge it, rather than a false "blocked". The real proof is the
+  // connect, which the controller's self-heal already handles.
+  if (bypass && n.isCleanIpFronted) {
+    return const NodeProbeResult.untestable(
+        'SNI-block bypass on; tested when you connect');
+  }
   try {
     return await _probe(n, timeout: timeout, deep: deep).timeout(
       timeout + const Duration(seconds: 2),
