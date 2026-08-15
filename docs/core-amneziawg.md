@@ -296,3 +296,38 @@ At connect the desktop controller no longer assumes what its core can do: it
 runs the same probe document through `check` once per binary and type, and
 gates AmneziaWG and NaiveProxy on the answer, so a swapped or stale binary is
 named rather than guessed at.
+
+## The nova_fragment patch (exact TLS fragmentation)
+
+`tool/core/novafrag.patch` (SHA-256 pinned in both build scripts) is applied on
+top of `amneziawg.patch`. It adds `transport/internet/novafrag`, a faithful port
+of Xray-core's `finalmask` fragment, and a new outbound TLS option
+`nova_fragment` that carries the exact stages (packets / lengths / delays /
+maxSplit). This exists because sing-box's own `record_fragment` splits the
+ClientHello at random points near the SNI and cannot take explicit byte lengths;
+on strict DPI (Iran MCI) that was not enough, while Xray's byte-exact split (as
+PattNG sends it) got through. With this, a Nova config carrying the same `fm=`
+mask produces the same bytes on the wire as PattNG.
+
+- The patch touches 4 files (novafrag.go new, plus option/tls.go and the std /
+  utls TLS clients) and is verified by a unit test that the ClientHello splits
+  into TLS records of 5, 94, 1 bytes and then TCP segments of 109, 1 bytes.
+- No build tag: novafrag is in `common/tls`, always compiled, so every rebuilt
+  core has it. `jmin`/`naive` still gate AmneziaWG/NaiveProxy by tag as before.
+- The Dart hardened TLS block emits `nova_fragment` from the node's own `fm`
+  mask when present, else the field-tested default; on Windows only the
+  `tlshello` record stage is kept (the segment stage needs an ACK-wait an
+  unelevated Windows core cannot drive).
+
+## Rebuilding the iOS core (Novacore.xcframework)
+
+There was no in-repo recipe for the iOS core. It binds
+`github.com/sagernet/sing-box/experimental/novacore`, which is NOT in stock
+sing-box: it is `experimental/libbox` copied with `package libbox` renamed to
+`package novacore` (a de-fingerprinting rename). To rebuild: in the patched
+tree, `cp -R experimental/libbox experimental/novacore`, sed the package name,
+then `gomobile bind -target ios,iossimulator -libname=core -o Novacore.xcframework
+./experimental/novacore` with build_libbox's shared+darwin tag set (gomobile /
+gobind v0.1.12, JDK 17). The exported ObjC API is unchanged by the rebuild
+(novafrag adds no exported symbols), so the existing NovaProxyHost / PacketTunnel
+Swift links against it as-is. Script kept at tool/core (build-novacore-ios).

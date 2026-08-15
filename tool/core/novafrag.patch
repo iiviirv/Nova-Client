@@ -1,0 +1,362 @@
+diff --git a/common/tls/std_client.go b/common/tls/std_client.go
+index 1611c83..101b55e 100644
+--- a/common/tls/std_client.go
++++ b/common/tls/std_client.go
+@@ -14,6 +14,7 @@ import (
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/common/tlsfragment"
++	"github.com/sagernet/sing-box/transport/internet/novafrag"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/option"
+ 	E "github.com/sagernet/sing/common/exceptions"
+@@ -27,6 +28,7 @@ type STDClientConfig struct {
+ 	fragment              bool
+ 	fragmentFallbackDelay time.Duration
+ 	recordFragment        bool
++	novaFragment          []novafrag.Stage
+ }
+ 
+ func (c *STDClientConfig) ServerName() string {
+@@ -50,6 +52,12 @@ func (c *STDClientConfig) STDConfig() (*STDConfig, error) {
+ }
+ 
+ func (c *STDClientConfig) Client(conn net.Conn) (Conn, error) {
++	// nova_fragment is applied CLOSEST to the wire (innermost), so the exact
++	// record/segment split is the last thing that touches the ClientHello
++	// bytes, matching Xray's finalmask.
++	if len(c.novaFragment) > 0 {
++		conn = novafrag.NewConn(conn, c.novaFragment)
++	}
+ 	if c.recordFragment {
+ 		conn = tf.NewConn(conn, c.ctx, c.fragment, c.recordFragment, c.fragmentFallbackDelay)
+ 	}
+@@ -63,6 +71,7 @@ func (c *STDClientConfig) Clone() Config {
+ 		fragment:              c.fragment,
+ 		fragmentFallbackDelay: c.fragmentFallbackDelay,
+ 		recordFragment:        c.recordFragment,
++		novaFragment:          c.novaFragment,
+ 	}
+ }
+ 
+@@ -198,7 +207,7 @@ func NewSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+ 	} else if len(clientCertificate) > 0 || len(clientKey) > 0 {
+ 		return nil, E.New("client certificate and client key must be provided together")
+ 	}
+-	var config Config = &STDClientConfig{ctx, &tlsConfig, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment}
++	var config Config = &STDClientConfig{ctx, &tlsConfig, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment, buildNovaFragment(options.NovaFragment)}
+ 	if options.ECH != nil && options.ECH.Enabled {
+ 		var err error
+ 		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options)
+@@ -238,3 +247,16 @@ func verifyPublicKeySHA256(knownHashValues [][]byte, rawCerts [][]byte, timeFunc
+ 	}
+ 	return E.New("unrecognized remote public key: ", base64.StdEncoding.EncodeToString(hashValue[:]))
+ }
++
++// buildNovaFragment converts the parsed nova_fragment option stages into the
++// novafrag stages the connection wrapper takes.
++func buildNovaFragment(stages []option.NovaFragmentStage) []novafrag.Stage {
++	if len(stages) == 0 {
++		return nil
++	}
++	out := make([]novafrag.Stage, 0, len(stages))
++	for _, s := range stages {
++		out = append(out, novafrag.NewStage(s.Packets, s.Lengths, s.Delays, s.MaxSplit))
++	}
++	return out
++}
+diff --git a/common/tls/utls_client.go b/common/tls/utls_client.go
+index 941192b..63b5003 100644
+--- a/common/tls/utls_client.go
++++ b/common/tls/utls_client.go
+@@ -14,6 +14,7 @@ import (
+ 
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/common/tlsfragment"
++	"github.com/sagernet/sing-box/transport/internet/novafrag"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/option"
+ 	"github.com/sagernet/sing/common"
+@@ -32,6 +33,7 @@ type UTLSClientConfig struct {
+ 	fragment              bool
+ 	fragmentFallbackDelay time.Duration
+ 	recordFragment        bool
++	novaFragment          []novafrag.Stage
+ }
+ 
+ func (c *UTLSClientConfig) ServerName() string {
+@@ -58,6 +60,9 @@ func (c *UTLSClientConfig) STDConfig() (*STDConfig, error) {
+ }
+ 
+ func (c *UTLSClientConfig) Client(conn net.Conn) (Conn, error) {
++	if len(c.novaFragment) > 0 {
++		conn = novafrag.NewConn(conn, c.novaFragment)
++	}
+ 	if c.recordFragment {
+ 		conn = tf.NewConn(conn, c.ctx, c.fragment, c.recordFragment, c.fragmentFallbackDelay)
+ 	}
+@@ -70,7 +75,7 @@ func (c *UTLSClientConfig) SetSessionIDGenerator(generator func(clientHello []by
+ 
+ func (c *UTLSClientConfig) Clone() Config {
+ 	return &UTLSClientConfig{
+-		c.ctx, c.config.Clone(), c.id, c.fragment, c.fragmentFallbackDelay, c.recordFragment,
++		c.ctx, c.config.Clone(), c.id, c.fragment, c.fragmentFallbackDelay, c.recordFragment, c.novaFragment,
+ 	}
+ }
+ 
+@@ -255,7 +260,7 @@ func NewUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	var config Config = &UTLSClientConfig{ctx, &tlsConfig, id, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment}
++	var config Config = &UTLSClientConfig{ctx, &tlsConfig, id, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment, buildNovaFragment(options.NovaFragment)}
+ 	if options.ECH != nil && options.ECH.Enabled {
+ 		if options.Reality != nil && options.Reality.Enabled {
+ 			return nil, E.New("Reality is conflict with ECH")
+diff --git a/option/tls.go b/option/tls.go
+index 60343a1..2bcae62 100644
+--- a/option/tls.go
++++ b/option/tls.go
+@@ -114,6 +114,7 @@ type OutboundTLSOptions struct {
+ 	Fragment                   bool                                `json:"fragment,omitempty"`
+ 	FragmentFallbackDelay      badoption.Duration                  `json:"fragment_fallback_delay,omitempty"`
+ 	RecordFragment             bool                                `json:"record_fragment,omitempty"`
++	NovaFragment               []NovaFragmentStage                 `json:"nova_fragment,omitempty"`
+ 	KernelTx                   bool                                `json:"kernel_tx,omitempty"`
+ 	KernelRx                   bool                                `json:"kernel_rx,omitempty"`
+ 	ECH                        *OutboundECHOptions                 `json:"ech,omitempty"`
+@@ -236,3 +237,12 @@ type OutboundRealityOptions struct {
+ 	PublicKey string `json:"public_key,omitempty"`
+ 	ShortID   string `json:"short_id,omitempty"`
+ }
++
++// NovaFragmentStage is one stage of the Xray-style finalmask fragment carried
++// in the `nova_fragment` outbound TLS option (see transport/internet/novafrag).
++type NovaFragmentStage struct {
++	Packets  string   `json:"packets,omitempty"`
++	Lengths  []string `json:"lengths,omitempty"`
++	Delays   []string `json:"delays,omitempty"`
++	MaxSplit string   `json:"maxSplit,omitempty"`
++}
+diff --git a/transport/internet/novafrag/novafrag.go b/transport/internet/novafrag/novafrag.go
+new file mode 100644
+index 0000000..14457e6
+--- /dev/null
++++ b/transport/internet/novafrag/novafrag.go
+@@ -0,0 +1,216 @@
++// Package novafrag reproduces Xray-core's finalmask "fragment" behaviour inside
++// sing-box, so a config can specify the EXACT TLS-record and TCP-segment sizes
++// and delays a ClientHello is split into. sing-box's own tlsfragment splits at
++// random points near the SNI and cannot take explicit sizes; on strict DPI
++// (e.g. Iran's MCI) that is not enough, while Xray's byte-exact split gets
++// through. The Write logic below is a faithful port of Xray-core's
++// transport/internet/finalmask/fragment/conn.go so a Nova config carrying the
++// same `fm=` mask produces the same bytes on the wire as PattNG.
++package novafrag
++
++import (
++	"math/rand"
++	"net"
++	"strconv"
++	"strings"
++	"time"
++)
++
++// Stage is one fragment mask (one element of finalmask.tcp).
++type Stage struct {
++	PacketsFrom int64
++	PacketsTo   int64
++	LengthsMin  []int64
++	LengthsMax  []int64
++	DelaysMin   []int64
++	DelaysMax   []int64
++	MaxSplitMin int64
++	MaxSplitMax int64
++}
++
++// parseRange reads "5" as {5,5} and "1-3" as {1,3}. Empty is {0,0}.
++func parseRange(s string) (int64, int64) {
++	s = strings.TrimSpace(s)
++	if s == "" {
++		return 0, 0
++	}
++	if i := strings.IndexByte(s, '-'); i >= 0 {
++		from, _ := strconv.ParseInt(strings.TrimSpace(s[:i]), 10, 64)
++		to, _ := strconv.ParseInt(strings.TrimSpace(s[i+1:]), 10, 64)
++		return from, to
++	}
++	v, _ := strconv.ParseInt(s, 10, 64)
++	return v, v
++}
++
++// NewStage builds a Stage from the string fields the finalmask JSON carries.
++// Packets: "tlshello" (record-level, first packet), "" (all packets), or a
++// range like "1-1" (only the Nth writes).
++func NewStage(packets string, lengths, delays []string, maxSplit string) Stage {
++	st := Stage{}
++	switch strings.ToLower(strings.TrimSpace(packets)) {
++	case "tlshello":
++		st.PacketsFrom, st.PacketsTo = 0, 1
++	case "":
++		st.PacketsFrom, st.PacketsTo = 0, 0
++	default:
++		st.PacketsFrom, st.PacketsTo = parseRange(packets)
++	}
++	if len(lengths) == 0 {
++		lengths = []string{"0"}
++	}
++	for _, l := range lengths {
++		lo, hi := parseRange(l)
++		st.LengthsMin = append(st.LengthsMin, lo)
++		st.LengthsMax = append(st.LengthsMax, hi)
++	}
++	if len(delays) == 0 {
++		delays = []string{"0"}
++	}
++	for _, d := range delays {
++		lo, hi := parseRange(d)
++		st.DelaysMin = append(st.DelaysMin, lo)
++		st.DelaysMax = append(st.DelaysMax, hi)
++	}
++	st.MaxSplitMin, st.MaxSplitMax = parseRange(maxSplit)
++	return st
++}
++
++func randBetween(from, to int64) int64 {
++	if from == to {
++		return from
++	}
++	if to < from {
++		from, to = to, from
++	}
++	return from + rand.Int63n(to-from+1)
++}
++
++// Conn wraps a net.Conn and fragments the writes its stage matches. It is a
++// direct port of Xray's fragmentConn.
++type Conn struct {
++	net.Conn
++	s     Stage
++	count uint64
++}
++
++// NewConn chains the stages so the FIRST element is outermost: the TLS layer
++// writes into stage[0], whose output flows into stage[1], then the raw conn.
++// That matches Xray applying finalmask.tcp in array order.
++func NewConn(raw net.Conn, stages []Stage) net.Conn {
++	c := raw
++	for i := len(stages) - 1; i >= 0; i-- {
++		c = &Conn{Conn: c, s: stages[i]}
++	}
++	return c
++}
++
++func (c *Conn) lengthForSegment(i int) (int64, int64) {
++	if i >= len(c.s.LengthsMin) {
++		i = len(c.s.LengthsMin) - 1
++	}
++	return c.s.LengthsMin[i], c.s.LengthsMax[i]
++}
++
++func (c *Conn) delayForSegment(i int) (int64, int64) {
++	if i >= len(c.s.DelaysMin) {
++		i = len(c.s.DelaysMin) - 1
++	}
++	return c.s.DelaysMin[i], c.s.DelaysMax[i]
++}
++
++// mergeTlsHelloSegments: delays is exactly one zero => write all sub-records in
++// one TCP packet.
++func (c *Conn) mergeTlsHelloSegments() bool {
++	return len(c.s.DelaysMax) == 1 && c.s.DelaysMax[0] == 0
++}
++
++func (c *Conn) Write(p []byte) (int, error) {
++	c.count++
++
++	// tlshello stage: split the TLS record body into sub-records of the given
++	// lengths, re-framing each with its own 5-byte record header.
++	if c.s.PacketsFrom == 0 && c.s.PacketsTo == 1 {
++		if c.count != 1 || len(p) <= 5 || p[0] != 22 {
++			return c.Conn.Write(p)
++		}
++		recordLen := 5 + ((int(p[3]) << 8) | int(p[4]))
++		if len(p) < recordLen {
++			return c.Conn.Write(p)
++		}
++		data := p[5:recordLen]
++		buff := make([]byte, 2048)
++		var hello []byte
++		merge := c.mergeTlsHelloSegments()
++		maxSplit := randBetween(c.s.MaxSplitMin, c.s.MaxSplitMax)
++		var splitNum int64
++		for from := 0; ; {
++			lo, hi := c.lengthForSegment(int(splitNum))
++			to := from + int(randBetween(lo, hi))
++			if to > len(data) || (maxSplit > 0 && splitNum+1 >= maxSplit) {
++				to = len(data)
++			}
++			l := to - from
++			if 5+l > len(buff) {
++				buff = make([]byte, 5+l)
++			}
++			copy(buff[:3], p)
++			copy(buff[5:], data[from:to])
++			from = to
++			buff[3] = byte(l >> 8)
++			buff[4] = byte(l)
++			if merge {
++				hello = append(hello, buff[:5+l]...)
++			} else {
++				dlo, dhi := c.delayForSegment(int(splitNum))
++				if _, err := c.Conn.Write(buff[:5+l]); err != nil {
++					return 0, err
++				}
++				if dhi > 0 {
++					time.Sleep(time.Duration(randBetween(dlo, dhi)) * time.Millisecond)
++				}
++			}
++			splitNum++
++			if from == len(data) {
++				if len(hello) > 0 {
++					if _, err := c.Conn.Write(hello); err != nil {
++						return 0, err
++					}
++				}
++				if len(p) > recordLen {
++					if n, err := c.Conn.Write(p[recordLen:]); err != nil {
++						return recordLen + n, err
++					}
++				}
++				return len(p), nil
++			}
++		}
++	}
++
++	// Numbered-packet stage: only fragment the Nth..Mth writes; pass others.
++	if c.s.PacketsFrom != 0 && (c.count < uint64(c.s.PacketsFrom) || c.count > uint64(c.s.PacketsTo)) {
++		return c.Conn.Write(p)
++	}
++	maxSplit := randBetween(c.s.MaxSplitMin, c.s.MaxSplitMax)
++	var splitNum int64
++	for from := 0; ; {
++		lo, hi := c.lengthForSegment(int(splitNum))
++		to := from + int(randBetween(lo, hi))
++		if to > len(p) || (maxSplit > 0 && splitNum+1 >= maxSplit) {
++			to = len(p)
++		}
++		n, err := c.Conn.Write(p[from:to])
++		from += n
++		if err != nil {
++			return from, err
++		}
++		dlo, dhi := c.delayForSegment(int(splitNum))
++		if dhi > 0 {
++			time.Sleep(time.Duration(randBetween(dlo, dhi)) * time.Millisecond)
++		}
++		splitNum++
++		if from >= len(p) {
++			return from, nil
++		}
++	}
++}

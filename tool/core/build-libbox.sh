@@ -18,6 +18,7 @@ set -euo pipefail
 SINGBOX_TAG="v1.13.13"
 SINGBOX_COMMIT="78b2e12fbdd85e6ec956647d6f79cf0bba85c6ba"
 PATCH_SHA256="a59362878c14227b9aa43ccee03da5dc6bbc0d867a029ba2a29cfc74e93c994f"
+NOVAFRAG_PATCH_SHA256="3168ae867e65ef57689aeb4734ff488920f1c333e42ac8b506e25111893ac92c"
 NDK_VERSION="${NDK_VERSION:-28.0.13004108}"
 # Every ABI the APK can run on. An ABI the app installs on with no core in it
 # is an app that connects to nothing, which is the defect this whole change
@@ -57,6 +58,17 @@ fi
 
 say "Applying the AmneziaWG patch"
 git apply --verbose "$patch_file"
+
+novafrag_file="$repo_root/tool/core/novafrag.patch"
+actual_nf="$(shasum -a 256 "$novafrag_file" | cut -d' ' -f1)"
+if [ "$actual_nf" != "$NOVAFRAG_PATCH_SHA256" ]; then
+  echo "novafrag patch SHA-256 mismatch" >&2
+  echo "  expected $NOVAFRAG_PATCH_SHA256" >&2
+  echo "  actual   $actual_nf" >&2
+  exit 1
+fi
+say "Applying the nova_fragment patch (exact TLS fragmentation)"
+git apply --verbose "$novafrag_file"
 
 say "Proving the patched source builds an AmneziaWG endpoint"
 # The same check the app makes at runtime, run here against the host build: a

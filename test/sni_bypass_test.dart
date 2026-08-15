@@ -71,14 +71,20 @@ void main() {
   });
 
   group('the bypass profile in the config', () {
-    test('a link that asks for it gets Go TLS, its ciphers, and both fragmenters',
+    test('a link that asks for it gets Go TLS, its ciphers, and the exact mask',
         () {
       final Map<String, dynamic> tls =
           _tlsOf(SingboxConfig.buildMap(parseShareLink(kPattLink)!));
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse,
           reason: 'fp=unsafe means no browser fingerprint');
-      expect(tls['fragment'], isTrue);
-      expect(tls['record_fragment'], isTrue);
+      // Exact fragmentation: the link's own fm mask, verbatim.
+      final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
+      expect(nf.length, 2);
+      expect((nf[0] as Map)['packets'], 'tlshello');
+      expect((nf[0] as Map)['lengths'], <String>['5', '94', '1']);
+      expect((nf[1] as Map)['packets'], '1-1');
+      expect((nf[1] as Map)['lengths'], <String>['109', '1']);
+      expect((nf[1] as Map)['maxSplit'], '355');
       final List<dynamic> cs = tls['cipher_suites'] as List<dynamic>;
       // The two CBC_SHA256 suites are in Go's insecure list; the core refuses
       // the whole outbound over them, so they are dropped, and the order of the
@@ -96,31 +102,33 @@ void main() {
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isTrue);
       expect((tls['utls'] as Map<String, dynamic>)['fingerprint'], 'chrome');
       expect(tls.containsKey('cipher_suites'), isFalse);
-      expect(tls.containsKey('record_fragment'), isFalse);
+      expect(tls.containsKey('nova_fragment'), isFalse);
     });
 
-    test('hardenTls applies the profile to a clean-IP fronted node', () {
+    test('hardenTls applies the default mask to a clean-IP fronted node', () {
       final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(
         parseShareLink(kNovaLink)!,
         options: const SingboxRouteOptions(hardenTls: true),
       ));
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse);
-      expect(tls['record_fragment'], isTrue);
+      // No fm on the standard link, so the field-tested default mask is used.
+      final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
+      expect(nf.length, 2);
+      expect((nf[0] as Map)['lengths'], <String>['5', '94', '1']);
       expect((tls['cipher_suites'] as List<dynamic>).length, 11);
     });
 
-    test('Windows keeps the record split but drops the packet fragment', () {
-      // The TCP-segment fragmenter's ACK-wait breaks on an unelevated Windows
-      // core, so that stage is dropped there while the record split, which is
-      // what defeats the SNI match, stays.
+    test('Windows keeps only the TLS-record stage of the mask', () {
+      // The TCP-segment stage needs an ACK-wait an unelevated Windows core
+      // cannot drive, so only the tlshello record split survives there.
       final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(
         parseShareLink(kPattLink)!,
         options:
             const SingboxRouteOptions(hardenPacketFragment: false),
       ));
-      expect(tls['record_fragment'], isTrue);
-      expect(tls.containsKey('fragment'), isFalse);
-      expect(tls.containsKey('fragment_fallback_delay'), isFalse);
+      final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
+      expect(nf.length, 1);
+      expect((nf[0] as Map)['packets'], 'tlshello');
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse);
     });
 

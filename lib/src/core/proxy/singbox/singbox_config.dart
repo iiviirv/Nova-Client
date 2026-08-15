@@ -643,13 +643,15 @@ class SingboxConfig {
         if (n.allowInsecure) 'insecure': true,
         if (n.alpn.isNotEmpty) 'alpn': n.alpn,
         if (suites.isNotEmpty) 'cipher_suites': suites,
-        // The TLS-record split (recipe stage one) always; the TCP-segment split
-        // (stage two) only where its ACK-wait works. See hardenPacketFragment.
-        'record_fragment': true,
-        if (hardenPacketFragment) ...<String, dynamic>{
-          'fragment': true,
-          'fragment_fallback_delay': '500ms',
-        },
+        // Exact, byte-for-byte fragmentation via the patched core's
+        // `nova_fragment` (a port of Xray's finalmask). The stages come from the
+        // node's own `fm` mask when the link carried one, else the field-tested
+        // default. This is what matches PattNG on strict DPI, where sing-box's
+        // own random-point `record_fragment` was not enough. On Windows the
+        // TCP-segment stage is dropped, since only that stage needs the
+        // ACK-wait an unelevated Windows core cannot drive; the TLS-record
+        // stage, which defeats the SNI match, stays.
+        'nova_fragment': _novaFragmentStages(n, hardenPacketFragment),
         'utls': <String, dynamic>{'enabled': false},
       };
     }
@@ -684,6 +686,78 @@ class SingboxConfig {
   /// .hardenTls] asks for it and the node is the kind it is for. Domain-
   /// addressed nodes and nodes that already carry their own profile from the
   /// link pass through unchanged.
+  /// The `nova_fragment` stages for a hardened node.
+  ///
+  /// If the node carries an `fm` mask (a PattNG / cf-optimizor link), its stages
+  /// are used verbatim, so the bytes match what that tool produces. Otherwise
+  /// the field-tested default is used. When [packetStage] is false (Windows) the
+  /// TCP-segment stage (packets other than the tlshello record split) is
+  /// dropped, keeping only the record split.
+  static List<Map<String, dynamic>> _novaFragmentStages(
+      ProxyNode n, bool packetStage) {
+    List<Map<String, dynamic>> stages;
+    final String? fm = n.fragmentMask;
+    if (fm != null && fm.isNotEmpty) {
+      try {
+        final Object? doc = jsonDecode(fm);
+        final Object? tcp = doc is Map ? doc['tcp'] : null;
+        stages = (tcp is List)
+            ? tcp
+                .whereType<Map>()
+                .map((Map m) => (m['settings'] as Map?)?.cast<String, dynamic>())
+                .whereType<Map<String, dynamic>>()
+                .map(_fmStage)
+                .toList()
+            : _defaultNovaFragment;
+      } catch (_) {
+        stages = _defaultNovaFragment;
+      }
+    } else {
+      stages = _defaultNovaFragment;
+    }
+    if (!packetStage) {
+      // Keep only the TLS-record split (packets: tlshello).
+      stages = stages
+          .where((Map<String, dynamic> st) =>
+              (st['packets'] as String?)?.toLowerCase() == 'tlshello')
+          .toList();
+    }
+    return stages;
+  }
+
+  /// One Xray finalmask fragment stage, normalised to string fields (lengths,
+  /// delays and maxSplit are strings in the links PattNG writes).
+  static Map<String, dynamic> _fmStage(Map<String, dynamic> settings) {
+    List<String> strs(Object? v) => v is List
+        ? v.map((Object? e) => '$e').toList()
+        : (v == null ? const <String>[] : <String>['$v']);
+    return <String, dynamic>{
+      if (settings['packets'] != null) 'packets': '${settings['packets']}',
+      if (settings['lengths'] != null) 'lengths': strs(settings['lengths']),
+      if (settings['delays'] != null) 'delays': strs(settings['delays']),
+      if (settings['maxSplit'] != null) 'maxSplit': '${settings['maxSplit']}',
+    };
+  }
+
+  /// The field-tested finalmask: ClientHello into TLS records of 5, 94, then 1
+  /// byte, merged into one write; that write split into TCP segments of 109 then
+  /// 1 byte, 1 ms apart, capped at 355.
+  static const List<Map<String, dynamic>> _defaultNovaFragment =
+      <Map<String, dynamic>>[
+    <String, dynamic>{
+      'packets': 'tlshello',
+      'lengths': <String>['5', '94', '1'],
+      'delays': <String>['0'],
+      'maxSplit': '0',
+    },
+    <String, dynamic>{
+      'packets': '1-1',
+      'lengths': <String>['109', '1'],
+      'delays': <String>['1'],
+      'maxSplit': '355',
+    },
+  ];
+
   static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) =>
       (o.hardenTls && n.isCleanIpFronted) ? n.hardened() : n;
 

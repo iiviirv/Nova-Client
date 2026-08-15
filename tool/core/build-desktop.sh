@@ -20,6 +20,7 @@ set -euo pipefail
 SINGBOX_TAG="v1.13.13"
 SINGBOX_COMMIT="78b2e12fbdd85e6ec956647d6f79cf0bba85c6ba"
 PATCH_SHA256="a59362878c14227b9aa43ccee03da5dc6bbc0d867a029ba2a29cfc74e93c994f"
+NOVAFRAG_PATCH_SHA256="3168ae867e65ef57689aeb4734ff488920f1c333e42ac8b506e25111893ac92c"
 
 # The Android core's tag set plus with_grpc, which the old desktop binaries had
 # and which the desktop config path may rely on for gRPC transports.
@@ -67,6 +68,15 @@ fi
 
 say "Applying the AmneziaWG patch"
 git apply "$patch_file"
+
+novafrag_file="$repo_root/tool/core/novafrag.patch"
+actual_nf="$(shasum -a 256 "$novafrag_file" | cut -d' ' -f1)"
+if [ "$actual_nf" != "$NOVAFRAG_PATCH_SHA256" ]; then
+  echo "novafrag patch SHA-256 mismatch: expected $NOVAFRAG_PATCH_SHA256, got $actual_nf" >&2
+  exit 1
+fi
+say "Applying the nova_fragment patch (exact TLS fragmentation)"
+git apply "$novafrag_file"
 
 # Reproducible bytes for one toolchain, same flags as the Android build.
 LDFLAGS="-s -w -buildid= -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_TAG#v}-nova"
@@ -144,15 +154,19 @@ if [ "$target" = "darwin" ] || [ "$target" = "all" ]; then
   [ "$(uname -s)" = "Darwin" ] || { echo "the macOS core needs cgo and must be built on a Mac" >&2; exit 1; }
   build darwin arm64 "$work/sing-box-macos-arm64" 1 "$TAGS"
   verify "$work/sing-box-macos-arm64"
+  rm -f "$out_dir/sing-box-macos-arm64"
   cp "$work/sing-box-macos-arm64" "$out_dir/sing-box-macos-arm64"
   chmod +x "$out_dir/sing-box-macos-arm64"
 fi
 if [ "$target" = "windows" ] || [ "$target" = "all" ]; then
   build windows amd64 "$work/sing-box-windows-amd64.exe" 0 "$TAGS,with_purego"
   verify "$work/sing-box-windows-amd64.exe"
+  rm -f "$out_dir/sing-box-windows-amd64.exe"
   cp "$work/sing-box-windows-amd64.exe" "$out_dir/sing-box-windows-amd64.exe"
   dll="$(cronet_dll)"
+  rm -f "$out_dir/libcronet.dll"
   cp "$dll" "$out_dir/libcronet.dll"
+  chmod u+w "$out_dir/libcronet.dll"
   ls -lh "$out_dir/libcronet.dll" | awk '{print "  " $5, $9}'
 fi
 
