@@ -447,9 +447,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
           geo: _geo[_key(n)],
           selected: pinned == _key(n),
           // The core's live latency for this node (through the actual tunnel, so
-          // with the bypass applied), and whether the auto-selector is currently
-          // routing through it. Both null/false unless connected.
+          // with the bypass applied), whether the core tested it at all, and
+          // whether the auto-selector is currently routing through it. All
+          // null/false unless connected.
           coreDelayMs: health.delayFor(n),
+          coreTested: health.wasTested(n),
           active: health.isSelected(n),
           showDivider: r < visible.length - 1,
           onTap: () => _pin(_key(n)),
@@ -877,6 +879,7 @@ class _NodeRow extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.coreDelayMs,
+    this.coreTested = false,
     this.active = false,
     this.showDivider = true,
   });
@@ -895,6 +898,10 @@ class _NodeRow extends StatelessWidget {
   /// when disconnected or the core has no figure. Takes precedence over [probe]
   /// because it is measured through the actual path (bypass included).
   final int? coreDelayMs;
+
+  /// True when the core measured this node this round (it may still have failed).
+  /// Lets the row say "no response" instead of "not testable" for a dead exit.
+  final bool coreTested;
 
   /// True when the auto-selector is currently routing through this node, so the
   /// row can show which server is really carrying traffic right now.
@@ -1010,7 +1017,10 @@ class _NodeRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: NovaSpace.md),
-                _Verdict(probe: probe, coreDelayMs: coreDelayMs),
+                _Verdict(
+                    probe: probe,
+                    coreDelayMs: coreDelayMs,
+                    coreTested: coreTested),
                 // The live green dot is the answer to "which one is connected":
                 // the auto-selector is routing through this node right now.
                 if (active) ...<Widget>[
@@ -1106,7 +1116,8 @@ class _MiniTag extends StatelessWidget {
 /// that cannot be judged from outside a tunnel says so instead of borrowing a
 /// number it did not earn. Blocked is a word on a red tint, never colour alone.
 class _Verdict extends StatelessWidget {
-  const _Verdict({required this.probe, this.coreDelayMs});
+  const _Verdict(
+      {required this.probe, this.coreDelayMs, this.coreTested = false});
   final NodeProbeResult? probe;
 
   /// The running core's live latency for this node, measured through the tunnel
@@ -1114,6 +1125,11 @@ class _Verdict extends StatelessWidget {
   /// it is the one honest number for a clean-IP node the outside probe had to
   /// call "not testable", and it is fresher than any outside measurement.
   final int? coreDelayMs;
+
+  /// True when the core measured this node this round but it did not answer (no
+  /// [coreDelayMs]). That is a real "no response" verdict, not "not testable":
+  /// the core tried it through the live tunnel and got nothing back.
+  final bool coreTested;
 
   @override
   Widget build(BuildContext context) {
@@ -1137,6 +1153,15 @@ class _Verdict extends StatelessWidget {
           fontWeight: FontWeight.w700,
           fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
         ),
+      );
+    }
+    // The core tried this node through the tunnel and it did not answer. That is
+    // an honest verdict on a dead/unusable exit, and the reason a node keeps
+    // reading "not testable" would be misleading here: it WAS tested.
+    if (coreTested) {
+      return _VerdictPill(
+        label: s.nodeNoResponse,
+        color: NovaSemantics.amber,
       );
     }
     final NodeProbeResult? p = probe;

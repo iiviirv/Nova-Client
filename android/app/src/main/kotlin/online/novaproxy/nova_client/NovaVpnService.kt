@@ -52,6 +52,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     companion object {
         const val EXTRA_CONFIG = "config"
         const val ACTION_STOP = "online.novaproxy.nova_client.STOP"
+        // The auto-select urltest outbound's tag (see SingboxConfig.buildMultiMap).
+        const val PROXY_GROUP_TAG = "proxy"
     }
 
     private val connectivity by lazy {
@@ -229,7 +231,21 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             Thread {
                 for (attempt in 0 until 10) {
                     if (groupClient !== client) return@Thread
-                    if (runCatching { client.connect() }.isSuccess) return@Thread
+                    if (runCatching { client.connect() }.isSuccess) {
+                        // Force the urltest so every pool node gets a fresh
+                        // measurement now, instead of some sitting unmeasured
+                        // until the group's own 3-min interval comes around (which
+                        // is what left nodes reading "not testable"). A few tries,
+                        // because the router may not be routing the instant the
+                        // command socket accepts. Best-effort; the interval covers
+                        // anything these miss.
+                        for (delayMs in longArrayOf(1500L, 4000L, 9000L)) {
+                            Thread.sleep(delayMs)
+                            if (groupClient !== client) return@Thread
+                            runCatching { client.urlTest(PROXY_GROUP_TAG) }
+                        }
+                        return@Thread
+                    }
                     Thread.sleep(300)
                 }
             }.start()

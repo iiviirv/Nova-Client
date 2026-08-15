@@ -195,7 +195,8 @@ class SingboxProxyController extends ProxyController {
     final CoreNodeHealth next = parseCoreGroups(_coreTagKeys, raw);
     final CoreNodeHealth cur = coreHealth.value;
     if (next.selectedKey == cur.selectedKey &&
-        mapEquals(next.delayMsByKey, cur.delayMsByKey)) {
+        mapEquals(next.delayMsByKey, cur.delayMsByKey) &&
+        setEquals(next.testedKeys, cur.testedKeys)) {
       return;
     }
     coreHealth.value = next;
@@ -212,6 +213,7 @@ class SingboxProxyController extends ProxyController {
       Map<String, String> tagKeys, Object? raw) {
     if (raw is! List) return CoreNodeHealth.empty;
     final Map<String, int> delays = <String, int>{};
+    final Set<String> tested = <String>{};
     String? selectedKey;
     for (final Object? g in raw) {
       if (g is! Map) continue;
@@ -227,14 +229,19 @@ class SingboxProxyController extends ProxyController {
           final Object? tag = it['tag'];
           final int delay = (it['delay'] as num?)?.toInt() ?? 0;
           final String? key = tag is String ? tagKeys[tag] : null;
-          // A 0 delay from the core is "no successful test yet", which is not a
-          // latency we can honestly show, so it stays absent (the row keeps its
-          // "tested when you connect" note) rather than reading as 0 ms.
-          if (key != null && delay > 0) delays[key] = delay;
+          if (key == null) continue;
+          // The node is in the pool, so the core is measuring it: record that
+          // even when it has not answered, so the UI can say "no response"
+          // (tried, failed) rather than the misleading "not testable".
+          tested.add(key);
+          // A 0 delay is "no successful measurement", not a latency we can
+          // honestly show as a number, so it stays out of the delay map.
+          if (delay > 0) delays[key] = delay;
         }
       }
     }
-    return CoreNodeHealth(delayMsByKey: delays, selectedKey: selectedKey);
+    return CoreNodeHealth(
+        delayMsByKey: delays, testedKeys: tested, selectedKey: selectedKey);
   }
 
   @override

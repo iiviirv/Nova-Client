@@ -335,6 +335,16 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private func connectGroupClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
     do {
       try client.connect()
+      // Force the urltest so every pool node is measured now, instead of some
+      // sitting unmeasured until the group's own 3-min interval (which is what
+      // left nodes reading "not testable"). A few tries, because the router may
+      // not be routing the instant the command socket accepts. Best-effort.
+      for delay in [1.5, 4.0, 9.0] {
+        statusQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+          guard let self, self.groupClient === client else { return }
+          try? client.urlTest("proxy")
+        }
+      }
     } catch {
       guard groupClient === client, attempt < 5 else { return }
       statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in

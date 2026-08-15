@@ -41,18 +41,35 @@ class TrafficStats {
 /// the auto-selector is currently routing through, so the list can mark which
 /// server is actually carrying traffic.
 class CoreNodeHealth {
-  const CoreNodeHealth({required this.delayMsByKey, this.selectedKey});
+  const CoreNodeHealth({
+    required this.delayMsByKey,
+    this.testedKeys = const <String>{},
+    this.selectedKey,
+  });
 
   static const CoreNodeHealth empty =
       CoreNodeHealth(delayMsByKey: <String, int>{});
 
   final Map<String, int> delayMsByKey;
+
+  /// Every node the core's urltest actually measured this round, whether or not
+  /// it answered. A key here with no [delayMsByKey] entry means the core tried
+  /// the node through the tunnel and got no successful round-trip: it is a dead
+  /// or unusable exit, not one that "can't be tested". The list uses this to say
+  /// "no response" instead of the misleading "not testable".
+  final Set<String> testedKeys;
+
   final String? selectedKey;
 
-  bool get isEmpty => delayMsByKey.isEmpty && selectedKey == null;
+  bool get isEmpty =>
+      delayMsByKey.isEmpty && testedKeys.isEmpty && selectedKey == null;
 
   /// The core's latency for [node], or null if the core has no live figure.
   int? delayFor(ProxyNode node) => delayMsByKey[proxyNodeKey(node)];
+
+  /// The core measured [node] this round (it may still have failed, see
+  /// [delayFor]). False for a node outside the auto-select pool.
+  bool wasTested(ProxyNode node) => testedKeys.contains(proxyNodeKey(node));
 
   bool isSelected(ProxyNode node) =>
       selectedKey != null && proxyNodeKey(node) == selectedKey;

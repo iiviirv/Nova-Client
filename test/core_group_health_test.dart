@@ -65,7 +65,7 @@ void main() {
       expect(h.selectedKey, 'k1');
     });
 
-    test('a 0 delay (no successful test yet) is dropped, not shown as 0 ms', () {
+    test('a 0 delay is dropped from latencies but the node counts as tested', () {
       final CoreNodeHealth h = SingboxProxyController.parseCoreGroups(
         tagKeys,
         <dynamic>[
@@ -79,8 +79,11 @@ void main() {
           },
         ],
       );
+      // No number for node-1 (it did not answer)...
       expect(h.delayMsByKey.containsKey('k1'), isFalse);
       expect(h.delayMsByKey['k0'], 190);
+      // ...but it WAS tested, so the UI shows "no response", not "not testable".
+      expect(h.testedKeys, <String>{'k0', 'k1'});
     });
 
     test('groups other than the auto-selector are ignored', () {
@@ -127,15 +130,20 @@ void main() {
   });
 
   group('CoreNodeHealth lookups by node', () {
-    test('delayFor and isSelected resolve through proxyNodeKey', () {
-      final ProxyNode a = _node('172.67.70.1');
-      final ProxyNode b = _node('104.16.0.2');
+    test('delayFor, wasTested and isSelected resolve through proxyNodeKey', () {
+      final ProxyNode a = _node('172.67.70.1'); // measured, selected
+      final ProxyNode b = _node('104.16.0.2'); // tested but no response
+      final ProxyNode c = _node('188.114.96.3'); // not in the pool at all
       final CoreNodeHealth h = CoreNodeHealth(
         delayMsByKey: <String, int>{proxyNodeKey(a): 150},
+        testedKeys: <String>{proxyNodeKey(a), proxyNodeKey(b)},
         selectedKey: proxyNodeKey(a),
       );
       expect(h.delayFor(a), 150);
       expect(h.delayFor(b), isNull);
+      // b was tested (so the row says "no response"); c was not (so "not testable")
+      expect(h.wasTested(b), isTrue);
+      expect(h.wasTested(c), isFalse);
       expect(h.isSelected(a), isTrue);
       expect(h.isSelected(b), isFalse);
     });

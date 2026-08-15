@@ -650,6 +650,10 @@ class NovaStrings {
   /// Verdict on a node that cannot be judged without connecting to it.
   String get nodeUntested => t('node.untested');
 
+  /// Verdict on a pool node the core tested through the live tunnel but that
+  /// never answered: a dead or unusable exit, not one that "can't be tested".
+  String get nodeNoResponse => t('node.noResponse');
+
   /// Shown when a subscription contained servers Nova cannot run, so the user
   /// learns why the count is short instead of assuming configs went missing.
   String nodeSkipped(int n, String schemes) =>
@@ -1310,6 +1314,7 @@ class NovaStrings {
     'node.count': '{n} nodes',
     'node.blocked': 'blocked',
     'node.untested': 'not testable',
+    'node.noResponse': 'no response',
     'node.staleList':
         'Could not refresh from the panel, so these are your saved servers. '
             'They still work; connect and they will update on their own.',
@@ -1969,6 +1974,7 @@ class NovaStrings {
     'node.count': '{n} سرور',
     'node.blocked': 'مسدود',
     'node.untested': 'قابل تست نیست',
+    'node.noResponse': 'بدون پاسخ',
     'node.staleList':
         'به‌روزرسانی از پنل ممکن نشد، پس این‌ها سرورهای ذخیره‌شده‌ی شما هستند. '
             'هنوز کار می‌کنند؛ وصل شوید تا خودشان به‌روز شوند.',
