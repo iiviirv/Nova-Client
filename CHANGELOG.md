@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.5.0-beta (2026-08-15)
+
+For the networks that block the worker domain itself, by the Nova team.
 
 - SNI-block bypass, for networks that have started blocking the workers.dev
   and pages.dev domains themselves. Nova can now run the profile that testers
