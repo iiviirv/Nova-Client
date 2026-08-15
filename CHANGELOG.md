@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.5.1-beta (2026-08-15)
+
+SNI-block bypass fixes from tester feedback, by the Nova team.
 
 - The server list no longer says "blocked" for every server when the SNI-block
   bypass is on. The test it runs cannot reproduce the bypass, so it now says
