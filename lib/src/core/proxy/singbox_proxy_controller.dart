@@ -215,7 +215,8 @@ class SingboxProxyController extends ProxyController {
     _lastError = null;
     NovaLog.instance.write(
       'Connecting with "${profile.name}" '
-      '(${profile.pinnedNode != null ? 'server chosen by you' : 'auto-select'})',
+      '(${profile.pinnedNode != null ? 'server chosen by you' : 'auto-select'}'
+      '${profile.hardenTls ? ', SNI-block bypass on' : ''})',
     );
     notifyListeners();
 
@@ -403,6 +404,9 @@ class SingboxProxyController extends ProxyController {
     final SingboxRouteOptions opts = routeOptions.copyWith(
       lean: Platform.isIOS,
       localRuleSets: Platform.isAndroid,
+      // The SNI-block bypass, per profile: turned on by the self-heal below or
+      // by the user, applied only to clean-IP fronted nodes.
+      hardenTls: profile.hardenTls,
       // Android's VpnService uses the gvisor stack (userspace TCP, clamped MSS),
       // like iOS. The system stack forwards raw IP and doesn't clamp MSS, which
       // the code comment on the inbound documents as dropping large packets on a
@@ -524,6 +528,20 @@ class SingboxProxyController extends ProxyController {
         _active?.pinnedNode != profile.pinnedNode) {
       return;
     }
+    // A pinned clean-IP node that carries nothing gets the same one-shot
+    // escalation as auto: the pin is kept, only the TLS profile changes.
+    if (!_autoHealTried) {
+      _autoHealTried = true;
+      _healing = true;
+      try {
+        if (await _escalateToBypass(profile, 'your chosen server carried no '
+            'traffic')) {
+          return;
+        }
+      } finally {
+        _healing = false;
+      }
+    }
     NovaLog.instance.write(
       'The server you chose connected but carried no traffic. Keeping your '
       'choice; switch server or use Auto to change it.',
@@ -587,17 +605,52 @@ class SingboxProxyController extends ProxyController {
       }
       return;
     }
-    NovaLog.instance.write(
-      'No traffic after ~18s on auto-select; rebuilding the tunnel once.',
-      level: NovaLogLevel.warn,
-    );
     _autoHealTried = true;
     _healing = true;
     try {
+      // The one rebuild is spent on the SNI-block bypass when the subscription
+      // is the kind it helps: clean-IP fronted worker nodes, none of which
+      // carried traffic. That is the signature of a network blocking the
+      // worker's SNI, and a plain rebuild would only replay the same handshake.
+      // The switch is persisted so the next connect starts hardened, and the
+      // user is told; they can turn it off in the node list.
+      if (await _escalateToBypass(profile, 'no traffic on any server')) {
+        return; // _escalateToBypass reconnected
+      }
+      NovaLog.instance.write(
+        'No traffic after ~18s on auto-select; rebuilding the tunnel once.',
+        level: NovaLogLevel.warn,
+      );
       await reconnect();
     } finally {
       _healing = false;
     }
+  }
+
+  /// Turn on the SNI-block bypass for [profile] and reconnect, if the profile
+  /// is not already hardened and actually contains clean-IP fronted nodes for
+  /// it to act on. Returns false when there was nothing to escalate to.
+  Future<bool> _escalateToBypass(ProxyProfile profile, String because) async {
+    if (profile.hardenTls) return false;
+    List<ProxyNode> nodes;
+    try {
+      nodes = await resolveProfileNodes(profile, fetch: subFetcher);
+    } catch (_) {
+      return false;
+    }
+    if (!nodes.any((ProxyNode n) => n.isCleanIpFronted)) return false;
+    final ProxyProfile hardened = profile.copyWith(hardenTls: true);
+    _active = hardened;
+    await persistProfile?.call(hardened);
+    NovaLog.instance.write(
+      'Turning on the SNI-block bypass for "${profile.name}" ($because): '
+      'Go TLS with the PattNG cipher list, TLS-record and TCP fragmentation, '
+      'on its clean-IP servers.',
+      level: NovaLogLevel.warn,
+    );
+    notice.value = ProxyNotice.sniBypassOn;
+    await reconnect();
+    return true;
   }
 
   /// Fetches a tiny reliability endpoint. On mobile the core runs as a full

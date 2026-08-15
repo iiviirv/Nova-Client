@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
@@ -51,6 +52,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// What the subscription carried that Nova cannot run, so the list can say
   /// why it is shorter than the panel's own count.
   SkippedLinks _skipped = SkippedLinks(<String, int>{});
+
+  /// True right after this screen turned the SNI-block bypass on because every
+  /// server read as blocked, so the note explaining that stays visible.
+  bool _bypassSuggested = false;
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5);
   final TextEditingController _search = TextEditingController();
@@ -161,6 +166,48 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
     _logSummary();
     _saveFastNodes();
+    _maybeSuggestBypass();
+  }
+
+  /// Every server reads as blocked, and there are clean-IP fronted servers in
+  /// the list: the signature of a network that blocks the worker's SNI. Turn
+  /// the SNI-block bypass on for the profile (persisted) and say so, so the
+  /// next connect starts with it instead of failing the same way once more.
+  /// The probe itself cannot try the bypass (it uses the platform's TLS), so
+  /// the proof happens on connect; the controller escalates the same way there.
+  void _maybeSuggestBypass() {
+    final profile = _profile;
+    if (profile == null || profile.hardenTls || _nodes.isEmpty) return;
+    final bool allBlocked = _nodes.every((ProxyNode n) =>
+        _probe[_key(n)]?.quality == NodeProbeQuality.unreachable);
+    if (!allBlocked) return;
+    if (!_nodes.any((ProxyNode n) => n.isCleanIpFronted)) return;
+    NovaLog.instance.write(
+      'Every server in "${profile.name}" reads as blocked; turning on the '
+      'SNI-block bypass for its clean-IP servers.',
+      level: NovaLogLevel.warn,
+    );
+    NovaScope.of(context).profiles.update(profile.copyWith(hardenTls: true));
+    _bypassSuggested = true;
+    if (mounted) setState(() {});
+  }
+
+  /// Turn the bypass on or off by hand. Reconnects if this profile is the live
+  /// tunnel, so the change takes effect without a second tap.
+  Future<void> _setBypass(bool on) async {
+    final scope = NovaScope.of(context);
+    final profile = _profile;
+    if (profile == null || profile.hardenTls == on) return;
+    NovaLog.instance.write(
+        'You turned the SNI-block bypass ${on ? 'on' : 'off'} for "${profile.name}"');
+    final updated = profile.copyWith(hardenTls: on);
+    scope.profiles.update(updated);
+    _bypassSuggested = false;
+    if (mounted) setState(() {});
+    if (scope.proxy.activeProfile?.id == profile.id) {
+      scope.proxy.selectProfile(updated);
+      if (scope.proxy.state.isActive) await scope.proxy.reconnect();
+    }
   }
 
   /// One line in the app log for the whole sweep. Per-node lines would drown
@@ -338,6 +385,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
         onTap: () => _pin(null),
       ),
       const Divider(height: 1),
+      if (_nodes.any((ProxyNode n) => n.isCleanIpFronted)) ...<Widget>[
+        _BypassRow(
+          on: _profile?.hardenTls ?? false,
+          onChanged: _setBypass,
+          note: _bypassSuggested ? s.nodeBypassAllBlocked : null,
+        ),
+        const Divider(height: 1),
+      ],
       if (_nodes.length > 6) _searchField(s),
       if (visible.isEmpty)
         Padding(
@@ -584,6 +639,53 @@ class _SocialRow extends StatelessWidget {
 
 /// The Auto row: the default, and the way back to it after pinning a node.
 /// Styled like a node row so it reads as the first choice in the same list.
+/// The SNI-block bypass switch. Only shown when the list has clean-IP fronted
+/// servers, which are the only ones it acts on. Styled as a row of the same
+/// list rather than a settings card, because it is a property of this
+/// subscription, not of the app.
+class _BypassRow extends StatelessWidget {
+  const _BypassRow({required this.on, required this.onChanged, this.note});
+  final bool on;
+  final ValueChanged<bool> onChanged;
+
+  /// Set when Nova just turned the bypass on by itself, so the row explains.
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SwitchListTile(
+          value: on,
+          onChanged: onChanged,
+          contentPadding: const EdgeInsets.symmetric(
+              horizontal: NovaSpace.lg, vertical: 2),
+          secondary: NovaIconChip(
+              icon: Icons.shield_moon_rounded,
+              color: nova.warning,
+              size: 36,
+              radius: 10),
+          title: Text(s.nodeBypassTitle,
+              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+          subtitle: Text(s.nodeBypassSub,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
+        ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                NovaSpace.lg, 0, NovaSpace.lg, NovaSpace.md),
+            child: Text(note!,
+                style: text.bodySmall?.copyWith(color: nova.warning)),
+          ),
+      ],
+    );
+  }
+}
+
 class _AutoRow extends StatelessWidget {
   const _AutoRow({required this.selected, required this.onTap});
   final bool selected;

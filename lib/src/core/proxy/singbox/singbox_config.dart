@@ -22,6 +22,7 @@ class SingboxRouteOptions {
     this.fingerprintOverride,
     this.autoOptimizeCarrier = false,
     this.verboseCoreLog = false,
+    this.hardenTls = false,
   });
 
   final SingboxMode mode;
@@ -103,6 +104,19 @@ class SingboxRouteOptions {
   /// The `log.level` this produces.
   String get logLevel => verboseCoreLog ? 'info' : 'warn';
 
+  /// Apply the SNI-block bypass profile to every clean-IP fronted node in the
+  /// config (see [ProxyNode.isCleanIpFronted] and [ProxyNode.hardened]).
+  ///
+  /// This exists for the day the censor blocks the SNI of `workers.dev` and
+  /// `pages.dev` outright, which field reports say has started. The profile
+  /// (Go's own TLS with the PattNG cipher list, TLS-record and TCP-segment
+  /// fragmentation of the ClientHello) is what got through on those networks in
+  /// PattNG. It is not the default because it costs speed and because a browser
+  /// fingerprint is the better disguise where the SNI itself is not the trigger,
+  /// so the controller turns it on for a subscription only after every node in
+  /// it failed to carry traffic, and the user can force it either way.
+  final bool hardenTls;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -113,6 +127,7 @@ class SingboxRouteOptions {
     String? fingerprintOverride,
     bool? autoOptimizeCarrier,
     bool? verboseCoreLog,
+    bool? hardenTls,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -129,6 +144,7 @@ class SingboxRouteOptions {
         fingerprintOverride: fingerprintOverride ?? this.fingerprintOverride,
         autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
         verboseCoreLog: verboseCoreLog ?? this.verboseCoreLog,
+        hardenTls: hardenTls ?? this.hardenTls,
       );
 }
 
@@ -160,9 +176,10 @@ class SingboxConfig {
 
   /// Returns the config as a map (useful for tests / further mutation).
   static Map<String, dynamic> buildMap(
-    ProxyNode node, {
+    ProxyNode inputNode, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
+    final ProxyNode node = _maybeHarden(inputNode, options);
     // xhttp / SplitHTTP is Xray-only; sing-box has no implementation, so
     // _transport() would return null and the node would be built as plain TCP,
     // which connects nowhere. buildMultiMap filters these out of the auto pool,
@@ -238,9 +255,11 @@ class SingboxConfig {
   }
 
   static Map<String, dynamic> buildMultiMap(
-    List<ProxyNode> nodes, {
+    List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
+    final List<ProxyNode> nodes =
+        inputNodes.map((ProxyNode n) => _maybeHarden(n, options)).toList();
     // The lean (iOS) path trims the node pool to stay under the extension's
     // ~50MB memory cap. Fewer idle outbounds (each holds a periodic urltest
     // probe) means more headroom for the throughput burst of a speed test, which
@@ -579,6 +598,32 @@ class SingboxConfig {
         'server_name': n.sni ?? n.server,
       };
     }
+    // The SNI-block bypass profile. `fp=unsafe` in Xray means no browser
+    // fingerprint at all: Go's own TLS with the given cipher list. So uTLS is
+    // off, the cipher list is what the link (or the app's default) says, and
+    // both of sing-box's fragmenters are on. `record_fragment` is the closest
+    // this core has to the recipe's first stage (ClientHello split into many
+    // TLS records) and `fragment` to its second (the first write split into
+    // small TCP segments); the exact 5/94/1-byte record and 109/1-byte segment
+    // sizes are not expressible here, which is the one known gap against the
+    // field-tested PattNG configuration. Reality keeps its own handshake.
+    if (n.isHardenedTls && !n.isReality) {
+      final List<String> suites =
+          (n.cipherSuites.isEmpty ? kBypassCipherSuites : n.cipherSuites)
+              .where(_coreCipherSuites.contains)
+              .toList();
+      return <String, dynamic>{
+        'enabled': true,
+        'server_name': n.sni ?? n.server,
+        if (n.allowInsecure) 'insecure': true,
+        if (n.alpn.isNotEmpty) 'alpn': n.alpn,
+        if (suites.isNotEmpty) 'cipher_suites': suites,
+        'fragment': true,
+        'fragment_fallback_delay': '500ms',
+        'record_fragment': true,
+        'utls': <String, dynamic>{'enabled': false},
+      };
+    }
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,
@@ -605,6 +650,38 @@ class SingboxConfig {
       'utls': <String, dynamic>{'enabled': true, 'fingerprint': fingerprint},
     };
   }
+
+  /// The node with the SNI-block bypass applied when [SingboxRouteOptions
+  /// .hardenTls] asks for it and the node is the kind it is for. Domain-
+  /// addressed nodes and nodes that already carry their own profile from the
+  /// link pass through unchanged.
+  static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) =>
+      (o.hardenTls && n.isCleanIpFronted) ? n.hardened() : n;
+
+  /// The cipher suite names the sing-box core accepts, measured against the
+  /// 1.13.13 binary: it looks names up in Go's secure list only, so anything in
+  /// Go's insecure list ("unknown cipher_suite: TLS_ECDHE_ECDSA_WITH_AES_128_
+  /// CBC_SHA256", which the PattNG recipe includes) is dropped here rather than
+  /// handed to a core that refuses the whole outbound over it.
+  static const Set<String> _coreCipherSuites = <String>{
+    'TLS_AES_128_GCM_SHA256',
+    'TLS_AES_256_GCM_SHA384',
+    'TLS_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
+    'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
+    'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384',
+    'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA',
+    'TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA',
+    'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA',
+    'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA',
+    'TLS_RSA_WITH_AES_128_GCM_SHA256',
+    'TLS_RSA_WITH_AES_256_GCM_SHA384',
+    'TLS_RSA_WITH_AES_128_CBC_SHA',
+    'TLS_RSA_WITH_AES_256_CBC_SHA',
+  };
 
   static Map<String, dynamic>? _transport(ProxyNode n) {
     switch (n.network) {

@@ -63,6 +63,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
       ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
       ProxyNotice.pinnedExitNoTraffic => s.pinnedExitNoTraffic,
       ProxyNotice.pinnedExitGone => s.pinnedExitGone,
+      ProxyNotice.sniBypassOn => s.sniBypassOn,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,
     };
     // Verdicts that carry instructions (Radar, another server, another network)

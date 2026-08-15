@@ -45,6 +45,7 @@ class ProxyProfile {
     this.updatedAt,
     this.pinnedNode,
     this.fastNodes = const <String>[],
+    this.hardenTls = false,
   });
 
   final String id;
@@ -75,6 +76,13 @@ class ProxyProfile {
   /// few. Empty until the user opens the node list.
   final List<String> fastNodes;
 
+  /// The SNI-block bypass profile is applied to this profile's clean-IP fronted
+  /// nodes (see `SingboxRouteOptions.hardenTls`). Off by default; turned on by
+  /// Nova itself when every node in the subscription fails to carry traffic
+  /// (the signature of a network that blocks the worker's SNI), or by the user
+  /// from the node list. Sticky once on, until the user turns it off.
+  final bool hardenTls;
+
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
@@ -86,6 +94,7 @@ class ProxyProfile {
     DateTime? updatedAt,
     Object? pinnedNode = _unset,
     List<String>? fastNodes,
+    bool? hardenTls,
   }) {
     return ProxyProfile(
       id: id,
@@ -100,6 +109,7 @@ class ProxyProfile {
       pinnedNode:
           pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
       fastNodes: fastNodes ?? this.fastNodes,
+      hardenTls: hardenTls ?? this.hardenTls,
     );
   }
 
@@ -114,6 +124,7 @@ class ProxyProfile {
         'updatedAt': updatedAt?.toIso8601String(),
         'pinnedNode': pinnedNode,
         'fastNodes': fastNodes,
+        'hardenTls': hardenTls,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -135,6 +146,7 @@ class ProxyProfile {
                 ?.map((e) => e as String)
                 .toList() ??
             const <String>[],
+        hardenTls: json['hardenTls'] as bool? ?? false,
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>

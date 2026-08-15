@@ -39,6 +39,15 @@ class NovaStrings {
   /// this session had to auto-select.
   String get pinnedExitGone => t('notice.pinnedExitGone');
 
+  /// Shown when Nova turns on the SNI-block bypass for a subscription because
+  /// none of its servers carried traffic.
+  String get sniBypassOn => t('notice.sniBypassOn');
+
+  // ---- SNI-block bypass (node list switch) ----
+  String get nodeBypassTitle => t('node.bypassTitle');
+  String get nodeBypassSub => t('node.bypassSub');
+  String get nodeBypassAllBlocked => t('node.bypassAllBlocked');
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -673,6 +682,19 @@ class NovaStrings {
     'notice.pinnedExitGone':
         'The server you had picked is no longer in this subscription, so Nova '
             'auto-selected one. Open the server list to choose again.',
+    'notice.sniBypassOn':
+        'None of these servers carried traffic, so Nova turned on the '
+            'SNI-block bypass for this subscription and reconnected. You can '
+            'turn it off in the server list.',
+    'node.bypassTitle': 'SNI-block bypass',
+    'node.bypassSub':
+        'For networks that block the worker domain itself. Plain TLS with a '
+            'fixed cipher list and a fragmented handshake, on the clean-IP '
+            'servers only. Slower, so leave it off unless nothing connects.',
+    'node.bypassAllBlocked':
+        'Every server here reads as blocked, which usually means this network '
+            'blocks the worker domain. The SNI-block bypass is now on for this '
+            'subscription; connect to try it.',
     'notice.tunnelNoInternet':
         'The tunnel is up but no traffic is getting through. Your network may '
             'be blocking this config; scan a clean IP in Radar or try another '
@@ -1320,6 +1342,19 @@ class NovaStrings {
         'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
             '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '
             'دوباره فهرست سرورها را باز کنید.',
+    'notice.sniBypassOn':
+        'هیچ‌کدام از این سرورها ترافیک عبور ندادند، پس \u2066Nova\u2069 '
+            'دور زدن مسدودی \u2066SNI\u2069 را برای این اشتراک روشن کرد و '
+            'دوباره وصل شد. می‌توانید از فهرست سرورها خاموشش کنید.',
+    'node.bypassTitle': 'دور زدن مسدودی \u2066SNI\u2069',
+    'node.bypassSub':
+        'برای شبکه‌هایی که خود دامنه‌ی ورکر را می‌بندند. \u2066TLS\u2069 ساده '
+            'با فهرست رمز ثابت و دست‌دهی تکه‌تکه‌شده، فقط روی سرورهای '
+            'آی‌پی تمیز. کندتر است؛ فقط وقتی هیچ‌چیز وصل نمی‌شود روشنش کنید.',
+    'node.bypassAllBlocked':
+        'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
+            'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '
+            'روشن شد؛ وصل شوید تا امتحان شود.',
     'notice.tunnelNoInternet':
         'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
             'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '

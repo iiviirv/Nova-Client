@@ -62,6 +62,11 @@ enum ProxyNotice {
   /// IPs), so this session had to auto-select. Announced rather than silent.
   pinnedExitGone,
 
+  /// Every server in the subscription came up but carried nothing, so Nova
+  /// turned on the SNI-block bypass for it and reconnected. Persisted; the
+  /// user can turn it off in the node list.
+  sniBypassOn,
+
   /// The tunnel is up but repeated probes (and one full rebuild) never got any
   /// traffic through: "connected but no internet". Fired once, when the
   /// controller stops trying, so the user learns what to do instead of staring

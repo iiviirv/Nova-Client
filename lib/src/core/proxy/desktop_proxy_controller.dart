@@ -245,6 +245,26 @@ class DesktopProxyController extends ProxyController {
     _autoHealTried = true;
     _healing = true;
     try {
+      // Spend the one rebuild on the SNI-block bypass when the subscription has
+      // clean-IP fronted nodes and none carried traffic (the mobile controller
+      // does the same; see its _escalateToBypass). Persisted, and announced.
+      if (!profile.hardenTls) {
+        List<ProxyNode> nodes = const <ProxyNode>[];
+        try {
+          nodes = await resolveProfileNodes(profile, fetch: subFetcher);
+        } catch (_) {/* fall through to a plain rebuild */}
+        if (nodes.any((ProxyNode n) => n.isCleanIpFronted)) {
+          final ProxyProfile hardened = profile.copyWith(hardenTls: true);
+          _active = hardened;
+          await persistProfile?.call(hardened);
+          NovaLog.instance.write(
+            'Turning on the SNI-block bypass for "${profile.name}" (no traffic '
+            'on any server).',
+            level: NovaLogLevel.warn,
+          );
+          notice.value = ProxyNotice.sniBypassOn;
+        }
+      }
       await reconnect();
     } finally {
       _healing = false;
@@ -325,8 +345,11 @@ class DesktopProxyController extends ProxyController {
       // with fragment on). Keeping fragmentation matters in Iran, without it the
       // SNI is exposed in one packet and DPI can block the tunnel to the worker.
       // If a future desktop core ever lacks the key, add `tlsFragment: false`.
-      final SingboxRouteOptions opts =
-          routeOptions.copyWith(localRuleSets: true);
+      final SingboxRouteOptions opts = routeOptions.copyWith(
+        localRuleSets: true,
+        // The SNI-block bypass, per profile (see the mobile controller).
+        hardenTls: profile.hardenTls,
+      );
       cfg = nodes.length == 1
           ? SingboxConfig.buildMap(nodes.first, options: opts)
           : SingboxConfig.buildMultiMap(nodes, options: opts);

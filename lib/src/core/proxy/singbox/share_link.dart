@@ -103,7 +103,24 @@ ProxyNode? _parseUserInfoLink(String input, NodeProtocol protocol) {
     grpcServiceName: network == 'grpc' ? (q['serviceName'] ?? q['path'] ?? '') : null,
     realityPublicKey: (pbk != null && pbk.isNotEmpty) ? pbk : null,
     realityShortId: reality ? q['sid'] : null,
+    // PattNG / cf-optimizor extensions: `cs` is a colon-separated TLS 1.2
+    // cipher list, `fm` an Xray finalmask JSON, and `fp=unsafe` (read above)
+    // means Go's own TLS instead of a browser fingerprint. Together they are
+    // the SNI-block bypass profile; see ProxyNode.isHardenedTls.
+    cipherSuites: _splitCiphers(q['cs']),
+    fragmentMask: (q['fm'] ?? '').trim().isEmpty ? null : q['fm']!.trim(),
   );
+}
+
+/// `cs=` is colon-separated in the links PattNG writes (the same shape Xray's
+/// own `cipherSuites` field takes).
+List<String> _splitCiphers(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const <String>[];
+  return raw
+      .split(':')
+      .map((String c) => c.trim())
+      .where((String c) => c.isNotEmpty)
+      .toList();
 }
 
 /// VMess share links are `vmess://` + base64 of a JSON object (the v2rayN
