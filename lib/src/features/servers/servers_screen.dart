@@ -19,15 +19,25 @@ class ServersScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(
+                  NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.sm),
               child: Row(
                 children: <Widget>[
-                  Text(s.navServers,
-                      style: Theme.of(context).textTheme.headlineMedium),
-                  const Spacer(),
+                  // The title yields to the action: at a large text scale on
+                  // a narrow phone the button must stay whole and reachable.
+                  Expanded(
+                    child: Text(s.navServers,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(width: NovaSpace.md),
                   NovaButton(
                     label: s.add,
-                    icon: Icons.add,
+                    icon: Icons.add_rounded,
                     onPressed: () => showAddConfigSheet(context),
                   ),
                 ],

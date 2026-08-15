@@ -12,8 +12,10 @@ import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/subscription.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_colors.dart';
+import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
+import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 
 /// Lists the nodes of a subscription with a live TCP latency for each, and lets
@@ -319,49 +321,66 @@ class _NodeListScreenState extends State<NodeListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!))
-              : ListView(
-                  children: <Widget>[
-                    const _FreeBanner(),
-                    if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
-                    const _SocialRow(),
-                    const Divider(height: 1),
-                    _AutoRow(
-                      selected: pinned == null,
-                      onTap: () => _pin(null),
-                    ),
-                    const Divider(height: 1),
-                    if (_nodes.length > 6) _searchField(s),
-                    if (visible.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 40),
-                        child: Center(
-                          child: Text(s.nodeNoMatch,
-                              style: TextStyle(color: context.nova.muted)),
-                        ),
-                      )
-                    else
-                      for (final n in visible)
-                        _NodeRow(
-                          node: n,
-                          probe: _probe[_key(n)],
-                          geo: _geo[_key(n)],
-                          selected: pinned == _key(n),
-                          onTap: () => _pin(_key(n)),
-                        ),
-                  ],
-                ),
+              : _list(s, visible, pinned),
+    );
+  }
+
+  /// The header blocks are a handful of cheap widgets; the node rows are built
+  /// on demand so an 80-node subscription only lays out what is on screen.
+  Widget _list(NovaStrings s, List<ProxyNode> visible, String? pinned) {
+    final List<Widget> header = <Widget>[
+      const _FreeBanner(),
+      if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
+      const _SocialRow(),
+      const Divider(height: 1),
+      _AutoRow(
+        selected: pinned == null,
+        onTap: () => _pin(null),
+      ),
+      const Divider(height: 1),
+      if (_nodes.length > 6) _searchField(s),
+      if (visible.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: NovaSpace.lg, vertical: 40),
+          child: Center(
+            child: Text(s.nodeNoMatch,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: context.nova.muted)),
+          ),
+        ),
+    ];
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: NovaSpace.xl),
+      itemCount: header.length + visible.length,
+      itemBuilder: (BuildContext context, int i) {
+        if (i < header.length) return header[i];
+        final int r = i - header.length;
+        final ProxyNode n = visible[r];
+        return _NodeRow(
+          node: n,
+          probe: _probe[_key(n)],
+          geo: _geo[_key(n)],
+          selected: pinned == _key(n),
+          showDivider: r < visible.length - 1,
+          onTap: () => _pin(_key(n)),
+        );
+      },
     );
   }
 
   Widget _searchField(NovaStrings s) {
     final nova = context.nova;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.md, NovaSpace.lg, NovaSpace.xs),
       child: TextField(
         controller: _search,
         onChanged: (v) => setState(() => _query = v),
         textInputAction: TextInputAction.search,
+        style: Theme.of(context).textTheme.bodyMedium,
         decoration: InputDecoration(
           isDense: true,
           hintText: s.nodeSearch,
@@ -369,6 +388,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
           suffixIcon: _query.isEmpty
               ? null
               : IconButton(
+                  tooltip: s.nodeClearSearch,
                   icon: Icon(Icons.close, color: nova.muted, size: 18),
                   onPressed: () {
                     _search.clear();
@@ -378,11 +398,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
           filled: true,
           fillColor: nova.surface,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: NovaRadii.tabR,
             borderSide: BorderSide(color: nova.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: NovaRadii.tabR,
             borderSide: BorderSide(color: nova.border),
           ),
         ),
@@ -402,33 +422,32 @@ class _FreeBanner extends StatelessWidget {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.sm),
+      padding: const EdgeInsets.all(NovaSpace.md + 2),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: NovaRadii.cardR,
         gradient: LinearGradient(
           colors: <Color>[
-            nova.cyan.withValues(alpha: 0.16),
-            nova.violet.withValues(alpha: 0.16),
+            nova.cyan.withValues(alpha: 0.12),
+            nova.violet.withValues(alpha: 0.12),
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
         ),
-        border: Border.all(color: nova.cyan.withValues(alpha: 0.35)),
+        border: Border.all(color: nova.cyan.withValues(alpha: 0.28)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: nova.cyan.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.volunteer_activism_rounded,
-                color: nova.cyan, size: 22),
+          NovaIconChip(
+            icon: Icons.volunteer_activism_rounded,
+            color: nova.cyan,
+            size: 36,
+            radius: 10,
+            iconScale: 0.56,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: NovaSpace.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -436,7 +455,7 @@ class _FreeBanner extends StatelessWidget {
                 Text(s.nodeFreeTitle,
                     style:
                         text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(s.nodeFreeBody,
                     style: text.bodySmall?.copyWith(color: nova.muted)),
               ],
@@ -468,30 +487,28 @@ class _SkippedNote extends StatelessWidget {
     final List<String> shown = skipped.schemes.take(2).toList();
     final String names = shown.join(', ');
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: nova.surface,
-          border: Border.all(color: nova.border),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(Icons.info_outline_rounded, size: 18, color: nova.muted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                s.nodeSkipped(skipped.total, names),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: nova.muted),
-              ),
+      padding: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.xs, NovaSpace.lg, NovaSpace.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsetsDirectional.only(
+                start: NovaSpace.sm, top: 1),
+            child:
+                Icon(Icons.info_outline_rounded, size: 16, color: nova.muted),
+          ),
+          const SizedBox(width: NovaSpace.sm),
+          Expanded(
+            child: Text(
+              s.nodeSkipped(skipped.total, names),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: nova.muted),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -502,11 +519,12 @@ class _SkippedNote extends StatelessWidget {
 class _SocialRow extends StatelessWidget {
   const _SocialRow();
 
-  static const List<(IconData, String)> _links = <(IconData, String)>[
-    (Icons.send_rounded, 'https://t.me/irnova_proxy'),
-    (Icons.camera_alt_rounded, 'https://instagram.com/irnova_proxy'),
-    (Icons.code_rounded, 'https://github.com/IRNova'),
-    (Icons.language_rounded, 'https://novaproxy.online/'),
+  static const List<(IconData, String, String)> _links =
+      <(IconData, String, String)>[
+    (Icons.send_rounded, 'Telegram', 'https://t.me/irnova_proxy'),
+    (Icons.camera_alt_rounded, 'Instagram', 'https://instagram.com/irnova_proxy'),
+    (Icons.code_rounded, 'GitHub', 'https://github.com/IRNova'),
+    (Icons.language_rounded, 'novaproxy.online', 'https://novaproxy.online/'),
   ];
 
   Future<void> _open(String url) async {
@@ -521,29 +539,40 @@ class _SocialRow extends StatelessWidget {
     final s = NovaStrings.of(context);
     final nova = context.nova;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.xs, NovaSpace.lg, NovaSpace.md),
       child: Row(
         children: <Widget>[
-          Text(s.nodeCommunity,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelMedium
-                  ?.copyWith(color: nova.muted, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          for (final (IconData icon, String url) in _links)
+          Expanded(
+            child: Text(s.nodeCommunity,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: nova.muted, fontWeight: FontWeight.w600)),
+          ),
+          for (final (IconData icon, String name, String url) in _links)
             Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _open(url),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: nova.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: nova.border),
+              padding: const EdgeInsetsDirectional.only(start: NovaSpace.xs),
+              child: Tooltip(
+                message: name,
+                child: Material(
+                  color: nova.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: NovaRadii.smR,
+                    side: BorderSide(color: nova.border),
                   ),
-                  child: Icon(icon, color: nova.cyan, size: 18),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _open(url),
+                    child: SizedBox(
+                      // A 40dp target: the icons are 18dp and used to sit in a
+                      // 34dp box, under the minimum touch size.
+                      width: 40,
+                      height: 40,
+                      child: Icon(icon, color: nova.cyan, size: 18),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -553,6 +582,8 @@ class _SocialRow extends StatelessWidget {
   }
 }
 
+/// The Auto row: the default, and the way back to it after pinning a node.
+/// Styled like a node row so it reads as the first choice in the same list.
 class _AutoRow extends StatelessWidget {
   const _AutoRow({required this.selected, required this.onTap});
   final bool selected;
@@ -561,13 +592,45 @@ class _AutoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
-    final Color accent = context.nova.indigo;
-    return ListTile(
-      leading: Icon(Icons.bolt, color: accent),
-      title: Text(s.nodeAuto),
-      subtitle: Text(s.nodeAutoSub),
-      trailing: selected ? Icon(Icons.check_circle, color: accent) : null,
-      onTap: onTap,
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    final Color accent = nova.indigo;
+    return Material(
+      color: selected ? accent.withValues(alpha: 0.07) : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Semantics(
+          selected: selected,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+            child: Row(
+              children: <Widget>[
+                NovaIconChip(
+                    icon: Icons.bolt_rounded, color: accent, size: 36, radius: 10),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(s.nodeAuto,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(s.nodeAutoSub,
+                          style: text.bodySmall?.copyWith(color: nova.muted)),
+                    ],
+                  ),
+                ),
+                if (selected) ...<Widget>[
+                  const SizedBox(width: NovaSpace.sm),
+                  Icon(Icons.check_circle_rounded, color: accent, size: 22),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -620,15 +683,14 @@ List<String> _transportTags(ProxyNode n) {
 
 /// The deeper TLS handshake details (SNI, uTLS fingerprint, VLESS flow) shown on
 /// a secondary line. Empty when the node carries none of them.
-String _nodeDetail(ProxyNode n) {
+List<String> _nodeDetail(ProxyNode n) {
   // Short, high-value bits first (uTLS, flow) so they stay visible; the long
-  // SNI host goes last and truncates gracefully.
-  final List<String> parts = <String>[
+  // SNI host goes last and wraps onto its own line if it must.
+  return <String>[
     if ((n.fingerprint ?? '').isNotEmpty) 'uTLS ${n.fingerprint}',
     if ((n.flow ?? '').isNotEmpty) 'flow ${n.flow}',
     if ((n.sni ?? '').isNotEmpty) 'SNI ${n.sni}',
   ];
-  return parts.join('   ·   ');
 }
 
 class _NodeRow extends StatelessWidget {
@@ -638,6 +700,7 @@ class _NodeRow extends StatelessWidget {
     required this.geo,
     required this.selected,
     required this.onTap,
+    this.showDivider = true,
   });
 
   final ProxyNode node;
@@ -649,6 +712,9 @@ class _NodeRow extends StatelessWidget {
   final _Geo? geo;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Hairline under the row; off for the last row so the list ends clean.
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -669,70 +735,111 @@ class _NodeRow extends StatelessWidget {
     ];
     // The probe's own verdict is the most useful thing on the row when it is
     // anything other than a plain number, so it leads the detail line.
-    final String detail = <String>[
+    final List<String> detail = <String>[
       if ((probe?.reason ?? '').isNotEmpty) probe!.reason!,
-      if (_nodeDetail(node).isNotEmpty) _nodeDetail(node),
-    ].join('   ·   ');
-    return ListTile(
-      isThreeLine: detail.isNotEmpty,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: cc.isNotEmpty
-          ? Text(_flagEmoji(cc), style: const TextStyle(fontSize: 26))
-          : Icon(Icons.public_rounded, color: nova.muted, size: 24),
-      title: Row(
-        children: <Widget>[
-          _ProtoBadge(protocol: node.protocol),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(primary,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const SizedBox(height: 4),
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            runSpacing: 4,
-            children: <Widget>[
-              Text(addr, style: text.bodySmall?.copyWith(color: nova.muted)),
-              for (final String t in transport) _MiniTag(text: t),
-            ],
-          ),
-          if (detail.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 3),
-              child: Text(
-                detail,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: text.labelSmall?.copyWith(color: nova.muted),
-              ),
+      ..._nodeDetail(node),
+    ];
+
+    return Material(
+      color: selected ? nova.indigo.withValues(alpha: 0.07) : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Semantics(
+          selected: selected,
+          child: Container(
+            decoration: showDivider
+                ? BoxDecoration(
+                    border: Border(bottom: BorderSide(color: nova.border)))
+                : null,
+            padding: const EdgeInsets.symmetric(
+                horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                SizedBox(
+                  width: 30,
+                  child: cc.isNotEmpty
+                      ? Text(_flagEmoji(cc),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 22))
+                      : Icon(Icons.public_rounded,
+                          color: nova.muted, size: 22),
+                ),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          _ProtoBadge(protocol: node.protocol),
+                          const SizedBox(width: NovaSpace.sm),
+                          Expanded(
+                            child: Text(primary,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: text.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: NovaSpace.xs),
+                      // The address stays LTR even in Farsi: a mirrored
+                      // host:port is unreadable.
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: <Widget>[
+                          Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(addr,
+                                style: text.bodySmall
+                                    ?.copyWith(color: nova.muted)),
+                          ),
+                          for (final String t in transport) _MiniTag(text: t),
+                        ],
+                      ),
+                      if (detail.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 3),
+                        // One line, each part truncating on its own, so a
+                        // long SNI host never pushes the row to five lines.
+                        Row(
+                          children: <Widget>[
+                            for (int i = 0; i < detail.length; i++) ...<Widget>[
+                              if (i > 0) const SizedBox(width: NovaSpace.md),
+                              Flexible(
+                                child: Text(detail[i],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: text.labelSmall
+                                        ?.copyWith(color: nova.muted)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: NovaSpace.md),
+                _Verdict(probe: probe),
+                if (selected) ...<Widget>[
+                  const SizedBox(width: NovaSpace.sm),
+                  Icon(Icons.check_circle_rounded,
+                      color: nova.indigo, size: 20),
+                ],
+              ],
             ),
-        ],
+          ),
+        ),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          _PingBadge(probe: probe),
-          if (selected) ...<Widget>[
-            const SizedBox(width: 10),
-            Icon(Icons.check_circle, color: nova.indigo, size: 20),
-          ],
-        ],
-      ),
-      onTap: onTap,
     );
   }
 }
 
-/// A small colored pill naming the node's protocol (VLESS, VMess, …), so it is
-/// always readable instead of being truncated inside the name.
+/// A small colored pill naming the node's protocol (VLESS, VMess, ...), so it
+/// is always readable instead of being truncated inside the name.
 class _ProtoBadge extends StatelessWidget {
   const _ProtoBadge({required this.protocol});
   final NodeProtocol protocol;
@@ -755,22 +862,26 @@ class _ProtoBadge extends StatelessWidget {
     final nova = context.nova;
     final Color c = _color(nova);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: c.withValues(alpha: 0.4)),
+        color: c.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(5),
       ),
       child: Text(
         protocol.label.toUpperCase(),
         style: TextStyle(
-            color: c, fontWeight: FontWeight.w700, fontSize: 11, height: 1.1),
+            color: c,
+            fontWeight: FontWeight.w800,
+            fontSize: 10,
+            height: 1.2,
+            letterSpacing: 0.4),
       ),
     );
   }
 }
 
-/// A muted outline chip for a transport detail (WS, TLS, Reality, …).
+/// A quiet surface tag for a transport detail (WS, TLS, Reality, a CDN name).
+/// Filled, not outlined: outlines on a dozen tiny chips read as noise.
 class _MiniTag extends StatelessWidget {
   const _MiniTag({required this.text});
   final String text;
@@ -779,31 +890,37 @@ class _MiniTag extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: nova.border),
+        color: nova.surface2,
       ),
       child: Text(text,
           style: TextStyle(
-              color: nova.muted, fontWeight: FontWeight.w600, fontSize: 10)),
+              color: nova.muted,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+              height: 1.2)),
     );
   }
 }
 
-/// The measured verdict for a node.
+/// The measured verdict for a node, and the most legible thing on the row.
 ///
 /// A number appears only when something was actually proven, and it says which:
-/// a node whose traffic reached the internet is marked, one that only answered
-/// its own handshake is not, and one that cannot be judged from outside a tunnel
-/// says so instead of borrowing a number it did not earn.
-class _PingBadge extends StatelessWidget {
-  const _PingBadge({required this.probe});
+/// a node whose traffic reached the internet gets the verified mark on a tinted
+/// pill, one that only answered its own handshake gets the plain number, and one
+/// that cannot be judged from outside a tunnel says so instead of borrowing a
+/// number it did not earn. Blocked is a word on a red tint, never colour alone.
+class _Verdict extends StatelessWidget {
+  const _Verdict({required this.probe});
   final NodeProbeResult? probe;
 
   @override
   Widget build(BuildContext context) {
     final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
     final NodeProbeResult? p = probe;
     if (p == null) {
       return const SizedBox(
@@ -814,32 +931,78 @@ class _PingBadge extends StatelessWidget {
     }
     switch (p.quality) {
       case NodeProbeQuality.unreachable:
-        return Text(s.nodeBlocked,
-            style: TextStyle(color: NovaSemantics.red, fontSize: 12));
+        return _VerdictPill(
+          label: s.nodeBlocked,
+          color: NovaSemantics.red,
+          filled: true,
+        );
       case NodeProbeQuality.untestable:
-        return Text(s.nodeUntested,
-            style: TextStyle(color: context.nova.muted, fontSize: 12));
+        return _VerdictPill(label: s.nodeUntested, color: nova.muted);
       case NodeProbeQuality.proxied:
       case NodeProbeQuality.handshake:
         final int ms = p.latencyMs ?? 0;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (p.quality == NodeProbeQuality.proxied) ...<Widget>[
-              Icon(Icons.verified_rounded,
-                  size: 14, color: NovaSemantics.ping(ms)),
-              const SizedBox(width: 4),
-            ],
-            Text('$ms ms',
-                style: TextStyle(
-                    color: NovaSemantics.ping(ms),
-                    fontWeight: FontWeight.w600)),
-          ],
+        final Color c = NovaSemantics.ping(ms);
+        final bool proven = p.quality == NodeProbeQuality.proxied;
+        return _VerdictPill(
+          label: '$ms ms',
+          color: c,
+          icon: proven ? Icons.verified_rounded : null,
+          filled: proven,
+          style: text.labelMedium?.copyWith(
+            color: c,
+            fontWeight: proven ? FontWeight.w700 : FontWeight.w600,
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
         );
     }
   }
 }
 
+class _VerdictPill extends StatelessWidget {
+  const _VerdictPill({
+    required this.label,
+    required this.color,
+    this.icon,
+    this.filled = false,
+    this.style,
+  });
+
+  final String label;
+  final Color color;
+  final IconData? icon;
+  final bool filled;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle base = style ??
+        Theme.of(context).textTheme.labelMedium!.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            );
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: filled ? NovaSpace.sm : 0, vertical: 4),
+      decoration: filled
+          ? BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              borderRadius: NovaRadii.iconChipR,
+            )
+          : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          // "14 ms" is a Latin run; a lone Farsi word is unaffected by LTR.
+          Text(label, style: base, textDirection: TextDirection.ltr),
+        ],
+      ),
+    );
+  }
+}
 /// Where a node is, or why that cannot be said.
 class _Geo {
   const _Geo({this.countryCode = '', this.place = ''}) : frontedBy = null;

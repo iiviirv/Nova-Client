@@ -133,7 +133,7 @@ class _ServersBodyState extends State<ServersBody> {
         final List<Widget> children = <Widget>[
           if (!widget.compact) ...<Widget>[
             _SearchField(onChanged: (v) => setState(() => _query = v)),
-            const SizedBox(height: 12),
+            const SizedBox(height: NovaSpace.sm),
           ],
           if (kinds.length > 1) ...<Widget>[
             _FilterChips(
@@ -141,7 +141,7 @@ class _ServersBodyState extends State<ServersBody> {
               selected: _filter,
               onChanged: (k) => setState(() => _filter = k),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: NovaSpace.xs),
           ],
           for (final p in shown)
             Padding(
@@ -298,20 +298,60 @@ class _FilterChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: <Widget>[
-          NovaPill(
-            label: 'All',
+          _FilterTarget(
             selected: selected == null,
             onTap: () => onChanged(null),
+            child: NovaPill(
+              label: NovaStrings.of(context).serversFilterAll,
+              selected: selected == null,
+              onTap: () => onChanged(null),
+            ),
           ),
           for (final k in kinds) ...<Widget>[
-            const SizedBox(width: 8),
-            NovaPill(
-              label: k.label,
+            const SizedBox(width: NovaSpace.sm),
+            _FilterTarget(
               selected: selected == k,
               onTap: () => onChanged(k),
+              child: NovaPill(
+                label: k.label,
+                selected: selected == k,
+                onTap: () => onChanged(k),
+              ),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Vertical hit slop and a selected state for a filter pill: the pill is about
+/// 30dp tall, under the touch minimum, and its state is otherwise carried by
+/// colour alone. Vertical only, so two neighbouring pills' targets never touch.
+class _FilterTarget extends StatelessWidget {
+  const _FilterTarget({
+    required this.child,
+    required this.onTap,
+    required this.selected,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Semantics(
+        selected: selected,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -347,143 +387,181 @@ class _ServerRow extends StatelessWidget {
     final s = NovaStrings.of(context);
     final int? latency = profile.lastLatencyMs;
 
-    return GestureDetector(
-      onTap: onOpen,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: active ? nova.cyan.withValues(alpha: 0.08) : nova.surface,
-          borderRadius: NovaRadii.cardR,
-          border: Border.all(
-            color: active ? nova.cyan.withValues(alpha: 0.5) : nova.border,
-          ),
+    // The active row is the one thing to find at a glance: a cyan hairline and
+    // a faint tint, with the check as the non-colour signal.
+    return Material(
+      color: active ? nova.cyan.withValues(alpha: 0.07) : nova.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: NovaRadii.cardR,
+        side: BorderSide(
+          color: active ? nova.cyan.withValues(alpha: 0.5) : nova.border,
         ),
-        child: Row(
-          children: <Widget>[
-            NovaIconChip(
-              icon: profile.isSubscription
-                  ? Icons.cloud_sync_rounded
-                  : Icons.vpn_key_rounded,
-              color: active ? nova.cyan : nova.indigo,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(profile.name,
-                      style: text.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 4,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Semantics(
+          selected: active,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(
+                NovaSpace.md, NovaSpace.md, NovaSpace.xs, NovaSpace.md),
+            child: Row(
+              children: <Widget>[
+                NovaIconChip(
+                  icon: profile.isSubscription
+                      ? Icons.cloud_sync_rounded
+                      : Icons.vpn_key_rounded,
+                  color: active ? nova.cyan : nova.indigo,
+                ),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      NovaProtocolBadge(
-                        label: profile.kind.label,
-                        color: nova.cyan,
+                      Text(profile.name,
+                          maxLines: 1,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: NovaSpace.xs),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: NovaSpace.sm,
+                        runSpacing: NovaSpace.xs,
+                        children: <Widget>[
+                          NovaProtocolBadge(
+                            label: profile.kind.label,
+                            color: nova.cyan,
+                          ),
+                          if (profile.isSubscription)
+                            Text(s.nodesCount(profile.nodeCount),
+                                style: text.labelSmall
+                                    ?.copyWith(color: nova.muted)),
+                          if (latency != null)
+                            _LatencyReadout(latencyMs: latency),
+                        ],
                       ),
-                      if (profile.isSubscription)
-                        Text('${profile.nodeCount} nodes',
-                            style:
-                                text.labelSmall?.copyWith(color: nova.muted)),
                     ],
                   ),
+                ),
+                const SizedBox(width: NovaSpace.sm),
+                if (active)
+                  Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
+                // A subscription's row opens its node/IP list; hint that with a
+                // chevron so it doesn't look like a dead-end.
+                if (profile.isSubscription) ...<Widget>[
+                  const SizedBox(width: NovaSpace.xs),
+                  Icon(Icons.chevron_right_rounded,
+                      color: nova.muted, size: 20),
                 ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (latency != null) ...<Widget>[
-              Text('$latency ms',
-                  style: text.labelMedium?.copyWith(
-                    color: NovaSemantics.ping(latency),
-                    fontWeight: FontWeight.w600,
-                  )),
-              const SizedBox(width: 8),
-              NovaSignalBars(latencyMs: latency),
-              const SizedBox(width: 10),
-            ],
-            if (active)
-              Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
-            // A subscription's row opens its node/IP list; hint that with a
-            // chevron so it doesn't look like a dead-end.
-            if (profile.isSubscription)
-              Icon(Icons.chevron_right_rounded, color: nova.muted, size: 20),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert_rounded, color: nova.muted, size: 20),
-              tooltip: s.serversActions,
-              onSelected: (String v) {
-                switch (v) {
-                  case 'select':
-                    onSelect();
-                  case 'manage':
-                    onManage?.call();
-                  case 'extract':
-                    onExtract();
-                  case 'edit':
-                    onEdit();
-                  case 'delete':
-                    onDelete();
-                }
-              },
-              itemBuilder: (_) => <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  value: 'select',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.check_circle_outline_rounded),
-                    title: Text(s.serversSelect),
-                  ),
-                ),
-                if (onManage != null)
-                  PopupMenuItem<String>(
-                    value: 'manage',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.dns_rounded),
-                      title: Text(s.vpsManage),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert_rounded,
+                      color: nova.muted, size: 20),
+                  tooltip: s.serversActions,
+                  onSelected: (String v) {
+                    switch (v) {
+                      case 'select':
+                        onSelect();
+                      case 'manage':
+                        onManage?.call();
+                      case 'extract':
+                        onExtract();
+                      case 'edit':
+                        onEdit();
+                      case 'delete':
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (_) => <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'select',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.check_circle_outline_rounded),
+                        title: Text(s.serversSelect),
+                      ),
                     ),
-                  ),
-                if (profile.isSubscription)
-                  PopupMenuItem<String>(
-                    value: 'extract',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.list_alt_rounded),
-                      title: Text(s.serversExtract),
+                    if (onManage != null)
+                      PopupMenuItem<String>(
+                        value: 'manage',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.dns_rounded),
+                          title: Text(s.vpsManage),
+                        ),
+                      ),
+                    if (profile.isSubscription)
+                      PopupMenuItem<String>(
+                        value: 'extract',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.list_alt_rounded),
+                          title: Text(s.serversExtract),
+                        ),
+                      ),
+                    PopupMenuItem<String>(
+                      value: 'edit',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.edit_outlined),
+                        title: Text(s.serversEdit),
+                      ),
                     ),
-                  ),
-                PopupMenuItem<String>(
-                  value: 'edit',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.edit_outlined),
-                    title: Text(s.serversEdit),
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'delete',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading:
-                        Icon(Icons.delete_outline_rounded, color: nova.danger),
-                    title: Text(s.serversDelete,
-                        style: TextStyle(color: nova.danger)),
-                  ),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.delete_outline_rounded,
+                            color: nova.danger),
+                        title: Text(s.serversDelete,
+                            style: TextStyle(color: nova.danger)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Latency + signal bars, folded into the row's meta line so the trailing
+/// edge only carries the state (check, chevron, menu). Tabular figures keep
+/// the number steady as it refreshes.
+class _LatencyReadout extends StatelessWidget {
+  const _LatencyReadout({required this.latencyMs});
+  final int latencyMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color c = NovaSemantics.ping(latencyMs);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        NovaSignalBars(latencyMs: latencyMs),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text('$latencyMs ms',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: c,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures()
+                    ],
+                  )),
+        ),
+      ],
     );
   }
 }

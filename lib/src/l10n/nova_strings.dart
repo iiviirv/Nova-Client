@@ -116,6 +116,7 @@ class NovaStrings {
   String get dashError => t('dash.error');
   String get dashLocation => t('dash.location');
   String get dashIp => t('dash.ip');
+  String get dashPing => t('dash.ping');
   String get dashNotProtected => t('dash.notProtected');
   String get dashNotProtectedBody => t('dash.notProtectedBody');
   String get homeTime => t('home.time');
@@ -330,6 +331,7 @@ class NovaStrings {
 
   // ---- Servers ----
   String get serversSearch => t('servers.search');
+  String get serversFilterAll => t('servers.filterAll');
   String get serversActions => t('servers.actions');
   String get serversSelect => t('servers.select');
   String get serversExtract => t('servers.extract');
@@ -626,6 +628,7 @@ class NovaStrings {
   String get nodeAutoSub => t('node.autoSub');
   String get nodeRefresh => t('node.refresh');
   String get nodeSearch => t('node.search');
+  String get nodeClearSearch => t('node.clearSearch');
   String get nodeNoMatch => t('node.noMatch');
   String get nodeFreeTitle => t('node.freeTitle');
   String get nodeFreeBody => t('node.freeBody');
@@ -692,6 +695,7 @@ class NovaStrings {
     'dash.tapToConnect': 'Tap to connect',
     'dash.location': 'Location',
     'dash.ip': 'IP',
+    'dash.ping': 'Ping',
     'dash.notProtected': 'Not protected',
     'dash.notProtectedBody': 'Connect to route your traffic through Nova.',
     'dash.download': 'Download',
@@ -969,6 +973,7 @@ class NovaStrings {
     'route.tuneTestHint':
         'Not sure which is fastest? Connect, then run a Speed test in the Stats tab with each option.',
     'servers.search': 'Search servers',
+    'servers.filterAll': 'All',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
     'servers.extract': 'Extract configs',
@@ -1270,6 +1275,7 @@ class NovaStrings {
     'node.autoSub': 'Let Nova pick the lowest-latency node',
     'node.refresh': 'Refresh',
     'node.search': 'Search nodes',
+    'node.clearSearch': 'Clear search',
     'node.noMatch': 'No nodes match your search',
     'node.freeTitle': 'Nova is free',
     'node.freeBody':
@@ -1336,6 +1342,7 @@ class NovaStrings {
     'dash.tapToConnect': 'برای اتصال لمس کنید',
     'dash.location': 'موقعیت',
     'dash.ip': 'آی‌پی',
+    'dash.ping': 'پینگ',
     'dash.notProtected': 'محافظت‌نشده',
     'dash.notProtectedBody': 'برای عبور ترافیک از Nova متصل شوید.',
     'dash.download': 'دانلود',
@@ -1612,6 +1619,7 @@ class NovaStrings {
     'route.tuneTestHint':
         'مطمئن نیستی کدام سریع‌تر است؟ وصل شو و در تب آمار با هر گزینه یک تست سرعت بگیر.',
     'servers.search': 'جستجوی سرورها',
+    'servers.filterAll': 'همه',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',
     'servers.extract': 'استخراج پیکربندی‌ها',
@@ -1910,6 +1918,7 @@ class NovaStrings {
     'node.autoSub': 'نوا سریع‌ترین سرور را انتخاب می‌کند',
     'node.refresh': 'بازخوانی',
     'node.search': 'جستجوی سرور',
+    'node.clearSearch': 'پاک کردن جستجو',
     'node.noMatch': 'سروری با جستجوی شما پیدا نشد',
     'node.freeTitle': 'نوا رایگان است',
     'node.freeBody':
