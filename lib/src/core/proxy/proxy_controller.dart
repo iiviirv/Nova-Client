@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
+import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 
 /// High-level connection lifecycle states surfaced to the UI.
@@ -30,6 +31,31 @@ class TrafficStats {
   final int downlinkTotal;
 
   static const TrafficStats zero = TrafficStats();
+}
+
+/// Per-node latency the running core measured for the auto-select pool.
+///
+/// [delayMsByKey] maps [proxyNodeKey] to the round-trip the core's urltest saw
+/// through that node (only nodes that answered are present; a delay of 0 from
+/// the core means "failed/untested" and is dropped). [selectedKey] is the node
+/// the auto-selector is currently routing through, so the list can mark which
+/// server is actually carrying traffic.
+class CoreNodeHealth {
+  const CoreNodeHealth({required this.delayMsByKey, this.selectedKey});
+
+  static const CoreNodeHealth empty =
+      CoreNodeHealth(delayMsByKey: <String, int>{});
+
+  final Map<String, int> delayMsByKey;
+  final String? selectedKey;
+
+  bool get isEmpty => delayMsByKey.isEmpty && selectedKey == null;
+
+  /// The core's latency for [node], or null if the core has no live figure.
+  int? delayFor(ProxyNode node) => delayMsByKey[proxyNodeKey(node)];
+
+  bool isSelected(ProxyNode node) =>
+      selectedKey != null && proxyNodeKey(node) == selectedKey;
 }
 
 /// The boundary between Nova Client's UI and the underlying proxy core.
@@ -88,6 +114,18 @@ abstract class ProxyController extends ChangeNotifier {
   /// a code (not a string) so the message follows the app language. Kept separate
   /// from [lastError] so an informational message doesn't read as a failure.
   final ValueNotifier<ProxyNotice?> notice = ValueNotifier<ProxyNotice?>(null);
+
+  /// Live per-node latency the running core measured for the auto-select pool,
+  /// keyed by [proxyNodeKey]. This is the only honest health signal for the
+  /// nodes the SNI-block bypass is for: a clean-IP fronted node cannot be probed
+  /// from outside the tunnel (the bypass fragments the ClientHello in a way only
+  /// the core can), so the server list shows "tested when you connect" for it.
+  /// Once the tunnel is up, the core's own urltest has real numbers for every
+  /// node in the pool, measured through the exact same bypass, and this surfaces
+  /// them so the list can finally show which servers actually work and which one
+  /// is carrying traffic. Empty when not connected or on a single-node profile.
+  final ValueNotifier<CoreNodeHealth> coreHealth =
+      ValueNotifier<CoreNodeHealth>(CoreNodeHealth.empty);
 
   /// True when the tunnel reports connected but the controller has exhausted
   /// its traffic probes and its one self-heal rebuild without a single request

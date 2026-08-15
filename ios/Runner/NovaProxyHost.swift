@@ -17,6 +17,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private var manager: NETunnelProviderManager?
   private var statusClient: NovacoreCommandClient?
   private var logClient: NovacoreCommandClient?
+  private var groupClient: NovacoreCommandClient?
   private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -57,6 +58,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         if status == .connected {
           self.startStatusClient()
           self.startLogClient()
+          self.startGroupClient()
         }
         result(self.stateName(status))
       }
@@ -196,9 +198,11 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     case .connected:
       startStatusClient()
       startLogClient()
+      startGroupClient()
     default:
       stopStatusClient()
       stopLogClient()
+      stopGroupClient()
     }
   }
 
@@ -307,6 +311,47 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     }
   }
 
+  /// Attaches a third command client for the core's outbound-group stream: the
+  /// auto-selector plus each pool node's urltest latency, measured through the
+  /// running tunnel (so the SNI-block bypass is already applied). This is what
+  /// lets the server list show a real ping, and which server is selected, for
+  /// the clean-IP nodes that cannot be probed from outside the tunnel. Separate
+  /// client for the same independent-lifecycle reason as the log one.
+  private func startGroupClient() {
+    statusQueue.async { [weak self] in
+      guard let self, self.groupClient == nil else { return }
+      self.ensureNovacoreSetup()
+      let options = NovacoreCommandClientOptions()
+      options.addCommand(NovacoreCommandGroup)
+      options.statusInterval = Int64(NSEC_PER_SEC) * 3 // one group push per 3s
+      guard let client = NovacoreNewCommandClient(GroupHandler(host: self), options)
+      else { return }
+      self.groupClient = client
+      self.connectGroupClientLocked(client, attempt: 0)
+    }
+  }
+
+  /// Runs on `statusQueue`.
+  private func connectGroupClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
+    do {
+      try client.connect()
+    } catch {
+      guard groupClient === client, attempt < 5 else { return }
+      statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        guard let self, self.groupClient === client else { return }
+        self.connectGroupClientLocked(client, attempt: attempt + 1)
+      }
+    }
+  }
+
+  private func stopGroupClient() {
+    statusQueue.async { [weak self] in
+      guard let self, let client = self.groupClient else { return }
+      self.groupClient = nil
+      try? client.disconnect()
+    }
+  }
+
   /// Forwards a batch of core log lines. Batched because the core emits them in
   /// bursts and each event is a hop to the main thread.
   fileprivate func onLogs(_ list: NovacoreLogIteratorProtocol) {
@@ -327,6 +372,31 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       "upTotal": message.uplinkTotal,
       "downTotal": message.downlinkTotal,
     ])
+  }
+
+  /// Flattens the core's outbound-group snapshot (auto-selector + per-node
+  /// urltest delays) into plain dictionaries for the Dart side, which maps the
+  /// `node-i` tags back to real servers.
+  fileprivate func onGroups(_ iterator: NovacoreOutboundGroupIteratorProtocol) {
+    var groups: [[String: Any]] = []
+    while iterator.hasNext() {
+      guard let group = iterator.next() else { continue }
+      var items: [[String: Any]] = []
+      if let itemIterator = group.getItems() {
+        while itemIterator.hasNext() {
+          guard let item = itemIterator.next() else { continue }
+          // urlTestDelay is ms; 0 means no successful test yet.
+          items.append(["tag": item.tag, "delay": item.urlTestDelay])
+        }
+      }
+      groups.append([
+        "tag": group.tag,
+        "selected": group.selected,
+        "items": items,
+      ])
+    }
+    guard !groups.isEmpty else { return }
+    emit(["type": "groups", "groups": groups])
   }
 
   private func stateName(_ s: NEVPNStatus) -> String {
@@ -397,5 +467,27 @@ private final class LogHandler: NSObject, NovacoreCommandClientHandlerProtocol {
   func updateClashMode(_ newMode: String?) {}
   func write(_ events: NovacoreConnectionEvents?) {}
   func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {}
+  func setDefaultLogLevel(_ level: Int32) {}
+}
+
+/// Receives the libbox outbound-group stream and forwards the per-node urltest
+/// snapshot to the host. Every other callback is a required-but-unused stub.
+private final class GroupHandler: NSObject, NovacoreCommandClientHandlerProtocol {
+  private weak var host: NovaProxyHost?
+  init(host: NovaProxyHost) { self.host = host }
+
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {
+    guard let message else { return }
+    host?.onGroups(message)
+  }
+
+  func writeStatus(_ message: NovacoreStatusMessage?) {}
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
   func setDefaultLogLevel(_ level: Int32) {}
 }

@@ -61,6 +61,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var commandServer: CommandServer? = null
     private var statusClient: CommandClient? = null
     private var logClient: CommandClient? = null
+    private var groupClient: CommandClient? = null
     private var pfd: ParcelFileDescriptor? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -111,6 +112,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             NovaProxyBridge.emitState("connected")
             startStatusClient()
             startLogClient()
+            startGroupClient()
         } catch (e: Exception) {
             running = false
             NovaProxyBridge.emitError(e.message)
@@ -208,6 +210,38 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { client.disconnect() }
     }
 
+    /// Subscribe to the core's outbound-group stream: the auto-selector plus each
+    /// pool node's urltest latency, measured through the running tunnel (so the
+    /// SNI-block bypass is already applied to those measurements). This is what
+    /// lets the server list show a real ping, and which server is selected, for
+    /// the clean-IP nodes that can't be probed from outside the tunnel. A THIRD
+    /// client for the same reason the log one is separate: independent lifecycle.
+    private fun startGroupClient() {
+        runCatching {
+            val options = CommandClientOptions().apply {
+                addCommand(Libbox.CommandGroup)
+                statusInterval = 3_000_000_000L // 3s, in nanoseconds
+            }
+            val client = CommandClient(GroupHandler(), options)
+            groupClient = client
+            // Same connect race as the status/log clients: the command server's
+            // socket may not be accepting the instant the service returns.
+            Thread {
+                for (attempt in 0 until 10) {
+                    if (groupClient !== client) return@Thread
+                    if (runCatching { client.connect() }.isSuccess) return@Thread
+                    Thread.sleep(300)
+                }
+            }.start()
+        }
+    }
+
+    private fun stopGroupClient() {
+        val client = groupClient ?: return
+        groupClient = null
+        runCatching { client.disconnect() }
+    }
+
     /// Receives the core's status callbacks. Only [writeStatus] carries traffic;
     /// the rest are required interface methods and stay no-ops (Nova doesn't use
     /// the log/groups/clash streams here).
@@ -261,7 +295,51 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun updateClashMode(newMode: String) {}
     }
 
+    /// Receives the core's outbound-group snapshots. Only [writeGroups] carries
+    /// anything; it flattens each group and its items' urltest delays into plain
+    /// maps for the Dart side, which maps the `node-i` tags back to real servers.
+    private inner class GroupHandler : CommandClientHandler {
+        override fun writeGroups(message: OutboundGroupIterator?) {
+            val groups = message ?: return
+            val out = ArrayList<Map<String, Any?>>()
+            while (groups.hasNext()) {
+                val group = groups.next() ?: continue
+                val items = ArrayList<Map<String, Any?>>()
+                val itemIterator = group.items
+                while (itemIterator != null && itemIterator.hasNext()) {
+                    val item = itemIterator.next() ?: continue
+                    items.add(
+                        mapOf(
+                            "tag" to item.tag,
+                            // urlTestDelay is ms; 0 means no successful test yet.
+                            "delay" to item.urlTestDelay,
+                        )
+                    )
+                }
+                out.add(
+                    mapOf(
+                        "tag" to group.tag,
+                        "selected" to group.selected,
+                        "items" to items,
+                    )
+                )
+            }
+            if (out.isNotEmpty()) NovaProxyBridge.emitGroups(out)
+        }
+
+        override fun writeStatus(message: StatusMessage) {}
+        override fun connected() {}
+        override fun disconnected(message: String?) {}
+        override fun clearLogs() {}
+        override fun writeLogs(messageList: LogIterator?) {}
+        override fun writeConnectionEvents(events: ConnectionEvents?) {}
+        override fun setDefaultLogLevel(level: Int) {}
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
+        override fun updateClashMode(newMode: String) {}
+    }
+
     private fun cleanup() {
+        stopGroupClient()
         stopLogClient()
         stopStatusClient()
         runCatching { commandServer?.closeService() }

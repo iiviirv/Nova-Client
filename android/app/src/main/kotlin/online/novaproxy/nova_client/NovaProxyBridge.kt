@@ -54,6 +54,14 @@ object NovaProxyBridge {
         post(mapOf("type" to "log", "lines" to lines))
     }
 
+    /// Forwards the core's outbound-group snapshot (the auto-selector and the
+    /// per-node urltest latencies it measured through the actual tunnel), so the
+    /// server list can show which nodes really work and which one is selected.
+    /// Each group is `{tag, selected, items:[{tag, delay}]}`.
+    fun emitGroups(groups: List<Map<String, Any?>>) {
+        post(mapOf("type" to "groups", "groups" to groups))
+    }
+
     private fun post(event: Map<String, Any?>) {
         val sink = eventSink ?: return
         mainHandler.post { runCatching { sink.success(event) } }

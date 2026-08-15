@@ -223,16 +223,20 @@ Future<NovaCoreConfig?> fetchCoreConfig(
   String url, {
   SubscriptionFetcher? fetch,
 }) async {
+  final String body = await fetchSubscriptionBody(url, fetch: fetch);
+  return NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+}
+
+/// Fetches the raw subscription body text (before parsing), so callers that need
+/// to persist the exact bytes the panel served can do so. Mirrors the transport
+/// choice [fetchCoreConfig] used to make inline: prefer the supplied fetcher (the
+/// relay or a test mock), but for a bare-IP "no domain" host fall back to a
+/// direct fetch that accepts the self-signed certificate.
+Future<String> fetchSubscriptionBody(
+  String url, {
+  SubscriptionFetcher? fetch,
+}) async {
   final Uri uri = Uri.parse(url);
-  // A subscription served straight off a bare IP is the "no domain" Nova node:
-  // it presents a self-signed certificate, so the relay (whose worker exit
-  // validates TLS and returns 502) and the default validating client both fail
-  // on it. Such a node also isn't domain-blocked, so it never needs the
-  // censorship relay. So: prefer the supplied fetcher (the relay, or a test
-  // mock), but for a bare-IP host fall back to a direct fetch that accepts the
-  // self-signed cert, exactly as the tunnel links already do with
-  // allowInsecure=1. A domain host keeps the normal path and surfaces relay
-  // errors as before.
   final bool bareIp = _isBareIpHost(uri);
   String? body;
   if (fetch != null) {
@@ -242,8 +246,7 @@ Future<NovaCoreConfig?> fetchCoreConfig(
       if (!bareIp) rethrow; // a real relay/transport error for a domain host
     }
   }
-  body ??= await _httpFetch(uri, insecure: bareIp);
-  return NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+  return body ?? await _httpFetch(uri, insecure: bareIp);
 }
 
 /// Whether [uri]'s host is a bare IP literal (IPv4/IPv6) rather than a domain.
@@ -369,10 +372,69 @@ final Map<String, List<ProxyNode>> _nodeCache = <String, List<ProxyNode>>{};
 
 void clearSubscriptionCache() => _nodeCache.clear();
 
+/// Persists the last good raw body of each subscription across app restarts.
+///
+/// This is what keeps a user from being stranded: when workers.dev is blocked
+/// and the sub can't be refreshed, the panel URL fails, but the servers it last
+/// handed out are still perfectly usable (they connect to clean Cloudflare IPs,
+/// not the blocked domain). So the last successful body is saved, and a failed
+/// refresh serves it instead of wiping the list. Wired to disk at startup; left
+/// null in tests (which drive their own fetcher), where it is simply skipped.
+abstract class SubscriptionBodyStore {
+  Future<String?> load(String url);
+  Future<void> save(String url, String body);
+}
+
+SubscriptionBodyStore? subscriptionBodyStore;
+
+/// True when the most recent [resolveProfileNodes] served nodes from the saved
+/// body because the live refresh failed. Read right after the call (like
+/// [lastSkippedLinks]) so the UI can say "showing saved servers" without turning
+/// a refresh failure into a fatal, list-wiping error.
+bool lastResolveWasStale = false;
+
+/// Turns a fetched subscription [body] into the real, connectable nodes: keep
+/// every node that carries a credential, dropping only the credential-less
+/// info/banner node some panels prepend. Falls back to all nodes if that filter
+/// would empty the list.
+List<ProxyNode> _expandSubscriptionBody(String body) {
+  final NovaCoreConfig? core =
+      NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+  if (core == null) return const <ProxyNode>[];
+  bool hasCredential(ProxyNode n) =>
+      (n.uuid ?? '').isNotEmpty ||
+      (n.password ?? '').isNotEmpty ||
+      (n.method ?? '').isNotEmpty ||
+      (n.awgConf ?? '').isNotEmpty; // AmneziaWG auth is keys, not uuid/password
+  final List<ProxyNode> real = core.nodes.where(hasCredential).toList();
+  return real.isNotEmpty ? real : core.nodes;
+}
+
+/// Best-effort read of a saved subscription body; never throws (a broken store
+/// must not turn into a failure to resolve).
+Future<String?> _loadSavedBody(String url) async {
+  try {
+    return await subscriptionBodyStore?.load(url);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Best-effort persist of a freshly-fetched body; never throws.
+Future<void> _saveBody(String url, String body) async {
+  try {
+    await subscriptionBodyStore?.save(url, body);
+  } catch (_) {
+    // A failed save just means the next blocked refresh has nothing to fall
+    // back to; it must never break the resolve that is currently succeeding.
+  }
+}
+
 Future<List<ProxyNode>> resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
 }) async {
+  lastResolveWasStale = false;
   final String raw = _profilePayload(profile);
   if (raw.isEmpty) return const <ProxyNode>[];
   // A SOCKS / HTTP proxy is a single link that starts with http(s)://socks://,
@@ -384,22 +446,34 @@ Future<List<ProxyNode>> resolveProfileNodes(
   if (_isHttpUrl(raw)) {
     // Only the real network path is cached (tests pass a custom fetch).
     if (fetch == null && _nodeCache[raw] != null) return _nodeCache[raw]!;
-    final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
-    if (core == null) return const <ProxyNode>[];
-    // Keep every real node, whatever its protocol. Previously this kept only
-    // uuid-carrying nodes (VLESS/VMess), which silently dropped every Trojan,
-    // Shadowsocks, Hysteria2 and TUIC node in a mixed subscription (a 500-node
-    // sub showed as 41). Filter only the credential-less info/banner node some
-    // panels prepend; a node with any credential is a real exit.
-    bool hasCredential(ProxyNode n) =>
-        (n.uuid ?? '').isNotEmpty ||
-        (n.password ?? '').isNotEmpty ||
-        (n.method ?? '').isNotEmpty ||
-        (n.awgConf ?? '').isNotEmpty; // AmneziaWG auth is keys, not uuid/password
-    final List<ProxyNode> real =
-        core.nodes.where(hasCredential).toList();
-    final List<ProxyNode> out = real.isNotEmpty ? real : core.nodes;
-    if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
+    String body;
+    try {
+      body = await fetchSubscriptionBody(raw, fetch: fetch);
+    } catch (e) {
+      // The live refresh failed. This is the workers.dev-blocked case: the panel
+      // URL is unreachable, but the servers it last handed out still work (they
+      // connect to clean IPs, not the blocked domain). Serve the saved body so
+      // the user keeps their list and can still connect, instead of wiping it.
+      // Persistence is store-backed (null in tests), so this is fetch-agnostic:
+      // the relay path benefits from the same fallback.
+      final String? saved = await _loadSavedBody(raw);
+      if (saved == null) rethrow; // nothing saved yet: a genuine first-run error
+      lastResolveWasStale = true;
+      // Deliberately NOT written to the session cache: a stale result must not
+      // stick, so the next open (or connect) retries the live fetch and picks up
+      // the fresh list the moment connectivity comes back.
+      return _expandSubscriptionBody(saved);
+    }
+    // Keep every real node, whatever its protocol (a mixed sub has Trojan / SS /
+    // Hysteria2 / TUIC too), dropping only the credential-less info/banner node.
+    final List<ProxyNode> out = _expandSubscriptionBody(body);
+    if (out.isNotEmpty) {
+      // The session cache is test-sensitive, so it stays gated on the real path.
+      if (fetch == null) _nodeCache[raw] = out;
+      // Save the freshly-fetched body so a future blocked refresh has it. The
+      // store is null in tests, so this is a no-op there whatever the fetcher.
+      await _saveBody(raw, body);
+    }
     return out;
   }
   // A pasted AmneziaWG / WireGuard `.conf` is a single multi-line node (not a

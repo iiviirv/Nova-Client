@@ -272,7 +272,16 @@ class SingboxConfig {
         .convert(buildMultiMap(nodes, options: options));
   }
 
-  static Map<String, dynamic> buildMultiMap(
+  /// The nodes that actually end up behind the auto-selector, in the exact order
+  /// they are tagged `node-0`, `node-1`, ... in the config, after hardening,
+  /// dropping cores the transport can't run, pushing gRPC to the back, deduping,
+  /// and applying the per-platform cap.
+  ///
+  /// Exposed so the controller can map the core's per-node urltest results (which
+  /// come back keyed by those `node-i` tags) back to real nodes, and show a live
+  /// "which server actually works" latency once the tunnel is up. The keys line
+  /// up with [orderedMultiNodeKeys].
+  static List<ProxyNode> pickedMultiNodes(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
   }) {
@@ -309,7 +318,27 @@ class SingboxConfig {
     // NB: never fall back to the unfiltered `nodes` here. Doing so reintroduced
     // the xhttp nodes this method just dropped, and they were then built as
     // plain TCP exits that could not connect.
-    final List<ProxyNode> picked = _dedupe(ordered).take(cap).toList();
+    return _dedupe(ordered).take(cap).toList();
+  }
+
+  /// The stable node keys for [pickedMultiNodes], in `node-i` tag order. Empty
+  /// when a single-node profile is built (there is no urltest group then).
+  static List<String> orderedMultiNodeKeys(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) {
+    final List<ProxyNode> picked =
+        pickedMultiNodes(inputNodes, options: options);
+    if (picked.length < 2) return const <String>[];
+    return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
+  }
+
+  static Map<String, dynamic> buildMultiMap(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) {
+    final List<ProxyNode> picked =
+        pickedMultiNodes(inputNodes, options: options);
     if (picked.isEmpty) {
       throw const FormatException(
           'None of this subscription\'s nodes use a transport Nova can run '

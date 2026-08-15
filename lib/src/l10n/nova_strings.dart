@@ -655,6 +655,10 @@ class NovaStrings {
   String nodeSkipped(int n, String schemes) =>
       t('node.skipped').replaceFirst('{n}', '$n').replaceFirst('{s}', schemes);
 
+  /// Shown when the panel could not be reached to refresh, so the list is the
+  /// last saved copy. Reassures the user the servers still work.
+  String get nodeStaleList => t('node.staleList');
+
   // ---- Logs ----
   String get logsTitle => t('logs.title');
   String get logsSubtitle => t('logs.subtitle');
@@ -1306,6 +1310,9 @@ class NovaStrings {
     'node.count': '{n} nodes',
     'node.blocked': 'blocked',
     'node.untested': 'not testable',
+    'node.staleList':
+        'Could not refresh from the panel, so these are your saved servers. '
+            'They still work; connect and they will update on their own.',
     'node.skipped':
         '{n} server(s) in this subscription use something Nova cannot run ({s}), so they are not listed.',
     'logs.title': 'Logs',
@@ -1962,6 +1969,9 @@ class NovaStrings {
     'node.count': '{n} سرور',
     'node.blocked': 'مسدود',
     'node.untested': 'قابل تست نیست',
+    'node.staleList':
+        'به‌روزرسانی از پنل ممکن نشد، پس این‌ها سرورهای ذخیره‌شده‌ی شما هستند. '
+            'هنوز کار می‌کنند؛ وصل شوید تا خودشان به‌روز شوند.',
     'node.skipped':
         '{n} سرور در این اشتراک از چیزی استفاده می‌کنند که نوا نمی‌تواند اجرا کند (\u2066{s}\u2069)، پس فهرست نشده‌اند.',
     'logs.title': 'گزارش‌ها',

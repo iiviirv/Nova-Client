@@ -63,6 +63,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
   bool _loading = true;
   String? _error;
 
+  /// The list on screen came from the saved subscription body because the live
+  /// refresh could not reach the panel (its domain is blocked). The servers are
+  /// still usable; the note just explains why the list may be a little old.
+  bool _stale = false;
+
   // Include protocol + ws path so one host offered over several protocols
   // (VLESS / VMess / Trojan on the same :443, different paths) shows as
   // distinct selectable nodes instead of collapsing to one. Matches the
@@ -121,6 +126,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
     try {
       final all = await resolveProfileNodes(profile);
+      // The refresh could not reach the panel (workers.dev blocked) and these
+      // came from the saved body instead. Surface it as a soft note, never a
+      // failure: the servers still work and the user can still connect.
+      _stale = lastResolveWasStale;
       // Whatever the subscription carried that Nova cannot run. Captured right
       // after the parse, before anything else can overwrite the side channel.
       _skipped = lastSkippedLinks;
@@ -150,7 +159,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Could not load nodes: $e';
+        // Never wipe a list the user already has over a failed refresh: if there
+        // are servers on screen (from this session or the saved body), keep them
+        // and show a soft "couldn't refresh" note instead of a fatal error that
+        // would leave the user with nothing to connect to. The hard error is
+        // only for the genuine first-run case where nothing was ever loaded.
+        if (_nodes.isNotEmpty) {
+          _stale = true;
+        } else {
+          _error = 'Could not load nodes: $e';
+        }
       });
     }
   }
@@ -368,15 +386,24 @@ class _NodeListScreenState extends State<NodeListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!))
-              : _list(s, visible, pinned),
+              // The core's live per-node latency lands while the tunnel is up;
+              // rebuild the rows when it changes so the SNI-blocked servers can
+              // show a real ping (and which one is carrying traffic) at last.
+              : ValueListenableBuilder<CoreNodeHealth>(
+                  valueListenable: NovaScope.of(context).proxy.coreHealth,
+                  builder: (BuildContext context, CoreNodeHealth health, _) =>
+                      _list(s, visible, pinned, health),
+                ),
     );
   }
 
   /// The header blocks are a handful of cheap widgets; the node rows are built
   /// on demand so an 80-node subscription only lays out what is on screen.
-  Widget _list(NovaStrings s, List<ProxyNode> visible, String? pinned) {
+  Widget _list(NovaStrings s, List<ProxyNode> visible, String? pinned,
+      CoreNodeHealth health) {
     final List<Widget> header = <Widget>[
       const _FreeBanner(),
+      if (_stale) const _StaleNote(),
       if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
       const _SocialRow(),
       const Divider(height: 1),
@@ -419,6 +446,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
           probe: _probe[_key(n)],
           geo: _geo[_key(n)],
           selected: pinned == _key(n),
+          // The core's live latency for this node (through the actual tunnel, so
+          // with the bypass applied), and whether the auto-selector is currently
+          // routing through it. Both null/false unless connected.
+          coreDelayMs: health.delayFor(n),
+          active: health.isSelected(n),
           showDivider: r < visible.length - 1,
           onTap: () => _pin(_key(n)),
         );
@@ -561,6 +593,48 @@ class _SkippedNote extends StatelessWidget {
                   .textTheme
                   .bodySmall
                   ?.copyWith(color: nova.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Soft note shown when the panel could not be refreshed and the list is the
+/// last saved copy. Amber, not red: nothing is broken, the servers still work.
+class _StaleNote extends StatelessWidget {
+  const _StaleNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.xs, NovaSpace.lg, NovaSpace.sm),
+      padding: const EdgeInsets.symmetric(
+          horizontal: NovaSpace.md, vertical: NovaSpace.sm),
+      decoration: BoxDecoration(
+        color: NovaSemantics.amber.withValues(alpha: 0.12),
+        borderRadius: NovaRadii.iconChipR,
+        border: Border.all(color: NovaSemantics.amber.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Padding(
+            padding: EdgeInsetsDirectional.only(top: 1),
+            child: Icon(Icons.cloud_off_rounded,
+                size: 16, color: NovaSemantics.amber),
+          ),
+          const SizedBox(width: NovaSpace.sm),
+          Expanded(
+            child: Text(
+              s.nodeStaleList,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: context.nova.text),
             ),
           ),
         ],
@@ -802,6 +876,8 @@ class _NodeRow extends StatelessWidget {
     required this.geo,
     required this.selected,
     required this.onTap,
+    this.coreDelayMs,
+    this.active = false,
     this.showDivider = true,
   });
 
@@ -814,6 +890,15 @@ class _NodeRow extends StatelessWidget {
   final _Geo? geo;
   final bool selected;
   final VoidCallback onTap;
+
+  /// The core's live latency for this node through the running tunnel, or null
+  /// when disconnected or the core has no figure. Takes precedence over [probe]
+  /// because it is measured through the actual path (bypass included).
+  final int? coreDelayMs;
+
+  /// True when the auto-selector is currently routing through this node, so the
+  /// row can show which server is really carrying traffic right now.
+  final bool active;
 
   /// Hairline under the row; off for the last row so the list ends clean.
   final bool showDivider;
@@ -925,7 +1010,13 @@ class _NodeRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: NovaSpace.md),
-                _Verdict(probe: probe),
+                _Verdict(probe: probe, coreDelayMs: coreDelayMs),
+                // The live green dot is the answer to "which one is connected":
+                // the auto-selector is routing through this node right now.
+                if (active) ...<Widget>[
+                  const SizedBox(width: NovaSpace.sm),
+                  Icon(Icons.circle, color: NovaSemantics.connectGreen, size: 10),
+                ],
                 if (selected) ...<Widget>[
                   const SizedBox(width: NovaSpace.sm),
                   Icon(Icons.check_circle_rounded,
@@ -1015,14 +1106,39 @@ class _MiniTag extends StatelessWidget {
 /// that cannot be judged from outside a tunnel says so instead of borrowing a
 /// number it did not earn. Blocked is a word on a red tint, never colour alone.
 class _Verdict extends StatelessWidget {
-  const _Verdict({required this.probe});
+  const _Verdict({required this.probe, this.coreDelayMs});
   final NodeProbeResult? probe;
+
+  /// The running core's live latency for this node, measured through the tunnel
+  /// (so with the SNI-block bypass applied). When present it wins over [probe]:
+  /// it is the one honest number for a clean-IP node the outside probe had to
+  /// call "not testable", and it is fresher than any outside measurement.
+  final int? coreDelayMs;
 
   @override
   Widget build(BuildContext context) {
     final NovaStrings s = NovaStrings.of(context);
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
+    // A live figure from the core (through the actual tunnel) is the truest
+    // verdict, so it leads whenever the tunnel is up and reporting for this node.
+    final int? live = coreDelayMs;
+    if (live != null) {
+      final Color c = NovaSemantics.ping(live);
+      return _VerdictPill(
+        label: '$live ms',
+        color: c,
+        // A bolt, not the outside probe's check: this is measured live through
+        // the tunnel right now, which is a stronger claim than "reachable".
+        icon: Icons.bolt_rounded,
+        filled: true,
+        style: text.labelMedium?.copyWith(
+          color: c,
+          fontWeight: FontWeight.w700,
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        ),
+      );
+    }
     final NodeProbeResult? p = probe;
     if (p == null) {
       return const SizedBox(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -72,6 +73,11 @@ class SingboxProxyController extends ProxyController {
   /// re-arm the heal (which would let a dead subscription loop).
   bool _healing = false;
 
+  /// Maps the config's `node-i` outbound tag to the real [proxyNodeKey], set
+  /// each time a multi-node config is built. Lets a `groups` event from the core
+  /// (which is keyed by those tags) be shown against the right server row.
+  Map<String, String> _coreTagKeys = const <String, String>{};
+
   ProxyConnectionState _state = ProxyConnectionState.disconnected;
   @override
   ProxyConnectionState get state => _state;
@@ -137,6 +143,13 @@ class SingboxProxyController extends ProxyController {
           _watchdog?.cancel();
           _watchdog = null;
         }
+        // The core's per-node latency only means anything while the tunnel is up;
+        // drop it the moment we leave connected so a stale ping can't linger on
+        // the list after disconnect.
+        if (_state != ProxyConnectionState.connected &&
+            !coreHealth.value.isEmpty) {
+          coreHealth.value = CoreNodeHealth.empty;
+        }
         notifyListeners();
         // Just came up: verify real traffic actually flows. A manually pinned
         // exit fails over to the fastest live server; an auto (subscription)
@@ -157,6 +170,8 @@ class SingboxProxyController extends ProxyController {
           downlinkTotal: (event['downTotal'] as num?)?.toInt() ?? 0,
         );
         notifyListeners();
+      case 'groups':
+        _onGroups(event['groups']);
       case 'error':
         _lastError = event['message'] as String?;
         NovaLog.instance
@@ -164,6 +179,62 @@ class SingboxProxyController extends ProxyController {
         _state = ProxyConnectionState.error;
         notifyListeners();
     }
+  }
+
+  /// Translates the core's outbound-group snapshot into [coreHealth]. The host
+  /// sends `{ "type": "groups", "groups": [ { "tag": "proxy", "selected":
+  /// "node-3", "items": [ { "tag": "node-0", "delay": 217 }, ... ] } ] }`, where
+  /// `delay` is the urltest round-trip in ms (0 = failed/untested). We keep only
+  /// the auto-select group (`proxy`) and map its `node-i` tags back to real
+  /// nodes via [_coreTagKeys], so the server list can show a live, honest ping
+  /// for the very nodes that can't be probed from outside the tunnel.
+  void _onGroups(Object? raw) {
+    // No mapping means a single/pinned node with no urltest group; nothing to
+    // attribute the numbers to.
+    if (_coreTagKeys.isEmpty) return;
+    final CoreNodeHealth next = parseCoreGroups(_coreTagKeys, raw);
+    final CoreNodeHealth cur = coreHealth.value;
+    if (next.selectedKey == cur.selectedKey &&
+        mapEquals(next.delayMsByKey, cur.delayMsByKey)) {
+      return;
+    }
+    coreHealth.value = next;
+  }
+
+  /// Turns the host's `groups` payload into a [CoreNodeHealth], mapping the
+  /// config's `node-i` outbound tags back to real node keys with [tagKeys].
+  ///
+  /// Exposed for tests because this is the fiddly part: it drops 0-delay items
+  /// (the core's "no successful test yet"), keeps only the auto-select group
+  /// `proxy`, and ignores tags it has no mapping for.
+  @visibleForTesting
+  static CoreNodeHealth parseCoreGroups(
+      Map<String, String> tagKeys, Object? raw) {
+    if (raw is! List) return CoreNodeHealth.empty;
+    final Map<String, int> delays = <String, int>{};
+    String? selectedKey;
+    for (final Object? g in raw) {
+      if (g is! Map) continue;
+      // The auto-selector is tagged `proxy`; ignore any other group the core
+      // might expose so a selector's own entry can't shadow the urltest figures.
+      if (g['tag'] != 'proxy') continue;
+      final Object? sel = g['selected'];
+      if (sel is String) selectedKey = tagKeys[sel];
+      final Object? items = g['items'];
+      if (items is List) {
+        for (final Object? it in items) {
+          if (it is! Map) continue;
+          final Object? tag = it['tag'];
+          final int delay = (it['delay'] as num?)?.toInt() ?? 0;
+          final String? key = tag is String ? tagKeys[tag] : null;
+          // A 0 delay from the core is "no successful test yet", which is not a
+          // latency we can honestly show, so it stays absent (the row keeps its
+          // "tested when you connect" note) rather than reading as 0 ms.
+          if (key != null && delay > 0) delays[key] = delay;
+        }
+      }
+    }
+    return CoreNodeHealth(delayMsByKey: delays, selectedKey: selectedKey);
   }
 
   @override
@@ -450,6 +521,19 @@ class SingboxProxyController extends ProxyController {
         );
         tuned = opts;
       }
+    }
+    // Remember which real node each `node-i` tag maps to, so the core's per-node
+    // urltest results (which come back keyed by those tags) can be shown against
+    // the right server in the list. Only a real multi-node pool has a urltest
+    // group; a single/pinned node has none.
+    if (nodes.length == 1) {
+      _coreTagKeys = const <String, String>{};
+    } else {
+      final List<String> keys =
+          SingboxConfig.orderedMultiNodeKeys(nodes, options: tuned);
+      _coreTagKeys = <String, String>{
+        for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
+      };
     }
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: tuned)
