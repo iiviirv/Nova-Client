@@ -78,6 +78,14 @@ class SingboxProxyController extends ProxyController {
   /// (which is keyed by those tags) be shown against the right server row.
   Map<String, String> _coreTagKeys = const <String, String>{};
 
+  /// Maps a node's [proxyNodeKey] to the name the panel gave it, set each time a
+  /// config is built. Lets the UI name the connected exit instead of showing a
+  /// clean-IP node's meaningless Cloudflare address.
+  Map<String, String> _keyToName = const <String, String>{};
+
+  @override
+  String? exitName(String? key) => key == null ? null : _keyToName[key];
+
   ProxyConnectionState _state = ProxyConnectionState.disconnected;
   @override
   ProxyConnectionState get state => _state;
@@ -412,26 +420,53 @@ class SingboxProxyController extends ProxyController {
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }
+    // Remember each node's own name (the label the panel gave it) keyed by its
+    // stable key, so the dashboard can show "Connected via <name>" instead of a
+    // bare address, which for a clean-IP node is a meaningless Cloudflare IP.
+    _keyToName = <String, String>{
+      for (final ProxyNode n in nodes) proxyNodeKey(n): n.tag,
+    };
     // Honour a manually pinned exit node: route through just that one instead of
     // letting the urltest auto-pick. Falls back to auto if it's no longer in the
     // subscription.
     final String? pin = profile.pinnedNode;
     if (pin != null) {
       bool honoured = false;
+      // Match the pinned node by its stable key first; if the panel rotated its
+      // clean IP so no key matches, fall back to the name the user pinned, which
+      // survives the rotation. Without this the pin silently breaks on every
+      // refresh and the user lands on a different (often different-country) exit.
+      final String? pinName = profile.pinnedName;
+      ProxyNode? chosen;
       for (final ProxyNode n in nodes) {
         if (proxyNodeMatchesKey(n, pin)) {
-          // An xhttp node cannot be built at all (sing-box has no such
-          // transport), and the pin self-heal only runs after a successful
-          // connect, so honouring the pin here would leave the profile
-          // permanently unconnectable with no way back. Treat it like a pin that
-          // is no longer in the subscription and fall through to auto.
-          if (n.network == 'xhttp') break;
-          nodes = <ProxyNode>[n];
+          chosen = n;
+          break;
+        }
+      }
+      if (chosen == null && (pinName ?? '').isNotEmpty) {
+        for (final ProxyNode n in nodes) {
+          if (n.tag == pinName) {
+            chosen = n;
+            NovaLog.instance.write(
+                'Your chosen server\'s address changed; matched it by name '
+                '("$pinName") so you stay on the same one.');
+            break;
+          }
+        }
+      }
+      if (chosen != null) {
+        // An xhttp node cannot be built at all (sing-box has no such transport),
+        // and the pin self-heal only runs after a successful connect, so
+        // honouring the pin here would leave the profile permanently
+        // unconnectable with no way back. Treat it like a pin that is no longer
+        // in the subscription and fall through to auto.
+        if (chosen.network != 'xhttp') {
+          nodes = <ProxyNode>[chosen];
           honoured = true;
           NovaLog.instance.write(
-              'Using your chosen server ${n.server}:${n.port} '
-              '(${n.protocol.label})');
-          break;
+              'Using your chosen server ${chosen.server}:${chosen.port} '
+              '(${chosen.protocol.label})');
         }
       }
       // The pinned server is gone from the subscription (a panel rotating its

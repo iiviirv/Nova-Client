@@ -205,6 +205,11 @@ abstract class ProxyController extends ChangeNotifier {
   /// through the exit like every other platform.
   String? get proxyUri => null;
 
+  /// The panel's name for the node with this [proxyNodeKey], or null when the
+  /// controller has no name for it (or is a mock). Lets the dashboard show
+  /// "Connected via `name`" instead of a clean-IP node's Cloudflare address.
+  String? exitName(String? key) => null;
+
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);
 

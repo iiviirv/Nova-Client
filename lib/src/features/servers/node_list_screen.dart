@@ -389,13 +389,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
     return host;
   }
 
-  Future<void> _pin(String? key) async {
+  Future<void> _pin(String? key, {String? name}) async {
     final scope = NovaScope.of(context);
     final profile = _profile;
     if (profile == null) return;
     NovaLog.instance.write(
         key == null ? 'You chose Auto' : 'You chose the server $key');
-    final updated = profile.copyWith(pinnedNode: key);
+    // Store the name too: if the panel later rotates this node's clean IP, the
+    // key stops matching, and the name is what keeps the pin on the same server.
+    final updated = profile.copyWith(pinnedNode: key, pinnedName: name);
     scope.profiles.update(updated);
     scope.profiles.setActive(updated.id);
     scope.proxy.selectProfile(updated);
@@ -517,7 +519,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
           coreTested: health.wasTested(n),
           active: health.isSelected(n),
           showDivider: r < visible.length - 1,
-          onTap: () => _pin(_key(n)),
+          onTap: () => _pin(_key(n), name: n.tag),
         );
       },
     );

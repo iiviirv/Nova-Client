@@ -44,6 +44,7 @@ class ProxyProfile {
     this.lastLatencyMs,
     this.updatedAt,
     this.pinnedNode,
+    this.pinnedName,
     this.fastNodes = const <String>[],
     this.hardenTls = false,
   });
@@ -70,6 +71,13 @@ class ProxyProfile {
   /// null to let the core auto-pick the fastest (urltest).
   final String? pinnedNode;
 
+  /// The panel's name for the pinned node. A subscription that rotates its clean
+  /// IPs changes a node's address (and so its [pinnedNode] key) on every refresh,
+  /// which would silently break the pin and drop the user onto a different exit.
+  /// Matching on this stable name as a fallback keeps the chosen server pinned
+  /// across those rotations.
+  final String? pinnedName;
+
   /// `server:port` keys of the fastest measured nodes (from the node picker's
   /// latency test), best first. Auto-select builds its urltest pool from these
   /// so "fastest" actually uses good nodes instead of the subscription's first
@@ -93,6 +101,7 @@ class ProxyProfile {
     Object? lastLatencyMs = _unset,
     DateTime? updatedAt,
     Object? pinnedNode = _unset,
+    Object? pinnedName = _unset,
     List<String>? fastNodes,
     bool? hardenTls,
   }) {
@@ -108,6 +117,8 @@ class ProxyProfile {
       updatedAt: updatedAt ?? this.updatedAt,
       pinnedNode:
           pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
+      pinnedName:
+          pinnedName == _unset ? this.pinnedName : pinnedName as String?,
       fastNodes: fastNodes ?? this.fastNodes,
       hardenTls: hardenTls ?? this.hardenTls,
     );
@@ -123,6 +134,7 @@ class ProxyProfile {
         'lastLatencyMs': lastLatencyMs,
         'updatedAt': updatedAt?.toIso8601String(),
         'pinnedNode': pinnedNode,
+        'pinnedName': pinnedName,
         'fastNodes': fastNodes,
         'hardenTls': hardenTls,
       };
@@ -142,6 +154,7 @@ class ProxyProfile {
             ? DateTime.tryParse(json['updatedAt'] as String)
             : null,
         pinnedNode: json['pinnedNode'] as String?,
+        pinnedName: json['pinnedName'] as String?,
         fastNodes: (json['fastNodes'] as List<dynamic>?)
                 ?.map((e) => e as String)
                 .toList() ??
