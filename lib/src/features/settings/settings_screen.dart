@@ -11,8 +11,10 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
+import '../../core/models/proxy_profile.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../logs/log_screen.dart';
+import '../panel/panel_webview_screen.dart';
 import '../radar/radar_screen.dart';
 import '../relay/relay_screen.dart';
 import '../routing/routing_screen.dart';
@@ -39,6 +41,9 @@ class SettingsScreen extends StatelessWidget {
     final s = NovaStrings.of(context);
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
+    // A Nova Server panel lives at the root of the subscription's host, so offer
+    // to open it in-app when the active profile is a subscription with a URL.
+    final String? panelUrl = _panelUrlFor(NovaScope.of(context).profiles.active);
 
     return ListenableBuilder(
       listenable: theme,
@@ -62,6 +67,17 @@ class SettingsScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
+                        if (panelUrl != null) ...<Widget>[
+                          _NavRow(
+                            icon: Icons.dashboard_rounded,
+                            color: nova.cyan,
+                            title: s.panelOpen,
+                            subtitle: s.panelOpenSub,
+                            onTap: () => _push(
+                                context, PanelWebviewScreen(url: panelUrl)),
+                          ),
+                          _div(nova.border),
+                        ],
                         _NavRow(
                           icon: Icons.alt_route_rounded,
                           color: nova.violet,
@@ -269,6 +285,20 @@ class SettingsScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => screen),
     );
+  }
+
+  /// The panel URL to open for [active]: the root of a subscription profile's
+  /// host (`https://panel.example.com/`), where a Nova Server panel serves its
+  /// admin UI. Null for a non-subscription or a URL we can't parse to an https
+  /// origin, so the row simply doesn't appear.
+  static String? _panelUrlFor(ProxyProfile? active) {
+    if (active == null || !active.isSubscription) return null;
+    final String raw = active.subscriptionUrl ?? '';
+    if (raw.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(raw);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+    if (uri.scheme != 'https' && uri.scheme != 'http') return null;
+    return uri.replace(path: '/', query: '', fragment: '').toString();
   }
 }
 

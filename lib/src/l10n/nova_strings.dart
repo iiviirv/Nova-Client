@@ -47,6 +47,11 @@ class NovaStrings {
   String get nodeBypassTitle => t('node.bypassTitle');
   String get nodeBypassSub => t('node.bypassSub');
 
+  // ---- Server panel (mini-app webview) ----
+  String get panelTitle => t('panel.title');
+  String get panelOpen => t('panel.open');
+  String get panelOpenSub => t('panel.openSub');
+
   // ---- SNI-block bypass editor ----
   String get bypassEdit => t('bypass.edit');
   String get bypassEditorTitle => t('bypass.title');
@@ -988,6 +993,9 @@ class NovaStrings {
     'mode.dark': 'Dark',
     'mode.light': 'Light',
     'common.save': 'Save',
+    'panel.title': 'Server panel',
+    'panel.open': 'Open server panel',
+    'panel.openSub': 'Manage your Nova panel in the app',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
     'common.add': 'Add',
@@ -1664,6 +1672,9 @@ class NovaStrings {
     'mode.dark': 'تیره',
     'mode.light': 'روشن',
     'common.save': 'ذخیره',
+    'panel.title': 'پنل سرور',
+    'panel.open': 'باز کردن پنل سرور',
+    'panel.openSub': 'پنل نوای خود را داخل برنامه مدیریت کنید',
     'common.cancel': 'لغو',
     'common.reset': 'بازنشانی',
     'common.add': 'افزودن',

@@ -48,6 +48,10 @@ dependencies:
   # no native code, so no CocoaPods entry needed).
   qr_flutter: ^4.1.0
 
+  # In-app web view so a Nova Server panel owner can open their panel / mini-app
+  # inside the client instead of leaving for a browser.
+  webview_flutter: ^4.7.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
