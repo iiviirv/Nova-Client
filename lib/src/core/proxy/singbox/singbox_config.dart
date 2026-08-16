@@ -24,7 +24,17 @@ class SingboxRouteOptions {
     this.verboseCoreLog = false,
     this.hardenTls = false,
     this.hardenPacketFragment = true,
+    this.bypassFingerprint,
+    this.bypassCipherSuites,
+    this.bypassFragmentMask,
   });
+
+  /// Per-profile SNI-block bypass overrides from the editor, each null to use
+  /// Nova's field-tested default (`unsafe` / [kBypassCipherSuites] /
+  /// [kBypassFragmentMask]). Only consulted when [hardenTls] is on.
+  final String? bypassFingerprint;
+  final List<String>? bypassCipherSuites;
+  final String? bypassFragmentMask;
 
   final SingboxMode mode;
   final bool blockAds;
@@ -143,6 +153,9 @@ class SingboxRouteOptions {
     bool? verboseCoreLog,
     bool? hardenTls,
     bool? hardenPacketFragment,
+    String? bypassFingerprint,
+    List<String>? bypassCipherSuites,
+    String? bypassFragmentMask,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -162,6 +175,9 @@ class SingboxRouteOptions {
         hardenTls: hardenTls ?? this.hardenTls,
         hardenPacketFragment:
             hardenPacketFragment ?? this.hardenPacketFragment,
+        bypassFingerprint: bypassFingerprint ?? this.bypassFingerprint,
+        bypassCipherSuites: bypassCipherSuites ?? this.bypassCipherSuites,
+        bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
       );
 }
 
@@ -800,7 +816,13 @@ class SingboxConfig {
   ];
 
   static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) =>
-      (o.hardenTls && n.isCleanIpFronted) ? n.hardened() : n;
+      (o.hardenTls && n.isCleanIpFronted)
+          ? n.hardened(
+              fingerprint: o.bypassFingerprint,
+              cipherSuites: o.bypassCipherSuites,
+              fragmentMask: o.bypassFragmentMask,
+            )
+          : n;
 
   /// The cipher suite names the sing-box core accepts, measured against the
   /// 1.13.13 binary: it looks names up in Go's secure list only, so anything in

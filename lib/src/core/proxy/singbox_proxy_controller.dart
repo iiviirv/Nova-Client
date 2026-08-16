@@ -518,8 +518,12 @@ class SingboxProxyController extends ProxyController {
       lean: Platform.isIOS,
       localRuleSets: Platform.isAndroid,
       // The SNI-block bypass, per profile: turned on by the self-heal below or
-      // by the user, applied only to clean-IP fronted nodes.
+      // by the user, applied only to clean-IP fronted nodes. The three overrides
+      // are the user's edits from the bypass editor (null = field-tested default).
       hardenTls: profile.hardenTls,
+      bypassFingerprint: profile.bypassFingerprint,
+      bypassCipherSuites: profile.bypassCipherSuites,
+      bypassFragmentMask: profile.bypassFragmentMask,
       // Android's VpnService uses the gvisor stack (userspace TCP, clamped MSS),
       // like iOS. The system stack forwards raw IP and doesn't clamp MSS, which
       // the code comment on the inbound documents as dropping large packets on a

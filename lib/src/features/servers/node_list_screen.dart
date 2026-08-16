@@ -18,6 +18,7 @@ import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
+import 'bypass_editor_screen.dart';
 
 /// Lists the nodes of a subscription with a live TCP latency for each, and lets
 /// the user pin a specific exit (or fall back to auto-select). Pinning updates
@@ -389,6 +390,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
     return host;
   }
 
+  void _openBypassEditor() {
+    final ProxyProfile? profile = _profile;
+    if (profile == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BypassEditorScreen(profileId: profile.id),
+      ),
+    );
+  }
+
   Future<void> _pin(String? key, {String? name}) async {
     final scope = NovaScope.of(context);
     final profile = _profile;
@@ -481,6 +492,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         _BypassRow(
           on: _profile?.hardenTls ?? false,
           onChanged: _setBypass,
+          onEdit: _openBypassEditor,
           note: _bypassSuggested ? s.nodeBypassAllBlocked : null,
         ),
         const Divider(height: 1),
@@ -729,9 +741,17 @@ class _SocialRow extends StatelessWidget {
 /// list rather than a settings card, because it is a property of this
 /// subscription, not of the app.
 class _BypassRow extends StatelessWidget {
-  const _BypassRow({required this.on, required this.onChanged, this.note});
+  const _BypassRow({
+    required this.on,
+    required this.onChanged,
+    required this.onEdit,
+    this.note,
+  });
   final bool on;
   final ValueChanged<bool> onChanged;
+
+  /// Opens the advanced editor (finalmask / fingerprint / cipher suites).
+  final VoidCallback onEdit;
 
   /// Set when Nova just turned the bypass on by itself, so the row explains.
   final String? note;
@@ -744,20 +764,48 @@ class _BypassRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile(
-          value: on,
-          onChanged: onChanged,
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: NovaSpace.lg, vertical: 2),
-          secondary: NovaIconChip(
-              icon: Icons.shield_moon_rounded,
-              color: nova.warning,
-              size: 36,
-              radius: 10),
-          title: Text(s.nodeBypassTitle,
-              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-          subtitle: Text(s.nodeBypassSub,
-              style: text.bodySmall?.copyWith(color: nova.muted)),
+        // The long description is gone; tapping the title opens the editor, and
+        // the switch is the only inline control.
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: InkWell(
+                onTap: onEdit,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+                  child: Row(
+                    children: <Widget>[
+                      NovaIconChip(
+                          icon: Icons.shield_moon_rounded,
+                          color: nova.warning,
+                          size: 36,
+                          radius: 10),
+                      const SizedBox(width: NovaSpace.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(s.nodeBypassTitle,
+                                style: text.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600)),
+                            Text(s.bypassEdit,
+                                style: text.labelSmall
+                                    ?.copyWith(color: nova.cyan)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.tune_rounded, size: 18, color: nova.muted),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: NovaSpace.md),
+              child: Switch(value: on, onChanged: onChanged),
+            ),
+          ],
         ),
         if (note != null)
           Padding(

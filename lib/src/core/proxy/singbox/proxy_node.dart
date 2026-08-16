@@ -259,12 +259,16 @@ class ProxyNode {
   /// of a browser fingerprint (`unsafe`), the cipher list PattNG uses, and a
   /// fragment mask. Idempotent, and it never touches a node that already
   /// carries its own hardening from the link.
-  ProxyNode hardened() {
+  ProxyNode hardened({
+    String? fingerprint,
+    List<String>? cipherSuites,
+    String? fragmentMask,
+  }) {
     if (isHardenedTls) return this;
     return copyWith(
-      fingerprint: 'unsafe',
-      cipherSuites: kBypassCipherSuites,
-      fragmentMask: kBypassFragmentMask,
+      fingerprint: fingerprint ?? 'unsafe',
+      cipherSuites: cipherSuites ?? kBypassCipherSuites,
+      fragmentMask: fragmentMask ?? kBypassFragmentMask,
     );
   }
 }

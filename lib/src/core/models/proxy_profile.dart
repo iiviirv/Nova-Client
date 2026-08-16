@@ -47,6 +47,9 @@ class ProxyProfile {
     this.pinnedName,
     this.fastNodes = const <String>[],
     this.hardenTls = false,
+    this.bypassFingerprint,
+    this.bypassCipherSuites,
+    this.bypassFragmentMask,
   });
 
   final String id;
@@ -91,6 +94,14 @@ class ProxyProfile {
   /// from the node list. Sticky once on, until the user turns it off.
   final bool hardenTls;
 
+  /// User overrides for the SNI-block bypass, edited from the bypass editor so a
+  /// tester can re-tune the anti-DPI recipe when filtering changes. Each is null
+  /// to use Nova's field-tested default (`unsafe` fingerprint, [kBypassCipherSuites],
+  /// [kBypassFragmentMask]).
+  final String? bypassFingerprint;
+  final List<String>? bypassCipherSuites;
+  final String? bypassFragmentMask;
+
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
@@ -104,6 +115,9 @@ class ProxyProfile {
     Object? pinnedName = _unset,
     List<String>? fastNodes,
     bool? hardenTls,
+    Object? bypassFingerprint = _unset,
+    Object? bypassCipherSuites = _unset,
+    Object? bypassFragmentMask = _unset,
   }) {
     return ProxyProfile(
       id: id,
@@ -121,6 +135,15 @@ class ProxyProfile {
           pinnedName == _unset ? this.pinnedName : pinnedName as String?,
       fastNodes: fastNodes ?? this.fastNodes,
       hardenTls: hardenTls ?? this.hardenTls,
+      bypassFingerprint: bypassFingerprint == _unset
+          ? this.bypassFingerprint
+          : bypassFingerprint as String?,
+      bypassCipherSuites: bypassCipherSuites == _unset
+          ? this.bypassCipherSuites
+          : bypassCipherSuites as List<String>?,
+      bypassFragmentMask: bypassFragmentMask == _unset
+          ? this.bypassFragmentMask
+          : bypassFragmentMask as String?,
     );
   }
 
@@ -137,6 +160,9 @@ class ProxyProfile {
         'pinnedName': pinnedName,
         'fastNodes': fastNodes,
         'hardenTls': hardenTls,
+        'bypassFingerprint': bypassFingerprint,
+        'bypassCipherSuites': bypassCipherSuites,
+        'bypassFragmentMask': bypassFragmentMask,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -160,6 +186,11 @@ class ProxyProfile {
                 .toList() ??
             const <String>[],
         hardenTls: json['hardenTls'] as bool? ?? false,
+        bypassFingerprint: json['bypassFingerprint'] as String?,
+        bypassCipherSuites: (json['bypassCipherSuites'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .toList(),
+        bypassFragmentMask: json['bypassFragmentMask'] as String?,
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>

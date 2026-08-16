@@ -164,6 +164,27 @@ void main() {
       }
     });
 
+    test('bypass editor overrides feed the config (custom mask + ciphers)', () {
+      // A user-edited finalmask and cipher list from the bypass editor must
+      // reach the emitted config, so re-tuning the recipe actually changes what
+      // the core sends.
+      const String customMask =
+          '{"tcp":[{"type":"fragment","settings":{"packets":"tlshello",'
+          '"lengths":["3","7"],"delays":["0"],"maxSplit":"0"}}]}';
+      final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(
+        parseShareLink(kNovaLink)!,
+        options: const SingboxRouteOptions(
+          hardenTls: true,
+          bypassFragmentMask: customMask,
+          bypassCipherSuites: <String>['TLS_AES_128_GCM_SHA256'],
+        ),
+      ));
+      final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
+      expect(nf.length, 1, reason: 'the custom single-stage mask is used');
+      expect((nf[0] as Map)['lengths'], <String>['3', '7']);
+      expect(tls['cipher_suites'], <String>['TLS_AES_128_GCM_SHA256']);
+    });
+
     test('a carrier fingerprint override does not undo an explicit unsafe', () {
       final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(
         parseShareLink(kPattLink)!,

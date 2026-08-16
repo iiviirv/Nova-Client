@@ -46,6 +46,16 @@ class NovaStrings {
   // ---- SNI-block bypass (node list switch) ----
   String get nodeBypassTitle => t('node.bypassTitle');
   String get nodeBypassSub => t('node.bypassSub');
+
+  // ---- SNI-block bypass editor ----
+  String get bypassEdit => t('bypass.edit');
+  String get bypassEditorTitle => t('bypass.title');
+  String get bypassEditorIntro => t('bypass.intro');
+  String get bypassFingerprint => t('bypass.fingerprint');
+  String get bypassFinalmask => t('bypass.finalmask');
+  String get bypassCipherSuites => t('bypass.cipherSuites');
+  String get bypassMaskInvalid => t('bypass.maskInvalid');
+  String get bypassResetDefaults => t('bypass.reset');
   String get nodeBypassAllBlocked => t('node.bypassAllBlocked');
 
   // ---- Radar ----
@@ -715,6 +725,14 @@ class NovaStrings {
         'For networks that block the worker domain itself. Plain TLS with a '
             'fixed cipher list and a fragmented handshake, on the clean-IP '
             'servers only. Slower, so leave it off unless nothing connects.',
+    'bypass.edit': 'Edit bypass settings',
+    'bypass.title': 'Bypass settings',
+    'bypass.intro': 'Advanced. These are the anti-censorship values Nova sends on the clean-IP servers. The defaults are field-tested; change them only if your network starts blocking differently, then Save.',
+    'bypass.fingerprint': 'TLS fingerprint',
+    'bypass.finalmask': 'Fragmentation (finalmask, JSON)',
+    'bypass.cipherSuites': 'Cipher suites (one per line)',
+    'bypass.maskInvalid': 'This is not valid JSON.',
+    'bypass.reset': 'Reset to defaults',
     'node.bypassAllBlocked':
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
@@ -1384,6 +1402,14 @@ class NovaStrings {
         'برای شبکه‌هایی که خود دامنه‌ی ورکر را می‌بندند. \u2066TLS\u2069 ساده '
             'با فهرست رمز ثابت و دست‌دهی تکه‌تکه‌شده، فقط روی سرورهای '
             'آی‌پی تمیز. کندتر است؛ فقط وقتی هیچ‌چیز وصل نمی‌شود روشنش کنید.',
+    'bypass.edit': 'ویرایش تنظیمات بایپس',
+    'bypass.title': 'تنظیمات بایپس',
+    'bypass.intro': 'پیشرفته. این‌ها مقادیر ضدسانسوری هستند که نوا روی سرورهای Clean-IP می‌فرستد. پیش‌فرض‌ها آزمایش‌شده‌اند؛ فقط اگر شیوه‌ی فیلترینگ شبکه‌تان تغییر کرد آن‌ها را عوض و ذخیره کنید.',
+    'bypass.fingerprint': 'اثر انگشت TLS',
+    'bypass.finalmask': 'فرگمنت (finalmask، JSON)',
+    'bypass.cipherSuites': 'مجموعه رمزها (هر خط یکی)',
+    'bypass.maskInvalid': 'این JSON معتبر نیست.',
+    'bypass.reset': 'بازگردانی به پیش‌فرض',
     'node.bypassAllBlocked':
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '
