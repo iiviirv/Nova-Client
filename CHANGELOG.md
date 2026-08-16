@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.0-beta (2026-08-16)
+
+Clearer server pings, by the Nova team.
+
+- The server list now puts the servers with a real, live ping at the top (fastest
+  first), so you can see and pick a working server at a glance instead of scrolling
+  past a wall of "not testable" entries.
+- With the SNI-block bypass on, the clean-IP servers (the ones that actually get
+  through) now fill the measured set first, so more of your live pings are for
+  servers that work.
+
 ## v1.8.0-beta (2026-08-15)
 
 Server list and dashboard improvements, by the Nova team.
