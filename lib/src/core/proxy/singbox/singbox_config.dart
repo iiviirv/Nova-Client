@@ -311,10 +311,22 @@ class SingboxConfig {
     // fills its pool with ws/Trojan first (and never opens on a dead gRPC node),
     // while a sub that is *only* gRPC still gets used. Order within each group is
     // preserved, so the caller's ping ranking still holds.
-    final List<ProxyNode> ordered = <ProxyNode>[
-      ...usable.where((ProxyNode n) => n.network != 'grpc'),
-      ...usable.where((ProxyNode n) => n.network == 'grpc'),
-    ];
+    final Iterable<ProxyNode> nonGrpc =
+        usable.where((ProxyNode n) => n.network != 'grpc');
+    final Iterable<ProxyNode> grpc =
+        usable.where((ProxyNode n) => n.network == 'grpc');
+    final List<ProxyNode> ordered = options.hardenTls
+        // Bypass on: a domain-addressed node can't pass the SNI block that is the
+        // whole reason the bypass is on, so it would just sit in the limited pool
+        // failing (and, on iOS where the pool is small, crowd out the clean-IP
+        // nodes that actually work and get a live ping). Let the clean-IP fronted
+        // nodes fill the measured pool first.
+        ? <ProxyNode>[
+            ...nonGrpc.where((ProxyNode n) => n.isCleanIpFronted),
+            ...nonGrpc.where((ProxyNode n) => !n.isCleanIpFronted),
+            ...grpc,
+          ]
+        : <ProxyNode>[...nonGrpc, ...grpc];
     // NB: never fall back to the unfiltered `nodes` here. Doing so reintroduced
     // the xhttp nodes this method just dropped, and they were then built as
     // plain TCP exits that could not connect.

@@ -409,14 +409,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
     final profile = _profile;
-    // Proven nodes first, then fastest. A node still being measured keeps its
-    // place until its verdict lands, so rows don't jump while the list fills in.
-    final sorted = <ProxyNode>[..._nodes]..sort((a, b) {
-        final int ka = _probe[_key(a)]?.sortKey ?? 1500000;
-        final int kb = _probe[_key(b)]?.sortKey ?? 1500000;
-        return ka.compareTo(kb);
-      });
-    final visible = sorted.where(_matches).toList();
+    final visible = _nodes.where(_matches).toList();
     final pinned = profile?.pinnedNode;
     return Scaffold(
       appBar: AppBar(
@@ -453,8 +446,25 @@ class _NodeListScreenState extends State<NodeListScreen> {
 
   /// The header blocks are a handful of cheap widgets; the node rows are built
   /// on demand so an 80-node subscription only lays out what is on screen.
-  Widget _list(NovaStrings s, List<ProxyNode> visible, String? pinned,
+  Widget _list(NovaStrings s, List<ProxyNode> visibleUnsorted, String? pinned,
       CoreNodeHealth health) {
+    // Ranking, best first. When connected, the core's live pings win: a node the
+    // core actually measured through the tunnel leads (lowest ping first), so the
+    // working servers surface at the top instead of being buried under the nodes
+    // the outside probe can only call "not testable". Disconnected (empty health)
+    // this collapses to the old probe order. A node still being measured keeps
+    // its place until its verdict lands, so rows don't jump while the list fills.
+    int rank(ProxyNode n) {
+      final int? live = health.delayFor(n);
+      if (live != null) return live; // 0..~, measured pool nodes first by ping
+      if (health.wasTested(n)) return 1000000; // tested but no response
+      // Not in the live pool: fall back to the outside-probe verdict, after all
+      // core-measured rows.
+      return 2000000 + (_probe[_key(n)]?.sortKey ?? 500000);
+    }
+
+    final List<ProxyNode> visible = <ProxyNode>[...visibleUnsorted]
+      ..sort((ProxyNode a, ProxyNode b) => rank(a).compareTo(rank(b)));
     final List<Widget> header = <Widget>[
       if (_stale) const _StaleNote(),
       if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),

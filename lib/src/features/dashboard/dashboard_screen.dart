@@ -1003,10 +1003,12 @@ class _ActiveExitLine extends StatelessWidget {
           valueListenable: scope.proxy.coreHealth,
           builder: (context, health, __) {
             final String? key = health.selectedKey ?? active.pinnedNode;
-            // An address is wrapped in LRI/PDI isolates so it reads left-to-right
-            // even inside Farsi RTL copy; the "Auto" fallback follows the locale.
-            final String value =
-                key != null ? '⁦${_addr(key)}⁩' : s.homeConnectedAuto;
+            // An address is wrapped in LRI/PDI isolates so it reads
+            // left-to-right even inside Farsi RTL copy; the "Auto" fallback
+            // follows the locale.
+            final String value = key != null
+                ? '\u2066${_addr(key)}\u2069'
+                : s.homeConnectedAuto;
             return Padding(
               padding: const EdgeInsets.only(top: NovaSpace.sm),
               child: Row(

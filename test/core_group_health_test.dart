@@ -37,6 +37,40 @@ void main() {
       expect(SingboxConfig.orderedMultiNodeKeys(<ProxyNode>[_node('1.2.3.4')]),
           isEmpty);
     });
+
+    test('with the bypass on, clean-IP nodes fill the pool before domain ones',
+        () {
+      // A domain-addressed node (workers.dev) can't pass the SNI block, so with
+      // the bypass on it must not crowd the small pool ahead of clean-IP nodes.
+      final ProxyNode domain = parseShareLink(
+        'vless://00000000-0000-4000-8000-000000000000@azure.workers.dev:443'
+        '?encryption=none&security=tls&type=ws&sni=azure.workers.dev'
+        '&host=azure.workers.dev&path=%2Fp#D',
+      )!;
+      final ProxyNode cleanA = _node('104.17.1.1');
+      final ProxyNode cleanB = _node('104.17.2.2');
+      final List<String> keys = SingboxConfig.orderedMultiNodeKeys(
+        <ProxyNode>[domain, cleanA, cleanB],
+        options: const SingboxRouteOptions(hardenTls: true),
+      );
+      // Clean-IP nodes lead; the domain node sinks to the back of the pool.
+      expect(keys.first, proxyNodeKey(cleanA));
+      expect(keys[1], proxyNodeKey(cleanB));
+      expect(keys.last, proxyNodeKey(domain));
+    });
+
+    test('without the bypass, original order is preserved', () {
+      final ProxyNode domain = parseShareLink(
+        'vless://00000000-0000-4000-8000-000000000000@azure.workers.dev:443'
+        '?encryption=none&security=tls&type=ws&sni=azure.workers.dev'
+        '&host=azure.workers.dev&path=%2Fp#D',
+      )!;
+      final ProxyNode clean = _node('104.17.1.1');
+      final List<String> keys = SingboxConfig.orderedMultiNodeKeys(
+        <ProxyNode>[domain, clean],
+      );
+      expect(keys.first, proxyNodeKey(domain));
+    });
   });
 
   group('parsing the core groups payload', () {
