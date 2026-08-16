@@ -80,7 +80,42 @@ class ConnInfoController extends ChangeNotifier {
     if (!_wasActive || _info.reachable) return;
     final CoreNodeHealth h = _proxy.coreHealth.value;
     final String? sel = h.selectedKey;
-    if (sel != null && h.delayMsByKey[sel] != null) _refresh();
+    final int? delay = sel == null ? null : h.delayMsByKey[sel];
+    if (delay == null) return;
+    // The core measured real traffic through the selected exit: that IS
+    // reachability, and it is more reliable than the external 204 probe, which a
+    // flaky endpoint can stall on and leave the hero stuck on "Verifying". Flip
+    // to reachable now (with the core's ping) so "Secure" shows, then fill in the
+    // IP/country in the background without gating the verdict on it.
+    _loading = false;
+    _info = ConnInfo(
+      reachable: true,
+      ip: _info.ip,
+      countryCode: _info.countryCode,
+      countryName: _info.countryName,
+      pingMs: _info.pingMs ?? delay,
+    );
+    notifyListeners();
+    unawaited(_fillGeoInBackground());
+  }
+
+  /// Fetches the exit IP/country after [reachable] is already true, so the geo
+  /// fills in without holding up the "Secure" verdict. Best-effort.
+  Future<void> _fillGeoInBackground() async {
+    try {
+      final ConnInfo? geo = await _fetchGeo();
+      if (!_wasActive || geo == null) return;
+      _info = ConnInfo(
+        reachable: _info.reachable,
+        ip: geo.ip ?? _info.ip,
+        countryCode: geo.countryCode ?? _info.countryCode,
+        countryName: geo.countryName ?? _info.countryName,
+        pingMs: _info.pingMs ?? geo.pingMs,
+      );
+      notifyListeners();
+    } catch (_) {
+      // Geo is optional; "Secure" already stands on the core's proof.
+    }
   }
 
   void _onProxyChanged() {
@@ -165,8 +200,13 @@ class ConnInfoController extends ChangeNotifier {
         final Stopwatch sw = Stopwatch()..start();
         final HttpClientRequest req = await _client.getUrl(Uri.parse(url));
         req.followRedirects = false;
-        final HttpClientResponse res = await req.close();
-        await res.drain<void>();
+        // Hard timeouts on the response: a flaky exit can connect and then
+        // never answer, and without these the probe hangs forever, so the hero
+        // stays on "Verifying" indefinitely (the exact stuck state users hit).
+        // Failing fast lets the next warmup/periodic probe get through.
+        final HttpClientResponse res =
+            await req.close().timeout(const Duration(seconds: 5));
+        await res.drain<void>().timeout(const Duration(seconds: 5));
         sw.stop();
         final bool ok = res.statusCode >= 200 && res.statusCode < 400;
         if (ok) return (true, sw.elapsedMilliseconds);
