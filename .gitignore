@@ -33,3 +33,7 @@ dist/
 
 # Large iOS core framework (build artifact, regenerated locally; too big for GitHub 100MB limit)
 ios/Frameworks/Novacore.xcframework/
+
+# Xray core AAR (Phase-1 spike), built by tool/core/build-xray.sh
+libxray.aar
+android/app/libs/libxray.aar

@@ -520,9 +520,13 @@ String _normalizeNetwork(String type) {
   };
 }
 
-/// Transports that carry an HTTP-style `path` + `host` (ws, http/2, httpupgrade).
+/// Transports that carry an HTTP-style `path` + `host` (ws, http/2, httpupgrade,
+/// and xhttp/SplitHTTP, which the Xray core needs the path for).
 bool _carriesPath(String network) =>
-    network == 'ws' || network == 'http' || network == 'httpupgrade';
+    network == 'ws' ||
+    network == 'http' ||
+    network == 'httpupgrade' ||
+    network == 'xhttp';
 
 List<String> _splitAlpn(String? alpn) {
   if (alpn == null || alpn.isEmpty) return const <String>[];

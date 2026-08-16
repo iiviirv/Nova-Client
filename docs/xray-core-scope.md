@@ -1,5 +1,42 @@
 # Adding an Xray core to Nova Client — cost and plan
 
+## Phase-1 spike RESULT (2026-08-16): feasible ✅
+
+Proven end to end on this machine:
+
+- **Xray builds for Android via gomobile.** `tool/core/xray/novaxray` is a tiny
+  wrapper (`Start(json)/Stop()/Version()`) around `xray-core v1.260327.0` with
+  `distro/all` imported. `tool/core/build-xray.sh` gomobile-binds it to a 20 MB
+  `libxray.aar` (arm64 built in ~18s); the AAR exports
+  `online.novaproxy.xray.novaxray.Novaxray.start/stop/version`.
+- **The xhttp transport is compiled in and a config starts the core**
+  (`tool/core/xray/novaxray/xray_test.go`).
+- **The client can translate an xhttp node to Xray JSON.**
+  `lib/src/core/proxy/xray/xray_config.dart` turns a VLESS-over-xhttp node into a
+  minimal Xray config (local socks inbound + xhttp outbound), and the **real Xray
+  core accepted and started the client-generated config** (verified by feeding the
+  Dart output into the Go wrapper). `test/xray_config_spike_test.dart` covers the
+  translation. Also fixed: the share-link parser now captures `path` for xhttp.
+
+So the core feasibility question — *can Nova build Xray for Android and run a
+client-generated xhttp config through it* — is **yes**. None of this is wired into
+the shipped app yet.
+
+### What Phase-2 still needs (unchanged from below)
+1. A **tun2socks bridge** from the VpnService TUN to Xray's local socks inbound
+   (Xray has no TUN inbound). This is the missing data path.
+2. A **Kotlin bridge** in NovaVpnService to call `Novaxray.start/stop`, and
+   **core-per-node routing** (xhttp -> Xray, everything else -> sing-box).
+3. An **Xray stats/observatory** equivalent for the coreHealth pings / logs /
+   traffic that currently read libbox.
+4. **Desktop binaries** and the **iOS binding + ~50 MB memory** work.
+5. **End-to-end test against a real xhttp server** (the spike proves start/accept,
+   not a live tunnel — no xhttp server was available).
+
+---
+
+# (Original scope) Adding an Xray core to Nova Client — cost and plan
+
 Scoping for feedback item #5 (xhttp / SplitHTTP configs) and, adjacent, #6
 (mieru). Nova Client today ships a single data core: a patched **sing-box**
 (AmneziaWG + nova_fragment), bound natively per platform. xhttp is an
