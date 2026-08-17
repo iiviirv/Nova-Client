@@ -22,6 +22,32 @@ So the core feasibility question — *can Nova build Xray for Android and run a
 client-generated xhttp config through it* — is **yes**. None of this is wired into
 the shipped app yet.
 
+## Phase-2 progress + the blocker (2026-08-16)
+
+Built and tested, all behind `kXrayXhttpEnabled = false` (dormant, app unchanged):
+
+- **The two-core data path is designed and both halves validate.** sing-box owns
+  the TUN and bridges it to a local SOCKS that Xray serves; Xray does the xhttp.
+  `SingboxConfig.buildXraySocksBridge` (TUN -> SOCKS at 127.0.0.1:port) is
+  accepted by the real sing-box core; `XrayConfig` (socks inbound + xhttp
+  outbound) is accepted by the real Xray core.
+- **Socket protection is solved.** The wrapper gained `SetProtector` +
+  `internet.RegisterDialerController`, so Xray's outbound dials get
+  `VpnService.protect` and don't loop back through the TUN. The AAR exports
+  `setProtector(Protector{ protect(fd: Long) })`.
+- **The controller + Android host are wired** (EXTRA_XRAY_CONFIG, start Xray
+  before libbox, stop on cleanup) as a skeleton.
+
+**BLOCKER found: two gomobile AARs cannot coexist.** libbox (sagernet's gomobile
+fork) and libxray (upstream gomobile) each ship the `go/*` runtime support
+classes, and the APK build fails `CheckDuplicates` on them; the two Go runtimes
+also can't share one `go.Seq`. The fix is the standard one (NekoBox/Karing
+libcore): **build sing-box AND xray-core into a SINGLE gomobile module** — one
+`.aar`, one `go.Seq`, one runtime. So Phase-3 is a build-system task: add
+`novaxray` (and xray-core) into the libbox build (sagernet's `build_libbox`, same
+gomobile fork) and expose it from there, then flip `kXrayXhttpEnabled` and
+uncomment the native calls (already in place). Nothing else in the path changes.
+
 ### What Phase-2 still needs (unchanged from below)
 1. A **tun2socks bridge** from the VpnService TUN to Xray's local socks inbound
    (Xray has no TUN inbound). This is the missing data path.

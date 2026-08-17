@@ -207,6 +207,51 @@ class SingboxConfig {
     return const JsonEncoder.withIndent('  ').convert(buildMap(node, options: options));
   }
 
+  /// A sing-box config whose only exit is a local SOCKS proxy: the TUN traffic
+  /// is forwarded to `127.0.0.1:[socksPort]`, where the Xray core is listening.
+  ///
+  /// This is the bridge half of the two-core xhttp path: sing-box owns the TUN
+  /// (as always) and hands everything to Xray, which speaks the xhttp transport
+  /// sing-box cannot. Xray then dials the real server on protected sockets. The
+  /// rest of the document (TUN, DNS, route) is the normal one, so ad-blocking and
+  /// the Iran bypass still apply to what flows through.
+  static String buildXraySocksBridge(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) =>
+      const JsonEncoder.withIndent('  ')
+          .convert(buildXraySocksBridgeMap(socksPort, options: options));
+
+  static Map<String, dynamic> buildXraySocksBridgeMap(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) {
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+      }),
+      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
+      'outbounds': <Map<String, dynamic>>[
+        // The Xray core's local SOCKS inbound. Tagged `proxy` so the shared route
+        // targets it exactly like any real exit.
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': socksPort,
+          'version': '5',
+        },
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      // QUIC stays blocked: the xhttp exit is TCP, and letting UDP escape direct
+      // would leak outside the tunnel.
+      'route': _route(options, blockQuic: true),
+    };
+  }
+
   /// Returns the config as a map (useful for tests / further mutation).
   static Map<String, dynamic> buildMap(
     ProxyNode inputNode, {

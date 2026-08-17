@@ -14,6 +14,15 @@ import 'singbox/node_probe.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
+import 'xray/xray_config.dart';
+
+/// Phase-2 xhttp/Xray path. OFF until the combined sing-box+Xray gomobile core
+/// is built (two separate gomobile AARs cannot coexist in one process, so the
+/// Android host cannot start Xray as a second AAR). The config translation and
+/// TUN->SOCKS bridge are done and tested; only the combined native core is
+/// missing. Flip to true once android/app/libs carries a combined core exposing
+/// Novaxray. See docs/xray-core-scope.md.
+const bool kXrayXhttpEnabled = false;
 
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///
@@ -82,6 +91,10 @@ class SingboxProxyController extends ProxyController {
   /// config is built. Lets the UI name the connected exit instead of showing a
   /// clean-IP node's meaningless Cloudflare address.
   Map<String, String> _keyToName = const <String, String>{};
+
+  /// Set by [_buildSingboxConfig] when the exit is an xhttp node: the Xray core
+  /// config the native host starts alongside the sing-box TUN->SOCKS bridge.
+  String? _pendingXrayConfig;
 
   @override
   String? exitName(String? key) => key == null ? null : _keyToName[key];
@@ -338,6 +351,9 @@ class SingboxProxyController extends ProxyController {
     try {
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
+        // For an xhttp node, the Xray core config the host runs alongside the
+        // sing-box bridge (Android only for now).
+        if (_pendingXrayConfig != null) 'xrayConfigJson': _pendingXrayConfig,
         // Bundled rule-set files the lean iOS config references as local
         // rule-sets. The host writes them next to the config in the App Group.
         if (Platform.isIOS) 'ruleSets': await _leanRuleSets(),
@@ -456,12 +472,13 @@ class SingboxProxyController extends ProxyController {
         }
       }
       if (chosen != null) {
-        // An xhttp node cannot be built at all (sing-box has no such transport),
-        // and the pin self-heal only runs after a successful connect, so
-        // honouring the pin here would leave the profile permanently
-        // unconnectable with no way back. Treat it like a pin that is no longer
-        // in the subscription and fall through to auto.
-        if (chosen.network != 'xhttp') {
+        // sing-box has no xhttp transport, so an xhttp pin can only be honoured
+        // on Android, where the two-core path runs it on Xray. Elsewhere it stays
+        // unbuildable, so treat it like a pin gone from the subscription and fall
+        // through to auto rather than leaving the profile unconnectable.
+        final bool xhttpOk =
+            chosen.network != 'xhttp' || (kXrayXhttpEnabled && Platform.isAndroid);
+        if (xhttpOk) {
           nodes = <ProxyNode>[chosen];
           honoured = true;
           NovaLog.instance.write(
@@ -580,6 +597,28 @@ class SingboxProxyController extends ProxyController {
       _coreTagKeys = <String, String>{
         for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
       };
+    }
+    // Two-core path for a single xhttp node (Xray-only transport): sing-box gets
+    // the TUN->SOCKS bridge config and Xray gets the real xhttp config. Only a
+    // single/pinned xhttp node is supported for now; the auto pool still drops
+    // xhttp. Android only in this Phase-2 spike.
+    //
+    // Gated OFF until the combined sing-box+Xray gomobile core is built: two
+    // separate gomobile AARs cannot coexist (duplicate `go` runtime), so the
+    // native host has no Xray to start yet. See docs/xray-core-scope.md.
+    _pendingXrayConfig = null;
+    if (kXrayXhttpEnabled &&
+        Platform.isAndroid &&
+        nodes.length == 1 &&
+        nodes.first.network == 'xhttp') {
+      const int socksPort = XrayConfig.defaultSocksPort;
+      _pendingXrayConfig = XrayConfig.build(nodes.first, socksPort: socksPort);
+      NovaLog.instance.write(
+          'xhttp node: running it on the Xray core, sing-box bridges the TUN.');
+      final String bridge =
+          SingboxConfig.buildXraySocksBridge(socksPort, options: tuned);
+      final String base = await _extractRuleSets();
+      return bridge.replaceAll(SingboxConfig.ruleSetBaseToken, base);
     }
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: tuned)

@@ -26,6 +26,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
+    private var pendingXrayConfig: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -39,13 +40,16 @@ class MainActivity : FlutterActivity() {
                         result.error("no_config", "configJson missing", null)
                         return@setMethodCallHandler
                     }
+                    // Present only for an xhttp node: the Xray core config.
+                    val xrayConfig = call.argument<String>("xrayConfigJson")
                     val consent = VpnService.prepare(this)
                     if (consent != null) {
                         pendingResult = result
                         pendingConfig = config
+                        pendingXrayConfig = xrayConfig
                         startActivityForResult(consent, vpnRequestCode)
                     } else {
-                        startVpn(config)
+                        startVpn(config, xrayConfig)
                         result.success(null)
                     }
                 }
@@ -111,9 +115,12 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun startVpn(config: String) {
+    private fun startVpn(config: String, xrayConfig: String? = null) {
         val intent = Intent(this, NovaVpnService::class.java)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
+        if (!xrayConfig.isNullOrEmpty()) {
+            intent.putExtra(NovaVpnService.EXTRA_XRAY_CONFIG, xrayConfig)
+        }
         startService(intent)
     }
 
@@ -130,10 +137,12 @@ class MainActivity : FlutterActivity() {
         if (requestCode != vpnRequestCode) return
         val result = pendingResult
         val config = pendingConfig
+        val xrayConfig = pendingXrayConfig
         pendingResult = null
         pendingConfig = null
+        pendingXrayConfig = null
         if (resultCode == Activity.RESULT_OK && config != null) {
-            startVpn(config)
+            startVpn(config, xrayConfig)
             result?.success(null)
         } else {
             NovaProxyBridge.emitError("VPN permission denied")

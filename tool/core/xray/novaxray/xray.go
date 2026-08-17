@@ -1,30 +1,60 @@
-// Package novaxray is a minimal gomobile wrapper around xray-core, for the
-// Phase-1 spike proving Nova can run an Xray-only transport (xhttp / SplitHTTP)
-// on Android. It exposes just start/stop/version with gomobile-safe signatures.
+// Package novaxray is a minimal gomobile wrapper around xray-core, for running
+// Nova's Xray-only transports (xhttp / SplitHTTP) as a second core alongside
+// sing-box. It exposes start/stop/version plus a socket protector so Xray's own
+// outbound sockets stay off the VPN route.
 //
-// The blank import registers every Xray inbound/outbound/transport (including
-// SplitHTTP/xhttp), so a config that uses them loads.
+// Data path (Android): the VpnService TUN is owned by sing-box, which forwards
+// everything to a local SOCKS inbound that Xray serves; Xray then dials the
+// xhttp server. Xray's dial to that server MUST be protected, or it would be
+// captured by the TUN and loop forever, hence [SetProtector].
+//
+// The blank import registers every Xray inbound/outbound/transport (xhttp too).
 package novaxray
 
 import (
 	"bytes"
 	"sync"
+	"syscall"
 
 	"github.com/xtls/xray-core/core"
 	_ "github.com/xtls/xray-core/main/distro/all"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 var (
-	mu       sync.Mutex
-	instance *core.Instance
+	mu         sync.Mutex
+	instance   *core.Instance
+	registered bool
 )
+
+// Protector is implemented on the platform side (Android VpnService.protect) so
+// Xray's outbound sockets bypass the VPN route. Without it the TUN -> sing-box
+// -> Xray -> server dial loops back through the TUN.
+type Protector interface {
+	Protect(fd int) bool
+}
+
+// SetProtector installs [p] as the controller for every socket Xray dials. Safe
+// to call once before Start; later calls are ignored. A nil protector is a no-op
+// (desktop, where sockets are not TUN-captured).
+func SetProtector(p Protector) {
+	mu.Lock()
+	defer mu.Unlock()
+	if p == nil || registered {
+		return
+	}
+	_ = internet.RegisterDialerController(
+		func(network, address string, c syscall.RawConn) error {
+			return c.Control(func(fd uintptr) { p.Protect(int(fd)) })
+		})
+	registered = true
+}
 
 // Version returns the embedded Xray core version.
 func Version() string { return core.Version() }
 
-// Start boots an Xray instance from a JSON config. Any previous instance is
-// stopped first. Returns the error string (empty on success) so gomobile can
-// surface it simply.
+// Start boots an Xray instance from a JSON config, stopping any previous one.
+// Returns the error string (empty on success) so gomobile can surface it simply.
 func Start(configJSON string) string {
 	mu.Lock()
 	defer mu.Unlock()

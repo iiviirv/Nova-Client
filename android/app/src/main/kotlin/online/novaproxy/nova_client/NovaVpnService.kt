@@ -51,10 +51,16 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     companion object {
         const val EXTRA_CONFIG = "config"
+        // Present only for an xhttp node: the Xray core config. When set, Xray is
+        // started first (with socket protection) and the sing-box [EXTRA_CONFIG]
+        // is the TUN->SOCKS bridge that forwards to it.
+        const val EXTRA_XRAY_CONFIG = "xrayConfig"
         const val ACTION_STOP = "online.novaproxy.nova_client.STOP"
         // The auto-select urltest outbound's tag (see SingboxConfig.buildMultiMap).
         const val PROXY_GROUP_TAG = "proxy"
     }
+
+    private var xrayRunning = false
 
     private val connectivity by lazy {
         getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -97,15 +103,21 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             stopSelf()
             return START_NOT_STICKY
         }
+        val xrayConfig = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
         if (running) return START_NOT_STICKY
         running = true
         NovaProxyBridge.emitState("connecting")
-        Thread { startBox(config) }.start()
+        Thread { startBox(config, xrayConfig) }.start()
         return START_NOT_STICKY
     }
 
-    private fun startBox(config: String) {
+    private fun startBox(config: String, xrayConfig: String?) {
         try {
+            // Two-core path: an xhttp node runs on Xray, and sing-box bridges the
+            // TUN to it. Start Xray FIRST (with socket protection so its dials
+            // bypass the TUN) so its SOCKS inbound is up before sing-box forwards
+            // to it.
+            if (!xrayConfig.isNullOrEmpty()) startXray(xrayConfig)
             NovaCore.ensureSetup(this)
             val server = CommandServer(this, this)
             server.start()
@@ -121,6 +133,35 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             cleanup()
             stopSelf()
         }
+    }
+
+    // Two-core (xhttp) wiring. Kept as a skeleton but the actual Novaxray calls
+    // are commented out until a COMBINED sing-box+Xray gomobile core is built:
+    // two separate gomobile .aar files cannot coexist in one process (each ships
+    // the `go` runtime support classes), so Xray cannot be a second .aar. When the
+    // combined core lands (exposing online.novaproxy.xray.novaxray.Novaxray),
+    // uncomment the calls and flip kXrayXhttpEnabled on the Dart side.
+    // The Dart controller never sends EXTRA_XRAY_CONFIG while that flag is off, so
+    // startXray is never reached today.
+
+    /// Starts the Xray core with [cfg], installing this service as the socket
+    /// protector so Xray's outbound dials skip the VPN route (no TUN loop).
+    private fun startXray(cfg: String) {
+        // val proto = object : online.novaproxy.xray.novaxray.Protector {
+        //     override fun protect(fd: Long): Boolean = this@NovaVpnService.protect(fd.toInt())
+        // }
+        // online.novaproxy.xray.novaxray.Novaxray.setProtector(proto)
+        // val err = online.novaproxy.xray.novaxray.Novaxray.start(cfg)
+        // if (!err.isNullOrEmpty()) throw IllegalStateException("Xray: $err")
+        // xrayRunning = true
+        throw IllegalStateException(
+            "xhttp needs the combined Xray core, which is not built into this APK yet")
+    }
+
+    private fun stopXray() {
+        if (!xrayRunning) return
+        xrayRunning = false
+        // runCatching { online.novaproxy.xray.novaxray.Novaxray.stop() }
     }
 
     private fun stopBox(stopStartId: Int = -1) {
@@ -361,6 +402,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { commandServer?.closeService() }
         runCatching { commandServer?.close() }
         commandServer = null
+        stopXray()
         runCatching { pfd?.close() }
         pfd = null
     }
