@@ -162,18 +162,36 @@ jobs:
             fi
           done
 
-      - name: Stage APK
+      - name: Stage universal APK
         run: |
           set -eux
           mkdir -p dist
+          # The universal APK installs on any device (all ABIs in one file), which
+          # is what a "download and sideload" link needs; it is also the largest.
           cp build/app/outputs/flutter-apk/app-release.apk dist/nova-client.apk
           ls -lh dist
 
-      - name: Upload APK artifact
+      # Smaller, per-architecture APKs. Most modern phones are arm64-v8a, so that
+      # one (roughly a third the size of the universal build) is the recommended
+      # download; the others are there for older/emulator targets. Built after the
+      # universal one so its app-release.apk is already staged and not overwritten.
+      - name: Build split-per-ABI APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Stage split-per-ABI APKs
+        run: |
+          set -eux
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            if [ -f "$src" ]; then cp "$src" "dist/nova-client-$abi.apk"; fi
+          done
+          ls -lh dist
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nova-client-apk
-          path: dist/nova-client.apk
+          path: dist/*.apk
           if-no-files-found: error
 
       # Release notes come from the CHANGELOG.md section matching the tag, so the
@@ -195,6 +213,6 @@ jobs:
         with:
           repository: IRNova/Nova-Client
           token: ${{ secrets.IRNOVA_TOKEN }}
-          files: dist/nova-client.apk
+          files: dist/*.apk
           body_path: notes.md
           generate_release_notes: false
