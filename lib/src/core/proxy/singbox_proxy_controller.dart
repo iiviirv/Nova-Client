@@ -23,6 +23,17 @@ import 'xray/xray_config.dart';
 /// runs on Xray while sing-box bridges the TUN. See docs/xray-core-scope.md.
 const bool kXrayXhttpEnabled = true;
 
+/// True for a core log line that reports a connection the core rejected via its
+/// `block` outbound — QUIC/HTTP-3 on a TCP-only exit (blocked so apps fall back
+/// to TCP), plus ad/geo blocks. The core logs each at ERROR ("operation not
+/// permitted"), which floods the user-facing log and reads as a fault when it is
+/// really the anti-QUIC / ad-block feature working. Filtered out of the quiet log
+/// (kept when Detailed core log is on). Matches both the TCP form and the
+/// "listen packet connection" (UDP/QUIC) form.
+bool isBlockedConnectionNoise(String message) =>
+    message.contains('outbound/block[block]') &&
+    message.contains('operation not permitted');
+
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///
 /// This is the **integration boundary** for the native data path. The Dart side
@@ -143,12 +154,17 @@ class SingboxProxyController extends ProxyController {
         if (lines is List) {
           for (final Object? line in lines) {
             if (line is! Map) continue;
+            final String message = '${line['message']}';
             final NovaLogLevel level =
                 novaLogLevelFromCore((line['level'] as num?)?.toInt() ?? 4);
+            // Connections the core sends to the `block` outbound are rejected BY
+            // DESIGN (see isBlockedConnectionNoise); hide that flood unless the
+            // user turned on Detailed core log.
+            if (!verbose && isBlockedConnectionNoise(message)) continue;
             // Quiet means what `log.level: warn` was supposed to mean: the core's
             // complaints, not a line per routed connection.
             if (!verbose && level.index < NovaLogLevel.warn.index) continue;
-            NovaLog.instance.writeCore('${line['message']}', level: level);
+            NovaLog.instance.writeCore(message, level: level);
           }
         }
       case 'state':

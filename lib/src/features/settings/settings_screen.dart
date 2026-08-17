@@ -22,7 +22,7 @@ import '../routing/routing_screen.dart';
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
 const String kNovaVersion = '0.3.3';
-const String kNovaBuild = '80';
+const String kNovaBuild = '81';
 // The release tag this build shipped as lives in update_checker.dart
 // (kNovaReleaseTag); bump it there in step with kNovaBuild on every release.
 
