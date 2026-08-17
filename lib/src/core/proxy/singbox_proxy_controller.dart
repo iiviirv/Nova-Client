@@ -515,8 +515,17 @@ class SingboxProxyController extends ProxyController {
     } else if (nodes.length > 1) {
       // First connect with no measured nodes yet: quickly ping-rank a sample so
       // Auto doesn't land on a dead/slow exit (which shows up as "connected but
-      // no internet / no country"). Best-effort and time-boxed.
-      nodes = await _rankByPing(nodes);
+      // no internet / no country"). This is the ONE cost the first connect pays
+      // that later connects skip (they reuse profile.fastNodes), so it is the
+      // reason a first connect feels slow. Hard-cap the whole rank so the tunnel
+      // never waits on it: on a slow or censored network the probes can stack up,
+      // and the core's own urltest re-picks the fastest exit within seconds after
+      // connect regardless. If the cap is hit we start with the order we have;
+      // pickedMultiNodes already puts clean-IP exits first when the bypass is on.
+      nodes = await _rankByPing(nodes).timeout(
+        const Duration(milliseconds: 1300),
+        onTimeout: () => nodes,
+      );
     }
     // iOS runs the core inside a Network Extension with a hard ~50 MB memory
     // cap, so build a lean config there (fewer nodes, normal MTU, rule-sets fed
@@ -915,7 +924,10 @@ class SingboxProxyController extends ProxyController {
     final List<ProxyNode> sample = <ProxyNode>[];
     for (final ProxyNode n in nodes) {
       if (seen.add('${n.server}:${n.port}')) sample.add(n);
-      if (sample.length >= 30) break;
+      // A smaller sample keeps the first-connect probe short; the core's urltest
+      // measures the full pool after connect, so this only needs to seed a good
+      // initial pick, not rank everything.
+      if (sample.length >= 16) break;
     }
     final Map<ProxyNode, int> ping = <ProxyNode, int>{};
     await Future.wait(sample.map((ProxyNode n) async {
@@ -923,9 +935,11 @@ class SingboxProxyController extends ProxyController {
       // DPI-blocked Cloudflare nodes as "fast", front-loading the urltest pool
       // with exits that can never carry traffic. `deep` is off here: this runs
       // before every connect, so it stops at the node's own handshake instead of
-      // spending a round trip to the open internet per node.
+      // spending a round trip to the open internet per node. A 900ms per-probe
+      // cap bounds the worst case (a blocked node that never answers) so the
+      // overall rank stays inside its deadline.
       final NodeProbeResult r = await probeNode(n,
-          timeout: const Duration(milliseconds: 1500),
+          timeout: const Duration(milliseconds: 900),
           deep: false,
           bypass: _active?.hardenTls ?? false);
       ping[n] = r.sortKey;

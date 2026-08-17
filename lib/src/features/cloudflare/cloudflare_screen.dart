@@ -111,7 +111,7 @@ class CloudflareScreen extends StatelessWidget {
           const SizedBox(height: NovaSpace.md),
           Text('Connect your Cloudflare account', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: NovaSpace.sm),
-          Text('Sign in once to deploy and manage your own free Nova panel. You stay signed in.',
+          Text('Sign in once to manage your Nova panels: see your workers, pull their configs, or hand off a new deploy to the bot. You stay signed in.',
               style: TextStyle(color: nova.muted)),
           const SizedBox(height: NovaSpace.lg),
           NovaButton(
