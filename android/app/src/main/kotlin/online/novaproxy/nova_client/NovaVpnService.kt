@@ -135,33 +135,31 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    // Two-core (xhttp) wiring. Kept as a skeleton but the actual Novaxray calls
-    // are commented out until a COMBINED sing-box+Xray gomobile core is built:
-    // two separate gomobile .aar files cannot coexist in one process (each ships
-    // the `go` runtime support classes), so Xray cannot be a second .aar. When the
-    // combined core lands (exposing online.novaproxy.xray.novaxray.Novaxray),
-    // uncomment the calls and flip kXrayXhttpEnabled on the Dart side.
-    // The Dart controller never sends EXTRA_XRAY_CONFIG while that flag is off, so
-    // startXray is never reached today.
+    // Two-core (xhttp) wiring. Xray ships INSIDE the combined libbox.aar as
+    // io.nekohasekai.novaxray, so it shares the one gomobile runtime with
+    // sing-box (see tool/core/build-combined-core.sh). Reached only for a single
+    // xhttp node, when the Dart side sends EXTRA_XRAY_CONFIG.
 
     /// Starts the Xray core with [cfg], installing this service as the socket
-    /// protector so Xray's outbound dials skip the VPN route (no TUN loop).
+    /// protector so Xray's outbound dials skip the VPN route (no TUN loop). The
+    /// fd is a Long across the gomobile boundary.
     private fun startXray(cfg: String) {
-        // val proto = object : online.novaproxy.xray.novaxray.Protector {
-        //     override fun protect(fd: Long): Boolean = this@NovaVpnService.protect(fd.toInt())
-        // }
-        // online.novaproxy.xray.novaxray.Novaxray.setProtector(proto)
-        // val err = online.novaproxy.xray.novaxray.Novaxray.start(cfg)
-        // if (!err.isNullOrEmpty()) throw IllegalStateException("Xray: $err")
-        // xrayRunning = true
-        throw IllegalStateException(
-            "xhttp needs the combined Xray core, which is not built into this APK yet")
+        io.nekohasekai.novaxray.Novaxray.setProtector(
+            object : io.nekohasekai.novaxray.Protector {
+                override fun protect(fd: Long): Boolean =
+                    this@NovaVpnService.protect(fd.toInt())
+            })
+        val err = io.nekohasekai.novaxray.Novaxray.start(cfg)
+        if (!err.isNullOrEmpty()) {
+            throw IllegalStateException("Xray failed to start: $err")
+        }
+        xrayRunning = true
     }
 
     private fun stopXray() {
         if (!xrayRunning) return
         xrayRunning = false
-        // runCatching { online.novaproxy.xray.novaxray.Novaxray.stop() }
+        runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
     }
 
     private fun stopBox(stopStartId: Int = -1) {

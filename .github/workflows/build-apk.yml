@@ -82,8 +82,9 @@ jobs:
         with:
           path: android/app/libs/libbox.aar
           key: >-
-            libbox-${{ env.SINGBOX_VERSION }}-ndk${{ env.NDK_VERSION }}-3abi-awg-${{
-            hashFiles('tool/core/amneziawg.patch', 'tool/core/build-libbox.sh') }}
+            libbox-${{ env.SINGBOX_VERSION }}-ndk${{ env.NDK_VERSION }}-3abi-awg-xray-${{
+            hashFiles('tool/core/amneziawg.patch', 'tool/core/novafrag.patch',
+            'tool/core/build-combined-core.sh', 'tool/core/xray/novaxray/xray.go') }}
 
       - name: Install Android NDK ${{ env.NDK_VERSION }}
         if: steps.libbox-cache.outputs.cache-hit != 'true'
@@ -95,12 +96,12 @@ jobs:
           test -d "$ANDROID_HOME/ndk/${NDK_VERSION}"
           echo "NDK installed at $ANDROID_HOME/ndk/${NDK_VERSION}"
 
-      - name: Build libbox.aar with AmneziaWG (sing-box ${{ env.SINGBOX_VERSION }})
+      - name: Build the combined core (sing-box + AmneziaWG + Xray/xhttp)
         if: steps.libbox-cache.outputs.cache-hit != 'true'
         run: |
           set -euxo pipefail
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/${NDK_VERSION}"
-          bash tool/core/build-libbox.sh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
+          bash tool/core/build-combined-core.sh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
 
       # Runs on a cache hit too. A cached AAR from before the core carried
       # AmneziaWG would otherwise ship, which is exactly the failure this whole

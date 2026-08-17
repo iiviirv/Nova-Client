@@ -16,13 +16,10 @@ import 'singbox/singbox_config.dart';
 import 'subscription.dart';
 import 'xray/xray_config.dart';
 
-/// Phase-2 xhttp/Xray path. OFF until the combined sing-box+Xray gomobile core
-/// is built (two separate gomobile AARs cannot coexist in one process, so the
-/// Android host cannot start Xray as a second AAR). The config translation and
-/// TUN->SOCKS bridge are done and tested; only the combined native core is
-/// missing. Flip to true once android/app/libs carries a combined core exposing
-/// Novaxray. See docs/xray-core-scope.md.
-const bool kXrayXhttpEnabled = false;
+/// Phase-3 xhttp/Xray path, ON: the Android libbox.aar is the combined
+/// sing-box+Xray core (io.nekohasekai.novaxray), so a single pinned xhttp node
+/// runs on Xray while sing-box bridges the TUN. See docs/xray-core-scope.md.
+const bool kXrayXhttpEnabled = true;
 
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///

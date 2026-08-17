@@ -14,6 +14,12 @@ class XrayConfig {
   /// The local SOCKS port Xray listens on; the tun bridge dials this.
   static const int defaultSocksPort = 10808;
 
+  /// Debug only: replace the xhttp outbound with a `freedom` (direct) exit, to
+  /// prove the two-core data path (TUN -> sing-box -> SOCKS -> Xray -> internet)
+  /// and socket protection on a device without a live xhttp server. Never true
+  /// in a shipped build.
+  static bool debugFreedomOutbound = false;
+
   static String build(ProxyNode node, {int socksPort = defaultSocksPort}) =>
       const JsonEncoder.withIndent('  ').convert(
           buildMap(node, socksPort: socksPort));
@@ -69,6 +75,9 @@ class XrayConfig {
         },
       ],
       'outbounds': <Map<String, dynamic>>[
+        if (debugFreedomOutbound)
+          <String, dynamic>{'tag': 'proxy', 'protocol': 'freedom'}
+        else
         <String, dynamic>{
           'tag': 'proxy',
           'protocol': 'vless',

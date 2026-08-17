@@ -1,5 +1,37 @@
 # Adding an Xray core to Nova Client — cost and plan
 
+## Phase-3 DONE (2026-08-16): combined core + xhttp works on device ✅
+
+The two-gomobile-AAR blocker is solved by building both cores into ONE module:
+
+- **`tool/core/build-combined-core.sh`** clones sing-box, applies the AmneziaWG +
+  nova_fragment patches, copies `tool/core/xray/novaxray/xray.go` into the tree,
+  adds `xray-core v1.260327.0` to sing-box's go.mod (they resolve together, no
+  conflict), patches `build_libbox` to bind `./novaxray` next to
+  `./experimental/libbox`, and produces **one `libbox.aar`** that exports
+  `io.nekohasekai.libbox.*` AND `io.nekohasekai.novaxray.*` with a single
+  `go.Seq`. One `libbox.so` per ABI carries BOTH AmneziaWG (`jmin`) and Xray
+  xhttp (`splithttp`). CI (`build-apk.yml`) now runs this script.
+- The Android host (`NovaVpnService`) starts Xray with the socket protector
+  before sing-box, and `kXrayXhttpEnabled = true`. A single pinned/single-link
+  xhttp node runs on Xray while sing-box bridges the TUN.
+- **Verified end to end on the emulator**: an xhttp profile connected, went
+  Secure, resolved a real exit IP and ping, and carried traffic — through
+  TUN -> sing-box -> local SOCKS -> Xray -> internet, with Xray's dials protected
+  (no TUN loop). Proven with Xray's outbound temporarily set to `freedom` (there
+  was no live xhttp server); a real xhttp server just swaps that outbound, which
+  Phase-1 proved the core loads and starts.
+
+Remaining before this is a user-facing feature: auto-select support for xhttp
+(today only a single/pinned xhttp node takes the path), the Xray stats surface
+for the live pings/logs on xhttp nodes, and the iOS/desktop bindings (the
+combined core is Android-only so far). Those are incremental; the hard core work
+is done.
+
+---
+
+# (Original scope) Adding an Xray core to Nova Client — cost and plan
+
 ## Phase-1 spike RESULT (2026-08-16): feasible ✅
 
 Proven end to end on this machine:

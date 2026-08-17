@@ -89,12 +89,6 @@ dependencies {
         implementation(files(libbox))
     }
 
-    // The Xray core (Phase-2 xhttp spike), built by tool/core/build-xray.sh.
-    // Optional: only present when the xhttp feature is being built/tested.
-    val libxray = file("libs/libxray.aar")
-    if (libxray.exists()) {
-        implementation(files(libxray))
-    }
 }
 
 kotlin {
