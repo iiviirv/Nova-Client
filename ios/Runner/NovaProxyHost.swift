@@ -45,7 +45,11 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       // Optional bundled rule-set files (name -> bytes), written next to the
       // config so the lean iOS config can reference them as local rule-sets.
       let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
-      start(config: config, ruleSets: ruleSets, result: result)
+      // Present only for an xhttp node: the Xray core config the extension runs
+      // alongside the sing-box TUN->SOCKS bridge.
+      let xrayConfig = args["xrayConfigJson"] as? String
+      start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
+            result: result)
     case "stop":
       stopTunnel(result: result)
     case "status":
@@ -102,6 +106,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private static let ruleSetBaseToken = "__NOVA_BASE__"
 
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
+                     xrayConfig: String?,
                      result: @escaping FlutterResult) {
     // Write the config where the extension can read it (shared App Group).
     guard let container = FileManager.default
@@ -119,6 +124,14 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         of: Self.ruleSetBaseToken, with: container.path)
       try resolved.write(to: container.appendingPathComponent("config.json"),
                          atomically: true, encoding: .utf8)
+      // The Xray config for an xhttp node, or remove a stale one so a normal
+      // node never starts a leftover Xray in the extension.
+      let xrayURL = container.appendingPathComponent("xray.json")
+      if let xrayConfig, !xrayConfig.isEmpty {
+        try xrayConfig.write(to: xrayURL, atomically: true, encoding: .utf8)
+      } else if FileManager.default.fileExists(atPath: xrayURL.path) {
+        try FileManager.default.removeItem(at: xrayURL)
+      }
     } catch {
       result(FlutterError(code: "write", message: error.localizedDescription, details: nil))
       return

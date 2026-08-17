@@ -19,6 +19,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   static let appGroup = "group.online.novaproxy.novaClient"
 
   private var commandServer: NovacoreCommandServer?
+  private var xrayStarted = false
   private var pathMonitor: NWPathMonitor?
 
   override func startTunnel(options _: [String: NSObject]?) async throws {
@@ -37,6 +38,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     NovacoreSetup(setup, &setupErr)
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"), encoding: .utf8)
+
+    // xhttp node: start the Xray core first (from xray.json) so its local SOCKS
+    // inbound is up before sing-box bridges the TUN to it. On iOS the extension's
+    // own sockets bypass its tunnel, so no socket protector is needed here (unlike
+    // Android's VpnService). Xray and sing-box share this one Novacore framework.
+    let xrayURL = container.appendingPathComponent("xray.json")
+    if let xrayCfg = try? String(contentsOf: xrayURL, encoding: .utf8),
+       !xrayCfg.isEmpty {
+      let xerr = NovaxrayStart(xrayCfg)
+      if !xerr.isEmpty {
+        throw NSError(domain: "Nova", code: 4,
+                      userInfo: [NSLocalizedDescriptionKey: "Xray: \(xerr)"])
+      }
+      xrayStarted = true
+    }
 
     // sing-box 1.13 folded the box service into the command server: instead of
     // NovacoreNewService(config, platform) + a separate command server, the command
@@ -63,6 +79,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     try? commandServer?.closeService()
     try? commandServer?.close()
     commandServer = nil
+    if xrayStarted {
+      xrayStarted = false
+      _ = NovaxrayStop()
+    }
   }
 
   private lazy var commandServerHandler = CommandServerHandler(provider: self)

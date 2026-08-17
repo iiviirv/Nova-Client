@@ -22,11 +22,21 @@ The two-gomobile-AAR blocker is solved by building both cores into ONE module:
   was no live xhttp server); a real xhttp server just swaps that outbound, which
   Phase-1 proved the core loads and starts.
 
-Remaining before this is a user-facing feature: auto-select support for xhttp
-(today only a single/pinned xhttp node takes the path), the Xray stats surface
-for the live pings/logs on xhttp nodes, and the iOS/desktop bindings (the
-combined core is Android-only so far). Those are incremental; the hard core work
-is done.
+**iOS: combined core + wiring done (2026-08-16).**
+`tool/core/build-combined-core-ios.sh` builds the combined **Novacore.xcframework**
+(sing-box renamed novacore + novaxray, xray-core folded into go.mod), exporting
+both `NovacoreCommandClient*` and `NovaxrayStart/Stop/SetProtector`. The NE
+(`PacketTunnelProvider`) starts Xray from `xray.json` before sing-box (no socket
+protector needed — an iOS extension's own sockets bypass its tunnel), and the app
+host writes `xray.json` next to `config.json`. The Dart two-core branch now covers
+iOS too. Compiles end to end (`flutter build ios`). **iOS runtime is unverified**
+— the NE tunnel can't run in the simulator, so it needs an on-device test with a
+real xhttp server (the Android path is proven, and the design is identical).
+
+Remaining before this is a full user-facing feature: auto-select support for
+xhttp (today only a single/pinned xhttp node takes the path), the Xray stats
+surface for the live pings/logs on xhttp nodes, and the **desktop** binding. Those
+are incremental; the hard core work (Android proven, iOS built + wired) is done.
 
 ---
 

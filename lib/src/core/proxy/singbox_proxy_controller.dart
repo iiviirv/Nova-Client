@@ -473,8 +473,8 @@ class SingboxProxyController extends ProxyController {
         // on Android, where the two-core path runs it on Xray. Elsewhere it stays
         // unbuildable, so treat it like a pin gone from the subscription and fall
         // through to auto rather than leaving the profile unconnectable.
-        final bool xhttpOk =
-            chosen.network != 'xhttp' || (kXrayXhttpEnabled && Platform.isAndroid);
+        final bool xhttpOk = chosen.network != 'xhttp' ||
+            (kXrayXhttpEnabled && (Platform.isAndroid || Platform.isIOS));
         if (xhttpOk) {
           nodes = <ProxyNode>[chosen];
           honoured = true;
@@ -605,7 +605,7 @@ class SingboxProxyController extends ProxyController {
     // native host has no Xray to start yet. See docs/xray-core-scope.md.
     _pendingXrayConfig = null;
     if (kXrayXhttpEnabled &&
-        Platform.isAndroid &&
+        (Platform.isAndroid || Platform.isIOS) &&
         nodes.length == 1 &&
         nodes.first.network == 'xhttp') {
       const int socksPort = XrayConfig.defaultSocksPort;
@@ -614,8 +614,14 @@ class SingboxProxyController extends ProxyController {
           'xhttp node: running it on the Xray core, sing-box bridges the TUN.');
       final String bridge =
           SingboxConfig.buildXraySocksBridge(socksPort, options: tuned);
-      final String base = await _extractRuleSets();
-      return bridge.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      // Android resolves the rule-set token to an on-disk path here; iOS returns
+      // the token untouched and the host replaces it (rule-sets are passed as
+      // bytes in the `start` call), exactly like the normal single-node path.
+      if (Platform.isAndroid) {
+        final String base = await _extractRuleSets();
+        return bridge.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      }
+      return bridge;
     }
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: tuned)
