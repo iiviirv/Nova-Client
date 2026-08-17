@@ -38,6 +38,7 @@ class XrayConfig {
     _assertXhttpVless(node);
     return <String, dynamic>{
       'log': <String, dynamic>{'loglevel': 'warning'},
+      'dns': _dns(),
       'inbounds': <Map<String, dynamic>>[
         _socksInbound('socks-in', socksPort),
       ],
@@ -46,8 +47,32 @@ class XrayConfig {
         <String, dynamic>{'tag': 'direct', 'protocol': 'freedom'},
         <String, dynamic>{'tag': 'block', 'protocol': 'blackhole'},
       ],
+      'routing': <String, dynamic>{
+        'rules': <Map<String, dynamic>>[_dnsDirectRule()],
+      },
     };
   }
+
+  /// Xray DNS. Without it Xray has no resolver and every hostname a client asks
+  /// for ("dns: exchange failed for www.google.com ...") fails and no traffic
+  /// flows. UseIP + these public resolvers.
+  static Map<String, dynamic> _dns() => <String, dynamic>{
+        'servers': <String>['1.1.1.1', '8.8.8.8'],
+        'queryStrategy': 'UseIP',
+      };
+
+  /// Route Xray's own DNS queries out the `direct` (freedom) outbound, not the
+  /// proxy. Otherwise there is a chicken-and-egg: the proxy's first use is a DNS
+  /// lookup, that lookup rides the proxy, and it fails before the xhttp session
+  /// is up ("dns: exchange failed for ..." floods the log and nothing connects).
+  /// Sending DNS direct (on a protected socket) resolves names independently, and
+  /// the real connection to the resolved IP then establishes the xhttp session.
+  static Map<String, dynamic> _dnsDirectRule() => <String, dynamic>{
+        'type': 'field',
+        'ip': <String>['1.1.1.1', '8.8.8.8'],
+        'port': 53,
+        'outboundTag': 'direct',
+      };
 
   /// Build a config that serves [nodes] (all xhttp/VLESS), each on its own local
   /// socks inbound. Inbound i listens on `basePort + i` and is routed to that
@@ -66,7 +91,11 @@ class XrayConfig {
     }
     final List<Map<String, dynamic>> inbounds = <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> outbounds = <Map<String, dynamic>>[];
-    final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[];
+    // DNS goes direct (see _dnsDirectRule); it must come before the per-node
+    // rules so a DNS query is never captured by a socks-in -> out rule.
+    final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[
+      _dnsDirectRule(),
+    ];
     for (int i = 0; i < nodes.length; i++) {
       _assertXhttpVless(nodes[i]);
       final String inTag = 'socks-in-$i';
@@ -84,6 +113,7 @@ class XrayConfig {
       ..add(<String, dynamic>{'tag': 'block', 'protocol': 'blackhole'});
     return <String, dynamic>{
       'log': <String, dynamic>{'loglevel': 'warning'},
+      'dns': _dns(),
       'inbounds': inbounds,
       'outbounds': outbounds,
       'routing': <String, dynamic>{'rules': rules},

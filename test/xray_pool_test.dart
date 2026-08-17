@@ -41,13 +41,18 @@ void main() {
     expect((out[0] as Map)['protocol'], 'vless');
     expect((out[1] as Map)['tag'], 'out-1');
 
-    // Routing maps each inbound tag to its own outbound.
+    // Routing: a leading DNS-direct rule, then each inbound tag to its outbound.
     final List<dynamic> rules =
         (cfg['routing'] as Map<String, dynamic>)['rules'] as List<dynamic>;
-    expect((rules[0] as Map)['inboundTag'], <String>['socks-in-0']);
-    expect((rules[0] as Map)['outboundTag'], 'out-0');
-    expect((rules[1] as Map)['inboundTag'], <String>['socks-in-1']);
-    expect((rules[1] as Map)['outboundTag'], 'out-1');
+    expect((rules[0] as Map)['outboundTag'], 'direct',
+        reason: 'DNS goes direct so it does not depend on the tunnel');
+    expect((rules[0] as Map)['port'], 53);
+    final List<dynamic> node =
+        rules.where((dynamic r) => (r as Map).containsKey('inboundTag')).toList();
+    expect((node[0] as Map)['inboundTag'], <String>['socks-in-0']);
+    expect((node[0] as Map)['outboundTag'], 'out-0');
+    expect((node[1] as Map)['inboundTag'], <String>['socks-in-1']);
+    expect((node[1] as Map)['outboundTag'], 'out-1');
   });
 
   test('a mixed pool wraps xhttp as a socks outbound, ordered after real exits',

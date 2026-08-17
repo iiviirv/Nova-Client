@@ -626,7 +626,8 @@ class SingboxProxyController extends ProxyController {
     // the real xhttp config on one local socks port.
     if (xhttpPool && nodes.length == 1 && nodes.first.network == 'xhttp') {
       const int socksPort = XrayConfig.defaultSocksPort;
-      _pendingXrayConfig = XrayConfig.build(nodes.first, socksPort: socksPort);
+      final ProxyNode xNode = await _resolveXhttpServer(nodes.first);
+      _pendingXrayConfig = XrayConfig.build(xNode, socksPort: socksPort);
       NovaLog.instance.write(
           'xhttp node: running it on the Xray core, sing-box bridges the TUN.');
       final String bridge =
@@ -652,7 +653,10 @@ class SingboxProxyController extends ProxyController {
           SingboxConfig.pickedXhttpNodes(nodes, options: tuned);
       if (xhttpNodes.isNotEmpty) {
         const int base = XrayConfig.defaultSocksPort;
-        _pendingXrayConfig = XrayConfig.buildMulti(xhttpNodes, basePort: base);
+        final List<ProxyNode> resolvedX = <ProxyNode>[
+          for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
+        ];
+        _pendingXrayConfig = XrayConfig.buildMulti(resolvedX, basePort: base);
         NovaLog.instance.write(
             'Auto pool includes ${xhttpNodes.length} xhttp node(s) on the Xray '
             'core; sing-box measures them as local socks exits.');
@@ -957,6 +961,28 @@ class SingboxProxyController extends ProxyController {
       }
     }
     return out;
+  }
+
+  /// An xhttp node with its server host resolved to an IP. Xray runs the xhttp
+  /// node and dials this server itself; with a hostname it would need DNS that is
+  /// not up yet (the Xray log fills with "dns: exchange failed for the server"),
+  /// so it must be numeric. SNI and Host stay the domain (copyWith keeps sni and
+  /// wsHost), so TLS and the xhttp Host header are unchanged. Already-numeric or
+  /// unresolvable servers pass through untouched.
+  Future<ProxyNode> _resolveXhttpServer(ProxyNode n) async {
+    if (InternetAddress.tryParse(n.server) != null) return n;
+    final String? ip = await _resolveHostToIp(n.server);
+    if (ip == null) {
+      NovaLog.instance.write(
+        'xhttp server ${n.server} did not resolve; Xray may fail to reach it',
+        level: NovaLogLevel.warn,
+      );
+      return n;
+    }
+    NovaLog.instance.write(
+        'xhttp server ${n.server} -> $ip (Xray needs an IP; SNI/Host stay the '
+        'domain)');
+    return n.copyWith(server: ip);
   }
 
   /// Resolves [host] to an IPv4: system DNS first (fast, works before the tunnel
