@@ -11,6 +11,7 @@ import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
 import 'proxy_controller.dart';
+import 'singbox_proxy_controller.dart' show isBlockedConnectionNoise;
 import 'subscription.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
@@ -680,8 +681,13 @@ class DesktopProxyController extends ProxyController {
       if (line.isEmpty) return;
       debugPrint('[sing-box:$label] $line');
       // Feed the in-app log too, so the desktop builds have the same Settings ->
-      // Logs view as mobile instead of only a file on disk.
-      NovaLog.instance.writeCore(line, level: _coreLineLevel(line));
+      // Logs view as mobile instead of only a file on disk. The by-design `block`
+      // outbound rejections (QUIC on a TCP-only exit, ad/geo blocks) are filtered
+      // from the quiet log exactly like mobile; the on-disk core log below still
+      // keeps every line.
+      if (routeOptions.verboseCoreLog || !isBlockedConnectionNoise(line)) {
+        NovaLog.instance.writeCore(line, level: _coreLineLevel(line));
+      }
       _coreTail.add(line);
       if (_coreTail.length > 40) _coreTail.removeAt(0);
       try {
