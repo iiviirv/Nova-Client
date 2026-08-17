@@ -11,6 +11,8 @@ import 'core_features.dart';
 import 'isp_optimizer.dart';
 import 'proxy_controller.dart';
 import 'singbox/node_probe.dart';
+import '../../features/cloudflare/doh_resolver.dart';
+import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
@@ -433,6 +435,12 @@ class SingboxProxyController extends ProxyController {
     if (nodes.isEmpty) {
       throw FormatException(emptyResolveMessage(profile));
     }
+    // AmneziaWG's core parses the peer Endpoint with ParseAddr and rejects a
+    // hostname outright ("IPC error -22 ... unexpected character"), so a config
+    // whose Endpoint is a domain never connects. Resolve any endpoint node's
+    // host to a numeric IP before the core sees it. Best-effort: if it does not
+    // resolve, the original config is kept (no worse than today).
+    nodes = await _resolveEndpointHosts(nodes);
     // Remember each node's own name (the label the panel gave it) keyed by its
     // stable key, so the dashboard can show "Connected via <name>" instead of a
     // bare address, which for a clean-IP node is a meaningless Cloudflare IP.
@@ -918,6 +926,57 @@ class SingboxProxyController extends ProxyController {
   /// TCP-pings a sample of nodes (direct, since this runs before the tunnel is
   /// up) and returns them ordered fastest-first, with unreachable ones last. So
   /// the urltest's pool — the first N — is built from good exits.
+  /// Rewrites any AmneziaWG/WireGuard endpoint node whose peer Endpoint is a
+  /// domain to use a resolved IP, since the AmneziaWG core cannot parse a
+  /// hostname endpoint. Non-endpoint nodes and already-numeric endpoints pass
+  /// through untouched.
+  Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {
+    final List<ProxyNode> out = <ProxyNode>[];
+    for (final ProxyNode n in nodes) {
+      final String? conf = n.awgConf;
+      if (!n.protocol.isEndpoint || conf == null || conf.isEmpty) {
+        out.add(n);
+        continue;
+      }
+      final String? host = awgEndpointHost(conf);
+      if (host == null || InternetAddress.tryParse(host) != null) {
+        out.add(n); // no endpoint, or already an IP literal
+        continue;
+      }
+      final String? ip = await _resolveHostToIp(host);
+      if (ip == null) {
+        NovaLog.instance.write(
+          'AWG endpoint $host did not resolve; the core may reject the name',
+          level: NovaLogLevel.warn,
+        );
+        out.add(n);
+      } else {
+        NovaLog.instance.write(
+            'AWG endpoint $host -> $ip (the core needs a numeric endpoint)');
+        out.add(n.copyWith(awgConf: rewriteAwgEndpointHost(conf, ip)));
+      }
+    }
+    return out;
+  }
+
+  /// Resolves [host] to an IPv4: system DNS first (fast, works before the tunnel
+  /// is up), then DoH as a fallback for a poisoned resolver. Null if neither
+  /// answers.
+  Future<String?> _resolveHostToIp(String host) async {
+    try {
+      final List<InternetAddress> a = await InternetAddress.lookup(host,
+              type: InternetAddressType.IPv4)
+          .timeout(const Duration(seconds: 4));
+      if (a.isNotEmpty) return a.first.address;
+    } catch (_) {}
+    try {
+      final List<String> a =
+          await DohResolver().resolveA(host).timeout(const Duration(seconds: 6));
+      if (a.isNotEmpty) return a.first;
+    } catch (_) {}
+    return null;
+  }
+
   Future<List<ProxyNode>> _rankByPing(List<ProxyNode> nodes) async {
     // Bound the work: dedupe by server:port and only probe a sample.
     final Set<String> seen = <String>{};

@@ -126,17 +126,42 @@ class XrayConfig {
         ? node.sni!
         : (node.wsHost ?? node.server);
     final String host = (node.wsHost?.isNotEmpty ?? false) ? node.wsHost! : sni;
+    // uTLS fingerprint: Reality needs a real one (default chrome); plain TLS
+    // keeps whatever the node carries, and only sets it when present.
+    final String fp = (node.fingerprint ?? '').isNotEmpty &&
+            node.fingerprint != 'unsafe'
+        ? node.fingerprint!
+        : 'chrome';
+    // Security block: Reality (borrowed cert, direct-IP, survives a CDN-less
+    // path) vs plain TLS. xhttp behind Cloudflare needs plain TLS, but a
+    // standalone Reality inbound is the way to run xhttp on a direct IP.
+    final Map<String, dynamic> security = node.isReality
+        ? <String, dynamic>{
+            'security': 'reality',
+            'realitySettings': <String, dynamic>{
+              'serverName': sni,
+              'fingerprint': fp,
+              'publicKey': node.realityPublicKey,
+              if ((node.realityShortId ?? '').isNotEmpty)
+                'shortId': node.realityShortId,
+              // spiderX default "/" matches the server's spider path when unset.
+              'spiderX': '/',
+            },
+          }
+        : <String, dynamic>{
+            'security': node.tls ? 'tls' : 'none',
+            if (node.tls)
+              'tlsSettings': <String, dynamic>{
+                'serverName': sni,
+                if ((node.fingerprint ?? '').isNotEmpty &&
+                    node.fingerprint != 'unsafe')
+                  'fingerprint': node.fingerprint,
+                'allowInsecure': node.allowInsecure,
+              },
+          };
     final Map<String, dynamic> stream = <String, dynamic>{
       'network': 'xhttp',
-      'security': node.tls ? 'tls' : 'none',
-      if (node.tls)
-        'tlsSettings': <String, dynamic>{
-          'serverName': sni,
-          if ((node.fingerprint ?? '').isNotEmpty &&
-              node.fingerprint != 'unsafe')
-            'fingerprint': node.fingerprint,
-          'allowInsecure': node.allowInsecure,
-        },
+      ...security,
       'xhttpSettings': <String, dynamic>{
         'host': host,
         'path': node.wsPath ?? '/',

@@ -220,6 +220,7 @@ class ProxyNode {
     List<String>? cipherSuites,
     String? fragmentMask,
     String? fingerprint,
+    String? awgConf,
   }) {
     return ProxyNode(
       protocol: protocol,
@@ -248,7 +249,7 @@ class ProxyNode {
       udpRelayMode: udpRelayMode,
       hy2UpMbps: hy2UpMbps,
       hy2DownMbps: hy2DownMbps,
-      awgConf: awgConf,
+      awgConf: awgConf ?? this.awgConf,
       cipherSuites: cipherSuites ?? this.cipherSuites,
       fragmentMask: fragmentMask ?? this.fragmentMask,
       fingerprint: fingerprint ?? this.fingerprint,

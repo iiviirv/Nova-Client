@@ -46,6 +46,33 @@ void main() {
         .writeAsStringSync(jsonEncode(cfg));
   });
 
+  test('an xhttp VLESS-Reality node translates to reality streamSettings', () {
+    final ProxyNode n = parseShareLink(
+      'vless://00000000-0000-4000-8000-000000000000@104.17.6.6:2087'
+      '?encryption=none&security=reality&type=xhttp&sni=www.microsoft.com'
+      '&pbk=abcdefPUBLICKEY123&sid=0123abcd&fp=chrome&path=%2F#XhttpReality',
+    )!;
+    expect(n.network, 'xhttp');
+    expect(n.isReality, isTrue);
+    final Map<String, dynamic> cfg = XrayConfig.buildMap(n, socksPort: 10810);
+    final Map<String, dynamic> out =
+        (cfg['outbounds'] as List<dynamic>).first as Map<String, dynamic>;
+    final Map<String, dynamic> stream =
+        out['streamSettings'] as Map<String, dynamic>;
+    expect(stream['network'], 'xhttp');
+    expect(stream['security'], 'reality');
+    expect(stream.containsKey('tlsSettings'), isFalse);
+    final Map<String, dynamic> r =
+        stream['realitySettings'] as Map<String, dynamic>;
+    expect(r['serverName'], 'www.microsoft.com');
+    expect(r['publicKey'], 'abcdefPUBLICKEY123');
+    expect(r['shortId'], '0123abcd');
+    expect(r['fingerprint'], 'chrome');
+    expect(r['spiderX'], '/');
+    // The xhttp transport still carries its path.
+    expect((stream['xhttpSettings'] as Map)['path'], '/');
+  });
+
   test('non-xhttp / non-VLESS is rejected (sing-box owns those)', () {
     final ProxyNode ws = parseShareLink(
       'vless://00000000-0000-4000-8000-000000000000@1.2.3.4:443'
