@@ -75,7 +75,11 @@ go run ./cmd/internal/build_libbox -target android -platform "$PLATFORMS"
 
 say "Verifying both cores are in the AAR"
 probe="$work/probe"; mkdir -p "$probe"; unzip -q -o libbox.aar -d "$probe"
-unzip -l "$probe/classes.jar" | grep -q "novaxray/Novaxray.class" || { echo "novaxray missing from AAR" >&2; exit 1; }
+# NB: use grep -c (reads the whole listing), not grep -q. Under `set -o pipefail`
+# grep -q short-circuits on the first match, `unzip -l` then dies on SIGPIPE, and
+# the pipeline reports failure even though the class is present -> a false
+# "missing from AAR". grep -c consumes all input, so no SIGPIPE.
+[ "$(unzip -l "$probe/classes.jar" | grep -c 'novaxray/Novaxray.class')" -ge 1 ] || { echo "novaxray missing from AAR" >&2; exit 1; }
 [ "$(unzip -l "$probe/classes.jar" | grep -c 'go/Seq.class')" = "1" ] || { echo "duplicate go.Seq" >&2; exit 1; }
 for so in "$probe"/jni/*/libbox.so; do
   jmin="$(strings -a "$so" | grep -c jmin || true)"

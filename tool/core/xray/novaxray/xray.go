@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 
+	xlog "github.com/xtls/xray-core/common/log"
 	"github.com/xtls/xray-core/core"
 	_ "github.com/xtls/xray-core/main/distro/all"
 	"github.com/xtls/xray-core/transport/internet"
@@ -25,7 +26,54 @@ var (
 	mu         sync.Mutex
 	instance   *core.Instance
 	registered bool
+
+	logMu     sync.RWMutex
+	logger    Logger
+	logHooked bool
 )
+
+// Logger is implemented on the platform side so Xray's own log lines can be
+// shown in the app's core log next to sing-box's (the app's Core log stream is
+// otherwise libbox-only, which left Xray-only failures like an xhttp transport
+// error invisible). One string per record; the platform tags/levels it.
+type Logger interface {
+	Log(line string)
+}
+
+// SetLogger installs [l] as the sink for Xray's log records and, on first call,
+// registers a core log handler that forwards to it. A nil logger detaches the
+// sink (the handler stays registered but drops records). Safe to call before or
+// after Start.
+func SetLogger(l Logger) {
+	logMu.Lock()
+	logger = l
+	hook := !logHooked && l != nil
+	if hook {
+		logHooked = true
+	}
+	logMu.Unlock()
+	if hook {
+		// Replaces whatever handler app/log installed from the config's `log`
+		// policy; we don't use Xray's own console/file logging, so forwarding
+		// every record to the app is exactly what we want. The config still sets
+		// loglevel (warning by default), which gates what reaches this handler.
+		xlog.RegisterHandler(xrayLogHandler{})
+	}
+}
+
+type xrayLogHandler struct{}
+
+func (xrayLogHandler) Handle(msg xlog.Message) {
+	if msg == nil {
+		return
+	}
+	logMu.RLock()
+	l := logger
+	logMu.RUnlock()
+	if l != nil {
+		l.Log(msg.String())
+	}
+}
 
 // Protector is implemented on the platform side (Android VpnService.protect) so
 // Xray's outbound sockets bypass the VPN route. Without it the TUN -> sing-box

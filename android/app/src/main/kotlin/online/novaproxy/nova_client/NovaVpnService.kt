@@ -149,6 +149,20 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 override fun protect(fd: Long): Boolean =
                     this@NovaVpnService.protect(fd.toInt())
             })
+        // Forward Xray's own log records into the app's core log stream. Without
+        // this the Core log is sing-box-only, so an Xray-only failure (e.g. an
+        // xhttp transport error on an xhttp node) is invisible. Xray's config
+        // loglevel is "warning", so these are tagged warn (3) and survive the
+        // quiet filter; the [xray] prefix sets them apart from sing-box lines.
+        io.nekohasekai.novaxray.Novaxray.setLogger(
+            object : io.nekohasekai.novaxray.Logger {
+                override fun log(line: String?) {
+                    val msg = line ?: return
+                    NovaProxyBridge.emitLog(
+                        listOf(mapOf("level" to 3, "message" to "[xray] $msg"))
+                    )
+                }
+            })
         val err = io.nekohasekai.novaxray.Novaxray.start(cfg)
         if (!err.isNullOrEmpty()) {
             throw IllegalStateException("Xray failed to start: $err")
@@ -159,6 +173,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private fun stopXray() {
         if (!xrayRunning) return
         xrayRunning = false
+        runCatching { io.nekohasekai.novaxray.Novaxray.setLogger(null) }
         runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
     }
 
