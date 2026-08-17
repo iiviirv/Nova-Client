@@ -20,6 +20,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   private var commandServer: NovacoreCommandServer?
   private var xrayStarted = false
+  private var xrayLogSink: XrayLogSink?
   private var pathMonitor: NWPathMonitor?
 
   override func startTunnel(options _: [String: NSObject]?) async throws {
@@ -46,6 +47,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     let xrayURL = container.appendingPathComponent("xray.json")
     if let xrayCfg = try? String(contentsOf: xrayURL, encoding: .utf8),
        !xrayCfg.isEmpty {
+      // Bridge Xray's own log to the app. The NE is a separate process, so it
+      // can't push to the Flutter engine the way Android's in-process VpnService
+      // does; instead the sink writes to a shared App Group file that the app
+      // tails into the Core log (see NovaProxyHost). Start each connection with a
+      // fresh file so the app's tail offset lines up.
+      let logURL = container.appendingPathComponent("xray.log")
+      try? Data().write(to: logURL)
+      xrayLogSink = XrayLogSink(url: logURL)
+      NovaxraySetLogger(xrayLogSink)
       let xerr = NovaxrayStart(xrayCfg)
       if !xerr.isEmpty {
         throw NSError(domain: "Nova", code: 4,
@@ -81,11 +91,41 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     commandServer = nil
     if xrayStarted {
       xrayStarted = false
+      NovaxraySetLogger(nil)
       _ = NovaxrayStop()
     }
+    xrayLogSink = nil
   }
 
   private lazy var commandServerHandler = CommandServerHandler(provider: self)
+}
+
+/// Sinks Xray's log records to a shared App Group file the app tails. The NE is a
+/// separate process from the app, so — unlike Android's in-process VpnService,
+/// which pushes straight to the Flutter engine — Xray's lines have to cross to the
+/// app through shared storage. Keeps a bounded in-memory ring and rewrites the
+/// whole file atomically per line (Xray runs at warning level, so the volume is
+/// low); rewriting the whole ring means the app never has to track a byte offset
+/// across truncation.
+final class XrayLogSink: NSObject, NovaxrayLoggerProtocol {
+  private let url: URL
+  private let queue = DispatchQueue(label: "online.novaproxy.xraylog")
+  private var ring: [String] = []
+  private static let maxLines = 500
+
+  init(url: URL) { self.url = url }
+
+  func log(_ line: String?) {
+    guard let line = line, !line.isEmpty else { return }
+    queue.async {
+      self.ring.append(line)
+      if self.ring.count > Self.maxLines {
+        self.ring.removeFirst(self.ring.count - Self.maxLines)
+      }
+      let body = self.ring.joined(separator: "\n") + "\n"
+      try? body.data(using: .utf8)?.write(to: self.url, options: .atomic)
+    }
+  }
 }
 
 /// Minimal command-server handler. The traffic/status stream the app consumes

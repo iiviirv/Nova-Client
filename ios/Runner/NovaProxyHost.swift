@@ -18,6 +18,11 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private var statusClient: NovacoreCommandClient?
   private var logClient: NovacoreCommandClient?
   private var groupClient: NovacoreCommandClient?
+  // Tails the NE's xray.log (Xray's own log lines, written from the extension) and
+  // folds them into the Core log next to sing-box's. libbox's CommandLog only
+  // carries sing-box, so without this Xray-only failures are invisible on iOS.
+  private var xrayLogTimer: DispatchSourceTimer?
+  private var xrayLogSeen = 0
   private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -300,7 +305,43 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       else { return }
       self.logClient = client
       self.connectLogClientLocked(client, attempt: 0)
+      self.startXrayLogTail()
     }
+  }
+
+  /// Polls the shared xray.log the NE writes and emits any new lines into the same
+  /// `{type:"log"}` channel as sing-box's, tagged like Android ("[xray]", warn).
+  /// Runs on `statusQueue`. The NE truncates the file on each connect, so a line
+  /// count below what we've emitted means a fresh session — reset and re-read.
+  private func startXrayLogTail() {
+    guard xrayLogTimer == nil else { return }
+    xrayLogSeen = 0
+    guard let url = FileManager.default
+      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup)?
+      .appendingPathComponent("xray.log") else { return }
+    let timer = DispatchSource.makeTimerSource(queue: statusQueue)
+    timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+    timer.setEventHandler { [weak self] in
+      guard let self else { return }
+      guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+      var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+      if lines.last == "" { lines.removeLast() }
+      if lines.count < self.xrayLogSeen { self.xrayLogSeen = 0 } // new session
+      guard lines.count > self.xrayLogSeen else { return }
+      let fresh = lines[self.xrayLogSeen..<lines.count]
+      self.xrayLogSeen = lines.count
+      // level 3 == warn, so it survives the Dart quiet-log filter, same as Android.
+      let batch = fresh.map { ["level": 3, "message": "[xray] \($0)"] as [String: Any] }
+      self.emit(["type": "log", "lines": batch])
+    }
+    xrayLogTimer = timer
+    timer.resume()
+  }
+
+  private func stopXrayLogTail() {
+    xrayLogTimer?.cancel()
+    xrayLogTimer = nil
+    xrayLogSeen = 0
   }
 
   /// Runs on `statusQueue`.
@@ -318,7 +359,9 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
 
   private func stopLogClient() {
     statusQueue.async { [weak self] in
-      guard let self, let client = self.logClient else { return }
+      guard let self else { return }
+      self.stopXrayLogTail()
+      guard let client = self.logClient else { return }
       self.logClient = nil
       try? client.disconnect()
     }
