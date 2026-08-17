@@ -29,17 +29,27 @@ Current identity (what changes away from):
 5. Cancel the pending submission on the OLD record (App ID 6785367637). Keep the
    record; just don't resubmit it.
 
-## B. Me (code — one atomic change once you give me the new bundle-id prefix)
+## B. Me (code) — DONE 2026-08-17
 
-- Replace `online.novaproxy.novaClient` → `<new>` and
-  `online.novaproxy.novaClient.NovaTunnel` → `<new>.NovaTunnel` across
-  `ios/Runner.xcodeproj/project.pbxproj` (9 occurrences).
-- Update the App Group `group.online.novaproxy.novaClient` → `group.<new>` in
-  `ios/Runner/Runner.entitlements` and `ios/NovaTunnel/NovaTunnel.entitlements`,
-  and anywhere the Swift reads it (grep `group.online.novaproxy`).
-- Set the display name to **Nova Edge** (CFBundleName / CFBundleDisplayName in
-  `ios/Runner/Info.plist`).
-- Android is unaffected (`online.novaproxy.nova_client` stays as-is).
+Applied the iOS rename to bundle-id prefix **`tech.innovatenorth.novaedge`**:
+- `ios/Runner.xcodeproj/project.pbxproj`: all 9 bundle ids
+  (`tech.innovatenorth.novaedge`, `.NovaTunnel`, `.RunnerTests`).
+- App Group → `group.tech.innovatenorth.novaedge` in `Runner.entitlements`,
+  `NovaTunnel.entitlements`, and the two Swift `appGroup` consts
+  (`NovaProxyHost.swift`, `PacketTunnelProvider.swift`); the hardcoded
+  `tunnelBundleId` in `NovaProxyHost.swift` updated too.
+- Display name **Nova Edge** (CFBundleDisplayName in `ios/Runner/Info.plist`).
+- Verified: plists/entitlements lint OK, pbxproj valid, `flutter analyze` clean.
+
+Deliberately NOT changed (out of scope / cross-platform):
+- macOS and Android identity (macOS ships Developer-ID, not App Store; Android
+  package `online.novaproxy.nova_client` unchanged).
+- The `novaclient://oauth-return` URL scheme (shared by Dart + iOS/Android/macOS
+  for the Cloudflare sign-in return; changing it would touch that flow on every
+  platform for a marginal 4.3 gain). CFBundleName stays `nova_client` (internal).
+
+A real iOS build/sign can only happen after the org account is approved and the
+new bundle id + App Group are registered/provisioned on it.
 
 ## C. Get build 82 onto TestFlight (after A + B)
 

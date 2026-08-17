@@ -10,8 +10,8 @@ import CoreTelephony
 /// the config is handed to the extension through the shared App Group, and the
 /// connection state is streamed back from NEVPNStatus.
 final class NovaProxyHost: NSObject, FlutterStreamHandler {
-  static let appGroup = "group.online.novaproxy.novaClient"
-  static let tunnelBundleId = "online.novaproxy.novaClient.NovaTunnel"
+  static let appGroup = "group.tech.innovatenorth.novaedge"
+  static let tunnelBundleId = "tech.innovatenorth.novaedge.NovaTunnel"
 
   private var eventSink: FlutterEventSink?
   private var manager: NETunnelProviderManager?
@@ -248,7 +248,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   /// freezing for a beat when it's cold-launched (returned to) while the tunnel
   /// is already up. A serial queue also makes every `statusClient` mutation
   /// thread-safe.
-  private let statusQueue = DispatchQueue(label: "online.novaproxy.novaClient.status")
+  private let statusQueue = DispatchQueue(label: "tech.innovatenorth.novaedge.status")
 
   private func startStatusClient() {
     statusQueue.async { [weak self] in
