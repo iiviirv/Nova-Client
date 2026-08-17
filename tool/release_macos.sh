@@ -37,6 +37,12 @@ APP="$PROJ/build/macos/Build/Products/Release/nova_client.app"
 if [[ ! -d "$APP" ]]; then echo "!! macOS app not produced"; exit 1; fi
 cp "$PROJ/assets/bin/sing-box-macos-arm64" "$APP/Contents/Resources/sing-box-macos-arm64"
 echo "core bundled: $(ls -lh "$APP/Contents/Resources/sing-box-macos-arm64" | awk '{print $5}')"
+# Second core, Xray, for xhttp exits. Best-effort: an older tree without it just
+# ships without xhttp support (the app says so at connect time).
+if [[ -f "$PROJ/assets/bin/xray-macos-arm64" ]]; then
+  cp "$PROJ/assets/bin/xray-macos-arm64" "$APP/Contents/Resources/xray-macos-arm64"
+  echo "xray core bundled: $(ls -lh "$APP/Contents/Resources/xray-macos-arm64" | awk '{print $5}')"
+fi
 
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
 # Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
@@ -49,6 +55,9 @@ for fw in "$APP"/Contents/Frameworks/*.framework(N); do
   codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw" 2>&1 | tail -1
 done
 codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/sing-box-macos-arm64" 2>&1 | tail -1
+if [[ -f "$APP/Contents/Resources/xray-macos-arm64" ]]; then
+  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/xray-macos-arm64" 2>&1 | tail -1
+fi
 codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" "${KCARGS[@]}" "$APP" 2>&1 | tail -1
 codesign --verify --deep --strict "$APP" 2>&1 | tail -2 && echo "signature valid"
 

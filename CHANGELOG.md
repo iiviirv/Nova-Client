@@ -12,7 +12,9 @@ Faster connects, cleaner logs, and broader server support, by the Nova team.
   the app now resolves it for you.
 - Subscriptions with xhttp servers now work: those servers join the auto-select
   pool and show a live ping like everything else, and Reality xhttp servers are
-  supported too.
+  supported too. On macOS this works in the app's proxy mode as well (whole-device
+  tunnel support for xhttp on desktop is still to come; Windows and Linux get the
+  second core in a later build).
 - The logs are cleaner. The core's routine "blocked" lines (for example QUIC being
   steered onto TCP, which is normal) no longer show up as scary red errors; turn on
   "Detailed core log" if you want to see everything. On Android and iOS the Logs

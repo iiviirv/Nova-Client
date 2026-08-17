@@ -15,6 +15,7 @@ import 'singbox_proxy_controller.dart' show isBlockedConnectionNoise;
 import 'subscription.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
+import 'xray/xray_config.dart';
 
 /// Drives the proxy on **desktop** (macOS, Windows, Linux) from pure Dart, no
 /// native plugin required: it extracts the bundled sing-box binary, runs it as a
@@ -66,6 +67,15 @@ class DesktopProxyController extends ProxyController {
   Process? _process;
   Process? _elevated;
   File? _runFlag;
+
+  /// The second core, Xray, for xhttp/SplitHTTP nodes sing-box cannot run. When
+  /// the exit is xhttp, sing-box bridges its inbound to Xray's local SOCKS (same
+  /// two-core path as mobile), and Xray does the xhttp. Only wired for the
+  /// unprivileged system-proxy path for now; TUN mode would need Xray's dials
+  /// route-excluded from sing-box's tunnel to avoid a loop.
+  Process? _xrayProcess;
+  String? _pendingXrayConfig;
+  static const int _xraySocksPort = XrayConfig.defaultSocksPort;
 
   /// Rolling tail of the core's stdout+stderr (last ~40 lines) so a startup
   /// failure can report the actual FATAL reason instead of a generic timeout.
@@ -147,6 +157,19 @@ class DesktopProxyController extends ProxyController {
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');
       await cfgFile.writeAsString(config);
+
+      // xhttp exit: start Xray first so its local SOCKS is up before sing-box
+      // bridges to it. Only the unprivileged system-proxy path is wired; a TUN
+      // (elevated) xhttp connection would loop Xray's own dials back through the
+      // tunnel, so refuse it clearly until the route-exclusion is done.
+      if (_pendingXrayConfig != null) {
+        if (tunMode) {
+          _fail('xhttp servers are not supported in whole-device (TUN) mode yet. '
+              'Turn off TUN mode in Settings to use this server.');
+          return;
+        }
+        if (!await _startXray(dir, _pendingXrayConfig!)) return;
+      }
 
       if (tunMode) {
         // Whole-device TUN: sing-box creates the utun/wintun device and routes
@@ -355,9 +378,22 @@ class DesktopProxyController extends ProxyController {
         // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.
         hardenPacketFragment: !Platform.isWindows,
       );
-      cfg = nodes.length == 1
-          ? SingboxConfig.buildMap(nodes.first, options: opts)
-          : SingboxConfig.buildMultiMap(nodes, options: opts);
+      // xhttp is an Xray-only transport. When the exit is a single/pinned xhttp
+      // node, hand the transport to Xray: sing-box gets a bridge config (its
+      // inbound forwarded to Xray's local SOCKS) and Xray runs the real xhttp.
+      // Same two-core path as mobile; the server host is resolved to an IP first
+      // (Xray can't resolve it before the tunnel is up). The pool case (xhttp
+      // mixed with other nodes) is a follow-up.
+      _pendingXrayConfig = null;
+      if (nodes.length == 1 && nodes.first.network == 'xhttp') {
+        final ProxyNode x = await _resolveXhttpServer(nodes.first);
+        _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort);
+        cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort, options: opts);
+      } else {
+        cfg = nodes.length == 1
+            ? SingboxConfig.buildMap(nodes.first, options: opts)
+            : SingboxConfig.buildMultiMap(nodes, options: opts);
+      }
     }
     // System-proxy mode swaps the builder's TUN inbound for a local `mixed`
     // (SOCKS+HTTP) inbound so the core runs unprivileged. TUN mode keeps the
@@ -568,6 +604,93 @@ class DesktopProxyController extends ProxyController {
     if (Platform.isMacOS) return 'sing-box-macos-$arch';
     if (Platform.isWindows) return 'sing-box-windows-$arch.exe';
     return 'sing-box-linux-$arch';
+  }
+
+  // ---- second core: Xray, for xhttp exits ----
+
+  String _xrayAssetName() {
+    final String arch = _arch();
+    if (Platform.isMacOS) return 'xray-macos-$arch';
+    if (Platform.isWindows) return 'xray-windows-$arch.exe';
+    return 'xray-linux-$arch';
+  }
+
+  /// The bundled Xray binary, found the same way as the sing-box one. Only the
+  /// macOS arm64 binary ships today; other targets return a non-existent path,
+  /// which [_startXray] turns into a clear "no Xray core" message.
+  File _bundledXrayBinary() {
+    final String name = _xrayAssetName();
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    if (Platform.isMacOS) {
+      final File f = File('${exeDir.parent.path}/Resources/$name');
+      if (f.existsSync()) return f;
+    } else if (Platform.isWindows) {
+      final File f = File('${exeDir.path}\\$name');
+      if (f.existsSync()) return f;
+    }
+    return File('assets/bin/$name');
+  }
+
+  /// Stages the Xray binary into app-support (chmod +x on POSIX) and returns its
+  /// path, or null when this build carries no Xray core for the platform.
+  Future<String?> _ensureXrayBinary() async {
+    final File src = _bundledXrayBinary();
+    if (!src.existsSync()) return null;
+    final Directory dir = await getApplicationSupportDirectory();
+    final String exe = Platform.isWindows ? 'xray.exe' : 'xray';
+    final File out = File('${dir.path}/$exe');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', <String>['+x', out.path]);
+      }
+    }
+    return out.path;
+  }
+
+  /// Starts Xray with [xrayJson] so its local SOCKS is up before sing-box bridges
+  /// to it. Returns false (and fails the connect) when the core is missing.
+  Future<bool> _startXray(Directory dir, String xrayJson) async {
+    final String? bin = await _ensureXrayBinary();
+    if (bin == null) {
+      _fail('This build has no Xray core, so xhttp servers cannot run on '
+          '${Platform.operatingSystem} yet.');
+      return false;
+    }
+    final File cfg = File('${dir.path}/nova-xray.json');
+    await cfg.writeAsString(xrayJson);
+    _xrayProcess = await Process.start(
+      bin,
+      <String>['run', '-c', cfg.path],
+      environment: _coreEnv,
+    );
+    _pipeCore(_xrayProcess!.stdout, 'xray');
+    _pipeCore(_xrayProcess!.stderr, 'xray');
+    // Give Xray a moment to bind its SOCKS inbound before sing-box dials it. A
+    // dead process here means a bad config, surfaced by the sing-box side failing
+    // to reach the bridge right after.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    return true;
+  }
+
+  void _stopXray() {
+    _xrayProcess?.kill();
+    _xrayProcess = null;
+    _pendingXrayConfig = null;
+  }
+
+  /// An xhttp node with its server host resolved to an IPv4 address (Xray needs a
+  /// numeric server before the tunnel is up; the SNI/Host stay the domain).
+  /// Best-effort: an unresolvable host passes through unchanged.
+  Future<ProxyNode> _resolveXhttpServer(ProxyNode n) async {
+    if (InternetAddress.tryParse(n.server) != null) return n;
+    try {
+      final List<InternetAddress> a = await InternetAddress
+          .lookup(n.server, type: InternetAddressType.IPv4)
+          .timeout(const Duration(seconds: 4));
+      if (a.isNotEmpty) return n.copyWith(server: a.first.address);
+    } catch (_) {/* fall through with the domain */}
+    return n;
   }
 
   String _arch() {
@@ -918,6 +1041,7 @@ class DesktopProxyController extends ProxyController {
     _elevated = null;
     _process?.kill();
     _process = null;
+    _stopXray();
     // Flush and close the tee log so the last core output (a FATAL reason) is
     // on disk for the user to send.
     try {
