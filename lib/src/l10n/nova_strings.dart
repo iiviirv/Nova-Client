@@ -381,6 +381,14 @@ class NovaStrings {
   String get serversEmptySub => t('servers.emptySub');
   String get serversDeploy => t('servers.deploy');
   String get serversDeploySub => t('servers.deploySub');
+
+  // ---- Deploy via the Telegram bot ----
+  String get deployBotTitle => t('deploy.botTitle');
+  String get deployBotIntro => t('deploy.botIntro');
+  String get deployBotStep1 => t('deploy.botStep1');
+  String get deployBotStep2 => t('deploy.botStep2');
+  String get deployBotStep3 => t('deploy.botStep3');
+  String get deployBotOpen => t('deploy.botOpen');
   String get serversSignIn => t('servers.signIn');
   String get serversSignInSub => t('servers.signInSub');
   String get serversAddConfig => t('servers.addConfig');
@@ -1061,6 +1069,12 @@ class NovaStrings {
         'Deploy your own panel, sign in to one, or add a config to get started.',
     'servers.deploy': 'Deploy your own panel',
     'servers.deploySub': 'Spin up a free Nova worker on Cloudflare',
+    'deploy.botTitle': 'Deploy with the Nova bot',
+    'deploy.botIntro': 'The Nova Telegram bot sets up a free Nova worker on your own Cloudflare account in a couple of minutes. Nothing to install here.',
+    'deploy.botStep1': 'Open the bot and tap Start.',
+    'deploy.botStep2': 'Paste a Cloudflare API token when it asks. The bot uses it once to create the worker on your account.',
+    'deploy.botStep3': 'It gives you your panel link and password. Come back and use "Import from your panel" to sign in.',
+    'deploy.botOpen': 'Open the Nova bot',
     'servers.signIn': 'Sign in to your panel',
     'servers.signInSub': 'Import configs from an existing panel',
     'servers.addConfig': 'Add a config',
@@ -1740,6 +1754,12 @@ class NovaStrings {
         'برای شروع، پنل خودتان را مستقر کنید، به یک پنل وارد شوید، یا یک پیکربندی اضافه کنید.',
     'servers.deploy': 'پنل خودتان را مستقر کنید',
     'servers.deploySub': 'یک ورکر رایگان نوا روی کلودفلر بسازید',
+    'deploy.botTitle': 'استقرار با ربات نوا',
+    'deploy.botIntro': 'ربات تلگرام نوا در چند دقیقه یک ورکر رایگان نوا روی حساب \u2066Cloudflare\u2069 خودتان می‌سازد. اینجا چیزی نصب نمی‌شود.',
+    'deploy.botStep1': 'ربات را باز کنید و \u2066Start\u2069 را بزنید.',
+    'deploy.botStep2': 'وقتی خواست، یک توکن \u2066Cloudflare API\u2069 را بفرستید. ربات یک‌بار از آن برای ساخت ورکر روی حساب شما استفاده می‌کند.',
+    'deploy.botStep3': 'لینک پنل و رمز را به شما می‌دهد. برگردید و از «ورود از پنل» وارد شوید.',
+    'deploy.botOpen': 'باز کردن ربات نوا',
     'servers.signIn': 'به پنل خود وارد شوید',
     'servers.signInSub': 'پیکربندی‌ها را از یک پنل موجود وارد کنید',
     'servers.addConfig': 'افزودن پیکربندی',
