@@ -582,32 +582,32 @@ class SingboxProxyController extends ProxyController {
         tuned = opts;
       }
     }
+    // xhttp is an Xray-only transport. When the combined sing-box+Xray core is
+    // present (Android/iOS today), xhttp nodes run on Xray and sing-box reaches
+    // them through a local Xray socks inbound, both for a single/pinned node and
+    // inside the auto-select pool. Desktop has no Xray binding yet, so it keeps
+    // dropping xhttp. See docs/xray-core-scope.md.
+    final bool xhttpPool =
+        kXrayXhttpEnabled && (Platform.isAndroid || Platform.isIOS);
     // Remember which real node each `node-i` tag maps to, so the core's per-node
     // urltest results (which come back keyed by those tags) can be shown against
     // the right server in the list. Only a real multi-node pool has a urltest
-    // group; a single/pinned node has none.
+    // group; a single/pinned node has none. Include xhttp in the mapping when the
+    // pool carries it, so its socks-wrapped node-i tag maps to the right server.
     if (nodes.length == 1) {
       _coreTagKeys = const <String, String>{};
     } else {
-      final List<String> keys =
-          SingboxConfig.orderedMultiNodeKeys(nodes, options: tuned);
+      final List<String> keys = SingboxConfig.orderedMultiNodeKeys(nodes,
+          options: tuned, includeXhttp: xhttpPool);
       _coreTagKeys = <String, String>{
         for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
       };
     }
-    // Two-core path for a single xhttp node (Xray-only transport): sing-box gets
-    // the TUN->SOCKS bridge config and Xray gets the real xhttp config. Only a
-    // single/pinned xhttp node is supported for now; the auto pool still drops
-    // xhttp. Android only in this Phase-2 spike.
-    //
-    // Gated OFF until the combined sing-box+Xray gomobile core is built: two
-    // separate gomobile AARs cannot coexist (duplicate `go` runtime), so the
-    // native host has no Xray to start yet. See docs/xray-core-scope.md.
     _pendingXrayConfig = null;
-    if (kXrayXhttpEnabled &&
-        (Platform.isAndroid || Platform.isIOS) &&
-        nodes.length == 1 &&
-        nodes.first.network == 'xhttp') {
+
+    // Single/pinned xhttp node: sing-box gets the TUN->SOCKS bridge, Xray gets
+    // the real xhttp config on one local socks port.
+    if (xhttpPool && nodes.length == 1 && nodes.first.network == 'xhttp') {
       const int socksPort = XrayConfig.defaultSocksPort;
       _pendingXrayConfig = XrayConfig.build(nodes.first, socksPort: socksPort);
       NovaLog.instance.write(
@@ -623,6 +623,32 @@ class SingboxProxyController extends ProxyController {
       }
       return bridge;
     }
+
+    // Auto pool that contains xhttp nodes: Xray serves one socks inbound per
+    // xhttp node (ports from XrayConfig.defaultSocksPort up), and the sing-box
+    // urltest lists each of those as an ordinary socks outbound alongside the
+    // real exits. The two lists share pickedXhttpNodes' order so the ports line
+    // up. That also gives every xhttp node a live ping and a pick through the
+    // existing command surface, no separate Xray stats channel.
+    if (xhttpPool && nodes.length > 1) {
+      final List<ProxyNode> xhttpNodes =
+          SingboxConfig.pickedXhttpNodes(nodes, options: tuned);
+      if (xhttpNodes.isNotEmpty) {
+        const int base = XrayConfig.defaultSocksPort;
+        _pendingXrayConfig = XrayConfig.buildMulti(xhttpNodes, basePort: base);
+        NovaLog.instance.write(
+            'Auto pool includes ${xhttpNodes.length} xhttp node(s) on the Xray '
+            'core; sing-box measures them as local socks exits.');
+        final String multi = SingboxConfig.buildMulti(nodes,
+            options: tuned, includeXhttp: true, xhttpBasePort: base);
+        if (Platform.isAndroid) {
+          final String ruleBase = await _extractRuleSets();
+          return multi.replaceAll(SingboxConfig.ruleSetBaseToken, ruleBase);
+        }
+        return multi;
+      }
+    }
+
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: tuned)
         : SingboxConfig.buildMulti(nodes, options: tuned);

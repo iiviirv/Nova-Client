@@ -328,9 +328,13 @@ class SingboxConfig {
   static String buildMulti(
     List<ProxyNode> nodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
+    int xhttpBasePort = 10808,
   }) {
-    return const JsonEncoder.withIndent('  ')
-        .convert(buildMultiMap(nodes, options: options));
+    return const JsonEncoder.withIndent('  ').convert(buildMultiMap(nodes,
+        options: options,
+        includeXhttp: includeXhttp,
+        xhttpBasePort: xhttpBasePort));
   }
 
   /// The nodes that actually end up behind the auto-selector, in the exact order
@@ -345,6 +349,7 @@ class SingboxConfig {
   static List<ProxyNode> pickedMultiNodes(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
   }) {
     final List<ProxyNode> nodes =
         inputNodes.map((ProxyNode n) => _maybeHarden(n, options)).toList();
@@ -376,6 +381,17 @@ class SingboxConfig {
         usable.where((ProxyNode n) => n.network != 'grpc');
     final Iterable<ProxyNode> grpc =
         usable.where((ProxyNode n) => n.network == 'grpc');
+    // xhttp is Xray-only. When the combined core is available ([includeXhttp]),
+    // keep the VLESS-over-xhttp nodes and place them at the BACK of the pool:
+    // sing-box reaches them through a local Xray socks inbound, so a real
+    // sing-box exit is always cheaper and should fill the measured pool first.
+    // A non-VLESS xhttp node still can't be translated, so it stays dropped.
+    final List<ProxyNode> xhttp = includeXhttp
+        ? nodes
+            .where((ProxyNode n) =>
+                n.network == 'xhttp' && n.protocol == NodeProtocol.vless)
+            .toList()
+        : const <ProxyNode>[];
     final List<ProxyNode> ordered = options.hardenTls
         // Bypass on: a domain-addressed node can't pass the SNI block that is the
         // whole reason the bypass is on, so it would just sit in the limited pool
@@ -386,11 +402,12 @@ class SingboxConfig {
             ...nonGrpc.where((ProxyNode n) => n.isCleanIpFronted),
             ...nonGrpc.where((ProxyNode n) => !n.isCleanIpFronted),
             ...grpc,
+            ...xhttp,
           ]
-        : <ProxyNode>[...nonGrpc, ...grpc];
+        : <ProxyNode>[...nonGrpc, ...grpc, ...xhttp];
     // NB: never fall back to the unfiltered `nodes` here. Doing so reintroduced
-    // the xhttp nodes this method just dropped, and they were then built as
-    // plain TCP exits that could not connect.
+    // the xhttp nodes, and without [includeXhttp] they were then built as plain
+    // TCP exits that could not connect.
     return _dedupe(ordered).take(cap).toList();
   }
 
@@ -399,33 +416,68 @@ class SingboxConfig {
   static List<String> orderedMultiNodeKeys(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
   }) {
     final List<ProxyNode> picked =
-        pickedMultiNodes(inputNodes, options: options);
+        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
     if (picked.length < 2) return const <String>[];
     return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
   }
 
+  /// The xhttp nodes that will sit in the auto pool, in the same order they take
+  /// in [pickedMultiNodes]/[buildMultiMap]. The controller feeds these to
+  /// [XrayConfig.buildMulti] so the i-th xhttp node's Xray socks inbound port
+  /// lines up with the socks outbound sing-box emits for it.
+  static List<ProxyNode> pickedXhttpNodes(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) =>
+      pickedMultiNodes(inputNodes, options: options, includeXhttp: true)
+          .where((ProxyNode n) => n.network == 'xhttp')
+          .toList();
+
   static Map<String, dynamic> buildMultiMap(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
+    int xhttpBasePort = 10808,
   }) {
     final List<ProxyNode> picked =
-        pickedMultiNodes(inputNodes, options: options);
+        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
     if (picked.isEmpty) {
       throw const FormatException(
           'None of this subscription\'s nodes use a transport Nova can run '
           '(they are all xhttp). Ask for ws, gRPC, httpupgrade, or Reality.');
     }
-    if (picked.length == 1) {
+    // A single non-xhttp survivor collapses to the plain single-node config.
+    // A single xhttp survivor cannot (sing-box has no xhttp outbound); it falls
+    // through to the socks-wrapped pool below, which handles a one-entry urltest.
+    if (picked.length == 1 && picked.first.network != 'xhttp') {
       return buildMap(picked.first, options: options);
     }
     final List<Map<String, dynamic>> nodeOutbounds = <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> nodeEndpoints = <Map<String, dynamic>>[];
     final List<String> tags = <String>[];
+    int xhttpSeq = 0;
     for (int i = 0; i < picked.length; i++) {
       final String tag = 'node-$i';
       tags.add(tag);
+      // An xhttp node runs on the Xray core; sing-box reaches it through a local
+      // Xray socks inbound (one per xhttp node, at xhttpBasePort + its order).
+      // As a plain socks outbound it sits in the urltest pool like any exit, so
+      // it gets measured, picked and shown with a live ping through the same
+      // command surface. The port order here matches XrayConfig.buildMulti.
+      if (picked[i].network == 'xhttp') {
+        nodeOutbounds.add(<String, dynamic>{
+          'type': 'socks',
+          'tag': tag,
+          'server': '127.0.0.1',
+          'server_port': xhttpBasePort + xhttpSeq,
+          'version': '5',
+        });
+        xhttpSeq++;
+        continue;
+      }
       // AmneziaWG nodes are endpoints; the urltest still lists their tag, so the
       // auto-selector measures and picks them alongside outbound nodes.
       if (picked[i].protocol.isEndpoint) {

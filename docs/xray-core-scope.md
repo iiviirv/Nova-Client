@@ -1,5 +1,43 @@
 # Adding an Xray core to Nova Client — cost and plan
 
+## Phase-4 DONE (2026-08-17): xhttp in the auto-select pool + live pings ✅
+
+xhttp nodes now join the auto-select pool, not just a single/pinned profile.
+The trick is to expose each xhttp node to sing-box as a plain local `socks`
+outbound:
+
+- `XrayConfig.buildMulti(xhttpNodes, basePort)` gives each xhttp node its own
+  Xray `socks` inbound (`basePort + i`) routed to its own xhttp outbound.
+- `SingboxConfig.pickedMultiNodes(..., includeXhttp: true)` keeps the
+  VLESS-over-xhttp nodes (ordered at the back so real sing-box exits fill the
+  pool first), and `buildMultiMap(..., includeXhttp: true, xhttpBasePort)` emits
+  each as a `socks` outbound in the urltest group at the matching port.
+- So every xhttp node sits in the ordinary `urltest` group: it is measured,
+  auto-picked, and shown with a live ping and a "Connected via …" line through
+  the **existing** sing-box command surface. No separate Xray stats/observatory
+  channel was needed — that item is closed by this design.
+
+The native hosts are unchanged: they already start Xray from a config JSON, and
+the multi-inbound config starts the same way. Controller branch:
+`singbox_proxy_controller._buildSingboxConfig` builds the Xray multi config and
+the socks-wrapped sing-box pool whenever a >1-node profile contains xhttp and the
+combined core is present (Android/iOS).
+
+**Verified on the emulator (2026-08-17):** a 2-node all-xhttp subscription,
+Auto mode — the app connected, went Secure, and reported **"Connected via
+XhttpA"** with a real exit IP, i.e. the urltest measured the socks-wrapped xhttp
+nodes and picked one, and the `node-i -> real node` mapping resolved correctly.
+(Proven with the debug `freedom` outbound since there was no live xhttp server,
+exactly like Phase-3; a real xhttp server swaps that outbound only.)
+Unit-covered by `test/xray_pool_test.dart`.
+
+**Still open on Xray:** iOS on-device runtime test (needs a device + a live xhttp
+server; NE can't run in the simulator) and the **desktop** binding. Desktop is
+not just a build target: it needs an `xray` binary shipped per OS/arch and, in
+the elevated-TUN mode, a route-exclusion so Xray's own dials don't loop back
+through sing-box's TUN. That can only be validated on real desktop OSes with
+elevation, so it is deferred rather than shipped unverified.
+
 ## Phase-3 DONE (2026-08-16): combined core + xhttp works on device ✅
 
 The two-gomobile-AAR blocker is solved by building both cores into ONE module:
