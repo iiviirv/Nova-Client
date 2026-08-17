@@ -248,8 +248,27 @@ class SingboxConfig {
       ],
       // QUIC stays blocked: the xhttp exit is TCP, and letting UDP escape direct
       // would leak outside the tunnel.
-      'route': _route(options, blockQuic: true),
+      'route': _routeResolvingForXray(options),
     };
+  }
+
+  /// The normal route, plus a trailing `resolve` action for the two-core xhttp
+  /// bridge. sing-box sniffs each connection's domain (TLS SNI / HTTP Host) and,
+  /// without this, forwards that domain to Xray's local SOCKS — where Xray, which
+  /// has no resolver in this path, fails it ("dns: exchange failed for a name")
+  /// and no traffic flows (only the DoH lookups, which already dial an IP, get
+  /// through). Resolving the sniffed name back to an IP here — via sing-box's own
+  /// DNS, already warm from the app's lookup of the same name — means Xray only
+  /// ever receives IPs and never needs to resolve anything. The action is placed
+  /// LAST, after the domain-based direct/block rules (so those still match on the
+  /// name) and before `final: proxy`, so it only touches proxy-bound connections.
+  static Map<String, dynamic> _routeResolvingForXray(SingboxRouteOptions o) {
+    final Map<String, dynamic> route = _route(o, blockQuic: true);
+    (route['rules'] as List<dynamic>).add(<String, dynamic>{
+      'action': 'resolve',
+      'strategy': 'prefer_ipv4',
+    });
+    return route;
   }
 
   /// Returns the config as a map (useful for tests / further mutation).

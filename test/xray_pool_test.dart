@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
 import 'package:nova_client/src/core/proxy/singbox/share_link.dart';
@@ -106,5 +107,16 @@ void main() {
     final Iterable<dynamic> socks =
         outs.where((dynamic o) => (o as Map)['type'] == 'socks');
     expect(socks.length, 2);
+  });
+
+  test('the xhttp bridge resolves the sniffed domain to an IP for Xray', () {
+    final Map<String, dynamic> route =
+        (jsonDecode(SingboxConfig.buildXraySocksBridge(10808))
+            as Map<String, dynamic>)['route'] as Map<String, dynamic>;
+    final List<dynamic> rules = route['rules'] as List<dynamic>;
+    // sniff runs first (to get the domain), resolve runs last (before proxy).
+    expect((rules.first as Map)['action'], 'sniff');
+    expect((rules.last as Map)['action'], 'resolve',
+        reason: 'Xray must receive an IP, not a domain it cannot resolve');
   });
 }
