@@ -186,7 +186,13 @@ class XrayConfig {
                 if ((node.fingerprint ?? '').isNotEmpty &&
                     node.fingerprint != 'unsafe')
                   'fingerprint': node.fingerprint,
-                'allowInsecure': node.allowInsecure,
+                // NB: no `allowInsecure`. Xray 26.3.27 REMOVED it (setting it
+                // true makes the whole config fail to build: "the feature
+                // allowInsecure has been removed ... migrated to
+                // pinnedPeerCertSha256"). Verifying a self-signed xhttp cert
+                // needs that pin, which we don't carry yet, so a self-signed /
+                // no-domain xhttp node stays unsupported rather than breaking the
+                // config for every valid-cert node.
               },
           };
     final Map<String, dynamic> stream = <String, dynamic>{
