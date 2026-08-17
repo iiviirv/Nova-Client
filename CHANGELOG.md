@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.10.0-beta (2026-08-17)
+
+Faster connects, cleaner logs, and broader server support, by the Nova team.
+
+- The first connection is quicker. The app no longer waits on a slow round of
+  server checks before the tunnel comes up, so tapping connect gets you online
+  sooner, especially on a blocked or slow network.
+- AmneziaWG configs that use a domain name for the server now connect. Before, a
+  config whose endpoint was a domain (not a plain IP address) failed to start;
+  the app now resolves it for you.
+- Subscriptions with xhttp servers now work: those servers join the auto-select
+  pool and show a live ping like everything else, and Reality xhttp servers are
+  supported too.
+- The logs are cleaner. The core's routine "blocked" lines (for example QUIC being
+  steered onto TCP, which is normal) no longer show up as scary red errors; turn on
+  "Detailed core log" if you want to see everything. On Android and iOS the Logs
+  screen now also shows the second core's own messages.
+- "Deploy your own panel" now hands you to the Nova Telegram bot, which sets up a
+  free panel on your own Cloudflare account in a couple of minutes, instead of an
+  in-app sign-in.
+- Smaller fixes: the "Connected via" line and manual server pin are steadier, and
+  the Cloudflare screen is clearer about signing in to manage your panel.
+
 ## v1.9.0-beta (2026-08-16)
 
 Clearer server pings, by the Nova team.
