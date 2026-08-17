@@ -159,15 +159,10 @@ class DesktopProxyController extends ProxyController {
       await cfgFile.writeAsString(config);
 
       // xhttp exit: start Xray first so its local SOCKS is up before sing-box
-      // bridges to it. Only the unprivileged system-proxy path is wired; a TUN
-      // (elevated) xhttp connection would loop Xray's own dials back through the
-      // tunnel, so refuse it clearly until the route-exclusion is done.
+      // bridges to it. Works in both proxy and TUN mode; in TUN mode the loop is
+      // avoided by routing the server IP direct in the bridge config (see
+      // buildXraySocksBridgeMap's directServerIp).
       if (_pendingXrayConfig != null) {
-        if (tunMode) {
-          _fail('xhttp servers are not supported in whole-device (TUN) mode yet. '
-              'Turn off TUN mode in Settings to use this server.');
-          return;
-        }
         if (!await _startXray(dir, _pendingXrayConfig!)) return;
       }
 
@@ -388,7 +383,14 @@ class DesktopProxyController extends ProxyController {
       if (nodes.length == 1 && nodes.first.network == 'xhttp') {
         final ProxyNode x = await _resolveXhttpServer(nodes.first);
         _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort);
-        cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort, options: opts);
+        // Pass the resolved server IP so the sing-box side routes it direct. In
+        // TUN mode this is what stops Xray's own dial from looping back through
+        // the tunnel; in proxy mode it's harmless (the server IP is the tunnel
+        // endpoint, which belongs direct anyway).
+        final String? serverIp =
+            InternetAddress.tryParse(x.server) != null ? x.server : null;
+        cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort,
+            options: opts, directServerIp: serverIp);
       } else {
         cfg = nodes.length == 1
             ? SingboxConfig.buildMap(nodes.first, options: opts)
@@ -615,9 +617,10 @@ class DesktopProxyController extends ProxyController {
     return 'xray-linux-$arch';
   }
 
-  /// The bundled Xray binary, found the same way as the sing-box one. Only the
-  /// macOS arm64 binary ships today; other targets return a non-existent path,
-  /// which [_startXray] turns into a clear "no Xray core" message.
+  /// The bundled Xray binary, found the same way as the sing-box one (macOS
+  /// arm64, Windows amd64, Linux amd64 all ship). A target with no binary returns
+  /// a non-existent path, which [_startXray] turns into a clear "no Xray core"
+  /// message rather than a crash.
   File _bundledXrayBinary() {
     final String name = _xrayAssetName();
     final Directory exeDir = File(Platform.resolvedExecutable).parent;

@@ -218,13 +218,23 @@ class SingboxConfig {
   static String buildXraySocksBridge(
     int socksPort, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? directServerIp,
   }) =>
-      const JsonEncoder.withIndent('  ')
-          .convert(buildXraySocksBridgeMap(socksPort, options: options));
+      const JsonEncoder.withIndent('  ').convert(buildXraySocksBridgeMap(
+          socksPort,
+          options: options,
+          directServerIp: directServerIp));
 
+  /// [directServerIp], when set, routes that IP straight out `direct`. On desktop
+  /// TUN (whole-device) mode this is what stops an xhttp loop: Xray is a separate
+  /// process, so its own connection to the server would be captured by sing-box's
+  /// tunnel and fed back into the socks->Xray chain forever. Sending the server IP
+  /// direct (Xray dials the resolved IP, so this rule matches it) breaks that
+  /// cycle. Harmless in proxy mode, where nothing is captured; pass null there.
   static Map<String, dynamic> buildXraySocksBridgeMap(
     int socksPort, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? directServerIp,
   }) {
     return <String, dynamic>{
       'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
@@ -248,7 +258,7 @@ class SingboxConfig {
       ],
       // QUIC stays blocked: the xhttp exit is TCP, and letting UDP escape direct
       // would leak outside the tunnel.
-      'route': _routeResolvingForXray(options),
+      'route': _routeResolvingForXray(options, directServerIp: directServerIp),
     };
   }
 
@@ -262,9 +272,23 @@ class SingboxConfig {
   /// ever receives IPs and never needs to resolve anything. The action is placed
   /// LAST, after the domain-based direct/block rules (so those still match on the
   /// name) and before `final: proxy`, so it only touches proxy-bound connections.
-  static Map<String, dynamic> _routeResolvingForXray(SingboxRouteOptions o) {
+  static Map<String, dynamic> _routeResolvingForXray(SingboxRouteOptions o,
+      {String? directServerIp}) {
     final Map<String, dynamic> route = _route(o, blockQuic: true);
-    (route['rules'] as List<dynamic>).add(<String, dynamic>{
+    final List<dynamic> rules = route['rules'] as List<dynamic>;
+    // Break the TUN loop before anything else: the server IP goes direct, so
+    // Xray's own dial to it (captured by the tunnel) exits on the real interface
+    // instead of re-entering the socks->Xray chain. Placed first so no later rule
+    // can steer it back into the proxy. IPv4 only (the resolver returns v4).
+    if (directServerIp != null &&
+        directServerIp.isNotEmpty &&
+        !directServerIp.contains(':')) {
+      rules.insert(0, <String, dynamic>{
+        'ip_cidr': <String>['$directServerIp/32'],
+        'outbound': 'direct',
+      });
+    }
+    rules.add(<String, dynamic>{
       'action': 'resolve',
       'strategy': 'prefer_ipv4',
     });

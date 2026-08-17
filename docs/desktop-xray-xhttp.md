@@ -25,25 +25,32 @@ note records the same wiring on desktop.
 Binary staging mirrors the sing-box core: `_bundledXrayBinary` / `_ensureXrayBinary`
 look for `xray-<os>-<arch>` in the app bundle (macOS `Contents/Resources/`, Windows
 next to the exe, else `assets/bin/` when running from source), copy it into
-app-support and chmod +x. Today only `assets/bin/xray-macos-arm64` (Xray 26.3.27)
-ships; `tool/release_macos.sh` copies and codesigns it alongside the sing-box core.
+app-support and chmod +x. All three desktop binaries ship, built from one pinned
+xray-core version (`tool/core/build-xray-desktop.sh`, which reads the version from
+the mobile wrapper's `go.mod` so the cores never drift):
+
+- `assets/bin/xray-macos-arm64` — `tool/release_macos.sh` copies and codesigns it
+  alongside the sing-box core.
+- `assets/bin/xray-windows-amd64.exe` — `.github/workflows/build-windows.yml`
+  copies it next to the `.exe`.
+- `assets/bin/xray-linux-amd64` — for the from-source Linux run (no packaged Linux
+  release today); `_bundledXrayBinary` finds it under `assets/bin/`.
+
+To rebuild all three: `tool/core/build-xray-desktop.sh all`.
 
 Verified on macOS: `xray run -test -c` reports "Configuration OK" for the exact
 config `XrayConfig.buildMap` emits, and the shipped binary binds SOCKS 10808 at
 runtime. The data path itself (TUN -> sing-box -> SOCKS -> Xray -> internet) was
 proven earlier by the mobile on-device pass and the Mac loopback test.
 
-## Follow-ups (not done)
+## Follow-ups
 
-1. **Windows/Linux binaries.** Only macOS arm64 xray ships. `_startXray` returns a
-   clear "no Xray core on <os>" message on the others. Add
-   `xray-windows-amd64.exe` / `xray-linux-amd64` to `assets/bin/`, bundle them in
-   the Windows/Linux packaging, and (Windows) codesign.
-2. **TUN (whole-device) mode.** xhttp is refused in TUN mode today: sing-box's TUN
-   would capture Xray's own outbound dials and loop. To support it, exclude Xray's
-   destination IPs (the resolved server IP) from the sing-box tunnel route, the
-   same way the mobile core route-excludes the bridge. Until then, the app tells
-   the user to turn off TUN mode for an xhttp server.
+1. ~~**Windows/Linux binaries.**~~ Done: all three desktop binaries ship (built by
+   `tool/core/build-xray-desktop.sh all`) and are bundled by their packaging steps.
+2. ~~**TUN (whole-device) mode.**~~ Done: xhttp works in TUN mode too. The bridge
+   config routes the resolved server IP `direct` (`buildXraySocksBridgeMap`'s
+   `directServerIp`), so Xray's own dial to the server, captured by the tunnel,
+   exits on the real interface instead of looping back into the socks->Xray chain.
 3. **Pool case on desktop.** Only the single/pinned xhttp node is wired. Mixing an
    xhttp node into a multi-node auto-select pool (as mobile does via
    `XrayConfig.buildMulti` + one SOCKS outbound per node in sing-box's urltest)
