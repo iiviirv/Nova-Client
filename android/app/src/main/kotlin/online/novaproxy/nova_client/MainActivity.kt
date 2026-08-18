@@ -1,9 +1,12 @@
 package online.novaproxy.nova_client
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.telephony.TelephonyManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -23,6 +26,7 @@ class MainActivity : FlutterActivity() {
     private val controlChannel = "nova.proxy/control"
     private val eventChannel = "nova.proxy/events"
     private val vpnRequestCode = 0x4E56 // "NV"
+    private val notifRequestCode = 0x4E4F // "NO"
 
     private var pendingResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
@@ -122,7 +126,29 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    /// Ask for POST_NOTIFICATIONS the first time the user connects.
+    ///
+    /// From Android 13 this is a runtime permission, and without it the
+    /// foreground service's ongoing status notification is silently dropped:
+    /// the tunnel runs but the user sees no "Connected" card and no Disconnect
+    /// action. Asking at connect time (rather than at launch) puts the prompt
+    /// where the notification is about to matter. The tunnel starts either way,
+    /// so a denial costs the notification, not the connection.
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        runCatching {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                notifRequestCode,
+            )
+        }
+    }
+
     private fun startVpn(config: String, xrayConfig: String? = null, label: String? = null) {
+        ensureNotificationPermission()
         val intent = Intent(this, NovaVpnService::class.java)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
         if (!xrayConfig.isNullOrEmpty()) {
