@@ -1,8 +1,15 @@
 package online.novaproxy.nova_client
 
 import android.annotation.SuppressLint
+import android.app.Notification as AppNotification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.graphics.BitmapFactory
+import androidx.core.app.NotificationCompat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -56,9 +63,22 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         // is the TUN->SOCKS bridge that forwards to it.
         const val EXTRA_XRAY_CONFIG = "xrayConfig"
         const val ACTION_STOP = "online.novaproxy.nova_client.STOP"
+        // The profile/node name shown in the ongoing notification, if the Dart
+        // side passed one. Purely cosmetic; the tunnel runs without it.
+        const val EXTRA_LABEL = "label"
         // The auto-select urltest outbound's tag (see SingboxConfig.buildMultiMap).
         const val PROXY_GROUP_TAG = "proxy"
+
+        // The ongoing foreground-service notification. A VpnService that runs
+        // past the short start window must post one, and it doubles as the user's
+        // "you are protected" status with a one-tap Disconnect.
+        private const val NOTIF_CHANNEL_ID = "nova_vpn_status"
+        private const val NOTIF_ID = 0x4E56 // 'NV'
     }
+
+    // The active profile's name, for the notification text. Null shows a plain
+    // "Connected" without a subtitle.
+    private var profileLabel: String? = null
 
     private var xrayRunning = false
 
@@ -106,6 +126,15 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val xrayConfig = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
         if (running) return START_NOT_STICKY
         running = true
+        profileLabel = intent?.getStringExtra(EXTRA_LABEL)?.takeIf { it.isNotBlank() }
+        // Let the bridge repaint the home-screen widget on state changes.
+        NovaProxyBridge.appContext = applicationContext
+        NovaProxyBridge.label = profileLabel
+        // Promote to foreground straight away with a "connecting" notification.
+        // Android gives a freshly started service only a few seconds to call
+        // startForeground before it force-stops us, so this cannot wait for the
+        // tunnel to finish coming up on the worker thread.
+        startForegroundNotification(getString(R.string.vpn_state_connecting), ongoing = true)
         NovaProxyBridge.emitState("connecting")
         Thread { startBox(config, xrayConfig) }.start()
         return START_NOT_STICKY
@@ -124,6 +153,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             commandServer = server
             server.startOrReloadService(config, OverrideOptions())
             NovaProxyBridge.emitState("connected")
+            startForegroundNotification(getString(R.string.vpn_state_connected), ongoing = true)
             startStatusClient()
             startLogClient()
             startGroupClient()
@@ -418,7 +448,102 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         stopXray()
         runCatching { pfd?.close() }
         pfd = null
+        // Drop the ongoing notification. STOP_FOREGROUND_REMOVE clears it rather
+        // than leaving a stale "Connected" card behind after we disconnect.
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        }
     }
+
+    /// Build (channel + content) and post the ongoing foreground notification.
+    /// Called once with "connecting" the moment the service starts (Android
+    /// requires startForeground within a few seconds) and again with "connected"
+    /// once the tunnel is up. The card carries the active profile name and a
+    /// one-tap Disconnect.
+    private fun startForegroundNotification(state: String, ongoing: Boolean) {
+        ensureNotificationChannel()
+
+        // Tap opens the app; the Disconnect action stops the tunnel without it.
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val contentPi = openIntent?.let {
+            PendingIntent.getActivity(this, 0, it, pendingIntentFlags())
+        }
+        val stopPi = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, NovaVpnService::class.java).setAction(ACTION_STOP),
+            pendingIntentFlags(),
+        )
+
+        // The status-bar icon must be monochrome (Android tints it flat), so it
+        // stays the simple mark. The large icon shows the real full-colour Nova
+        // logo as the notification's main circle, which is what a user actually
+        // recognises.
+        val largeIcon = runCatching {
+            BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+        }.getOrNull()
+
+        val builder = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_nova)
+            .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
+            .setContentTitle(state)
+            .setContentText(profileLabel ?: getString(R.string.app_name))
+            .setOngoing(ongoing)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                0,
+                getString(R.string.vpn_action_disconnect),
+                stopPi,
+            )
+        if (contentPi != null) builder.setContentIntent(contentPi)
+
+        val notification: AppNotification = builder.build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+    }
+
+    /// The status channel is created once, lazily. Low importance so the ongoing
+    /// card is silent (no sound or heads-up); it is a status surface, not an
+    /// alert. No-op below Android 8, which has no notification channels.
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (mgr.getNotificationChannel(NOTIF_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            NOTIF_CHANNEL_ID,
+            getString(R.string.vpn_channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.vpn_channel_desc)
+            setShowBadge(false)
+            lockscreenVisibility = AppNotification.VISIBILITY_PUBLIC
+        }
+        mgr.createNotificationChannel(channel)
+    }
+
+    /// Immutable PendingIntents everywhere (required target-side from Android 12).
+    private fun pendingIntentFlags(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
 
     override fun onDestroy() {
         cleanup()

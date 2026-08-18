@@ -366,6 +366,8 @@ class SingboxProxyController extends ProxyController {
     try {
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
+        // Shown in the platform's ongoing VPN notification. Cosmetic only.
+        if (_active?.name != null) 'label': _active!.name,
         // For an xhttp node, the Xray core config the host runs alongside the
         // sing-box bridge (Android only for now).
         if (_pendingXrayConfig != null) 'xrayConfigJson': _pendingXrayConfig,

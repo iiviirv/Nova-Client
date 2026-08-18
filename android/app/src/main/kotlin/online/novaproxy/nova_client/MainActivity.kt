@@ -27,9 +27,13 @@ class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
     private var pendingXrayConfig: String? = null
+    private var pendingLabel: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // So the home-screen widget can be repainted from state changes even
+        // before the VpnService has run once this process.
+        NovaProxyBridge.appContext = applicationContext
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         MethodChannel(messenger, controlChannel).setMethodCallHandler { call, result ->
@@ -42,14 +46,17 @@ class MainActivity : FlutterActivity() {
                     }
                     // Present only for an xhttp node: the Xray core config.
                     val xrayConfig = call.argument<String>("xrayConfigJson")
+                    // Cosmetic profile name for the ongoing notification.
+                    val label = call.argument<String>("label")
                     val consent = VpnService.prepare(this)
                     if (consent != null) {
                         pendingResult = result
                         pendingConfig = config
                         pendingXrayConfig = xrayConfig
+                        pendingLabel = label
                         startActivityForResult(consent, vpnRequestCode)
                     } else {
-                        startVpn(config, xrayConfig)
+                        startVpn(config, xrayConfig, label)
                         result.success(null)
                     }
                 }
@@ -115,11 +122,14 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun startVpn(config: String, xrayConfig: String? = null) {
+    private fun startVpn(config: String, xrayConfig: String? = null, label: String? = null) {
         val intent = Intent(this, NovaVpnService::class.java)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
         if (!xrayConfig.isNullOrEmpty()) {
             intent.putExtra(NovaVpnService.EXTRA_XRAY_CONFIG, xrayConfig)
+        }
+        if (!label.isNullOrEmpty()) {
+            intent.putExtra(NovaVpnService.EXTRA_LABEL, label)
         }
         startService(intent)
     }
@@ -138,11 +148,13 @@ class MainActivity : FlutterActivity() {
         val result = pendingResult
         val config = pendingConfig
         val xrayConfig = pendingXrayConfig
+        val label = pendingLabel
         pendingResult = null
         pendingConfig = null
         pendingXrayConfig = null
+        pendingLabel = null
         if (resultCode == Activity.RESULT_OK && config != null) {
-            startVpn(config, xrayConfig)
+            startVpn(config, xrayConfig, label)
             result?.success(null)
         } else {
             NovaProxyBridge.emitError("VPN permission denied")

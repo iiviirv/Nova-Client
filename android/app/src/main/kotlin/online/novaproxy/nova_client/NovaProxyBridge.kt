@@ -1,5 +1,6 @@
 package online.novaproxy.nova_client
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.EventChannel
@@ -21,6 +22,15 @@ object NovaProxyBridge {
     var state: String = "disconnected"
         private set
 
+    // Application context + active profile name, used to keep the home-screen
+    // widget in sync. Set by the service/activity; null before either runs (the
+    // widget just shows its saved state until then).
+    @Volatile
+    var appContext: Context? = null
+
+    @Volatile
+    var label: String? = null
+
     fun setSink(sink: EventChannel.EventSink?) {
         eventSink = sink
     }
@@ -28,11 +38,13 @@ object NovaProxyBridge {
     fun emitState(value: String) {
         state = value
         post(mapOf("type" to "state", "value" to value))
+        appContext?.let { NovaWidget.onStateChanged(it, value, label) }
     }
 
     fun emitError(message: String?) {
         state = "error"
         post(mapOf("type" to "error", "message" to (message ?: "unknown error")))
+        appContext?.let { NovaWidget.onStateChanged(it, "error", label) }
     }
 
     fun emitTraffic(up: Long, down: Long, upTotal: Long, downTotal: Long) {

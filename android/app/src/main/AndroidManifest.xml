@@ -57,6 +57,19 @@
             </intent-filter>
         </service>
 
+        <!-- Home-screen status widget. Reflects the tunnel state and opens the
+             app when tapped. -->
+        <receiver
+            android:name=".NovaWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nova_widget_info"/>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

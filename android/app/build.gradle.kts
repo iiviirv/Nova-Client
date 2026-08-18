@@ -89,6 +89,10 @@ dependencies {
         implementation(files(libbox))
     }
 
+    // NotificationCompat for the ongoing VPN status notification. Also arrives
+    // transitively via the Flutter embedding; pinned here so the service's
+    // notification code never depends on that resolution.
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 kotlin {

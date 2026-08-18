@@ -1,0 +1,15 @@
+<!-- Monochrome status-bar icon: the Nova "N" mark as a single stroked path.
+     Android tints notification small icons to a flat colour, so this carries
+     no gradient, only the silhouette. Source: assets/brand/nova-logo-white.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path
+        android:pathData="M28,22 L28,64 A13,13 0 0 0 54,64 L54,36 A13,13 0 0 1 80,36 L80,78"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
