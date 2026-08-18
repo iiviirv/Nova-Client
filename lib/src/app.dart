@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/models/proxy_profile.dart';
 import 'core/proxy/conn_info_controller.dart';
 import 'core/proxy/proxy_controller.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
@@ -97,6 +101,8 @@ class _RootGate extends StatefulWidget {
 
 class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
   String? _startAction;
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
 
   @override
   void initState() {
@@ -107,12 +113,66 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) NovaScope.of(context).proxy.syncStatus();
     });
+    _initDeepLinks();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _linkSub?.cancel();
     super.dispose();
+  }
+
+  /// The panel's share page offers a one-tap import as `nova://install-config?
+  /// url=<sub url>` (also accept the app's own `novaclient://`). Register both
+  /// schemes so the OS hands the link to us instead of Safari saying the address
+  /// is invalid, then add the subscription. Handles cold start and while running.
+  Future<void> _initDeepLinks() async {
+    try {
+      final Uri? initial = await _appLinks.getInitialLink();
+      if (initial != null) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _handleUri(initial));
+      }
+    } catch (_) {/* no initial link */}
+    _linkSub = _appLinks.uriLinkStream.listen(_handleUri, onError: (_) {});
+  }
+
+  void _handleUri(Uri uri) {
+    // nova://install-config?url=<encoded sub url>. The action is the host
+    // (nova://install-config) or the first path segment, depending on the OS.
+    final String action =
+        uri.host.isNotEmpty ? uri.host : (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '');
+    if (action != 'install-config') return;
+    final String sub = (uri.queryParameters['url'] ?? '').trim();
+    if (sub.isEmpty) return;
+    _importSubscription(sub);
+  }
+
+  void _importSubscription(String url) {
+    if (!mounted) return;
+    final NovaScope scope = NovaScope.of(context);
+    ProxyProfile? existing;
+    for (final ProxyProfile p in scope.profiles.profiles) {
+      if (p.subscriptionUrl == url) {
+        existing = p;
+        break;
+      }
+    }
+    final ProxyProfile profile = existing ??
+        ProxyProfile(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          name: 'Nova subscription',
+          kind: ProxyKind.subscription,
+          uri: '',
+          subscriptionUrl: url,
+          updatedAt: DateTime.now(),
+        );
+    if (existing == null) scope.profiles.add(profile);
+    scope.profiles.setActive(profile.id);
+    scope.proxy.selectProfile(profile);
+    // The new subscription shows in the server list and becomes active; the
+    // ProfilesController notifies listeners, so the UI updates on its own.
   }
 
   @override
