@@ -17,7 +17,7 @@ import UIKit
 /// ExtensionPlatformInterface; if you hit routing edge cases, cross-check against
 /// that reference (it is built against this same Novacore.xcframework).
 class PacketTunnelProvider: NEPacketTunnelProvider {
-  static let appGroup = "group.tech.innovatenorth.novaedge"
+  static let appGroup = "group.online.novaproxy.novaClient"
 
   private var commandServer: NovacoreCommandServer?
   private var xrayStarted = false

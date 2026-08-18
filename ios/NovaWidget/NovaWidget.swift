@@ -7,7 +7,7 @@ import WidgetKit
 // WidgetCenter.reloadAllTimelines(). Tapping it opens the app. It never touches
 // the tunnel itself, so it needs no VPN entitlement of its own.
 
-private let appGroup = "group.tech.innovatenorth.novaedge"
+private let appGroup = "group.online.novaproxy.novaClient"
 
 struct NovaEntry: TimelineEntry {
   let date: Date
