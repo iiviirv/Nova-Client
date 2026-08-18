@@ -1,86 +1,144 @@
 # IzzyOnDroid submission (F-Droid-compatible repo)
 
 IzzyOnDroid lists prebuilt APKs from GitHub Releases. It is the address-free
-distribution channel: unlike Google Play, it does not publish a developer's
+distribution channel: unlike Google Play it does not publish a developer's
 physical address, and unlike a bare APK download it reduces the "unsafe app"
 friction because users add a trusted repo once.
 
-## BLOCKER: the default branch is stale
+## Where to submit (this moved)
 
-IzzyOnDroid (and GitHub's own license detection) read the **default branch**,
-which is `main`. Today `main` still carries:
+**Not GitLab.** The old GitLab tracker is archived. App-inclusion requests now
+go to the **repodata** tracker on Codeberg:
 
-- the **old MIT LICENSE** (GitHub reports the repo as MIT), while the current
-  license is **GPL-3.0** (required, since the app links GPL cores);
-- **no `fastlane/metadata/`** directory, which is where IzzyOnDroid picks up the
-  title, descriptions, changelogs and icon.
+    https://codeberg.org/IzzyOnDroid/repodata/issues/new/choose
+    -> choose "App Inclusion Request"
 
-Both exist only on the release branch. As of this writing the release branch is
-**76 commits ahead** of `main`, and `main` has just **1** commit not in it
-(`867895a CI: publish Windows to IRNova releases + CHANGELOG-driven notes`).
+This needs a **Codeberg** account (free). Creating the account and posting the
+issue are Vahid's to do; the content below is ready to paste.
 
-**Decision needed (Vahid):** merge the release branch into `main` (or make it the
-default branch) before submitting. Submitting against the current `main` would
-list Nova as MIT with no store metadata.
+Inclusion policy: https://izzyondroid.org/docs/general/AppInclusionPolicy/
 
-## Checklist
+## Readiness
 
 | Requirement | State |
 | --- | --- |
-| Public repo | Yes, `github.com/iiviirv/Nova-Client` |
-| FOSS license in repo | GPL-3.0 present, but **only on the release branch** |
-| APK on a GitHub Release | Latest release is stale (`v0.2.0-b59`; current build is 82) |
-| Release APK signed with a stable key | Yes, CI signs with the permanent upload key |
-| `fastlane/metadata/android/en-US/` | Present (title, short + full description, icon, changelog), **release branch only** |
-| No proprietary blobs / trackers | Cores are built from pinned FOSS sources in CI |
-| versionCode increases per release | Yes, driven by `pubspec.yaml` (`0.3.3+82`) |
+| Public source repo | Yes, `github.com/iiviirv/Nova-Client` |
+| FOSS license | GPL-3.0, and `main` now reports it correctly |
+| Fastlane folder in the repo | Yes, `fastlane/metadata/android/en-US/` on `main` |
+| APK on a GitHub Release | v1.11.0-beta (build 83), published by CI |
+| Stable signing key | Yes, CI signs every release with the permanent upload key |
+| Not already listed | Confirm at https://apt.izzysoft.de/fdroid/ before posting |
 
-## Steps once `main` is current
+## Form answers (paste into the template fields)
 
-1. **Cut a GitHub Release** for the current build with the APK attached
-   (`nova-client.apk` plus the per-ABI APKs the workflow already stages). The
-   tag should match the version, e.g. `v1.10.0-beta` / build 82.
-2. **File the RFP (Request For Packaging)** at
-   `https://gitlab.com/IzzyOnDroid/repo/-/issues` using the template below.
-   This needs Vahid's GitLab account; it is an outward-facing post, so it is
-   his to submit.
-3. IzzyOnDroid's maintainer reviews, adds the app to their updater config, and
-   the app appears in the IzzyOnDroid repo (usually within days).
+**Title**
 
-## RFP text (paste into the GitLab issue)
+    [AppRequest] Nova
 
-Title:
+**Guidelines checkboxes:** tick "I am the developer of the app", "complies with
+the App Inclusion Policy", "not already listed" and "Fastlane folder available".
 
-    RFP: Nova - anti-censorship proxy client
+**Link to the source code**
 
-Body:
+    https://github.com/iiviirv/Nova-Client
 
-    App name: Nova
-    Source: https://github.com/iiviirv/Nova-Client
-    License: GPL-3.0-or-later
-    Upstream releases: GitHub Releases, APK attached to each release
-    Package id: online.novaproxy.nova_client
+**Link to app in another app store:** leave empty (not on Play or F-Droid).
 
-    Description:
-    Nova is an open-source client for reaching the open internet on restricted
-    networks. Users bring their own configuration or subscription and connect
-    through infrastructure they control. It bundles the sing-box and Xray cores
-    and supports VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard,
+**License used**
+
+    GPL-3.0-or-later
+
+**Categories:** `Connectivity`, `Internet`, `Security`
+
+**Summary**
+
+    An anti-censorship proxy client that connects through servers you control,
+    with a clean-IP scanner and one-tap self-hosting.
+
+**Description**
+
+    Nova is a client for reaching the open internet on restricted networks. You
+    bring your own configuration or subscription and connect through
+    infrastructure you control, so there is no shared middleman.
+
+    It bundles the sing-box and Xray cores and supports VLESS (including
+    Reality and xhttp), VMess, Trojan, Shadowsocks, Hysteria2, WireGuard,
     AmneziaWG, NaiveProxy and mieru.
 
-    Metadata: fastlane/metadata/android/en-US/ (title, short and full
-    description, icon, changelogs) is in the repository.
+    Other features: a scanner that finds working clean IPs when the usual
+    endpoints are blocked, an SNI-block bypass for networks that filter on the
+    server name, per-server latency measured through the tunnel, a status
+    notification with one-tap disconnect, a home-screen widget, and an English
+    and Farsi interface with full right-to-left support.
 
-    Signing: release APKs are signed in CI with a permanent upload key, so the
-    signature is stable across releases.
+    No ads, no analytics, no tracking. The app only contacts the servers the
+    user configures.
 
-    Anti-features: none known. The app ships no ads, no analytics and no
-    tracking. Network access is the point of the app (it is a proxy client) and
-    it only contacts servers the user configures.
+**Build instructions**
+
+    # Prerequisites: JDK 17, Go 1.24.7, Android SDK + NDK 28.0.13004108,
+    # Flutter (stable channel).
+
+    git clone https://github.com/iiviirv/Nova-Client
+    cd Nova-Client
+
+    # 1. Build the native core. This is sing-box v1.13.13 with the AmneziaWG
+    #    patch and the Xray core folded in, compiled to an Android AAR via
+    #    gomobile. The script verifies the patches applied and fails otherwise.
+    bash tool/core/build-combined-core.sh "$PWD/android/app/libs/libbox.aar"
+
+    # 2. Build the APK.
+    flutter pub get
+    flutter build apk --release
+
+    # Split-per-ABI (what the release publishes alongside the universal APK):
+    flutter build apk --release --split-per-abi
+
+    # Output: build/app/outputs/flutter-apk/
+
+**AI Tools Usage — Assistance Level**
+
+    Substantial – Used throughout development
+
+**"AI" Tool(s)**
+
+    Claude (Claude Code)
+
+**What did the tools help with?**
+
+    Used throughout as a coding assistant: implementing protocol support and
+    the native Android/iOS tunnel plumbing, UI work, debugging (for example a
+    routing loop in the two-core data path), writing tests, and documentation.
+    Architecture decisions, the security model and all release decisions were
+    made by the developer.
+
+**AI Accountability:** tick both boxes only if true for you. For this project
+both hold: outputs were reviewed and edited, and changes were manually tested
+(the test suite plus on-device and emulator verification).
+
+**Further Notices**
+
+    I am the developer of the app.
+
+    The bundled cores (sing-box, Xray) are FOSS and are built from pinned
+    sources by the release workflow, not shipped as opaque prebuilt blobs. The
+    build is reproducible from the repository using the instructions above.
+
+    Anti-features: none known. No ads, analytics or tracking. Network access is
+    the purpose of the app (it is a proxy client) and it only contacts servers
+    the user configures.
 
 ## Note on reproducible builds
 
-IzzyOnDroid lists the upstream-signed APK; it does not require reproducible
-builds. F-Droid's main repo does, which would mean building the sing-box/Xray
-cores reproducibly on their infrastructure. That is a much bigger lift and is
+IzzyOnDroid lists the upstream-signed APK and does not require reproducible
+builds (they run an RB transparency log separately, opt-in). F-Droid's main repo
+does require them, which would mean building the sing-box and Xray cores
+reproducibly on their infrastructure. That is a much bigger lift and is
 deliberately out of scope here.
+
+## A caution about Codeberg's terms
+
+Codeberg recently restricted LLM-generated content on the platform. The template
+itself asks for an AI-usage disclosure rather than forbidding AI use, so
+disclosing honestly (as above) is the right move. Post in your own words and
+review the text before submitting rather than pasting it unread.
