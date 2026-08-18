@@ -31,6 +31,35 @@ Build scripts to touch: `build-combined-core.sh` (Android AAR),
 `build-combined-core-ios.sh` (iOS xcframework), `build-desktop.sh` (desktop CLI).
 Same three cores as the AmneziaWG + Xray work.
 
+## CONFIRMED: what Nova Server actually emits (from a live Hiddify sub)
+
+Nova Server DOES run mieru: a mieru/mita server (default port 6600), exposed only
+through the **Hiddify-format** sub (`/sub?u=<token>&target=hiddify` or `target=mieru`),
+per-user via a "mieru (Hiddify only)" toggle. The normal/nova sub omits it, which is
+why it looked absent. The Hiddify sub is a sing-box JSON whose mieru outbound is:
+
+```json
+{
+  "type": "mieru", "tag": "<name> mieru",
+  "server": "<host>", "server_port": 6600,
+  "portBindings": [{ "port": 6600, "protocol": "TCP" }],
+  "username": "u<hex>", "password": "<hex>",
+  "multiplexing": "MULTIPLEXING_LOW"
+}
+```
+
+Field mapping to the mbox `MieruOutboundOptions`:
+- `server` + `server_port` -> ServerOptions (same).
+- `portBindings[].protocol` -> `transport` ("TCP"/"UDP"); a single binding -> one
+  server_port; multiple/ranges -> `server_ports`.
+- `username`, `password`, `multiplexing` -> same names.
+
+This means the client path is a **sing-box JSON passthrough**, not a `mieru://` link
+parser: the Hiddify sub already carries the `type:"mieru"` outbound, so the client
+just needs the core to RUN it (plus rewrite `portBindings` -> `server_port`/`transport`
+if the mbox outbound doesn't accept `portBindings` directly). A live test target
+exists (an Azad Hiddify link on vpn.novaproxy.qzz.io:6600); creds kept out of git.
+
 ## Confirmed sing-box outbound (from mbox, verified via the GitHub API)
 
 - `protocol/mieru/outbound.go` (277 lines, `package mieru`, self-contained;
