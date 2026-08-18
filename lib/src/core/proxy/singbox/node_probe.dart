@@ -132,6 +132,11 @@ Future<NodeProbeResult> _probe(
       return const NodeProbeResult.untestable('WireGuard cannot be tested '
           'without connecting');
 
+    case NodeProtocol.mieru:
+      // mieru's transport is fully obfuscated; an outside probe can't speak it,
+      // and like AmneziaWG/xhttp it's verified once the tunnel is up.
+      return const NodeProbeResult.untestable('mieru is verified when you connect');
+
     case NodeProtocol.hysteria2:
     case NodeProtocol.tuic:
       if ((n.obfsType ?? '').isNotEmpty) {
@@ -501,6 +506,7 @@ List<int>? _requestHeader(ProxyNode n) {
     // Naive's CONNECT rides inside HTTP/2 with a padding scheme; it has no
     // plain header to write, so it stops at the handshake tier.
     case NodeProtocol.naive:
+    case NodeProtocol.mieru:
       return null;
   }
 }

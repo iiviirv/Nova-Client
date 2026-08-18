@@ -1115,6 +1115,7 @@ class _ProtoBadge extends StatelessWidget {
         NodeProtocol.socks => nova.muted,
         NodeProtocol.http => nova.muted,
         NodeProtocol.naive => nova.info,
+        NodeProtocol.mieru => nova.violet,
       };
 
   @override

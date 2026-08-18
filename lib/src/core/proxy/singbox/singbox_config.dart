@@ -754,6 +754,14 @@ class SingboxConfig {
         // variant, so the transport block below must not add one.
         if (n.uuid != null) o['username'] = n.uuid;
         if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.mieru:
+        // enfein/mieru outbound (ported into the core from mbox). Username sits
+        // in the uuid slot like socks/http/naive; transport is TCP/UDP and the
+        // multiplexing level rides on the node. server/server_port set above.
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
+        o['transport'] = n.mieruTransport.toUpperCase() == 'UDP' ? 'UDP' : 'TCP';
+        o['multiplexing'] = n.mieruMultiplexing;
       case NodeProtocol.awg:
         // AmneziaWG is a sing-box endpoint, not an outbound; callers must use
         // _endpoint(). Reaching here is a wiring bug.

@@ -29,6 +29,11 @@ enum NodeProtocol {
   /// `with_naive_outbound`, but the app could not read the `naive+https://`
   /// link, so an operator who made one watched it appear in no client at all.
   naive,
+
+  /// mieru: an obfuscated socks5 transport (enfein/mieru) served by a
+  /// mieru/mita server. Credentials are a username + password; transport is
+  /// TCP or UDP. Ported into the sing-box core as a native outbound.
+  mieru,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -44,6 +49,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.socks => 'socks',
         NodeProtocol.http => 'http',
         NodeProtocol.naive => 'naive',
+        NodeProtocol.mieru => 'mieru',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -67,6 +73,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.socks => 'SOCKS',
         NodeProtocol.http => 'HTTP',
         NodeProtocol.naive => 'NaiveProxy',
+        NodeProtocol.mieru => 'mieru',
       };
 }
 
@@ -100,6 +107,8 @@ class ProxyNode {
     this.hy2UpMbps,
     this.hy2DownMbps,
     this.awgConf,
+    this.mieruTransport = 'TCP',
+    this.mieruMultiplexing = 'MULTIPLEXING_LOW',
     this.cipherSuites = const <String>[],
     this.fragmentMask,
   });
@@ -172,6 +181,10 @@ class ProxyNode {
   // AmneziaWG / WireGuard: the raw `.conf` text. Parsed to a sing-box `awg`
   // endpoint (keys, address, peer, and the junk params) at config-build time.
   final String? awgConf;
+  /// mieru transport: 'TCP' or 'UDP'.
+  final String mieruTransport;
+  /// mieru multiplexing level, e.g. 'MULTIPLEXING_LOW'.
+  final String mieruMultiplexing;
 
   // The SNI-block bypass profile, as PattNG-style links carry it (`cs=` and
   // `fm=`, with `fp=unsafe`). See [isHardenedTls]. [cipherSuites] is the TLS 1.2

@@ -25,6 +25,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 patch_file="$repo_root/tool/core/amneziawg.patch"
 novafrag_file="$repo_root/tool/core/novafrag.patch"
 novaxray_src="$repo_root/tool/core/xray/novaxray/xray.go"
+mieru_out="$repo_root/tool/core/mieru/outbound.go"
+mieru_opt="$repo_root/tool/core/mieru/option_mieru.go"
 output="${1:-$repo_root/android/app/libs/libbox.aar}"
 say() { printf '\n== %s\n' "$1"; }
 
@@ -55,6 +57,20 @@ go mod tidy
 perl -0pi -e 's{args = append\(args, "\./experimental/libbox"\)}{args = append(args, "./experimental/libbox", "./novaxray")}g' \
   cmd/internal/build_libbox/main.go
 grep -q '"./novaxray"' cmd/internal/build_libbox/main.go || { echo "failed to patch build_libbox" >&2; exit 1; }
+
+say "Folding in the mieru outbound (enfein/mieru/v3)"
+mkdir -p protocol/mieru
+cp "$mieru_out" protocol/mieru/outbound.go
+cp "$mieru_opt" option/mieru.go
+# The mbox outbound needs a TypeMieru constant + a registration that stock
+# sing-box lacks; add both, then pull the mieru library.
+perl -0pi -e 's{(\tTypeNaive\s+= "naive"\n)}{$1\tTypeMieru = "mieru"\n}' constant/proxy.go
+grep -q 'TypeMieru' constant/proxy.go || { echo "failed to add TypeMieru" >&2; exit 1; }
+perl -0pi -e 's{(\t"github.com/sagernet/sing-box/protocol/naive"\n)}{$1\t"github.com/sagernet/sing-box/protocol/mieru"\n}' include/registry.go
+perl -0pi -e 's{(\tregisterNaiveOutbound\(registry\)\n)}{$1\tmieru.RegisterOutbound(registry)\n}' include/registry.go
+grep -q 'mieru.RegisterOutbound' include/registry.go || { echo "failed to register mieru" >&2; exit 1; }
+go get github.com/enfein/mieru/v3@v3.36.0
+go mod tidy
 
 say "Proving the patched source builds an AmneziaWG endpoint"
 go run -tags "with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_clash_api" ./cmd/internal/awg_probe
@@ -89,8 +105,9 @@ for so in "$probe"/jni/*/libbox.so; do
   # signal. An Android core without it would run every other protocol and fail
   # only NaiveProxy servers, which reads as a dead server.
   nv="$(strings -a "$so" | grep -c -i 'Cronet_Engine' || true)"
-  echo "  $(basename "$(dirname "$so")")  amneziawg(jmin)=$jmin  xray(splithttp)=$xh  naive(cronet)=$nv"
-  [ "$jmin" -ge 1 ] && [ "$xh" -ge 1 ] && [ "$nv" -ge 1 ] || { echo "core for $(basename "$(dirname "$so")") missing a protocol (awg/xray/naive)" >&2; exit 1; }
+  mu="$(strings -a "$so" | grep -c -i 'enfein/mieru' || true)"
+  echo "  $(basename "$(dirname "$so")")  amneziawg(jmin)=$jmin  xray(splithttp)=$xh  naive(cronet)=$nv  mieru=$mu"
+  [ "$jmin" -ge 1 ] && [ "$xh" -ge 1 ] && [ "$nv" -ge 1 ] && [ "$mu" -ge 1 ] || { echo "core for $(basename "$(dirname "$so")") missing a protocol (awg/xray/naive/mieru)" >&2; exit 1; }
 done
 
 mkdir -p "$(dirname "$output")"; cp libbox.aar "$output"

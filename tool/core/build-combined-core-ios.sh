@@ -21,6 +21,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 patch_file="$repo_root/tool/core/amneziawg.patch"
 novafrag_file="$repo_root/tool/core/novafrag.patch"
 novaxray_src="$repo_root/tool/core/xray/novaxray/xray.go"
+mieru_out="$repo_root/tool/core/mieru/outbound.go"
+mieru_opt="$repo_root/tool/core/mieru/option_mieru.go"
 OUT="${1:-$repo_root/ios/Frameworks/Novacore.xcframework}"
 say() { printf '\n== %s\n' "$1"; }
 
@@ -54,6 +56,18 @@ cp "$novaxray_src" novaxray/xray.go
 export GOFLAGS=-mod=mod
 go get "github.com/xtls/xray-core@$XRAY_VERSION"
 go mod tidy
+
+say "Folding in the mieru outbound (enfein/mieru/v3)"
+mkdir -p protocol/mieru
+cp "$mieru_out" protocol/mieru/outbound.go
+cp "$mieru_opt" option/mieru.go
+perl -0pi -e 's{(\tTypeNaive\s+= "naive"\n)}{$1\tTypeMieru = "mieru"\n}' constant/proxy.go
+grep -q 'TypeMieru' constant/proxy.go || { echo "failed to add TypeMieru" >&2; exit 1; }
+perl -0pi -e 's{(\t"github.com/sagernet/sing-box/protocol/naive"\n)}{$1\t"github.com/sagernet/sing-box/protocol/mieru"\n}' include/registry.go
+perl -0pi -e 's{(\tregisterNaiveOutbound\(registry\)\n)}{$1\tmieru.RegisterOutbound(registry)\n}' include/registry.go
+grep -q 'mieru.RegisterOutbound' include/registry.go || { echo "failed to register mieru" >&2; exit 1; }
+GOFLAGS=-mod=mod go get github.com/enfein/mieru/v3@v3.36.0
+GOFLAGS=-mod=mod go mod tidy
 
 say "Installing the pinned gomobile"
 export PATH="$PATH:$(go env GOPATH)/bin"

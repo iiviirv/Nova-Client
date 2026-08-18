@@ -50,6 +50,9 @@ ProxyNode? parseShareLink(String raw) {
       // NaiveProxy. The scheme names the transport it runs over, and only the
       // https (HTTP/2 over TLS) form is one the core can dial.
       'naive+https' => _parseNaive(input),
+      // mieru (enfein/mieru): the simple mierus:// form. server + one port +
+      // TCP/UDP is enough to build the outbound the core now runs.
+      'mieru' || 'mierus' => _parseMieru(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -348,6 +351,61 @@ ProxyNode? _parseSocksHttp(String input, NodeProtocol proto) {
 /// Only `naive+https` reaches here. The `naive+quic` form exists in the wild and
 /// sing-box cannot dial it, so it is left to fall through as unsupported instead
 /// of being silently downgraded to TLS.
+/// A mieru link. The simple form is
+///   `mierus://username:password@server[:port]?port=..&protocol=TCP&multiplexing=..#name`
+/// (port in the authority or the `port`/`portRange` query param). Only the
+/// outbound is built: server, one port, TCP/UDP, and the multiplexing level map
+/// straight onto the mbox mieru outbound now compiled into the core.
+ProxyNode? _parseMieru(String input) {
+  final int schemeEnd = input.indexOf('://');
+  final String rest = input.substring(schemeEnd + 3);
+  // Only the human-readable form carries `user:pass@`; the base64 `mieru://`
+  // full-config form is not emitted by Nova Server, so skip it.
+  if (!rest.contains('@')) return null;
+  final Uri uri = Uri.parse('https://$rest');
+  final String host = uri.host;
+  if (host.isEmpty) return null;
+
+  final String raw = uri.userInfo;
+  final int c = raw.indexOf(':');
+  if (c < 0) return null;
+  final String user = Uri.decodeComponent(raw.substring(0, c));
+  final String pass = Uri.decodeComponent(raw.substring(c + 1));
+  if (user.isEmpty || pass.isEmpty) return null;
+
+  final Map<String, String> q = uri.queryParameters;
+  // Uri.port defaults to 443 under the https:// normalisation, so read an
+  // explicit authority port (host:port) from the raw text, then fall back to the
+  // `port`/`portRange` query param (the form mieru's simple links actually use).
+  final String authority = rest.split(RegExp(r'[?#/]')).first;
+  final String hostPort =
+      authority.contains('@') ? authority.split('@').last : authority;
+  int port = hostPort.contains(':')
+      ? (int.tryParse(hostPort.split(':').last) ?? 0)
+      : 0;
+  if (port == 0) {
+    final String pr = q['port'] ?? q['portRange'] ?? '';
+    port = int.tryParse(pr.split(RegExp(r'[-,]')).first.trim()) ?? 0;
+  }
+  if (port == 0) return null;
+
+  final String transport =
+      (q['protocol'] ?? q['transport'] ?? 'TCP').toUpperCase() == 'UDP'
+          ? 'UDP'
+          : 'TCP';
+
+  return ProxyNode(
+    protocol: NodeProtocol.mieru,
+    server: host,
+    port: port,
+    tag: _name(uri, host),
+    uuid: user, // username in the uuid slot, as socks/http/naive do
+    password: pass,
+    mieruTransport: transport,
+    mieruMultiplexing: q['multiplexing'] ?? 'MULTIPLEXING_LOW',
+  );
+}
+
 ProxyNode? _parseNaive(String input) {
   // Uri cannot parse a `+` scheme reliably across platforms, so normalise it to
   // https:// and read the standard authority from that.

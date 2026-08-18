@@ -1,4 +1,16 @@
-# mieru protocol support (plan)
+# mieru protocol support (DONE, verified)
+
+STATUS: implemented and verified end-to-end (2026-08-18). The mbox mieru outbound
+was ported into Nova's sing-box (a `TypeMieru` constant + `option/mieru.go` +
+`protocol/mieru/outbound.go` + one registration line + the `enfein/mieru/v3` dep),
+wired into all three core builds (Android/iOS/desktop). The Android AAR verifies
+with `mieru=1502` symbols. A sing-box CLI built from the same tree connected to a
+LIVE Nova mieru server (vpn.novaproxy.qzz.io:6600) and carried real traffic
+(exited via the server's Frankfurt IP, confirmed by curl). Dart: `NodeProtocol.mieru`,
+a `mierus://` parser, and a `type:"mieru"` outbound emitter (unit-tested). Note the
+panel currently gates mieru to the Hiddify sub ("Hiddify only"); to reach Nova-Client
+users it must also include the mieru node in the `target=nova` sub, or emit a
+`mierus://` link. Source files: `tool/core/mieru/`.
 
 Nova Server can emit `mieru://` configs, but neither sing-box (mainline) nor
 Xray implements mieru, so the client only counts it as a skipped/unsupported
