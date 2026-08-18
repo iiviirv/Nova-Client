@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.11.0-beta (2026-08-18)
+
+A status notification, a home-screen widget, a new protocol, and a lighter touch
+on your battery, by the Nova team.
+
+- Nova now shows a status notification while it is connected, with the server
+  you are on and a one-tap Disconnect. Before, the app ran with no notification
+  at all, which made it hard to tell whether you were protected.
+- New home-screen widget on Android: see at a glance whether Nova is connected,
+  and tap it to open the app.
+- New protocol: mieru. Subscriptions that offer mieru servers now work in Nova.
+- The app is easier on your battery. Nova no longer checks your exit address or
+  redraws the traffic graph while it is in the background, so a long connection
+  costs less power.
+- A cleaner look throughout: a calmer dashboard, tidier cards, and a clearer
+  server list where long server names are no longer cut off.
+- The opening screen now carries the Nova name and motto in English and Farsi,
+  and no longer flashes white before the app loads.
+- On iPhone, Nova now tells you if the connection drops unexpectedly, so you are
+  not left unprotected without knowing.
+- You can now import an AmneziaWG .conf file straight from the Add screen, and
+  panel links (nova://) open Nova instead of failing in Safari.
+
 ## v1.10.0-beta (2026-08-17)
 
 Faster connects, cleaner logs, and broader server support, by the Nova team.
