@@ -4,6 +4,7 @@ import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
+import '../../widgets/nova_components.dart';
 import 'servers_body.dart';
 
 /// The Servers tab: a plain title with the shared [ServersBody], and a small
@@ -24,13 +25,7 @@ class ServersScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                   NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.sm),
-              child: Text(s.navServers,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+              child: NovaScreenHeader(title: s.navServers),
             ),
             Expanded(
               child: Stack(

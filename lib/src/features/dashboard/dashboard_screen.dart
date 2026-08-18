@@ -16,7 +16,6 @@ import '../../theme/nova_theme.dart';
 import '../../widgets/nova_button.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
-import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
 import '../cloudflare/cloudflare_controller.dart';
@@ -133,21 +132,9 @@ class _HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            s.t('home.title'),
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
-          ),
-        ),
-        const SizedBox(width: NovaSpace.md),
-        const NovaLogo(size: 34),
-      ],
+    return NovaScreenHeader(
+      title: s.t('home.title'),
+      subtitle: s.t('home.subtitle'),
     );
   }
 }
@@ -254,28 +241,29 @@ class _UpdateBanner extends StatelessWidget {
                   mode: LaunchMode.externalApplication),
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: NovaSpace.md, vertical: NovaSpace.sm),
+                    horizontal: NovaSpace.md, vertical: NovaSpace.md),
                 decoration: BoxDecoration(
                   borderRadius: NovaRadii.cardR,
-                  gradient: LinearGradient(
-                    colors: <Color>[
-                      nova.cyan.withValues(alpha: 0.14),
-                      nova.violet.withValues(alpha: 0.14),
-                    ],
-                  ),
-                  border: Border.all(color: nova.cyan.withValues(alpha: 0.30)),
+                  color: nova.surface,
+                  border: Border.all(color: nova.border),
                 ),
                 child: Row(
                   children: <Widget>[
-                    Icon(Icons.system_update_rounded,
-                        size: 18, color: nova.cyan),
-                    const SizedBox(width: NovaSpace.sm),
+                    NovaIconChip(
+                      icon: Icons.system_update_rounded,
+                      color: nova.cyan,
+                      size: 30,
+                      radius: 9,
+                    ),
+                    const SizedBox(width: NovaSpace.md),
                     Expanded(
-                      child: Text('${s.updateAvailable} ($tag)',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.labelMedium
-                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      child: Text(
+                        '${s.updateAvailable} ($tag)',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
                     ),
                     const SizedBox(width: NovaSpace.sm),
                     Text(s.updateGet,
@@ -501,21 +489,44 @@ class _UptimeText extends StatefulWidget {
   State<_UptimeText> createState() => _UptimeTextState();
 }
 
-class _UptimeTextState extends State<_UptimeText> {
+class _UptimeTextState extends State<_UptimeText> with WidgetsBindingObserver {
   Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _startTicker();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // No point ticking the uptime once per second while the app is in the
+    // background: nobody is watching it and each tick is a rebuild. Pause it and
+    // catch up with a single refresh when the user comes back.
+    if (state == AppLifecycleState.resumed) {
+      if (_ticker == null) {
+        _startTicker();
+        if (mounted) setState(() {});
+      }
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

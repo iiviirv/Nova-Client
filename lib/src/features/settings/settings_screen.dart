@@ -56,9 +56,7 @@ class SettingsScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(
                   NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.xxl),
               children: <Widget>[
-                Text(s.navSettings,
-                    style: text.headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                NovaScreenHeader(title: s.navSettings),
                 const SizedBox(height: NovaSpace.xl),
 
                 _Section(

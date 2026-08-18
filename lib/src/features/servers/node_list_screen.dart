@@ -924,7 +924,10 @@ List<String> _nodeDetail(ProxyNode n) {
   return <String>[
     if ((n.fingerprint ?? '').isNotEmpty) 'uTLS ${n.fingerprint}',
     if ((n.flow ?? '').isNotEmpty) 'flow ${n.flow}',
-    if ((n.sni ?? '').isNotEmpty) 'SNI ${n.sni}',
+    // The SNI only earns a line when it differs from the host already shown in
+    // the address; repeating the same workers.dev name is pure noise.
+    if ((n.sni ?? '').isNotEmpty && n.sni!.toLowerCase() != n.server.toLowerCase())
+      'SNI ${n.sni}',
   ];
 }
 
@@ -1040,72 +1043,71 @@ class _NodeRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      // Primary line: the protocol tag and the node's name. The
-                      // name follows the ambient direction, so a Farsi name
-                      // reads right-to-left and a Latin one left-to-right, each
-                      // ellipsizing on its own trailing edge.
+                      // Primary: the node's name, alone on its line so it is the
+                      // one thing the eye lands on. It follows the ambient
+                      // direction, so a Farsi name reads right-to-left and a
+                      // Latin one left-to-right, each ellipsizing on its own
+                      // trailing edge.
+                      Text(primary,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                              letterSpacing: -0.1)),
+                      const SizedBox(height: NovaSpace.xs),
+                      // Secondary: what this server is. The protocol tag anchors
+                      // the line in colour, then the address (always LTR) fills
+                      // the rest on a single tidy line, middle-truncated so a
+                      // long workers.dev host keeps its port in view instead of
+                      // wrapping to two lines.
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Padding(
-                            padding: const EdgeInsets.only(top: 1),
-                            child: _ProtoBadge(protocol: node.protocol),
-                          ),
+                          _ProtoBadge(protocol: node.protocol),
                           const SizedBox(width: NovaSpace.sm),
                           Expanded(
-                            child: Text(primary,
-                                maxLines: 2,
-                                softWrap: true,
-                                overflow: TextOverflow.ellipsis,
-                                style: text.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.2,
-                                    letterSpacing: -0.1)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      // Secondary line: the address (always LTR) trailed by the
-                      // quiet transport chips. Wraps tidily on a narrow screen
-                      // instead of fighting the name for width.
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: NovaSpace.sm,
-                        runSpacing: 4,
-                        children: <Widget>[
-                          Directionality(
-                            textDirection: TextDirection.ltr,
-                            child: Text(addr,
+                            child: Directionality(
+                              textDirection: TextDirection.ltr,
+                              child: _MiddleEllipsis(
+                                text: addr,
                                 style: text.bodySmall?.copyWith(
                                   color: nova.muted,
                                   fontWeight: FontWeight.w500,
                                   fontFeatures: const <FontFeature>[
                                     FontFeature.tabularFigures()
                                   ],
-                                )),
+                                ),
+                              ),
+                            ),
                           ),
-                          for (final String t in transport) _MiniTag(text: t),
                         ],
                       ),
-                      if (detail.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 4),
-                        // Tertiary line: the deep TLS details, kept to one dim
-                        // line. Each part truncates on its own so a long SNI
-                        // host never grows the row.
+                      if (transport.isNotEmpty || detail.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 3),
+                        // Tertiary: one quiet metadata cluster. The transport
+                        // tags read as a low-key group, then the deep TLS
+                        // details trail as dim text on the same line and
+                        // truncate together, so the handshake internals never
+                        // add a whole extra line of noise.
                         Row(
                           children: <Widget>[
-                            for (int i = 0; i < detail.length; i++) ...<Widget>[
-                              if (i > 0) const SizedBox(width: NovaSpace.sm),
+                            for (int i = 0; i < transport.length; i++) ...<Widget>[
+                              if (i > 0) const SizedBox(width: NovaSpace.xs),
+                              _MiniTag(text: transport[i]),
+                            ],
+                            if (transport.isNotEmpty && detail.isNotEmpty)
+                              const SizedBox(width: NovaSpace.sm),
+                            if (detail.isNotEmpty)
                               Flexible(
-                                child: Text(detail[i],
+                                child: Text(detail.join('   '),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: text.labelSmall?.copyWith(
-                                        color:
-                                            nova.muted.withValues(alpha: 0.8),
+                                        color: nova.muted
+                                            .withValues(alpha: 0.75),
                                         height: 1.2)),
                               ),
-                            ],
                           ],
                         ),
                       ],
@@ -1201,18 +1203,74 @@ class _MiniTag extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(5),
         color: nova.surface2,
       ),
       child: Text(text,
           style: TextStyle(
               color: nova.muted,
               fontWeight: FontWeight.w600,
-              fontSize: 10,
+              fontSize: 9.5,
               height: 1.1,
               letterSpacing: 0.2)),
+    );
+  }
+}
+
+/// Renders text on a single line, dropping characters from the MIDDLE when it
+/// will not fit, so a long host keeps both its readable start and its trailing
+/// port ("lively-heron-...workers.dev:443") instead of losing the tail to a
+/// plain end-ellipsis or wrapping onto a second line. Measured against the real
+/// available width, so it stays honest at any screen size.
+class _MiddleEllipsis extends StatelessWidget {
+  const _MiddleEllipsis({required this.text, required this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxWidth = constraints.maxWidth;
+
+        double widthOf(String s) {
+          final TextPainter tp = TextPainter(
+            text: TextSpan(text: s, style: style),
+            maxLines: 1,
+            textDirection: TextDirection.ltr,
+          )..layout();
+          return tp.width;
+        }
+
+        Widget oneLine(String s) => Text(
+              s,
+              style: style,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.clip,
+              textDirection: TextDirection.ltr,
+            );
+
+        if (text.length <= 8 || widthOf(text) <= maxWidth) {
+          return oneLine(text);
+        }
+
+        const String ellipsis = '…';
+        String best = text;
+        for (int keep = text.length - 1; keep >= 8; keep--) {
+          final int head = (keep + 1) ~/ 2;
+          final int tail = keep - head;
+          final String candidate = text.substring(0, head) +
+              ellipsis +
+              text.substring(text.length - tail);
+          best = candidate;
+          if (widthOf(candidate) <= maxWidth) break;
+        }
+        return oneLine(best);
+      },
     );
   }
 }
@@ -1250,7 +1308,7 @@ class _Verdict extends StatelessWidget {
     // not a check: measured live right now is a stronger claim than "reachable".
     final int? live = coreDelayMs;
     if (live != null) {
-      return _LatencyBadge(ms: live, icon: Icons.bolt_rounded, filled: true);
+      return _LatencyBadge(ms: live, icon: Icons.bolt_rounded);
     }
     // The core tried this node through the tunnel and got nothing back: an
     // honest "no response", not the misleading "not testable" (it WAS tested).
@@ -1289,50 +1347,50 @@ class _Verdict extends StatelessWidget {
       case NodeProbeQuality.handshake:
         final int ms = p.latencyMs ?? 0;
         final bool proven = p.quality == NodeProbeQuality.proxied;
-        // Proven traffic gets the verified mark on a tinted pill; a
+        // Proven traffic earns a quiet leading dot in the ping colour; a
         // handshake-only figure stays plain so it does not overclaim.
-        return _LatencyBadge(
-          ms: ms,
-          icon: proven ? Icons.verified_rounded : null,
-          filled: proven,
-        );
+        return _LatencyBadge(ms: ms, marked: proven);
     }
   }
 }
 
-/// A latency reading rendered as a confident, tabular figure: the number leads
-/// at full weight, the "ms" unit is demoted to the same hue at lower emphasis,
-/// and both take the ping color (green fast, amber middling, red slow). A
-/// proven or live reading also earns a tinted pill and a leading mark; a
-/// handshake-only number stays plain so it never looks stronger than it is.
+/// A latency reading rendered as a calm, confident metric rather than a sticker:
+/// no pill, no border. The number leads at full weight, the "ms" unit is demoted
+/// to the same hue at lower emphasis, and both take the ping color (green fast,
+/// amber middling, red slow). A live core reading gets a small leading bolt and
+/// a proven reading a quiet leading dot; a handshake-only number stays plain so
+/// it never looks stronger than it is.
 class _LatencyBadge extends StatelessWidget {
-  const _LatencyBadge({required this.ms, this.icon, this.filled = false});
+  const _LatencyBadge({required this.ms, this.icon, this.marked = false});
 
   final int ms;
+
+  /// A small leading glyph for a live core reading (a bolt). Null otherwise.
   final IconData? icon;
-  final bool filled;
+
+  /// A quiet leading dot marking a proven (traffic-reached) reading, so
+  /// "verified" stays legible without a shield-on-tint that reads as an alarm.
+  final bool marked;
 
   @override
   Widget build(BuildContext context) {
     final Color c = NovaSemantics.ping(ms);
-    return Container(
-      padding: EdgeInsets.symmetric(
-          horizontal: filled ? NovaSpace.sm : 0, vertical: 3),
-      decoration: filled
-          ? BoxDecoration(
-              color: c.withValues(alpha: 0.13),
-              borderRadius: NovaRadii.iconChipR,
-            )
-          : null,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (icon != null) ...<Widget>[
-            Icon(icon, size: 14, color: c),
-            const SizedBox(width: 4),
-          ],
-          // "42 ms" is a Latin run, held LTR so it is never mirrored in Farsi.
-          Text.rich(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Icon(icon, size: 13, color: c),
+          const SizedBox(width: 3),
+        ] else if (marked) ...<Widget>[
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+        ],
+        // "42 ms" is a Latin run, held LTR so it is never mirrored in Farsi.
+        Text.rich(
             TextSpan(
               children: <InlineSpan>[
                 TextSpan(
@@ -1363,8 +1421,7 @@ class _LatencyBadge extends StatelessWidget {
             textDirection: TextDirection.ltr,
           ),
         ],
-      ),
-    );
+      );
   }
 }
 
