@@ -171,6 +171,18 @@ if [ "$target" = "darwin" ] || [ "$target" = "all" ]; then
   rm -f "$out_dir/sing-box-macos-arm64"
   cp "$work/sing-box-macos-arm64" "$out_dir/sing-box-macos-arm64"
   chmod +x "$out_dir/sing-box-macos-arm64"
+
+  # Intel Macs. The Flutter app bundle is already universal (x86_64 + arm64) and
+  # the app picks its core by the running architecture at runtime, so an Intel
+  # Mac was launching the app and then finding no core to run. cgo needs an
+  # explicit -arch here because we are cross-compiling from an Apple Silicon
+  # host; cronet-go resolves lib/darwin_amd64 for the static link on its own.
+  CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
+    build darwin amd64 "$work/sing-box-macos-amd64" 1 "$TAGS"
+  verify "$work/sing-box-macos-amd64"
+  rm -f "$out_dir/sing-box-macos-amd64"
+  cp "$work/sing-box-macos-amd64" "$out_dir/sing-box-macos-amd64"
+  chmod +x "$out_dir/sing-box-macos-amd64"
 fi
 if [ "$target" = "windows" ] || [ "$target" = "all" ]; then
   build windows amd64 "$work/sing-box-windows-amd64.exe" 0 "$TAGS,with_purego"

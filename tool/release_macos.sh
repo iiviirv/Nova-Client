@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Build, sign, notarize, staple the macOS app and produce BOTH a zip and a DMG.
 # Usage: ./tool/release_macos.sh <build-number>      e.g. ./tool/release_macos.sh 60
-# Outputs in /tmp:  Nova-macOS-arm64-b<n>.zip  and  Nova-macOS-arm64-b<n>.dmg
+# Outputs in /tmp: Nova-macOS.dmg and Nova-macOS.zip (universal: Intel + Apple
+# Silicon), plus Nova-macOS-arm64.* compat aliases.
 # macOS-only: needs the Developer ID identity in the signing keychain and the
 # App Store Connect notary key on disk. Runs locally, not in GitHub CI.
 set -o pipefail
@@ -35,14 +36,27 @@ echo "############ build macOS ############"
 flutter build macos --release 2>&1 | tail -5
 APP="$PROJ/build/macos/Build/Products/Release/nova_client.app"
 if [[ ! -d "$APP" ]]; then echo "!! macOS app not produced"; exit 1; fi
-cp "$PROJ/assets/bin/sing-box-macos-arm64" "$APP/Contents/Resources/sing-box-macos-arm64"
-echo "core bundled: $(ls -lh "$APP/Contents/Resources/sing-box-macos-arm64" | awk '{print $5}')"
+# Bundle the cores for BOTH architectures. The Flutter app bundle is universal
+# (x86_64 + arm64) and the app resolves its core by the architecture it is
+# actually running on, so shipping only the arm64 core meant an Intel Mac
+# launched the app and then had nothing to run. Missing arch is fatal: a DMG
+# that half works on Intel is worse than a build failure here.
+for a in arm64 amd64; do
+  src="$PROJ/assets/bin/sing-box-macos-$a"
+  if [[ ! -f "$src" ]]; then
+    echo "!! missing $src (build it: tool/core/build-desktop.sh darwin)"; exit 1
+  fi
+  cp "$src" "$APP/Contents/Resources/sing-box-macos-$a"
+  echo "core bundled ($a): $(ls -lh "$APP/Contents/Resources/sing-box-macos-$a" | awk '{print $5}')"
+done
 # Second core, Xray, for xhttp exits. Best-effort: an older tree without it just
 # ships without xhttp support (the app says so at connect time).
-if [[ -f "$PROJ/assets/bin/xray-macos-arm64" ]]; then
-  cp "$PROJ/assets/bin/xray-macos-arm64" "$APP/Contents/Resources/xray-macos-arm64"
-  echo "xray core bundled: $(ls -lh "$APP/Contents/Resources/xray-macos-arm64" | awk '{print $5}')"
-fi
+for a in arm64 amd64; do
+  if [[ -f "$PROJ/assets/bin/xray-macos-$a" ]]; then
+    cp "$PROJ/assets/bin/xray-macos-$a" "$APP/Contents/Resources/xray-macos-$a"
+    echo "xray core bundled ($a): $(ls -lh "$APP/Contents/Resources/xray-macos-$a" | awk '{print $5}')"
+  fi
+done
 
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
 # Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
@@ -54,10 +68,11 @@ done
 for fw in "$APP"/Contents/Frameworks/*.framework(N); do
   codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw" 2>&1 | tail -1
 done
-codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/sing-box-macos-arm64" 2>&1 | tail -1
-if [[ -f "$APP/Contents/Resources/xray-macos-arm64" ]]; then
-  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/xray-macos-arm64" 2>&1 | tail -1
-fi
+# Every bundled core must be signed, or notarization rejects the app.
+for core in "$APP"/Contents/Resources/sing-box-macos-* "$APP"/Contents/Resources/xray-macos-*; do
+  [[ -f "$core" ]] || continue
+  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$core" 2>&1 | tail -1
+done
 codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" "${KCARGS[@]}" "$APP" 2>&1 | tail -1
 codesign --verify --deep --strict "$APP" 2>&1 | tail -2 && echo "signature valid"
 
@@ -95,11 +110,23 @@ ls -lh "$DMG" | awk '{print "macOS dmg:", $5}'
 # ASSET name is stable across releases; uploading only the "-b<n>" name is what
 # made that link 404. The release tag already carries the version, so the stable
 # name loses nothing. Upload these two to the release.
-STABLE_DMG=/tmp/Nova-macOS-arm64.dmg
-STABLE_ZIP=/tmp/Nova-macOS-arm64.zip
+#
+# The build is universal (Intel + Apple Silicon, app and cores), so the primary
+# name no longer says arm64: calling it that told Intel users it was not for
+# them. The old arm64 names are still emitted so links already shared in
+# Telegram and elsewhere keep resolving; they can be dropped after a release or
+# two.
+STABLE_DMG=/tmp/Nova-macOS.dmg
+STABLE_ZIP=/tmp/Nova-macOS.zip
+LEGACY_DMG=/tmp/Nova-macOS-arm64.dmg
+LEGACY_ZIP=/tmp/Nova-macOS-arm64.zip
 cp -f "$DMG" "$STABLE_DMG"
 cp -f "$ZIP" "$STABLE_ZIP"
+cp -f "$DMG" "$LEGACY_DMG"
+cp -f "$ZIP" "$LEGACY_ZIP"
 echo "upload these to the release:"
-echo "  $STABLE_DMG"
+echo "  $STABLE_DMG   (primary, universal)"
 echo "  $STABLE_ZIP"
+echo "  $LEGACY_DMG   (compat alias for links already shared)"
+echo "  $LEGACY_ZIP"
 echo "RELEASE_MACOS_DONE b$B"
