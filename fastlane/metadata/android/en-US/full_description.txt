@@ -1,0 +1,21 @@
+Nova is an open-source client for reaching the open internet on restricted
+networks. Bring your own configuration or subscription and connect through
+infrastructure you control.
+
+FEATURES
+* Broad protocol support via bundled sing-box and Xray cores: VLESS (incl.
+  Reality and xhttp/SplitHTTP), VMess, Trojan, Shadowsocks (incl. 2022),
+  Hysteria2, TUIC, AmneziaWG and WireGuard, SOCKS and HTTP.
+* Nova Radar: an on-device clean-IP scanner that pulls candidate Cloudflare
+  ranges, verifies each over TCP and TLS, ranks them by real latency, and
+  applies the fastest one in a tap.
+* Deploy your own: sign in to your own Cloudflare account and set up your own
+  Worker from inside the app - your keys, your edge.
+* SNI-block bypass for networks that block the worker domains themselves.
+* Per-server live ping through the tunnel, honest reachability verdicts, a full
+  core log, and per-network tuning (TLS fingerprint, fragmentation).
+* Import from a link, a subscription URL, a QR code, or an AmneziaWG .conf.
+
+Nova bundles and sells nothing. Its networking layer is built on widely used
+open-source components, with original scanning, deployment, and interface on
+top. The app is MIT-licensed; the source is at github.com/iiviirv/Nova-Client.
