@@ -35,6 +35,10 @@ Future<void> _pumpShell(WidgetTester tester) async {
     relay: relay,
     tunnel: tunnel,
   ));
+  // Advance past the minimum-splash hold (started in a post-frame callback), so
+  // the gate moves on to the shell.
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 1600));
   // The connect orb pulses continuously, so the tree never fully settles;
   // pump a couple of fixed frames instead of pumpAndSettle.
   await tester.pump();
