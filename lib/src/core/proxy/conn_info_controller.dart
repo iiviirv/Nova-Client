@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'proxy_controller.dart';
 
@@ -42,6 +43,38 @@ class ConnInfoController extends ChangeNotifier {
     _proxy.addListener(_onProxyChanged);
     _proxy.coreHealth.addListener(_onCoreHealth);
     _client = _makeClient();
+    // Pause the 6-second exit-IP poll while the app is backgrounded. The reading
+    // only feeds the dashboard, which nobody is looking at when we are not in the
+    // foreground, so probing the network on a timer there is pure battery and
+    // data waste over a long-running tunnel. We resume (and refresh at once) when
+    // the user comes back.
+    _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
+  }
+
+  AppLifecycleListener? _lifecycle;
+  bool _foreground = true;
+
+  void _onLifecycle(AppLifecycleState state) {
+    final bool fg = state == AppLifecycleState.resumed;
+    if (fg == _foreground) return;
+    _foreground = fg;
+    if (!_wasActive) return;
+    if (fg) {
+      // Back in view: refresh straight away so a stale reading does not linger,
+      // then resume the periodic poll.
+      _refresh();
+      _armPoll();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  /// (Re)arms the periodic poll, but only while the app is in the foreground.
+  void _armPoll() {
+    _timer?.cancel();
+    if (!_foreground) return;
+    _timer = Timer.periodic(const Duration(seconds: 6), (_) => _refresh());
   }
 
   /// A fresh client whose connections are made *after* the tunnel is up. We
@@ -140,8 +173,7 @@ class ConnInfoController extends ChangeNotifier {
     // — without this the first reading stayed blank until a manual reconnect.
     _refresh();
     _scheduleWarmup();
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 6), (_) => _refresh());
+    _armPoll();
   }
 
   void _scheduleWarmup() {
@@ -288,6 +320,7 @@ class ConnInfoController extends ChangeNotifier {
   void dispose() {
     _proxy.removeListener(_onProxyChanged);
     _proxy.coreHealth.removeListener(_onCoreHealth);
+    _lifecycle?.dispose();
     _timer?.cancel();
     _client.close(force: true);
     super.dispose();

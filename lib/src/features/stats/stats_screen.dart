@@ -29,7 +29,7 @@ class StatsScreen extends StatefulWidget {
   State<StatsScreen> createState() => _StatsScreenState();
 }
 
-class _StatsScreenState extends State<StatsScreen> {
+class _StatsScreenState extends State<StatsScreen> with WidgetsBindingObserver {
   int _range = 0; // 0 Live, 1 1m, 2 5m, 3 Session
   static const List<int> _windows = <int>[20, 30, 40, 60];
 
@@ -37,6 +37,24 @@ class _StatsScreenState extends State<StatsScreen> {
   final Queue<double> _down = Queue<double>();
   final Queue<double> _up = Queue<double>();
   Timer? _ticker;
+
+  // Only sample while the app is in the foreground. The chart is invisible when
+  // backgrounded, so the once-per-second read + repaint is pure waste there.
+  bool _foreground = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool fg = state == AppLifecycleState.resumed;
+    if (fg == _foreground) return;
+    _foreground = fg;
+    _sync();
+  }
 
   ProxyController? _proxyRef;
   ProxyController get _proxy => _proxyRef!;
@@ -54,12 +72,15 @@ class _StatsScreenState extends State<StatsScreen> {
 
   void _sync() {
     if (_proxyRef == null) return;
-    if (_proxy.state.isActive) {
+    final bool active = _proxy.state.isActive;
+    if (active && _foreground) {
       _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _sample());
     } else {
       _ticker?.cancel();
       _ticker = null;
-      if (_down.isNotEmpty || _up.isNotEmpty) {
+      // Wipe the rolling history only on a real disconnect. Merely pausing for
+      // the background must keep it so the chart is intact on resume.
+      if (!active && (_down.isNotEmpty || _up.isNotEmpty)) {
         setState(() {
           _down.clear();
           _up.clear();
@@ -84,6 +105,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _proxyRef?.removeListener(_sync);
     super.dispose();
@@ -146,9 +168,8 @@ class _StatsScreenState extends State<StatsScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: <Widget>[
-                Text(s.navStats,
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 14),
+                NovaScreenHeader(title: s.navStats),
+                const SizedBox(height: NovaSpace.md),
                 // Real download/upload measurement, for comparing configs.
                 NovaCard(
                   onTap: () => Navigator.of(context).push(
