@@ -139,6 +139,10 @@ jobs:
       # app" warning on sideload). The key lives only in GitHub secrets; without
       # them the build still runs but falls back to debug signing (build.gradle.kts).
       - name: Set up release signing
+        # Never decode the keystore during a pull-request build (a public repo
+        # accepts PRs). Fork PRs get no secrets from GitHub anyway; this also
+        # keeps a same-repo PR's build steps from ever seeing the key.
+        if: github.event_name != 'pull_request'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
