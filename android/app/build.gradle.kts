@@ -20,7 +20,7 @@ if (hasReleaseKeystore) {
 
 android {
     namespace = "online.novaproxy.nova_client"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36  // file_picker's lifecycle dep needs 36; targetSdk stays 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

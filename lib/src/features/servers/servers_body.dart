@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'dart:convert' show utf8;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
@@ -891,22 +890,16 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   /// user left it blank. A cancelled or unreadable pick leaves the field as-is.
   Future<void> _pickConfFile() async {
     try {
-      final FilePickerResult? res = await FilePicker.platform.pickFiles(
-        withData: true,
-        type: FileType.any,
-      );
-      if (res == null || res.files.isEmpty) return;
-      final PlatformFile f = res.files.first;
-      final List<int>? bytes = f.bytes;
-      if (bytes == null || bytes.isEmpty) return;
-      final String text = utf8.decode(bytes, allowMalformed: true).trim();
-      if (!mounted) return;
+      final XFile? file = await openFile();
+      if (file == null) return;
+      final String text = (await file.readAsString()).trim();
+      if (text.isEmpty || !mounted) return;
       setState(() {
         _uriCtrl.text = text;
         _kind = ProxyKind.awg;
-        if (_nameCtrl.text.trim().isEmpty && f.name.isNotEmpty) {
+        if (_nameCtrl.text.trim().isEmpty && file.name.isNotEmpty) {
           _nameCtrl.text =
-              f.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
+              file.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
         }
       });
     } catch (_) {
