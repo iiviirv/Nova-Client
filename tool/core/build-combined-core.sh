@@ -84,8 +84,13 @@ probe="$work/probe"; mkdir -p "$probe"; unzip -q -o libbox.aar -d "$probe"
 for so in "$probe"/jni/*/libbox.so; do
   jmin="$(strings -a "$so" | grep -c jmin || true)"
   xh="$(strings -a "$so" | grep -c -i splithttp || true)"
-  echo "  $(basename "$(dirname "$so")")  amneziawg(jmin)=$jmin  xray(splithttp)=$xh"
-  [ "$jmin" -ge 1 ] && [ "$xh" -ge 1 ] || { echo "core for $(basename "$(dirname "$so")") missing a protocol" >&2; exit 1; }
+  # NaiveProxy rides on Chromium's cronet; a with_naive_outbound core statically
+  # links it, so a Cronet_Engine symbol is the reliable "naive is really in here"
+  # signal. An Android core without it would run every other protocol and fail
+  # only NaiveProxy servers, which reads as a dead server.
+  nv="$(strings -a "$so" | grep -c -i 'Cronet_Engine' || true)"
+  echo "  $(basename "$(dirname "$so")")  amneziawg(jmin)=$jmin  xray(splithttp)=$xh  naive(cronet)=$nv"
+  [ "$jmin" -ge 1 ] && [ "$xh" -ge 1 ] && [ "$nv" -ge 1 ] || { echo "core for $(basename "$(dirname "$so")") missing a protocol (awg/xray/naive)" >&2; exit 1; }
 done
 
 mkdir -p "$(dirname "$output")"; cp libbox.aar "$output"
