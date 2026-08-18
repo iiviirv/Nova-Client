@@ -89,4 +89,17 @@ xcrun stapler staple "$DMG" 2>&1 | tail -1
 xcrun stapler validate "$DMG" 2>&1 | tail -1
 spctl -a -vvv -t open --context context:primary-signature "$DMG" 2>&1 | tail -3
 ls -lh "$DMG" | awk '{print "macOS dmg:", $5}'
+
+# Also emit build-number-free copies. The website links to
+# releases/latest/download/Nova-macOS-arm64.dmg, which only resolves if the
+# ASSET name is stable across releases; uploading only the "-b<n>" name is what
+# made that link 404. The release tag already carries the version, so the stable
+# name loses nothing. Upload these two to the release.
+STABLE_DMG=/tmp/Nova-macOS-arm64.dmg
+STABLE_ZIP=/tmp/Nova-macOS-arm64.zip
+cp -f "$DMG" "$STABLE_DMG"
+cp -f "$ZIP" "$STABLE_ZIP"
+echo "upload these to the release:"
+echo "  $STABLE_DMG"
+echo "  $STABLE_ZIP"
 echo "RELEASE_MACOS_DONE b$B"
