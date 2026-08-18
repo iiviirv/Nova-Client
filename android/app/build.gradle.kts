@@ -56,6 +56,14 @@ android {
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
+                // Sign with v2 AND v3. Shipped APKs were v2-only, which is the
+                // bare minimum for minSdk 24 but leaves out the scheme every
+                // Android 9+ device prefers and the one that carries key-rotation
+                // proof. This is signing hygiene, not a fix for the Play Protect
+                // "unknown developer" warning (that is reputation on the signing
+                // key, see docs/play-protect-warning.md).
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
