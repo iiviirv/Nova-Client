@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:convert' show utf8;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
@@ -883,6 +885,35 @@ class _ConfigDialogState extends State<_ConfigDialog> {
       TextEditingController(text: widget.initialUri);
   late ProxyKind _kind = widget.initialKind;
 
+  /// AmneziaWG configs arrive as a `.conf` file. Let the user pick one and drop
+  /// its text straight into the URI field, where the normal Save path parses it
+  /// (looksLikeConf -> ProxyKind.awg). The name is filled from the file when the
+  /// user left it blank. A cancelled or unreadable pick leaves the field as-is.
+  Future<void> _pickConfFile() async {
+    try {
+      final FilePickerResult? res = await FilePicker.platform.pickFiles(
+        withData: true,
+        type: FileType.any,
+      );
+      if (res == null || res.files.isEmpty) return;
+      final PlatformFile f = res.files.first;
+      final List<int>? bytes = f.bytes;
+      if (bytes == null || bytes.isEmpty) return;
+      final String text = utf8.decode(bytes, allowMalformed: true).trim();
+      if (!mounted) return;
+      setState(() {
+        _uriCtrl.text = text;
+        _kind = ProxyKind.awg;
+        if (_nameCtrl.text.trim().isEmpty && f.name.isNotEmpty) {
+          _nameCtrl.text =
+              f.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
+        }
+      });
+    } catch (_) {
+      // Best-effort import; a failure just leaves the dialog untouched.
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -933,6 +964,17 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 ],
               ),
             ),
+            if (_kind == ProxyKind.awg) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _pickConfFile,
+                  icon: const Icon(Icons.upload_file_rounded, size: 18),
+                  label: Text(s.awgImportConf),
+                ),
+              ),
+            ],
           ],
         ],
       ),

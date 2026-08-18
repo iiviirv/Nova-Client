@@ -656,6 +656,7 @@ class NovaStrings {
   String get inbPresetSs2022Sub => t('inb.presetSs2022Sub');
 
   String get serversName => t('servers.name');
+  String get awgImportConf => t('servers.awgImportConf');
   String get serversLink => t('servers.link');
   String get serversSubUrl => t('servers.subUrl');
   String get serversUriHint => t('servers.uriHint');
@@ -1350,6 +1351,7 @@ class NovaStrings {
     'inb.presetWsTlsSub': 'WebSocket over TLS.',
     'inb.presetSs2022Sub': 'Modern Shadowsocks with a strong cipher.',
     'servers.name': 'Name',
+    'servers.awgImportConf': 'Import .conf file',
     'servers.link': 'Link',
     'servers.subUrl': 'Subscription URL',
     'servers.uriHint': 'vless://…  or  https://…/sub',
@@ -2032,6 +2034,7 @@ class NovaStrings {
     'inb.presetWsTlsSub': 'وب‌سوکت روی TLS.',
     'inb.presetSs2022Sub': 'شادوساکس مدرن با رمز قوی.',
     'servers.name': 'نام',
+    'servers.awgImportConf': 'وارد کردن فایل \u2066conf.\u2069',
     'servers.link': 'لینک',
     'servers.subUrl': 'نشانی اشتراک',
     'servers.uriHint': 'vless://…  یا  https://…/sub',

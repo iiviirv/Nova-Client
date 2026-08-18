@@ -38,6 +38,9 @@ dependencies:
   crypto: ^3.0.0
   http_parser: ^4.0.0
 
+  # Lets AmneziaWG users import a .conf file directly in the Add dialog.
+  file_picker: ^8.1.2
+
   # "Connect your VPS": SSH into the user's server to install the Nova node
   # agent (pure-Dart SSH/SFTP client, works on iOS + Android), and store the
   # optional saved SSH credentials in the iOS Keychain / Android Keystore.
