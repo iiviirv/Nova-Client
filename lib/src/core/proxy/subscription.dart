@@ -106,11 +106,51 @@ class NovaCoreConfig {
   }
 }
 
+/// What a subscription contained that Nova could not turn into a node.
+///
+/// A dropped line used to vanish without a word, which is how an operator who
+/// created a NaiveProxy or mieru inbound found it "appeared in no client at
+/// all": the app knew it had skipped something and said nothing. Counting the
+/// schemes lets the UI name them.
+class SkippedLinks {
+  SkippedLinks(this.byScheme);
+
+  /// Lowercased scheme (`mieru`, `naive+quic`, …) to how many lines used it.
+  /// `?` collects lines with no scheme Nova could read at all.
+  final Map<String, int> byScheme;
+
+  int get total => byScheme.values.fold(0, (int a, int b) => a + b);
+  bool get isEmpty => byScheme.isEmpty;
+
+  /// The schemes, most common first, for a short human list.
+  List<String> get schemes {
+    final List<MapEntry<String, int>> e = byScheme.entries.toList()
+      ..sort((MapEntry<String, int> a, MapEntry<String, int> b) =>
+          b.value.compareTo(a.value));
+    return e.map((MapEntry<String, int> x) => x.key).toList();
+  }
+}
+
+/// The schemes skipped by the most recent [parseSubscriptionBody] call.
+///
+/// Deliberately a side channel rather than a changed return type: every caller
+/// wants the nodes, and only the node list wants to explain the gaps.
+SkippedLinks lastSkippedLinks = SkippedLinks(<String, int>{});
+
 /// Parses a subscription body (base64 or plaintext newline-separated links)
 /// into nodes, skipping anything that doesn't parse.
 List<ProxyNode> parseSubscriptionBody(String body) {
   final String text = _maybeBase64Decode(body.trim());
   final List<ProxyNode> nodes = <ProxyNode>[];
+  final Map<String, int> skipped = <String, int>{};
+  void note(String line) {
+    final int at = line.indexOf('://');
+    // Cap the length so a malformed line cannot become the label.
+    final String scheme =
+        at > 0 && at <= 24 ? line.substring(0, at).toLowerCase() : '?';
+    skipped[scheme] = (skipped[scheme] ?? 0) + 1;
+  }
+
   for (final String raw in const LineSplitter().convert(text)) {
     final String line = raw.trim();
     if (line.isEmpty) continue;
@@ -129,11 +169,20 @@ List<ProxyNode> parseSubscriptionBody(String body) {
     final String? decoded = _decodeBase64Line(line);
     if (decoded != null) {
       for (final String inner in const LineSplitter().convert(decoded)) {
-        final ProxyNode? n = parseShareLink(inner.trim());
-        if (n != null && !_isPlaceholderNode(n)) nodes.add(n);
+        final String innerLine = inner.trim();
+        if (innerLine.isEmpty) continue;
+        final ProxyNode? n = parseShareLink(innerLine);
+        if (n != null) {
+          if (!_isPlaceholderNode(n)) nodes.add(n);
+        } else {
+          note(innerLine);
+        }
       }
+      continue;
     }
+    note(line);
   }
+  lastSkippedLinks = SkippedLinks(skipped);
   return nodes;
 }
 
@@ -174,8 +223,37 @@ Future<NovaCoreConfig?> fetchCoreConfig(
   String url, {
   SubscriptionFetcher? fetch,
 }) async {
-  final String body = await (fetch ?? _httpFetch)(Uri.parse(url));
+  final String body = await fetchSubscriptionBody(url, fetch: fetch);
   return NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+}
+
+/// Fetches the raw subscription body text (before parsing), so callers that need
+/// to persist the exact bytes the panel served can do so. Mirrors the transport
+/// choice [fetchCoreConfig] used to make inline: prefer the supplied fetcher (the
+/// relay or a test mock), but for a bare-IP "no domain" host fall back to a
+/// direct fetch that accepts the self-signed certificate.
+Future<String> fetchSubscriptionBody(
+  String url, {
+  SubscriptionFetcher? fetch,
+}) async {
+  final Uri uri = Uri.parse(url);
+  final bool bareIp = _isBareIpHost(uri);
+  String? body;
+  if (fetch != null) {
+    try {
+      body = await fetch(uri);
+    } catch (_) {
+      if (!bareIp) rethrow; // a real relay/transport error for a domain host
+    }
+  }
+  return body ?? await _httpFetch(uri, insecure: bareIp);
+}
+
+/// Whether [uri]'s host is a bare IP literal (IPv4/IPv6) rather than a domain.
+/// A self-signed Nova node is always reached by IP, so this cleanly identifies
+/// the "no domain" case without a separate flag.
+bool _isBareIpHost(Uri uri) {
+  return InternetAddress.tryParse(uri.host) != null;
 }
 
 /// If [body] isn't already plaintext links, try to base64-decode it (tolerating
@@ -294,10 +372,85 @@ final Map<String, List<ProxyNode>> _nodeCache = <String, List<ProxyNode>>{};
 
 void clearSubscriptionCache() => _nodeCache.clear();
 
+/// Persists the last good raw body of each subscription across app restarts.
+///
+/// This is what keeps a user from being stranded: when workers.dev is blocked
+/// and the sub can't be refreshed, the panel URL fails, but the servers it last
+/// handed out are still perfectly usable (they connect to clean Cloudflare IPs,
+/// not the blocked domain). So the last successful body is saved, and a failed
+/// refresh serves it instead of wiping the list. Wired to disk at startup; left
+/// null in tests (which drive their own fetcher), where it is simply skipped.
+abstract class SubscriptionBodyStore {
+  Future<String?> load(String url);
+  Future<void> save(String url, String body);
+}
+
+SubscriptionBodyStore? subscriptionBodyStore;
+
+/// True when the most recent [resolveProfileNodes] served nodes from the saved
+/// body because the live refresh failed. Read right after the call (like
+/// [lastSkippedLinks]) so the UI can say "showing saved servers" without turning
+/// a refresh failure into a fatal, list-wiping error.
+bool lastResolveWasStale = false;
+
+/// Turns a fetched subscription [body] into the real, connectable nodes: keep
+/// every node that carries a credential, dropping only the credential-less
+/// info/banner node some panels prepend. Falls back to all nodes if that filter
+/// would empty the list.
+List<ProxyNode> _expandSubscriptionBody(String body) {
+  final NovaCoreConfig? core =
+      NovaCoreConfig.fromNodes(parseSubscriptionBody(body));
+  if (core == null) return const <ProxyNode>[];
+  bool hasCredential(ProxyNode n) =>
+      (n.uuid ?? '').isNotEmpty ||
+      (n.password ?? '').isNotEmpty ||
+      (n.method ?? '').isNotEmpty ||
+      (n.awgConf ?? '').isNotEmpty; // AmneziaWG auth is keys, not uuid/password
+  final List<ProxyNode> real = core.nodes.where(hasCredential).toList();
+  return real.isNotEmpty ? real : core.nodes;
+}
+
+/// Best-effort read of a saved subscription body; never throws (a broken store
+/// must not turn into a failure to resolve).
+Future<String?> _loadSavedBody(String url) async {
+  try {
+    return await subscriptionBodyStore?.load(url);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Best-effort persist of a freshly-fetched body; never throws.
+Future<void> _saveBody(String url, String body) async {
+  try {
+    await subscriptionBodyStore?.save(url, body);
+  } catch (_) {
+    // A failed save just means the next blocked refresh has nothing to fall
+    // back to; it must never break the resolve that is currently succeeding.
+  }
+}
+
+/// The nodes for [profile] that are already available with NO network at all:
+/// the in-memory session cache, or the persisted last-good body. Returns empty
+/// when nothing is saved yet (a genuine first run).
+///
+/// This is what lets the server list appear instantly instead of sitting on a
+/// spinner for the ~40s a filtered subscription URL takes to time out. The list
+/// shows these first, then refreshes live in the background.
+Future<List<ProxyNode>> cachedProfileNodes(ProxyProfile profile) async {
+  final String raw = _profilePayload(profile);
+  if (raw.isEmpty || !_isHttpUrl(raw)) return const <ProxyNode>[];
+  if (_nodeCache[raw] != null) return _nodeCache[raw]!;
+  final String? saved = await _loadSavedBody(raw);
+  if (saved == null) return const <ProxyNode>[];
+  return _expandSubscriptionBody(saved);
+}
+
 Future<List<ProxyNode>> resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
 }) async {
+  lastResolveWasStale = false;
   final String raw = _profilePayload(profile);
   if (raw.isEmpty) return const <ProxyNode>[];
   // A SOCKS / HTTP proxy is a single link that starts with http(s)://socks://,
@@ -309,22 +462,34 @@ Future<List<ProxyNode>> resolveProfileNodes(
   if (_isHttpUrl(raw)) {
     // Only the real network path is cached (tests pass a custom fetch).
     if (fetch == null && _nodeCache[raw] != null) return _nodeCache[raw]!;
-    final NovaCoreConfig? core = await fetchCoreConfig(raw, fetch: fetch);
-    if (core == null) return const <ProxyNode>[];
-    // Keep every real node, whatever its protocol. Previously this kept only
-    // uuid-carrying nodes (VLESS/VMess), which silently dropped every Trojan,
-    // Shadowsocks, Hysteria2 and TUIC node in a mixed subscription (a 500-node
-    // sub showed as 41). Filter only the credential-less info/banner node some
-    // panels prepend; a node with any credential is a real exit.
-    bool hasCredential(ProxyNode n) =>
-        (n.uuid ?? '').isNotEmpty ||
-        (n.password ?? '').isNotEmpty ||
-        (n.method ?? '').isNotEmpty ||
-        (n.awgConf ?? '').isNotEmpty; // AmneziaWG auth is keys, not uuid/password
-    final List<ProxyNode> real =
-        core.nodes.where(hasCredential).toList();
-    final List<ProxyNode> out = real.isNotEmpty ? real : core.nodes;
-    if (fetch == null && out.isNotEmpty) _nodeCache[raw] = out;
+    String body;
+    try {
+      body = await fetchSubscriptionBody(raw, fetch: fetch);
+    } catch (e) {
+      // The live refresh failed. This is the workers.dev-blocked case: the panel
+      // URL is unreachable, but the servers it last handed out still work (they
+      // connect to clean IPs, not the blocked domain). Serve the saved body so
+      // the user keeps their list and can still connect, instead of wiping it.
+      // Persistence is store-backed (null in tests), so this is fetch-agnostic:
+      // the relay path benefits from the same fallback.
+      final String? saved = await _loadSavedBody(raw);
+      if (saved == null) rethrow; // nothing saved yet: a genuine first-run error
+      lastResolveWasStale = true;
+      // Deliberately NOT written to the session cache: a stale result must not
+      // stick, so the next open (or connect) retries the live fetch and picks up
+      // the fresh list the moment connectivity comes back.
+      return _expandSubscriptionBody(saved);
+    }
+    // Keep every real node, whatever its protocol (a mixed sub has Trojan / SS /
+    // Hysteria2 / TUIC too), dropping only the credential-less info/banner node.
+    final List<ProxyNode> out = _expandSubscriptionBody(body);
+    if (out.isNotEmpty) {
+      // The session cache is test-sensitive, so it stays gated on the real path.
+      if (fetch == null) _nodeCache[raw] = out;
+      // Save the freshly-fetched body so a future blocked refresh has it. The
+      // store is null in tests, so this is a no-op there whatever the fetcher.
+      await _saveBody(raw, body);
+    }
     return out;
   }
   // A pasted AmneziaWG / WireGuard `.conf` is a single multi-line node (not a
@@ -352,18 +517,22 @@ Future<List<ProxyNode>> resolveProfileNodes(
 /// (common in Iran) often times out where a second, warmed-up connection gets
 /// through. A real HTTP status (non-200) is not retried, since that won't
 /// change on a second try.
-Future<String> _httpFetch(Uri url) async {
+Future<String> _httpFetch(Uri url, {bool insecure = false}) async {
   // Fast path: a direct fetch, retried once for a transient hiccup. A bad HTTP
   // status means we reached the server (not a block), so surface it as-is.
   for (int attempt = 0; attempt < 2; attempt++) {
     try {
-      return await _httpFetchOnce(url);
+      return await _httpFetchOnce(url, insecure: insecure);
     } on HttpException {
       rethrow;
     } catch (_) {
       if (attempt >= 1) break;
     }
   }
+  // A bare-IP self-signed node is reached directly; the SNI-fragment fallback is
+  // for a domain being SNI-blocked, which doesn't apply, so don't attempt it
+  // (and it would re-validate the cert anyway).
+  if (insecure) return await _httpFetchOnce(url, insecure: true);
   // The direct fetch failed at the connection level, which is exactly what a
   // plaintext-SNI block on workers.dev looks like from Iran. Retry through a
   // local fragment proxy that splits the TLS ClientHello so the censor can't
@@ -377,9 +546,19 @@ Future<String> _httpFetch(Uri url) async {
   }
 }
 
-Future<String> _httpFetchOnce(Uri url, {String? proxyAuthority}) async {
+Future<String> _httpFetchOnce(Uri url,
+    {String? proxyAuthority, bool insecure = false}) async {
   final HttpClient client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 20);
+    // Kept short: on a filtered subscription URL the connect just hangs, and the
+    // whole point is to fail fast through to the SNI-fragment fallback (and, if
+    // that fails too, to the saved list) rather than sit on a spinner.
+    ..connectionTimeout = const Duration(seconds: 8);
+  if (insecure) {
+    // Accept the node's self-signed certificate (the "no domain" case). Scoped
+    // to this one request; the default validating client is used everywhere else.
+    client.badCertificateCallback =
+        (X509Certificate cert, String host, int port) => true;
+  }
   if (proxyAuthority != null) {
     // Route this request through the loopback fragment proxy: HttpClient issues
     // CONNECT <host>:443 to it, then does TLS end to end through the tunnel, so
@@ -390,7 +569,7 @@ Future<String> _httpFetchOnce(Uri url, {String? proxyAuthority}) async {
     final HttpClientRequest req = await client.getUrl(url);
     req.headers.set(HttpHeaders.userAgentHeader, 'NovaClient');
     final HttpClientResponse resp =
-        await req.close().timeout(const Duration(seconds: 25));
+        await req.close().timeout(const Duration(seconds: 12));
     if (resp.statusCode != HttpStatus.ok) {
       throw HttpException('Subscription HTTP ${resp.statusCode}', uri: url);
     }
@@ -400,7 +579,7 @@ Future<String> _httpFetchOnce(Uri url, {String? proxyAuthority}) async {
     return await resp
         .transform(utf8.decoder)
         .join()
-        .timeout(const Duration(seconds: 25));
+        .timeout(const Duration(seconds: 12));
   } finally {
     client.close(force: true);
   }

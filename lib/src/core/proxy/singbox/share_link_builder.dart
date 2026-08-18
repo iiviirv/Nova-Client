@@ -31,6 +31,8 @@ String buildShareLink(ProxyNode node) {
     NodeProtocol.hysteria2 ||
     NodeProtocol.tuic ||
     NodeProtocol.socks ||
+    NodeProtocol.naive ||
+    NodeProtocol.mieru ||
     NodeProtocol.http =>
       throw UnsupportedError(
         'Share-link building for ${node.protocol.label} is not supported',
@@ -83,6 +85,15 @@ String _buildUserInfoLink(ProxyNode node, String scheme, String credential) {
   }
   if (node.allowInsecure) {
     params.add('allowInsecure=1');
+  }
+  // The SNI-block bypass profile travels as PattNG writes it (`cs=` and `fm=`,
+  // with fp=unsafe already emitted above), so a hardened Nova node pastes
+  // straight into PattNG or v2rayNG with the same profile.
+  if (node.cipherSuites.isNotEmpty) {
+    params.add('cs=${Uri.encodeComponent(node.cipherSuites.join(':'))}');
+  }
+  if ((node.fragmentMask ?? '').isNotEmpty) {
+    params.add('fm=${Uri.encodeComponent(node.fragmentMask!)}');
   }
 
   final String query = params.join('&');

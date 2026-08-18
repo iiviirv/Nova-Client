@@ -4,7 +4,7 @@ description: >-
   fork) with the Nova Radar Cloudflare clean-IP scanner built in. Follows the
   Nova Proxy design language.
 publish_to: "none"
-version: 0.3.3+70
+version: 0.3.3+82
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -38,6 +38,12 @@ dependencies:
   crypto: ^3.0.0
   http_parser: ^4.0.0
 
+  # Lets AmneziaWG users import a .conf file directly in the Add dialog.
+  file_selector: ^1.0.3
+
+  # Handles nova:// deep links (e.g. the panel's install-config import link).
+  app_links: ^6.3.2
+
   # "Connect your VPS": SSH into the user's server to install the Nova node
   # agent (pure-Dart SSH/SFTP client, works on iOS + Android), and store the
   # optional saved SSH credentials in the iOS Keychain / Android Keystore.
@@ -47,6 +53,10 @@ dependencies:
   # Render per-user share links as QR codes in the VPS admin panel (pure Dart,
   # no native code, so no CocoaPods entry needed).
   qr_flutter: ^4.1.0
+
+  # In-app web view so a Nova Server panel owner can open their panel / mini-app
+  # inside the client instead of leaving for a browser.
+  webview_flutter: ^4.7.0
 
 dev_dependencies:
   flutter_test:

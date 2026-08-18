@@ -9,13 +9,19 @@ import '../theme/nova_theme.dart';
 import 'nova_logo.dart';
 
 /// The signature connect control: a glowing ring around the Nova mark, colored
-/// by the live connection state (cyan→violet idle, green connected, amber
-/// busy). The ring sweep rotates continuously only while connecting/
-/// disconnecting; otherwise it sits still and the glow gently breathes.
+/// by the live connection state (cyan to violet idle, green connected, amber
+/// busy).
 ///
-/// A faithful Dart port of the native `NovaConnectOrb`. In [showLabel] mode it
-/// stacks a top status line + logo + bottom label; otherwise it is a clean
-/// logo-only orb (the home hero uses this at 168dp).
+/// Motion is deliberately cheap. Nothing ticks while the orb is idle or
+/// connected: the ring only rotates and breathes while a connection is being
+/// brought up or torn down, and a state change fades the ring's colours over
+/// once (about a third of a second) rather than snapping. The paint is isolated
+/// in its own [RepaintBoundary] so a redraw of the ring never touches the rest
+/// of the dashboard, and the press feedback is a one-shot scale.
+///
+/// A port of the native `NovaConnectOrb`. In [showLabel] mode it stacks a top
+/// status line + logo + bottom label; otherwise it is a clean logo-only orb
+/// (the home hero uses this).
 class NovaConnectOrb extends StatefulWidget {
   const NovaConnectOrb({
     super.key,
@@ -40,86 +46,137 @@ class NovaConnectOrb extends StatefulWidget {
 
 class _NovaConnectOrbState extends State<NovaConnectOrb>
     with TickerProviderStateMixin {
-  late final AnimationController _spin = AnimationController(
+  /// Drives both the sweep rotation and the breathing glow while busy. Stopped
+  /// (and therefore free) in every other state.
+  late final AnimationController _motion = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2600),
   );
-  late final AnimationController _pulse = AnimationController(
+
+  /// One-shot colour crossfade between the previous and current state.
+  late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1500),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 360),
+    value: 1,
+  );
+  late final Animation<double> _fadeCurve =
+      CurvedAnimation(parent: _fade, curve: Curves.easeOutCubic);
+
+  ProxyConnectionState? _previous;
+  bool _pressed = false;
 
   @override
   void initState() {
     super.initState();
-    _syncSpin();
+    _syncMotion();
   }
 
   @override
   void didUpdateWidget(NovaConnectOrb old) {
     super.didUpdateWidget(old);
-    if (old.state != widget.state) _syncSpin();
+    if (old.state != widget.state) {
+      _previous = old.state;
+      _syncMotion();
+      _fade.forward(from: 0);
+    }
   }
 
-  void _syncSpin() {
+  void _syncMotion() {
     if (widget.state.isBusy) {
-      if (!_spin.isAnimating) _spin.repeat();
+      if (!_motion.isAnimating) _motion.repeat();
     } else {
-      _spin.stop();
-      _spin.value = 0;
+      _motion.stop();
+      _motion.value = 0;
     }
   }
 
   @override
   void dispose() {
-    _spin.dispose();
-    _pulse.dispose();
+    _motion.dispose();
+    _fade.dispose();
     super.dispose();
+  }
+
+  void _setPressed(bool v) {
+    if (_pressed != v && widget.onTap != null) setState(() => _pressed = v);
   }
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
-    final visual = NovaConnectVisual.of(widget.state, nova);
+    final NovaConnectVisual to = NovaConnectVisual.of(widget.state, nova);
+    final NovaConnectVisual from =
+        NovaConnectVisual.of(_previous ?? widget.state, nova);
     final bool connected = widget.state.isActive;
+    final bool wasConnected = (_previous ?? widget.state).isActive;
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Semantics(
       button: true,
+      enabled: widget.onTap != null,
       label: widget.statusText ?? widget.label,
       child: GestureDetector(
         onTap: widget.onTap,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: widget.size,
-          height: widget.size,
-          child: AnimatedBuilder(
-            animation: Listenable.merge(<Listenable>[_spin, _pulse]),
-            builder: (context, _) {
-              return CustomPaint(
-                painter: _OrbPainter(
-                  accent: visual.accent,
-                  connected: connected,
-                  busy: widget.state.isBusy,
-                  spin: _spin.value,
-                  pulse: _pulse.value,
-                ),
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: Listenable.merge(<Listenable>[_motion, _fadeCurve]),
+                builder: (context, child) {
+                  final double t = reduceMotion ? 1 : _fadeCurve.value;
+                  final double m = _motion.value;
+                  return CustomPaint(
+                    painter: _OrbPainter(
+                      accent: Color.lerp(from.accent, to.accent, t)!,
+                      sweep: _lerpSweep(
+                        wasConnected
+                            ? NovaGradients.orbSweepConnected
+                            : NovaGradients.orbSweepIdle,
+                        connected
+                            ? NovaGradients.orbSweepConnected
+                            : NovaGradients.orbSweepIdle,
+                        t,
+                      ),
+                      connected: connected,
+                      busy: widget.state.isBusy,
+                      spin: m,
+                      // Two breaths per rotation, derived from the same clock.
+                      pulse: 0.5 - 0.5 * math.cos(m * 4 * math.pi),
+                    ),
+                    child: child,
+                  );
+                },
                 child: Center(
                   child: widget.showLabel
                       ? _LabeledContent(
                           state: widget.state,
-                          accent: visual.accent,
+                          accent: to.accent,
                           size: widget.size,
                           label: widget.label,
                           statusText: widget.statusText,
                         )
                       : NovaLogo(size: widget.size * 0.56),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),
     );
+  }
+
+  static List<Color> _lerpSweep(List<Color> a, List<Color> b, double t) {
+    if (t >= 1 || identical(a, b)) return b;
+    return List<Color>.generate(b.length, (i) => Color.lerp(a[i], b[i], t)!);
   }
 }
 
@@ -162,6 +219,7 @@ class _LabeledContent extends StatelessWidget {
 class _OrbPainter extends CustomPainter {
   _OrbPainter({
     required this.accent,
+    required this.sweep,
     required this.connected,
     required this.busy,
     required this.spin,
@@ -169,10 +227,11 @@ class _OrbPainter extends CustomPainter {
   });
 
   final Color accent;
+  final List<Color> sweep;
   final bool connected;
   final bool busy;
   final double spin; // 0..1 continuous while busy
-  final double pulse; // 0..1 breathing
+  final double pulse; // 0..1 breathing while busy
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -189,7 +248,7 @@ class _OrbPainter extends CustomPainter {
     final double glowAlpha = busy
         ? 0.14 + 0.10 * pulse
         : connected
-            ? 0.20
+            ? 0.22
             : 0.10;
     final Paint glow = Paint()
       ..shader = RadialGradient(
@@ -200,18 +259,15 @@ class _OrbPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: c, radius: ringR));
     canvas.drawCircle(c, ringR, glow);
 
-    // 2) Sweep ring stroke.
-    final List<Color> sweep =
-        connected ? NovaGradients.orbSweepConnected : NovaGradients.orbSweepIdle;
+    // 2) Sweep ring stroke. Idle uses the cyan to violet sweep (matching the
+    // native orb), not a flat single-accent ring.
     final double rot = busy ? spin * 2 * math.pi : -math.pi / 2;
     final Paint ring = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeW
       ..strokeCap = StrokeCap.round
       ..shader = SweepGradient(
-        // Idle uses the cyan→violet sweep too (matching the native orb), not a
-        // flat single-accent ring.
-        colors: connected || busy ? sweep : NovaGradients.orbSweepIdle,
+        colors: sweep,
         transform: GradientRotation(rot),
       ).createShader(Rect.fromCircle(center: c, radius: ringR));
     canvas.drawCircle(c, ringR, ring);
@@ -227,5 +283,6 @@ class _OrbPainter extends CustomPainter {
       old.connected != connected ||
       old.busy != busy ||
       old.spin != spin ||
-      old.pulse != pulse;
+      old.pulse != pulse ||
+      !identical(old.sweep, sweep);
 }

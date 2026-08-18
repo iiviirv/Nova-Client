@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../core/proxy/proxy_controller.dart';
@@ -61,13 +63,16 @@ class _NovaAppShellState extends State<NovaAppShell> {
     final NovaStrings s = NovaStrings.of(context);
     final String message = switch (code) {
       ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
+      ProxyNotice.pinnedExitNoTraffic => s.pinnedExitNoTraffic,
+      ProxyNotice.pinnedExitGone => s.pinnedExitGone,
+      ProxyNotice.sniBypassOn => s.sniBypassOn,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,
     };
-    // The no-internet verdict carries instructions (Radar, other network), so
-    // give it longer on screen than the informational failover note.
-    final Duration duration = code == ProxyNotice.tunnelHasNoInternet
-        ? const Duration(seconds: 8)
-        : const Duration(seconds: 4);
+    // Verdicts that carry instructions (Radar, another server, another network)
+    // get longer on screen than a purely informational note.
+    final Duration duration = code == ProxyNotice.failoverToWorkingServer
+        ? const Duration(seconds: 4)
+        : const Duration(seconds: 8);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
@@ -222,22 +227,40 @@ class _NovaBottomBar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
-          // The bar surface, pinned to the bottom.
+          // The bar surface, pinned to the bottom. A real frosted-glass panel:
+          // content scrolls up and blurs behind it, with a hairline top edge
+          // and a whisper-quiet lift shadow so the bar reads as a layer above
+          // the canvas rather than painted onto it.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             height: _barHeight + bottomInset,
-            child: Container(
-              decoration: BoxDecoration(
-                color: nova.navBg,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 24,
+                    offset: Offset(0, -6),
+                    spreadRadius: -10,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(26),
                 ),
-                border: Border(top: BorderSide(color: nova.border)),
-              ),
-              padding: EdgeInsets.only(bottom: bottomInset),
-              child: Row(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: nova.navBg,
+                      border: Border(top: BorderSide(color: nova.border)),
+                    ),
+                    padding: EdgeInsets.only(bottom: bottomInset),
+                    child: Row(
                 children: <Widget>[
                   for (int i = 0; i < leftDests.length; i++)
                     Expanded(
@@ -257,9 +280,12 @@ class _NovaBottomBar extends StatelessWidget {
                       ),
                     ),
                 ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
           // Floating connect button, centered over the bar's top edge.
           Positioned(
             top: 0,

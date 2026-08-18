@@ -4,9 +4,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
+import '../../core/proxy/singbox/node_probe.dart';
+import '../../core/proxy/singbox/proxy_node.dart';
 import '../relay/relay_link.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_gradients.dart';
@@ -24,6 +27,10 @@ import '../cloudflare/deploy_screen.dart';
 import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
 import 'node_list_screen.dart';
+
+/// Probe every profile once per app launch. [ServersBody] exists in both the
+/// Home and Servers tabs, so this shared guard prevents duplicate network work.
+final Set<String> _profileMetadataScheduled = <String>{};
 
 /// The scrollable Servers content — search, protocol filters, and the list of
 /// configs styled as native server rows (flag/icon, name, protocol badge,
@@ -69,8 +76,8 @@ class _ServersBodyState extends State<ServersBody> {
   }
 
   Future<void> _loadPanels() async {
-    final List<VpsPanel> panels =
-        await (_vps?.loadPanels() ?? Future<List<VpsPanel>>.value(<VpsPanel>[]));
+    final List<VpsPanel> panels = await (_vps?.loadPanels() ??
+        Future<List<VpsPanel>>.value(<VpsPanel>[]));
     if (mounted) setState(() => _vpsPanels = panels);
   }
 
@@ -109,6 +116,9 @@ class _ServersBodyState extends State<ServersBody> {
       listenable: profiles,
       builder: (context, _) {
         final List<ProxyProfile> all = profiles.profiles;
+        for (final ProxyProfile profile in all) {
+          _scheduleProfileMetadata(profiles, profile);
+        }
         final List<ProxyProfile> shown = all.where((p) {
           if (_filter != null && p.kind != _filter) return false;
           if (_query.isEmpty) return true;
@@ -119,13 +129,12 @@ class _ServersBodyState extends State<ServersBody> {
           return _EmptyState(compact: widget.compact);
         }
 
-        final List<ProxyKind> kinds =
-            all.map((p) => p.kind).toSet().toList();
+        final List<ProxyKind> kinds = all.map((p) => p.kind).toSet().toList();
 
         final List<Widget> children = <Widget>[
           if (!widget.compact) ...<Widget>[
             _SearchField(onChanged: (v) => setState(() => _query = v)),
-            const SizedBox(height: 12),
+            const SizedBox(height: NovaSpace.sm),
           ],
           if (kinds.length > 1) ...<Widget>[
             _FilterChips(
@@ -133,7 +142,7 @@ class _ServersBodyState extends State<ServersBody> {
               selected: _filter,
               onChanged: (k) => setState(() => _filter = k),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: NovaSpace.xs),
           ],
           for (final p in shown)
             Padding(
@@ -229,13 +238,18 @@ class _ServersBodyState extends State<ServersBody> {
     if (res == null) return;
     final String name = res.name;
     final String url = res.uri;
-    profiles.update(p.copyWith(
+    final ProxyProfile updated = p.copyWith(
       name: name.isEmpty ? p.name : name,
       subscriptionUrl: isSub ? url : null,
       uri: isSub ? p.uri : url,
-    ));
+      lastLatencyMs: null,
+      fastNodes: const <String>[],
+    );
+    profiles.update(updated);
     // The source may have changed; drop cached nodes so the next resolve refetches.
     clearSubscriptionCache();
+    _profileMetadataScheduled.remove(p.id);
+    _scheduleProfileMetadata(profiles, updated);
   }
 }
 
@@ -285,20 +299,60 @@ class _FilterChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: <Widget>[
-          NovaPill(
-            label: 'All',
+          _FilterTarget(
             selected: selected == null,
             onTap: () => onChanged(null),
+            child: NovaPill(
+              label: NovaStrings.of(context).serversFilterAll,
+              selected: selected == null,
+              onTap: () => onChanged(null),
+            ),
           ),
           for (final k in kinds) ...<Widget>[
-            const SizedBox(width: 8),
-            NovaPill(
-              label: k.label,
+            const SizedBox(width: NovaSpace.sm),
+            _FilterTarget(
               selected: selected == k,
               onTap: () => onChanged(k),
+              child: NovaPill(
+                label: k.label,
+                selected: selected == k,
+                onTap: () => onChanged(k),
+              ),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Vertical hit slop and a selected state for a filter pill: the pill is about
+/// 30dp tall, under the touch minimum, and its state is otherwise carried by
+/// colour alone. Vertical only, so two neighbouring pills' targets never touch.
+class _FilterTarget extends StatelessWidget {
+  const _FilterTarget({
+    required this.child,
+    required this.onTap,
+    required this.selected,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: Semantics(
+        selected: selected,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -334,139 +388,181 @@ class _ServerRow extends StatelessWidget {
     final s = NovaStrings.of(context);
     final int? latency = profile.lastLatencyMs;
 
-    return GestureDetector(
-      onTap: onOpen,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: active ? nova.cyan.withValues(alpha: 0.08) : nova.surface,
-          borderRadius: NovaRadii.cardR,
-          border: Border.all(
-            color: active ? nova.cyan.withValues(alpha: 0.5) : nova.border,
-          ),
+    // The active row is the one thing to find at a glance: a cyan hairline and
+    // a faint tint, with the check as the non-colour signal.
+    return Material(
+      color: active ? nova.cyan.withValues(alpha: 0.07) : nova.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: NovaRadii.cardR,
+        side: BorderSide(
+          color: active ? nova.cyan.withValues(alpha: 0.5) : nova.border,
         ),
-        child: Row(
-          children: <Widget>[
-            NovaIconChip(
-              icon: profile.isSubscription
-                  ? Icons.cloud_sync_rounded
-                  : Icons.vpn_key_rounded,
-              color: active ? nova.cyan : nova.indigo,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(profile.name,
-                      style: text.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Row(
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Semantics(
+          selected: active,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(
+                NovaSpace.md, NovaSpace.md, NovaSpace.xs, NovaSpace.md),
+            child: Row(
+              children: <Widget>[
+                NovaIconChip(
+                  icon: profile.isSubscription
+                      ? Icons.cloud_sync_rounded
+                      : Icons.vpn_key_rounded,
+                  color: active ? nova.cyan : nova.indigo,
+                ),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      NovaProtocolBadge(
-                        label: profile.kind.label,
-                        color: nova.cyan,
+                      Text(profile.name,
+                          maxLines: 1,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: NovaSpace.xs),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: NovaSpace.sm,
+                        runSpacing: NovaSpace.xs,
+                        children: <Widget>[
+                          NovaProtocolBadge(
+                            label: profile.kind.label,
+                            color: nova.cyan,
+                          ),
+                          if (profile.isSubscription)
+                            Text(s.nodesCount(profile.nodeCount),
+                                style: text.labelSmall
+                                    ?.copyWith(color: nova.muted)),
+                          if (latency != null)
+                            _LatencyReadout(latencyMs: latency),
+                        ],
                       ),
-                      if (profile.isSubscription) ...<Widget>[
-                        const SizedBox(width: 8),
-                        Text('${profile.nodeCount} nodes',
-                            style: text.labelSmall?.copyWith(color: nova.muted)),
-                      ],
                     ],
                   ),
+                ),
+                const SizedBox(width: NovaSpace.sm),
+                if (active)
+                  Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
+                // A subscription's row opens its node/IP list; hint that with a
+                // chevron so it doesn't look like a dead-end.
+                if (profile.isSubscription) ...<Widget>[
+                  const SizedBox(width: NovaSpace.xs),
+                  Icon(Icons.chevron_right_rounded,
+                      color: nova.muted, size: 20),
                 ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (latency != null) ...<Widget>[
-              Text('$latency ms',
-                  style: text.labelMedium?.copyWith(
-                    color: NovaSemantics.ping(latency),
-                    fontWeight: FontWeight.w600,
-                  )),
-              const SizedBox(width: 8),
-              NovaSignalBars(latencyMs: latency),
-              const SizedBox(width: 10),
-            ],
-            if (active)
-              Icon(Icons.check_circle_rounded, color: nova.cyan, size: 22),
-            // A subscription's row opens its node/IP list; hint that with a
-            // chevron so it doesn't look like a dead-end.
-            if (profile.isSubscription)
-              Icon(Icons.chevron_right_rounded, color: nova.muted, size: 20),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert_rounded, color: nova.muted, size: 20),
-              tooltip: s.serversActions,
-              onSelected: (String v) {
-                switch (v) {
-                  case 'select':
-                    onSelect();
-                  case 'manage':
-                    onManage?.call();
-                  case 'extract':
-                    onExtract();
-                  case 'edit':
-                    onEdit();
-                  case 'delete':
-                    onDelete();
-                }
-              },
-              itemBuilder: (_) => <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  value: 'select',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.check_circle_outline_rounded),
-                    title: Text(s.serversSelect),
-                  ),
-                ),
-                if (onManage != null)
-                  PopupMenuItem<String>(
-                    value: 'manage',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.dns_rounded),
-                      title: Text(s.vpsManage),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert_rounded,
+                      color: nova.muted, size: 20),
+                  tooltip: s.serversActions,
+                  onSelected: (String v) {
+                    switch (v) {
+                      case 'select':
+                        onSelect();
+                      case 'manage':
+                        onManage?.call();
+                      case 'extract':
+                        onExtract();
+                      case 'edit':
+                        onEdit();
+                      case 'delete':
+                        onDelete();
+                    }
+                  },
+                  itemBuilder: (_) => <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'select',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.check_circle_outline_rounded),
+                        title: Text(s.serversSelect),
+                      ),
                     ),
-                  ),
-                if (profile.isSubscription)
-                  PopupMenuItem<String>(
-                    value: 'extract',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.list_alt_rounded),
-                      title: Text(s.serversExtract),
+                    if (onManage != null)
+                      PopupMenuItem<String>(
+                        value: 'manage',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.dns_rounded),
+                          title: Text(s.vpsManage),
+                        ),
+                      ),
+                    if (profile.isSubscription)
+                      PopupMenuItem<String>(
+                        value: 'extract',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.list_alt_rounded),
+                          title: Text(s.serversExtract),
+                        ),
+                      ),
+                    PopupMenuItem<String>(
+                      value: 'edit',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.edit_outlined),
+                        title: Text(s.serversEdit),
+                      ),
                     ),
-                  ),
-                PopupMenuItem<String>(
-                  value: 'edit',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.edit_outlined),
-                    title: Text(s.serversEdit),
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'delete',
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.delete_outline_rounded, color: nova.danger),
-                    title: Text(s.serversDelete, style: TextStyle(color: nova.danger)),
-                  ),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.delete_outline_rounded,
+                            color: nova.danger),
+                        title: Text(s.serversDelete,
+                            style: TextStyle(color: nova.danger)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Latency + signal bars, folded into the row's meta line so the trailing
+/// edge only carries the state (check, chevron, menu). Tabular figures keep
+/// the number steady as it refreshes.
+class _LatencyReadout extends StatelessWidget {
+  const _LatencyReadout({required this.latencyMs});
+  final int latencyMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color c = NovaSemantics.ping(latencyMs);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        NovaSignalBars(latencyMs: latencyMs),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text('$latencyMs ms',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: c,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures()
+                    ],
+                  )),
+        ),
+      ],
     );
   }
 }
@@ -493,7 +589,8 @@ class _EmptyState extends StatelessWidget {
               gradient: NovaGradients.logo,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 30),
+            child:
+                const Icon(Icons.bolt_rounded, color: Colors.white, size: 30),
           ),
         ),
         const SizedBox(height: 16),
@@ -636,7 +733,8 @@ Future<void> showAddServerDialog(BuildContext context,
     return;
   }
 
-  final ProxyKind detected = _detectKind(prefill ?? '') ?? ProxyKind.subscription;
+  final ProxyKind detected =
+      _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
   final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(
     context: context,
@@ -670,28 +768,70 @@ Future<void> showAddServerDialog(BuildContext context,
       updatedAt: DateTime.now(),
     );
     profiles.add(profile);
-    // Resolve a subscription's real node count right away so the card shows,
-    // e.g., "17 nodes" instead of the default placeholder "1 nodes". Without
-    // this the count only updated when the user opened the node list, which
-    // read as "I can only see one config" even though all nodes were there.
-    // Fire-and-forget: a slow or failed fetch must not block adding the config.
-    if (isSub) {
-      unawaited(_resolveNodeCount(profiles, profile));
-    }
+    // Resolve metadata and a live ping right away. Fire-and-forget: a slow or
+    // failed endpoint must not block adding the config.
+    _scheduleProfileMetadata(profiles, profile);
   }
 }
 
-/// Best-effort background resolve of a subscription's node count, updating the
-/// stored profile so the servers card reflects the true number.
-Future<void> _resolveNodeCount(
-    ProfilesController profiles, ProxyProfile profile) async {
+void _scheduleProfileMetadata(
+    ProfilesController profiles, ProxyProfile profile) {
+  if (!_profileMetadataScheduled.add(profile.id)) return;
+  unawaited(_resolveProfileMetadata(profiles, profile));
+}
+
+/// Resolves the real node count and measures a representative live latency for
+/// the Servers/Home cards. A bounded sample keeps large subscriptions cheap;
+/// opening the node list still measures up to 80 exits in detail.
+Future<void> _resolveProfileMetadata(
+    ProfilesController profiles, ProxyProfile snapshot) async {
   try {
-    final nodes = await resolveProfileNodes(profile);
-    if (nodes.isNotEmpty) {
-      profiles.update(profile.copyWith(nodeCount: nodes.length));
+    final List<ProxyNode> nodes = await resolveProfileNodes(snapshot);
+    if (nodes.isEmpty) return;
+
+    final measured = await Future.wait(
+      nodes.take(12).map((ProxyNode node) async => (
+            node: node,
+            probe: await probeNode(
+              node,
+              timeout: const Duration(seconds: 5),
+            ),
+          )),
+    );
+    // Only nodes a probe could actually prove are worth putting on a card or
+    // seeding auto-select with; a TCP connect that proved nothing used to land
+    // here as a latency.
+    final reachable = measured.where((result) => result.probe.ok).toList()
+      ..sort((a, b) => a.probe.sortKey.compareTo(b.probe.sortKey));
+
+    ProxyProfile? current;
+    for (final ProxyProfile candidate in profiles.profiles) {
+      if (candidate.id == snapshot.id) {
+        current = candidate;
+        break;
+      }
     }
+    if (current == null ||
+        current.uri != snapshot.uri ||
+        current.subscriptionUrl != snapshot.subscriptionUrl) {
+      return;
+    }
+
+    profiles.update(current.copyWith(
+      nodeCount: nodes.length,
+      lastLatencyMs: reachable.isEmpty
+          ? current.lastLatencyMs
+          : reachable.first.probe.latencyMs,
+      fastNodes: reachable.isEmpty
+          ? current.fastNodes
+          : reachable
+              .take(24)
+              .map((result) => proxyNodeKey(result.node))
+              .toList(),
+    ));
   } catch (_) {
-    // Leave the placeholder count; the node list will resolve it on open.
+    // Keep the existing metadata; a later app launch or node-list refresh will
+    // try again.
   }
 }
 
@@ -744,6 +884,29 @@ class _ConfigDialogState extends State<_ConfigDialog> {
       TextEditingController(text: widget.initialUri);
   late ProxyKind _kind = widget.initialKind;
 
+  /// AmneziaWG configs arrive as a `.conf` file. Let the user pick one and drop
+  /// its text straight into the URI field, where the normal Save path parses it
+  /// (looksLikeConf -> ProxyKind.awg). The name is filled from the file when the
+  /// user left it blank. A cancelled or unreadable pick leaves the field as-is.
+  Future<void> _pickConfFile() async {
+    try {
+      final XFile? file = await openFile();
+      if (file == null) return;
+      final String text = (await file.readAsString()).trim();
+      if (text.isEmpty || !mounted) return;
+      setState(() {
+        _uriCtrl.text = text;
+        _kind = ProxyKind.awg;
+        if (_nameCtrl.text.trim().isEmpty && file.name.isNotEmpty) {
+          _nameCtrl.text =
+              file.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
+        }
+      });
+    } catch (_) {
+      // Best-effort import; a failure just leaves the dialog untouched.
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -765,8 +928,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
         children: <Widget>[
           TextField(
             controller: _nameCtrl,
-            decoration:
-                InputDecoration(hintText: s.serversName, labelText: s.serversName),
+            decoration: InputDecoration(
+                hintText: s.serversName, labelText: s.serversName),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -794,6 +957,17 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 ],
               ),
             ),
+            if (_kind == ProxyKind.awg) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _pickConfFile,
+                  icon: const Icon(Icons.upload_file_rounded, size: 18),
+                  label: Text(s.awgImportConf),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -846,8 +1020,7 @@ ProxyKind? _detectKind(String raw) {
 Future<void> showAddConfigSheet(BuildContext context) async {
   final nova = context.nova;
   final s = NovaStrings.of(context);
-  final bool canScan =
-      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+  final bool canScan = Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: nova.bgAlt,
@@ -891,8 +1064,7 @@ Future<void> showAddConfigSheet(BuildContext context) async {
                 subtitle: s.serversScanQrSub,
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  final String? code =
-                      await Navigator.of(context).push<String>(
+                  final String? code = await Navigator.of(context).push<String>(
                     MaterialPageRoute<String>(
                         builder: (_) => const QrScanScreen()),
                   );
@@ -964,8 +1136,8 @@ class _AddOption extends StatelessWidget {
       leading: NovaIconChip(icon: icon, color: color, size: 38, radius: 11),
       title: Text(title,
           style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle,
-          style: text.bodySmall?.copyWith(color: nova.muted)),
+      subtitle:
+          Text(subtitle, style: text.bodySmall?.copyWith(color: nova.muted)),
       onTap: onTap,
     );
   }

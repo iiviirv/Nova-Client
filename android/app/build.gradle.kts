@@ -20,7 +20,7 @@ if (hasReleaseKeystore) {
 
 android {
     namespace = "online.novaproxy.nova_client"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36  // file_picker's lifecycle dep needs 36; targetSdk stays 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -88,6 +88,11 @@ dependencies {
     if (libbox.exists()) {
         implementation(files(libbox))
     }
+
+    // NotificationCompat for the ongoing VPN status notification. Also arrives
+    // transitively via the Flutter embedding; pinned here so the service's
+    // notification code never depends on that resolution.
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 kotlin {

@@ -1,8 +1,65 @@
 import 'package:flutter/material.dart';
 
 import '../core/proxy/conn_info_controller.dart';
+import '../theme/nova_radii.dart';
 import '../theme/nova_semantics.dart';
 import '../theme/nova_theme.dart';
+
+/// The standard screen header used by every primary tab (Home, Servers, Stats,
+/// Settings). One component so the four titles share a single type, weight and
+/// rhythm instead of drifting apart. An optional [subtitle] turns the title into
+/// an intentional two-line lockup rather than a lone word.
+class NovaScreenHeader extends StatelessWidget {
+  const NovaScreenHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+
+  /// An optional right-aligned element (e.g. a status pill), kept vertically
+  /// centred against the title line.
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    final Widget titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: text.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
+          const SizedBox(height: NovaSpace.xs),
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.bodySmall?.copyWith(color: nova.muted, height: 1.2),
+          ),
+        ],
+      ],
+    );
+    if (trailing == null) return titleBlock;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Expanded(child: titleBlock),
+        const SizedBox(width: NovaSpace.md),
+        trailing!,
+      ],
+    );
+  }
+}
 
 /// A rounded, tinted icon chip — the small colored square holding an icon used
 /// across the Nova cards (metrics, tools, config card, server rows).
@@ -114,8 +171,9 @@ class NovaStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(NovaRadii.pill),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

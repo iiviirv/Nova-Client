@@ -1,0 +1,17 @@
+<!-- Monochrome status-bar / small-notification icon. Android renders this as a
+     flat tinted silhouette, so it is a bold geometric "N" that stays legible at
+     24dp rather than the brand ribbon (which reads as a squiggle that small).
+     The full-colour brand mark is used where colour is allowed: the notification
+     large icon and the home-screen widget. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M5,19 L5,5 L19,19 L19,5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

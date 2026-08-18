@@ -1,8 +1,15 @@
 package online.novaproxy.nova_client
 
 import android.annotation.SuppressLint
+import android.app.Notification as AppNotification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.graphics.BitmapFactory
+import androidx.core.app.NotificationCompat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -30,12 +37,10 @@ import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
-import java.io.File
 import java.net.InetSocketAddress
 import java.net.NetworkInterface as JavaNetworkInterface
 import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
@@ -53,11 +58,29 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     companion object {
         const val EXTRA_CONFIG = "config"
+        // Present only for an xhttp node: the Xray core config. When set, Xray is
+        // started first (with socket protection) and the sing-box [EXTRA_CONFIG]
+        // is the TUN->SOCKS bridge that forwards to it.
+        const val EXTRA_XRAY_CONFIG = "xrayConfig"
         const val ACTION_STOP = "online.novaproxy.nova_client.STOP"
+        // The profile/node name shown in the ongoing notification, if the Dart
+        // side passed one. Purely cosmetic; the tunnel runs without it.
+        const val EXTRA_LABEL = "label"
+        // The auto-select urltest outbound's tag (see SingboxConfig.buildMultiMap).
+        const val PROXY_GROUP_TAG = "proxy"
 
-        @Volatile
-        private var libboxSetup = false
+        // The ongoing foreground-service notification. A VpnService that runs
+        // past the short start window must post one, and it doubles as the user's
+        // "you are protected" status with a one-tap Disconnect.
+        private const val NOTIF_CHANNEL_ID = "nova_vpn_status"
+        private const val NOTIF_ID = 0x4E56 // 'NV'
     }
+
+    // The active profile's name, for the notification text. Null shows a plain
+    // "Connected" without a subtitle.
+    private var profileLabel: String? = null
+
+    private var xrayRunning = false
 
     private val connectivity by lazy {
         getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -65,6 +88,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     private var commandServer: CommandServer? = null
     private var statusClient: CommandClient? = null
+    private var logClient: CommandClient? = null
+    private var groupClient: CommandClient? = null
     private var pfd: ParcelFileDescriptor? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -98,39 +123,88 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             stopSelf()
             return START_NOT_STICKY
         }
+        val xrayConfig = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
         if (running) return START_NOT_STICKY
         running = true
+        profileLabel = intent?.getStringExtra(EXTRA_LABEL)?.takeIf { it.isNotBlank() }
+        // Let the bridge repaint the home-screen widget on state changes.
+        NovaProxyBridge.appContext = applicationContext
+        NovaProxyBridge.label = profileLabel
+        // Promote to foreground straight away with a "connecting" notification.
+        // Android gives a freshly started service only a few seconds to call
+        // startForeground before it force-stops us, so this cannot wait for the
+        // tunnel to finish coming up on the worker thread.
+        startForegroundNotification(getString(R.string.vpn_state_connecting), ongoing = true)
         NovaProxyBridge.emitState("connecting")
-        Thread { startBox(config) }.start()
+        Thread { startBox(config, xrayConfig) }.start()
         return START_NOT_STICKY
     }
 
-    private fun startBox(config: String) {
+    private fun startBox(config: String, xrayConfig: String?) {
         try {
-            if (!libboxSetup) {
-                val working = File(filesDir, "working").apply { mkdirs() }
-                Libbox.setup(
-                    SetupOptions().apply {
-                        setBasePath(filesDir.absolutePath)
-                        setWorkingPath(working.absolutePath)
-                        setTempPath(cacheDir.absolutePath)
-                        setCommandServerListenPort(0)
-                    },
-                )
-                libboxSetup = true
-            }
+            // Two-core path: an xhttp node runs on Xray, and sing-box bridges the
+            // TUN to it. Start Xray FIRST (with socket protection so its dials
+            // bypass the TUN) so its SOCKS inbound is up before sing-box forwards
+            // to it.
+            if (!xrayConfig.isNullOrEmpty()) startXray(xrayConfig)
+            NovaCore.ensureSetup(this)
             val server = CommandServer(this, this)
             server.start()
             commandServer = server
             server.startOrReloadService(config, OverrideOptions())
             NovaProxyBridge.emitState("connected")
+            startForegroundNotification(getString(R.string.vpn_state_connected), ongoing = true)
             startStatusClient()
+            startLogClient()
+            startGroupClient()
         } catch (e: Exception) {
             running = false
             NovaProxyBridge.emitError(e.message)
             cleanup()
             stopSelf()
         }
+    }
+
+    // Two-core (xhttp) wiring. Xray ships INSIDE the combined libbox.aar as
+    // io.nekohasekai.novaxray, so it shares the one gomobile runtime with
+    // sing-box (see tool/core/build-combined-core.sh). Reached only for a single
+    // xhttp node, when the Dart side sends EXTRA_XRAY_CONFIG.
+
+    /// Starts the Xray core with [cfg], installing this service as the socket
+    /// protector so Xray's outbound dials skip the VPN route (no TUN loop). The
+    /// fd is a Long across the gomobile boundary.
+    private fun startXray(cfg: String) {
+        io.nekohasekai.novaxray.Novaxray.setProtector(
+            object : io.nekohasekai.novaxray.Protector {
+                override fun protect(fd: Long): Boolean =
+                    this@NovaVpnService.protect(fd.toInt())
+            })
+        // Forward Xray's own log records into the app's core log stream. Without
+        // this the Core log is sing-box-only, so an Xray-only failure (e.g. an
+        // xhttp transport error on an xhttp node) is invisible. Xray's config
+        // loglevel is "warning", so these are tagged warn (3) and survive the
+        // quiet filter; the [xray] prefix sets them apart from sing-box lines.
+        io.nekohasekai.novaxray.Novaxray.setLogger(
+            object : io.nekohasekai.novaxray.Logger {
+                override fun log(line: String?) {
+                    val msg = line ?: return
+                    NovaProxyBridge.emitLog(
+                        listOf(mapOf("level" to 3, "message" to "[xray] $msg"))
+                    )
+                }
+            })
+        val err = io.nekohasekai.novaxray.Novaxray.start(cfg)
+        if (!err.isNullOrEmpty()) {
+            throw IllegalStateException("Xray failed to start: $err")
+        }
+        xrayRunning = true
+    }
+
+    private fun stopXray() {
+        if (!xrayRunning) return
+        xrayRunning = false
+        runCatching { io.nekohasekai.novaxray.Novaxray.setLogger(null) }
+        runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
     }
 
     private fun stopBox(stopStartId: Int = -1) {
@@ -188,6 +262,86 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runCatching { client.disconnect() }
     }
 
+    /// Subscribe to the core's log stream and forward it to Flutter, where it
+    /// backs Settings -> Logs. A SECOND client on purpose: the status client is
+    /// what feeds the dashboard's live speed meter, and adding a command to it
+    /// would put that at the mercy of the log subscription's lifecycle. Two
+    /// clients are cheap (a local socket each) and fail independently.
+    ///
+    /// How much this carries is set by the config's `log.level`, which the Dart
+    /// side raises from `warn` to `info` only when the user asks for detailed
+    /// logs.
+    private fun startLogClient() {
+        runCatching {
+            val options = CommandClientOptions().apply {
+                addCommand(Libbox.CommandLog)
+            }
+            val client = CommandClient(LogHandler(), options)
+            logClient = client
+            // Same race as the status client: the command server's socket may
+            // not be accepting the instant startOrReloadService returns.
+            Thread {
+                for (attempt in 0 until 10) {
+                    if (logClient !== client) return@Thread
+                    if (runCatching { client.connect() }.isSuccess) return@Thread
+                    Thread.sleep(300)
+                }
+            }.start()
+        }
+    }
+
+    private fun stopLogClient() {
+        val client = logClient ?: return
+        logClient = null
+        runCatching { client.disconnect() }
+    }
+
+    /// Subscribe to the core's outbound-group stream: the auto-selector plus each
+    /// pool node's urltest latency, measured through the running tunnel (so the
+    /// SNI-block bypass is already applied to those measurements). This is what
+    /// lets the server list show a real ping, and which server is selected, for
+    /// the clean-IP nodes that can't be probed from outside the tunnel. A THIRD
+    /// client for the same reason the log one is separate: independent lifecycle.
+    private fun startGroupClient() {
+        runCatching {
+            val options = CommandClientOptions().apply {
+                addCommand(Libbox.CommandGroup)
+                statusInterval = 3_000_000_000L // 3s, in nanoseconds
+            }
+            val client = CommandClient(GroupHandler(), options)
+            groupClient = client
+            // Same connect race as the status/log clients: the command server's
+            // socket may not be accepting the instant the service returns.
+            Thread {
+                for (attempt in 0 until 10) {
+                    if (groupClient !== client) return@Thread
+                    if (runCatching { client.connect() }.isSuccess) {
+                        // Force the urltest so every pool node gets a fresh
+                        // measurement now, instead of some sitting unmeasured
+                        // until the group's own 3-min interval comes around (which
+                        // is what left nodes reading "not testable"). A few tries,
+                        // because the router may not be routing the instant the
+                        // command socket accepts. Best-effort; the interval covers
+                        // anything these miss.
+                        for (delayMs in longArrayOf(1500L, 4000L, 9000L)) {
+                            Thread.sleep(delayMs)
+                            if (groupClient !== client) return@Thread
+                            runCatching { client.urlTest(PROXY_GROUP_TAG) }
+                        }
+                        return@Thread
+                    }
+                    Thread.sleep(300)
+                }
+            }.start()
+        }
+    }
+
+    private fun stopGroupClient() {
+        val client = groupClient ?: return
+        groupClient = null
+        runCatching { client.disconnect() }
+    }
+
     /// Receives the core's status callbacks. Only [writeStatus] carries traffic;
     /// the rest are required interface methods and stay no-ops (Nova doesn't use
     /// the log/groups/clash streams here).
@@ -212,14 +366,184 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun updateClashMode(newMode: String) {}
     }
 
+    /// Receives the core's log stream. Only [writeLogs] carries anything; the
+    /// rest are required interface methods.
+    private inner class LogHandler : CommandClientHandler {
+        override fun writeLogs(messageList: LogIterator?) {
+            val list = messageList ?: return
+            val batch = ArrayList<Map<String, Any>>()
+            while (list.hasNext()) {
+                val entry = list.next() ?: continue
+                batch.add(
+                    mapOf(
+                        "level" to entry.level,
+                        "message" to (entry.message ?: ""),
+                    )
+                )
+            }
+            if (batch.isNotEmpty()) NovaProxyBridge.emitLog(batch)
+        }
+
+        override fun writeStatus(message: StatusMessage) {}
+        override fun connected() {}
+        override fun disconnected(message: String?) {}
+        override fun clearLogs() {}
+        override fun writeGroups(message: OutboundGroupIterator?) {}
+        override fun writeConnectionEvents(events: ConnectionEvents?) {}
+        override fun setDefaultLogLevel(level: Int) {}
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
+        override fun updateClashMode(newMode: String) {}
+    }
+
+    /// Receives the core's outbound-group snapshots. Only [writeGroups] carries
+    /// anything; it flattens each group and its items' urltest delays into plain
+    /// maps for the Dart side, which maps the `node-i` tags back to real servers.
+    private inner class GroupHandler : CommandClientHandler {
+        override fun writeGroups(message: OutboundGroupIterator?) {
+            val groups = message ?: return
+            val out = ArrayList<Map<String, Any?>>()
+            while (groups.hasNext()) {
+                val group = groups.next() ?: continue
+                val items = ArrayList<Map<String, Any?>>()
+                val itemIterator = group.items
+                while (itemIterator != null && itemIterator.hasNext()) {
+                    val item = itemIterator.next() ?: continue
+                    items.add(
+                        mapOf(
+                            "tag" to item.tag,
+                            // urlTestDelay is ms; 0 means no successful test yet.
+                            "delay" to item.urlTestDelay,
+                        )
+                    )
+                }
+                out.add(
+                    mapOf(
+                        "tag" to group.tag,
+                        "selected" to group.selected,
+                        "items" to items,
+                    )
+                )
+            }
+            if (out.isNotEmpty()) NovaProxyBridge.emitGroups(out)
+        }
+
+        override fun writeStatus(message: StatusMessage) {}
+        override fun connected() {}
+        override fun disconnected(message: String?) {}
+        override fun clearLogs() {}
+        override fun writeLogs(messageList: LogIterator?) {}
+        override fun writeConnectionEvents(events: ConnectionEvents?) {}
+        override fun setDefaultLogLevel(level: Int) {}
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
+        override fun updateClashMode(newMode: String) {}
+    }
+
     private fun cleanup() {
+        stopGroupClient()
+        stopLogClient()
         stopStatusClient()
         runCatching { commandServer?.closeService() }
         runCatching { commandServer?.close() }
         commandServer = null
+        stopXray()
         runCatching { pfd?.close() }
         pfd = null
+        // Drop the ongoing notification. STOP_FOREGROUND_REMOVE clears it rather
+        // than leaving a stale "Connected" card behind after we disconnect.
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        }
     }
+
+    /// Build (channel + content) and post the ongoing foreground notification.
+    /// Called once with "connecting" the moment the service starts (Android
+    /// requires startForeground within a few seconds) and again with "connected"
+    /// once the tunnel is up. The card carries the active profile name and a
+    /// one-tap Disconnect.
+    private fun startForegroundNotification(state: String, ongoing: Boolean) {
+        ensureNotificationChannel()
+
+        // Tap opens the app; the Disconnect action stops the tunnel without it.
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val contentPi = openIntent?.let {
+            PendingIntent.getActivity(this, 0, it, pendingIntentFlags())
+        }
+        val stopPi = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, NovaVpnService::class.java).setAction(ACTION_STOP),
+            pendingIntentFlags(),
+        )
+
+        // The status-bar icon must be monochrome (Android tints it flat), so it
+        // stays the simple mark. The large icon shows the real full-colour Nova
+        // logo as the notification's main circle, which is what a user actually
+        // recognises.
+        val largeIcon = runCatching {
+            BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+        }.getOrNull()
+
+        val builder = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_nova)
+            .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
+            .setContentTitle(state)
+            .setContentText(profileLabel ?: getString(R.string.app_name))
+            .setOngoing(ongoing)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                0,
+                getString(R.string.vpn_action_disconnect),
+                stopPi,
+            )
+        if (contentPi != null) builder.setContentIntent(contentPi)
+
+        val notification: AppNotification = builder.build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+    }
+
+    /// The status channel is created once, lazily. Low importance so the ongoing
+    /// card is silent (no sound or heads-up); it is a status surface, not an
+    /// alert. No-op below Android 8, which has no notification channels.
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (mgr.getNotificationChannel(NOTIF_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            NOTIF_CHANNEL_ID,
+            getString(R.string.vpn_channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.vpn_channel_desc)
+            setShowBadge(false)
+            lockscreenVisibility = AppNotification.VISIBILITY_PUBLIC
+        }
+        mgr.createNotificationChannel(channel)
+    }
+
+    /// Immutable PendingIntents everywhere (required target-side from Android 12).
+    private fun pendingIntentFlags(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
 
     override fun onDestroy() {
         cleanup()
@@ -362,6 +686,30 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 else ->
                     connectivity.registerDefaultNetworkCallback(callback)
             }
+        }
+        // Report the network we can already see, synchronously. Every
+        // registration above delivers its first onAvailable on a handler, so on
+        // a fast start the core reaches the stage that opens its own sockets
+        // before that callback arrives, and anything binding to the default
+        // interface (the AmneziaWG and WireGuard endpoints both do) fails with
+        // "no available network interface" on a device that is perfectly
+        // online. Reproduced as an intermittent connect failure; there is
+        // nothing emulator-specific about the race.
+        // The VPN's own interface is skipped for the reason in
+        // [defaultNetworkRequest]: reporting tun0 as the uplink makes the direct
+        // outbound loop back into the tunnel.
+        runCatching {
+            val current = connectivity.activeNetwork ?: return@runCatching
+            val caps = connectivity.getNetworkCapabilities(current) ?: return@runCatching
+            // The same predicate [defaultNetworkRequest] uses, so this shortcut
+            // can never report a network the callback path would have rejected.
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@runCatching
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+            ) {
+                return@runCatching
+            }
+            report(listener, current)
         }
     }
 

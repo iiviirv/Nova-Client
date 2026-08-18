@@ -31,6 +31,38 @@ class NovaStrings {
   /// auto-switches to the fastest working one.
   String get failoverSwitched => t('notice.failoverSwitched');
 
+  /// Shown when the server the user picked connects but carries no traffic.
+  /// Nova keeps their choice and tells them, rather than switching behind them.
+  String get pinnedExitNoTraffic => t('notice.pinnedExitNoTraffic');
+
+  /// Shown when the pinned server has disappeared from the subscription, so
+  /// this session had to auto-select.
+  String get pinnedExitGone => t('notice.pinnedExitGone');
+
+  /// Shown when Nova turns on the SNI-block bypass for a subscription because
+  /// none of its servers carried traffic.
+  String get sniBypassOn => t('notice.sniBypassOn');
+
+  // ---- SNI-block bypass (node list switch) ----
+  String get nodeBypassTitle => t('node.bypassTitle');
+  String get nodeBypassSub => t('node.bypassSub');
+
+  // ---- Server panel (mini-app webview) ----
+  String get panelTitle => t('panel.title');
+  String get panelOpen => t('panel.open');
+  String get panelOpenSub => t('panel.openSub');
+
+  // ---- SNI-block bypass editor ----
+  String get bypassEdit => t('bypass.edit');
+  String get bypassEditorTitle => t('bypass.title');
+  String get bypassEditorIntro => t('bypass.intro');
+  String get bypassFingerprint => t('bypass.fingerprint');
+  String get bypassFinalmask => t('bypass.finalmask');
+  String get bypassCipherSuites => t('bypass.cipherSuites');
+  String get bypassMaskInvalid => t('bypass.maskInvalid');
+  String get bypassResetDefaults => t('bypass.reset');
+  String get nodeBypassAllBlocked => t('node.bypassAllBlocked');
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -108,12 +140,29 @@ class NovaStrings {
   String get dashError => t('dash.error');
   String get dashLocation => t('dash.location');
   String get dashIp => t('dash.ip');
+  String get dashPing => t('dash.ping');
   String get dashNotProtected => t('dash.notProtected');
   String get dashNotProtectedBody => t('dash.notProtectedBody');
   String get homeTime => t('home.time');
   String get homeData => t('home.data');
   String get homeExpiry => t('home.expiry');
   String get homeSingleConfig => t('home.singleConfig');
+
+  /// Small banner shown on the dashboard when a newer release exists.
+  String get updateAvailable => t('home.updateAvailable');
+
+  /// The action on that banner and in Settings.
+  String get updateGet => t('home.updateGet');
+
+  /// The Settings row that re-checks for a new version.
+  String get updateCheck => t('settings.checkUpdates');
+
+  /// Label before the address of the server currently carrying traffic.
+  String get homeConnectedVia => t('home.connectedVia');
+
+  /// Shown as the connected exit when the auto-selector has not settled on a
+  /// specific node yet.
+  String get homeConnectedAuto => t('home.connectedAuto');
   String get cfConnectedTo => t('cf.connectedTo');
   String get cfConnect => t('cf.connect');
   String get toolDeploy => t('tool.deploy');
@@ -322,6 +371,7 @@ class NovaStrings {
 
   // ---- Servers ----
   String get serversSearch => t('servers.search');
+  String get serversFilterAll => t('servers.filterAll');
   String get serversActions => t('servers.actions');
   String get serversSelect => t('servers.select');
   String get serversExtract => t('servers.extract');
@@ -331,6 +381,14 @@ class NovaStrings {
   String get serversEmptySub => t('servers.emptySub');
   String get serversDeploy => t('servers.deploy');
   String get serversDeploySub => t('servers.deploySub');
+
+  // ---- Deploy via the Telegram bot ----
+  String get deployBotTitle => t('deploy.botTitle');
+  String get deployBotIntro => t('deploy.botIntro');
+  String get deployBotStep1 => t('deploy.botStep1');
+  String get deployBotStep2 => t('deploy.botStep2');
+  String get deployBotStep3 => t('deploy.botStep3');
+  String get deployBotOpen => t('deploy.botOpen');
   String get serversSignIn => t('servers.signIn');
   String get serversSignInSub => t('servers.signInSub');
   String get serversAddConfig => t('servers.addConfig');
@@ -598,6 +656,7 @@ class NovaStrings {
   String get inbPresetSs2022Sub => t('inb.presetSs2022Sub');
 
   String get serversName => t('servers.name');
+  String get awgImportConf => t('servers.awgImportConf');
   String get serversLink => t('servers.link');
   String get serversSubUrl => t('servers.subUrl');
   String get serversUriHint => t('servers.uriHint');
@@ -618,15 +677,80 @@ class NovaStrings {
   String get nodeAutoSub => t('node.autoSub');
   String get nodeRefresh => t('node.refresh');
   String get nodeSearch => t('node.search');
+  String get nodeClearSearch => t('node.clearSearch');
   String get nodeNoMatch => t('node.noMatch');
   String get nodeFreeTitle => t('node.freeTitle');
   String get nodeFreeBody => t('node.freeBody');
   String get nodeCommunity => t('node.community');
   String nodeCount(int n) => t('node.count').replaceFirst('{n}', '$n');
 
+  /// Verdict on a node whose server never answered.
+  String get nodeBlocked => t('node.blocked');
+
+  /// Verdict on a node that cannot be judged without connecting to it.
+  String get nodeUntested => t('node.untested');
+
+  /// Verdict on a pool node the core tested through the live tunnel but that
+  /// never answered: a dead or unusable exit, not one that "can't be tested".
+  String get nodeNoResponse => t('node.noResponse');
+
+  /// Shown when a subscription contained servers Nova cannot run, so the user
+  /// learns why the count is short instead of assuming configs went missing.
+  String nodeSkipped(int n, String schemes) =>
+      t('node.skipped').replaceFirst('{n}', '$n').replaceFirst('{s}', schemes);
+
+  /// Shown when the panel could not be reached to refresh, so the list is the
+  /// last saved copy. Reassures the user the servers still work.
+  String get nodeStaleList => t('node.staleList');
+
+  // ---- Logs ----
+  String get logsTitle => t('logs.title');
+  String get logsSubtitle => t('logs.subtitle');
+  String get logsTabApp => t('logs.tabApp');
+  String get logsTabCore => t('logs.tabCore');
+  String get logsEmptyApp => t('logs.emptyApp');
+  String get logsEmptyCore => t('logs.emptyCore');
+  String get logsCopy => t('logs.copy');
+  String get logsCopied => t('logs.copied');
+  String get logsClear => t('logs.clear');
+  String get logsFollow => t('logs.follow');
+  String get logsRedactNote => t('logs.redactNote');
+  String get logsVerbose => t('logs.verbose');
+  String get logsVerboseSub => t('logs.verboseSub');
+  String logsLineCount(int n) =>
+      t('logs.lineCount').replaceFirst('{n}', '$n');
+
   static const Map<String, String> _en = <String, String>{
     'notice.failoverSwitched':
         'That server was not responding, so Nova switched to the fastest working one.',
+    'notice.pinnedExitNoTraffic':
+        'The server you picked is connected but no traffic is getting through. '
+            'Nova is staying on your choice: pick another server, or switch to '
+            'Auto, in the server list.',
+    'notice.pinnedExitGone':
+        'The server you had picked is no longer in this subscription, so Nova '
+            'auto-selected one. Open the server list to choose again.',
+    'notice.sniBypassOn':
+        'None of these servers carried traffic, so Nova turned on the '
+            'SNI-block bypass for this subscription and reconnected. You can '
+            'turn it off in the server list.',
+    'node.bypassTitle': 'SNI-block bypass',
+    'node.bypassSub':
+        'For networks that block the worker domain itself. Plain TLS with a '
+            'fixed cipher list and a fragmented handshake, on the clean-IP '
+            'servers only. Slower, so leave it off unless nothing connects.',
+    'bypass.edit': 'Edit bypass settings',
+    'bypass.title': 'Bypass settings',
+    'bypass.intro': 'Advanced. These are the anti-censorship values Nova sends on the clean-IP servers. The defaults are field-tested; change them only if your network starts blocking differently, then Save.',
+    'bypass.fingerprint': 'TLS fingerprint',
+    'bypass.finalmask': 'Fragmentation (finalmask, JSON)',
+    'bypass.cipherSuites': 'Cipher suites (one per line)',
+    'bypass.maskInvalid': 'This is not valid JSON.',
+    'bypass.reset': 'Reset to defaults',
+    'node.bypassAllBlocked':
+        'Every server here reads as blocked, which usually means this network '
+            'blocks the worker domain. The SNI-block bypass is now on for this '
+            'subscription; connect to try it.',
     'notice.tunnelNoInternet':
         'The tunnel is up but no traffic is getting through. Your network may '
             'be blocking this config; scan a clean IP in Radar or try another '
@@ -649,6 +773,7 @@ class NovaStrings {
     'dash.tapToConnect': 'Tap to connect',
     'dash.location': 'Location',
     'dash.ip': 'IP',
+    'dash.ping': 'Ping',
     'dash.notProtected': 'Not protected',
     'dash.notProtectedBody': 'Connect to route your traffic through Nova.',
     'dash.download': 'Download',
@@ -656,6 +781,7 @@ class NovaStrings {
     'home.summary': 'Summary',
     'home.configs': 'Configs',
     'home.title': 'Dashboard',
+    'home.subtitle': 'Connection status and plan at a glance',
     'dash.activeProfile': 'Active profile',
     'dash.noProfile': 'No profile selected',
     'radar.title': 'Nova Radar',
@@ -702,6 +828,11 @@ class NovaStrings {
     'dash.error': 'Error',
     'home.time': 'Time',
     'home.data': 'Data',
+    'home.updateAvailable': 'A new version of Nova is available',
+    'home.updateGet': 'Get it',
+    'settings.checkUpdates': 'Check for updates',
+    'home.connectedVia': 'Connected via',
+    'home.connectedAuto': 'Auto (picking the fastest)',
     'home.expiry': 'Expiry',
     'home.singleConfig': 'Single config',
     'cf.connectedTo': 'Connected to Cloudflare',
@@ -715,7 +846,7 @@ class NovaStrings {
     'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
     'set.radarSub': 'Scan for clean Cloudflare IPs',
     'set.cloudflare': 'Cloudflare',
-    'set.cloudflareSub': 'Deploy or sign in to your panel',
+    'set.cloudflareSub': 'Sign in to manage your panel',
     'set.relay': 'Google relay',
     'set.relaySub': 'Reach your panel and subscription through Google when it is blocked',
     'relay.title': 'Google relay',
@@ -872,6 +1003,9 @@ class NovaStrings {
     'mode.dark': 'Dark',
     'mode.light': 'Light',
     'common.save': 'Save',
+    'panel.title': 'Server panel',
+    'panel.open': 'Open server panel',
+    'panel.openSub': 'Manage your Nova panel in the app',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
     'common.add': 'Add',
@@ -926,6 +1060,7 @@ class NovaStrings {
     'route.tuneTestHint':
         'Not sure which is fastest? Connect, then run a Speed test in the Stats tab with each option.',
     'servers.search': 'Search servers',
+    'servers.filterAll': 'All',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
     'servers.extract': 'Extract configs',
@@ -936,6 +1071,12 @@ class NovaStrings {
         'Deploy your own panel, sign in to one, or add a config to get started.',
     'servers.deploy': 'Deploy your own panel',
     'servers.deploySub': 'Spin up a free Nova worker on Cloudflare',
+    'deploy.botTitle': 'Deploy with the Nova bot',
+    'deploy.botIntro': 'The Nova Telegram bot sets up a free Nova worker on your own Cloudflare account in a couple of minutes. Nothing to install here.',
+    'deploy.botStep1': 'Open the bot and tap Start.',
+    'deploy.botStep2': 'Paste a Cloudflare API token when it asks. The bot uses it once to create the worker on your account.',
+    'deploy.botStep3': 'It gives you your panel link and password. Come back and use "Import from your panel" to sign in.',
+    'deploy.botOpen': 'Open the Nova bot',
     'servers.signIn': 'Sign in to your panel',
     'servers.signInSub': 'Import configs from an existing panel',
     'servers.addConfig': 'Add a config',
@@ -1211,6 +1352,7 @@ class NovaStrings {
     'inb.presetWsTlsSub': 'WebSocket over TLS.',
     'inb.presetSs2022Sub': 'Modern Shadowsocks with a strong cipher.',
     'servers.name': 'Name',
+    'servers.awgImportConf': 'Import .conf file',
     'servers.link': 'Link',
     'servers.subUrl': 'Subscription URL',
     'servers.uriHint': 'vless://…  or  https://…/sub',
@@ -1227,17 +1369,76 @@ class NovaStrings {
     'node.autoSub': 'Let Nova pick the lowest-latency node',
     'node.refresh': 'Refresh',
     'node.search': 'Search nodes',
+    'node.clearSearch': 'Clear search',
     'node.noMatch': 'No nodes match your search',
     'node.freeTitle': 'Nova is free',
     'node.freeBody':
         'Never pay anyone for these configs. Nova is a free service, share it with friends.',
     'node.community': 'Follow Nova',
     'node.count': '{n} nodes',
+    'node.blocked': 'blocked',
+    'node.untested': 'not testable',
+    'node.noResponse': 'no response',
+    'node.staleList':
+        'Could not refresh from the panel, so these are your saved servers. '
+            'They still work; connect and they will update on their own.',
+    'node.skipped':
+        '{n} server(s) in this subscription use something Nova cannot run ({s}), so they are not listed.',
+    'logs.title': 'Logs',
+    'logs.subtitle': 'What Nova and the VPN core are doing',
+    'logs.tabApp': 'Nova',
+    'logs.tabCore': 'Core',
+    'logs.emptyApp':
+        'Nothing yet. Connect once and the steps Nova takes appear here.',
+    'logs.emptyCore':
+        'Nothing yet. The core writes here while the tunnel is running.',
+    'logs.copy': 'Copy',
+    'logs.copied': 'Copied. Credentials were removed.',
+    'logs.clear': 'Clear',
+    'logs.follow': 'Follow new lines',
+    'logs.redactNote':
+        'Passwords, UUIDs and subscription tokens are removed when you copy. '
+            'Server addresses are kept, because they are usually what the '
+            'problem turns on.',
+    'logs.verbose': 'Detailed core log',
+    'logs.verboseSub':
+        'Log every connection the core routes, not just its warnings. Uses more '
+            'battery, and starts with your next connection.',
+    'logs.lineCount': '{n} lines',
   };
 
   static const Map<String, String> _fa = <String, String>{
     'notice.failoverSwitched':
         'این سرور پاسخ نمی‌داد؛ Nova به سریع‌ترین سرور فعال تغییر کرد.',
+    'notice.pinnedExitNoTraffic':
+        'سروری که انتخاب کرده‌اید وصل شده ولی هیچ ترافیکی عبور نمی‌کند. '
+            '\u2066Nova\u2069 روی انتخاب شما می‌ماند: از فهرست سرورها سرور '
+            'دیگری را انتخاب کنید یا حالت خودکار را بزنید.',
+    'notice.pinnedExitGone':
+        'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
+            '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '
+            'دوباره فهرست سرورها را باز کنید.',
+    'notice.sniBypassOn':
+        'هیچ‌کدام از این سرورها ترافیک عبور ندادند، پس \u2066Nova\u2069 '
+            'دور زدن مسدودی \u2066SNI\u2069 را برای این اشتراک روشن کرد و '
+            'دوباره وصل شد. می‌توانید از فهرست سرورها خاموشش کنید.',
+    'node.bypassTitle': 'دور زدن مسدودی \u2066SNI\u2069',
+    'node.bypassSub':
+        'برای شبکه‌هایی که خود دامنه‌ی ورکر را می‌بندند. \u2066TLS\u2069 ساده '
+            'با فهرست رمز ثابت و دست‌دهی تکه‌تکه‌شده، فقط روی سرورهای '
+            'آی‌پی تمیز. کندتر است؛ فقط وقتی هیچ‌چیز وصل نمی‌شود روشنش کنید.',
+    'bypass.edit': 'ویرایش تنظیمات بایپس',
+    'bypass.title': 'تنظیمات بایپس',
+    'bypass.intro': 'پیشرفته. این‌ها مقادیر ضدسانسوری هستند که نوا روی سرورهای Clean-IP می‌فرستد. پیش‌فرض‌ها آزمایش‌شده‌اند؛ فقط اگر شیوه‌ی فیلترینگ شبکه‌تان تغییر کرد آن‌ها را عوض و ذخیره کنید.',
+    'bypass.fingerprint': 'اثر انگشت TLS',
+    'bypass.finalmask': 'فرگمنت (finalmask، JSON)',
+    'bypass.cipherSuites': 'مجموعه رمزها (هر خط یکی)',
+    'bypass.maskInvalid': 'این JSON معتبر نیست.',
+    'bypass.reset': 'بازگردانی به پیش‌فرض',
+    'node.bypassAllBlocked':
+        'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
+            'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '
+            'روشن شد؛ وصل شوید تا امتحان شود.',
     'notice.tunnelNoInternet':
         'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
             'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '
@@ -1260,6 +1461,7 @@ class NovaStrings {
     'dash.tapToConnect': 'برای اتصال لمس کنید',
     'dash.location': 'موقعیت',
     'dash.ip': 'آی‌پی',
+    'dash.ping': 'پینگ',
     'dash.notProtected': 'محافظت‌نشده',
     'dash.notProtectedBody': 'برای عبور ترافیک از Nova متصل شوید.',
     'dash.download': 'دانلود',
@@ -1267,6 +1469,7 @@ class NovaStrings {
     'home.summary': 'خلاصه',
     'home.configs': 'پیکربندی‌ها',
     'home.title': 'داشبورد',
+    'home.subtitle': 'وضعیت اتصال و پلن شما در یک نگاه',
     'dash.activeProfile': 'پروفایل فعال',
     'dash.noProfile': 'پروفایلی انتخاب نشده',
     'radar.title': 'رادار نوا',
@@ -1313,6 +1516,11 @@ class NovaStrings {
     'dash.error': 'خطا',
     'home.time': 'زمان',
     'home.data': 'داده',
+    'home.updateAvailable': 'نسخه‌ی جدید نوا در دسترس است',
+    'home.updateGet': 'دریافت',
+    'settings.checkUpdates': 'بررسی بروزرسانی',
+    'home.connectedVia': 'متصل از طریق',
+    'home.connectedAuto': 'خودکار (انتخاب سریع‌ترین)',
     'home.expiry': 'انقضا',
     'home.singleConfig': 'پیکربندی تکی',
     'cf.connectedTo': 'متصل به کلودفلر',
@@ -1326,7 +1534,7 @@ class NovaStrings {
     'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
     'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
     'set.cloudflare': 'کلودفلر',
-    'set.cloudflareSub': 'استقرار یا ورود به پنل شما',
+    'set.cloudflareSub': 'ورود برای مدیریت پنل شما',
     'set.relay': 'رله گوگل',
     'set.relaySub': 'وقتی پنل و اشتراکتان مسدود است، از طریق گوگل به آن‌ها برسید',
     'relay.title': 'رله گوگل',
@@ -1482,6 +1690,9 @@ class NovaStrings {
     'mode.dark': 'تیره',
     'mode.light': 'روشن',
     'common.save': 'ذخیره',
+    'panel.title': 'پنل سرور',
+    'panel.open': 'باز کردن پنل سرور',
+    'panel.openSub': 'پنل نوای خود را داخل برنامه مدیریت کنید',
     'common.cancel': 'لغو',
     'common.reset': 'بازنشانی',
     'common.add': 'افزودن',
@@ -1536,6 +1747,7 @@ class NovaStrings {
     'route.tuneTestHint':
         'مطمئن نیستی کدام سریع‌تر است؟ وصل شو و در تب آمار با هر گزینه یک تست سرعت بگیر.',
     'servers.search': 'جستجوی سرورها',
+    'servers.filterAll': 'همه',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',
     'servers.extract': 'استخراج پیکربندی‌ها',
@@ -1546,6 +1758,12 @@ class NovaStrings {
         'برای شروع، پنل خودتان را مستقر کنید، به یک پنل وارد شوید، یا یک پیکربندی اضافه کنید.',
     'servers.deploy': 'پنل خودتان را مستقر کنید',
     'servers.deploySub': 'یک ورکر رایگان نوا روی کلودفلر بسازید',
+    'deploy.botTitle': 'استقرار با ربات نوا',
+    'deploy.botIntro': 'ربات تلگرام نوا در چند دقیقه یک ورکر رایگان نوا روی حساب \u2066Cloudflare\u2069 خودتان می‌سازد. اینجا چیزی نصب نمی‌شود.',
+    'deploy.botStep1': 'ربات را باز کنید و \u2066Start\u2069 را بزنید.',
+    'deploy.botStep2': 'وقتی خواست، یک توکن \u2066Cloudflare API\u2069 را بفرستید. ربات یک‌بار از آن برای ساخت ورکر روی حساب شما استفاده می‌کند.',
+    'deploy.botStep3': 'لینک پنل و رمز را به شما می‌دهد. برگردید و از «ورود از پنل» وارد شوید.',
+    'deploy.botOpen': 'باز کردن ربات نوا',
     'servers.signIn': 'به پنل خود وارد شوید',
     'servers.signInSub': 'پیکربندی‌ها را از یک پنل موجود وارد کنید',
     'servers.addConfig': 'افزودن پیکربندی',
@@ -1818,6 +2036,7 @@ class NovaStrings {
     'inb.presetWsTlsSub': 'وب‌سوکت روی TLS.',
     'inb.presetSs2022Sub': 'شادوساکس مدرن با رمز قوی.',
     'servers.name': 'نام',
+    'servers.awgImportConf': 'وارد کردن فایل \u2066conf.\u2069',
     'servers.link': 'لینک',
     'servers.subUrl': 'نشانی اشتراک',
     'servers.uriHint': 'vless://…  یا  https://…/sub',
@@ -1834,12 +2053,42 @@ class NovaStrings {
     'node.autoSub': 'نوا سریع‌ترین سرور را انتخاب می‌کند',
     'node.refresh': 'بازخوانی',
     'node.search': 'جستجوی سرور',
+    'node.clearSearch': 'پاک کردن جستجو',
     'node.noMatch': 'سروری با جستجوی شما پیدا نشد',
     'node.freeTitle': 'نوا رایگان است',
     'node.freeBody':
         'برای این کانفیگ‌ها به کسی پول ندهید. نوا یک سرویس رایگان است، آن را با دوستانتان به اشتراک بگذارید.',
     'node.community': 'نوا را دنبال کنید',
     'node.count': '{n} سرور',
+    'node.blocked': 'مسدود',
+    'node.untested': 'قابل تست نیست',
+    'node.noResponse': 'بدون پاسخ',
+    'node.staleList':
+        'به‌روزرسانی از پنل ممکن نشد، پس این‌ها سرورهای ذخیره‌شده‌ی شما هستند. '
+            'هنوز کار می‌کنند؛ وصل شوید تا خودشان به‌روز شوند.',
+    'node.skipped':
+        '{n} سرور در این اشتراک از چیزی استفاده می‌کنند که نوا نمی‌تواند اجرا کند (\u2066{s}\u2069)، پس فهرست نشده‌اند.',
+    'logs.title': 'گزارش‌ها',
+    'logs.subtitle': 'آنچه نوا و هسته‌ی VPN انجام می‌دهند',
+    'logs.tabApp': 'نوا',
+    'logs.tabCore': 'هسته',
+    'logs.emptyApp':
+        'هنوز چیزی نیست. یک بار وصل شوید تا کارهایی که نوا انجام می‌دهد '
+            'اینجا بیاید.',
+    'logs.emptyCore':
+        'هنوز چیزی نیست. هسته تا وقتی تونل روشن است اینجا می‌نویسد.',
+    'logs.copy': 'کپی',
+    'logs.copied': 'کپی شد. اطلاعات محرمانه حذف شد.',
+    'logs.clear': 'پاک کردن',
+    'logs.follow': 'دنبال‌کردن خط‌های تازه',
+    'logs.redactNote':
+        'رمزها، \u2066UUID\u2069 و توکن اشتراک هنگام کپی حذف می‌شوند. '
+            'آدرس سرورها می‌ماند، چون معمولا مشکل به همان‌ها برمی‌گردد.',
+    'logs.verbose': 'گزارش کامل هسته',
+    'logs.verboseSub':
+        'هر اتصالی که هسته مسیریابی می‌کند ثبت شود، نه فقط هشدارها. مصرف '
+            'باتری بیشتر می‌شود و از اتصال بعدی اعمال می‌شود.',
+    'logs.lineCount': '{n} خط',
   };
 }
 

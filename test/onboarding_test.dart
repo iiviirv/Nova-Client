@@ -36,6 +36,9 @@ void main() {
       relay: relay,
       tunnel: tunnel,
     ));
+    // Advance past the minimum-splash hold before onboarding is reached.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1600));
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome to Nova'), findsOneWidget);

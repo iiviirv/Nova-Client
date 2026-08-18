@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Nova Client</string>
+	<string>Nova Edge</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -78,6 +78,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>novaclient</string>
+				<string>nova</string>
 			</array>
 		</dict>
 	</array>

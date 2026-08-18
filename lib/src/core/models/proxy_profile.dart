@@ -44,7 +44,12 @@ class ProxyProfile {
     this.lastLatencyMs,
     this.updatedAt,
     this.pinnedNode,
+    this.pinnedName,
     this.fastNodes = const <String>[],
+    this.hardenTls = false,
+    this.bypassFingerprint,
+    this.bypassCipherSuites,
+    this.bypassFragmentMask,
   });
 
   final String id;
@@ -69,11 +74,33 @@ class ProxyProfile {
   /// null to let the core auto-pick the fastest (urltest).
   final String? pinnedNode;
 
+  /// The panel's name for the pinned node. A subscription that rotates its clean
+  /// IPs changes a node's address (and so its [pinnedNode] key) on every refresh,
+  /// which would silently break the pin and drop the user onto a different exit.
+  /// Matching on this stable name as a fallback keeps the chosen server pinned
+  /// across those rotations.
+  final String? pinnedName;
+
   /// `server:port` keys of the fastest measured nodes (from the node picker's
   /// latency test), best first. Auto-select builds its urltest pool from these
   /// so "fastest" actually uses good nodes instead of the subscription's first
   /// few. Empty until the user opens the node list.
   final List<String> fastNodes;
+
+  /// The SNI-block bypass profile is applied to this profile's clean-IP fronted
+  /// nodes (see `SingboxRouteOptions.hardenTls`). Off by default; turned on by
+  /// Nova itself when every node in the subscription fails to carry traffic
+  /// (the signature of a network that blocks the worker's SNI), or by the user
+  /// from the node list. Sticky once on, until the user turns it off.
+  final bool hardenTls;
+
+  /// User overrides for the SNI-block bypass, edited from the bypass editor so a
+  /// tester can re-tune the anti-DPI recipe when filtering changes. Each is null
+  /// to use Nova's field-tested default (`unsafe` fingerprint, [kBypassCipherSuites],
+  /// [kBypassFragmentMask]).
+  final String? bypassFingerprint;
+  final List<String>? bypassCipherSuites;
+  final String? bypassFragmentMask;
 
   bool get isSubscription => kind == ProxyKind.subscription;
 
@@ -82,10 +109,15 @@ class ProxyProfile {
     String? uri,
     String? subscriptionUrl,
     int? nodeCount,
-    int? lastLatencyMs,
+    Object? lastLatencyMs = _unset,
     DateTime? updatedAt,
     Object? pinnedNode = _unset,
+    Object? pinnedName = _unset,
     List<String>? fastNodes,
+    bool? hardenTls,
+    Object? bypassFingerprint = _unset,
+    Object? bypassCipherSuites = _unset,
+    Object? bypassFragmentMask = _unset,
   }) {
     return ProxyProfile(
       id: id,
@@ -94,11 +126,24 @@ class ProxyProfile {
       uri: uri ?? this.uri,
       subscriptionUrl: subscriptionUrl ?? this.subscriptionUrl,
       nodeCount: nodeCount ?? this.nodeCount,
-      lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
+      lastLatencyMs:
+          lastLatencyMs == _unset ? this.lastLatencyMs : lastLatencyMs as int?,
       updatedAt: updatedAt ?? this.updatedAt,
       pinnedNode:
           pinnedNode == _unset ? this.pinnedNode : pinnedNode as String?,
+      pinnedName:
+          pinnedName == _unset ? this.pinnedName : pinnedName as String?,
       fastNodes: fastNodes ?? this.fastNodes,
+      hardenTls: hardenTls ?? this.hardenTls,
+      bypassFingerprint: bypassFingerprint == _unset
+          ? this.bypassFingerprint
+          : bypassFingerprint as String?,
+      bypassCipherSuites: bypassCipherSuites == _unset
+          ? this.bypassCipherSuites
+          : bypassCipherSuites as List<String>?,
+      bypassFragmentMask: bypassFragmentMask == _unset
+          ? this.bypassFragmentMask
+          : bypassFragmentMask as String?,
     );
   }
 
@@ -112,7 +157,12 @@ class ProxyProfile {
         'lastLatencyMs': lastLatencyMs,
         'updatedAt': updatedAt?.toIso8601String(),
         'pinnedNode': pinnedNode,
+        'pinnedName': pinnedName,
         'fastNodes': fastNodes,
+        'hardenTls': hardenTls,
+        'bypassFingerprint': bypassFingerprint,
+        'bypassCipherSuites': bypassCipherSuites,
+        'bypassFragmentMask': bypassFragmentMask,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
@@ -130,10 +180,17 @@ class ProxyProfile {
             ? DateTime.tryParse(json['updatedAt'] as String)
             : null,
         pinnedNode: json['pinnedNode'] as String?,
+        pinnedName: json['pinnedName'] as String?,
         fastNodes: (json['fastNodes'] as List<dynamic>?)
                 ?.map((e) => e as String)
                 .toList() ??
             const <String>[],
+        hardenTls: json['hardenTls'] as bool? ?? false,
+        bypassFingerprint: json['bypassFingerprint'] as String?,
+        bypassCipherSuites: (json['bypassCipherSuites'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .toList(),
+        bypassFragmentMask: json['bypassFragmentMask'] as String?,
       );
 
   static String encodeList(List<ProxyProfile> profiles) =>

@@ -1,5 +1,171 @@
 # Changelog
 
+## v1.10.0-beta (2026-08-17)
+
+Faster connects, cleaner logs, and broader server support, by the Nova team.
+
+- The first connection is quicker. The app no longer waits on a slow round of
+  server checks before the tunnel comes up, so tapping connect gets you online
+  sooner, especially on a blocked or slow network.
+- AmneziaWG configs that use a domain name for the server now connect. Before, a
+  config whose endpoint was a domain (not a plain IP address) failed to start;
+  the app now resolves it for you.
+- Subscriptions with xhttp servers now work: those servers join the auto-select
+  pool and show a live ping like everything else, and Reality xhttp servers are
+  supported too. On macOS this works in the app's proxy mode as well (whole-device
+  tunnel support for xhttp on desktop is still to come; Windows and Linux get the
+  second core in a later build).
+- The logs are cleaner. The core's routine "blocked" lines (for example QUIC being
+  steered onto TCP, which is normal) no longer show up as scary red errors; turn on
+  "Detailed core log" if you want to see everything. On Android and iOS the Logs
+  screen now also shows the second core's own messages.
+- "Deploy your own panel" now hands you to the Nova Telegram bot, which sets up a
+  free panel on your own Cloudflare account in a couple of minutes, instead of an
+  in-app sign-in.
+- Smaller fixes: the "Connected via" line and manual server pin are steadier, and
+  the Cloudflare screen is clearer about signing in to manage your panel.
+
+## v1.9.0-beta (2026-08-16)
+
+Clearer server pings, by the Nova team.
+
+- The server list now puts the servers with a real, live ping at the top (fastest
+  first), so you can see and pick a working server at a glance instead of scrolling
+  past a wall of "not testable" entries.
+- With the SNI-block bypass on, the clean-IP servers (the ones that actually get
+  through) now fill the measured set first, so more of your live pings are for
+  servers that work.
+
+## v1.8.0-beta (2026-08-15)
+
+Server list and dashboard improvements, by the Nova team.
+
+- The server list opens instantly now. If your subscription's address is blocked,
+  the app shows your saved servers right away and refreshes in the background,
+  instead of sitting on a loading spinner.
+- When connected, every server in the list shows a live ping measured through the
+  tunnel, and a green dot marks the one carrying traffic. A server that was tested
+  but did not answer now reads "no response" instead of "not testable".
+- The dashboard shows a live line with the exact server you are connected through,
+  and "Secure" appears sooner after you connect.
+- The refresh button re-checks your servers and reconnects to the best one.
+- Nova now checks once a day for a new version and shows a small note when one is
+  available; there is also a "Check for updates" link in Settings.
+- A cleaner look: the Add button is now a floating button over the server list,
+  and some secondary items were tidied away from the dashboard.
+
+## v1.7.0-beta (2026-08-15)
+
+Two fixes for restricted networks, by the Nova team.
+
+- When the SNI-block bypass is on and connected, the server list now shows a live
+  ping for each server (measured through the tunnel) and a green dot on the one
+  actually carrying traffic, so you can finally see which servers work and which
+  one you are on.
+- A failed subscription refresh no longer wipes your servers. If the panel can't
+  be reached (its domain is blocked), the app keeps your saved servers and shows
+  a small note instead of an error, so you can still connect. The list updates on
+  its own the moment the panel is reachable again, without dropping your
+  connection.
+
+## v1.6.0-beta (2026-08-15)
+
+Exact-match the anti-censorship fragmentation, by the Nova team.
+
+- The SNI-block bypass now splits the connection handshake into the exact same
+  packet sizes as PattNG, byte for byte, instead of an approximation. On the
+  strictest networks the approximation was not enough; this should behave the
+  same as PattNG there. It is still off by default and only on the clean-IP
+  servers, and turns itself on when nothing else connects.
+
+## v1.5.1-beta (2026-08-15)
+
+SNI-block bypass fixes from tester feedback, by the Nova team.
+
+- The server list no longer says "blocked" for every server when the SNI-block
+  bypass is on. The test it runs cannot reproduce the bypass, so it now says
+  those servers are tested when you connect, instead of a false blocked.
+- SNI-block bypass on Windows. The handshake fragmentation it used has a step
+  that a normal Windows install cannot perform, so it never connected. Windows
+  now uses the part that works, which is also the part that matters for hiding
+  the server name.
+
+## v1.5.0-beta (2026-08-15)
+
+For the networks that block the worker domain itself, by the Nova team.
+
+- SNI-block bypass, for networks that have started blocking the workers.dev
+  and pages.dev domains themselves. Nova can now run the profile that testers
+  found gets through in PattNG: plain TLS with a fixed cipher list instead of a
+  browser fingerprint, and a fragmented handshake, on the clean-IP servers only.
+  It stays off by default. If every server in a subscription fails to carry
+  traffic, Nova turns it on for that subscription by itself, reconnects, and
+  tells you; there is also a switch at the top of the server list. Links from
+  cf-optimizor (fp=unsafe, cs, fm) import as-is, and a hardened Nova server
+  re-shares in that same format so it pastes into PattNG.
+
+## v1.4.0-beta (2026-08-15)
+
+Every platform on the same code, and a cleaner app, by the Nova team.
+
+- A modernized interface. The dashboard, server list, node list, settings and
+  first-run screens were reworked around one clear focus per screen, with
+  colour reserved for state and the measured verdict the most legible thing on
+  a server row. Nothing animates while the app is idle any more, which is a
+  real battery win: the connect orb used to repaint sixty times a second all
+  day.
+- Windows and macOS get the same VPN core as the phone. The desktop core had
+  been an older stock build with no WireGuard, no NaiveProxy and no AmneziaWG in
+  it, so those servers failed on desktop while working on Android. Both desktop
+  cores are now built from the same source and patch as the Android one.
+- iOS now requires iOS 15 or later, ahead of Apple's 2027 requirement.
+- NaiveProxy servers work now. Nova Server has always been able to create one,
+  and the phone app's VPN core could always run it, but the app could not read
+  the link, so a NaiveProxy server appeared in no client at all. On desktop it
+  says plainly that this build's core cannot run it, instead of the core dying
+  at startup.
+- A subscription no longer loses servers in silence. If it contains something
+  Nova cannot run, the server list says how many and what kind, so a short list
+  is explained instead of looking like configs went missing.
+
+## v1.3.0-beta (2026-08-14)
+
+An honesty update, by the Nova team. Nova now tells you what it actually knows
+about your servers instead of guessing, and shows you what it and the VPN core
+are doing.
+
+- The server you pick is the server you get. If the one you chose connects but
+  carries no traffic, Nova now tells you and stays on your choice instead of
+  quietly connecting through a different one while the list still showed yours
+  as selected. If your server has disappeared from the subscription, it says
+  that too, rather than switching in silence.
+- Ping numbers are real now. Nova used to show the time it took to open a
+  connection, which succeeds against Cloudflare's network for any address at
+  all, so every config looked healthy even on a network where none of them
+  worked. Each server is now tested by actually talking to it, and where
+  possible by sending a real request through it and waiting for the answer. A
+  server that cannot be tested from outside says so instead of borrowing a
+  number it did not earn.
+- Server locations are honest. A config sent with a clean Cloudflare address
+  used to be labelled with wherever that address happened to resolve, which is
+  not where your traffic comes out. Those now show the name the panel gave them
+  and say they are fronted, and configs that use a domain get a real flag,
+  which they never used to.
+- New Logs screen in Settings, with Nova's own log and the VPN core's log kept
+  separate. Copying strips passwords, UUIDs and subscription tokens first, so a
+  log is safe to send to support. Detailed core logging is a switch on that
+  screen, off by default.
+- AmneziaWG now actually works in Nova. The app has been building correct
+  AmneziaWG configurations all along and handing them to a core that did not
+  have the protocol in it, so a server's AmneziaWG worked in the official
+  Amnezia apps and not here. Nova's core is now built with AmneziaWG.
+- Nova also checks its own core before it tries. If a build ever ships without
+  AmneziaWG again, it says so instead of connecting to nothing.
+- The VPN core is now included for every processor type the app runs on. Older
+  32-bit phones and x86 devices were installing an app that had no core for
+  them, so they could open Nova and never connect. The download is larger
+  because of it.
+
 ## v1.2.0-beta (2026-07-21)
 
 A big anti-censorship update, by the Nova team.

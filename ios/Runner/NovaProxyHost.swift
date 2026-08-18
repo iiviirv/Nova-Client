@@ -3,6 +3,7 @@ import Foundation
 import Novacore
 import NetworkExtension
 import CoreTelephony
+import WidgetKit
 
 /// iOS implementation of the `nova.proxy/control` MethodChannel + `nova.proxy/events`
 /// EventChannel that the Flutter `SingboxProxyController` drives. It manages the
@@ -10,12 +11,19 @@ import CoreTelephony
 /// the config is handed to the extension through the shared App Group, and the
 /// connection state is streamed back from NEVPNStatus.
 final class NovaProxyHost: NSObject, FlutterStreamHandler {
-  static let appGroup = "group.online.novaproxy.novaClient"
-  static let tunnelBundleId = "online.novaproxy.novaClient.NovaTunnel"
+  static let appGroup = "group.tech.innovatenorth.novaedge"
+  static let tunnelBundleId = "tech.innovatenorth.novaedge.NovaTunnel"
 
   private var eventSink: FlutterEventSink?
   private var manager: NETunnelProviderManager?
   private var statusClient: NovacoreCommandClient?
+  private var logClient: NovacoreCommandClient?
+  private var groupClient: NovacoreCommandClient?
+  // Tails the NE's xray.log (Xray's own log lines, written from the extension) and
+  // folds them into the Core log next to sing-box's. libbox's CommandLog only
+  // carries sing-box, so without this Xray-only failures are invisible on iOS.
+  private var xrayLogTimer: DispatchSourceTimer?
+  private var xrayLogSeen = 0
   private var libboxReady = false
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -43,7 +51,14 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       // Optional bundled rule-set files (name -> bytes), written next to the
       // config so the lean iOS config can reference them as local rule-sets.
       let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
-      start(config: config, ruleSets: ruleSets, result: result)
+      // Present only for an xhttp node: the Xray core config the extension runs
+      // alongside the sing-box TUN->SOCKS bridge.
+      let xrayConfig = args["xrayConfigJson"] as? String
+      // Cosmetic profile name for the home-screen widget.
+      profileLabel = (args["label"] as? String)?.isEmpty == false
+        ? (args["label"] as? String) : nil
+      start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
+            result: result)
     case "stop":
       stopTunnel(result: result)
     case "status":
@@ -53,7 +68,11 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       loadManagerIfNeeded { [weak self] in
         guard let self else { result("disconnected"); return }
         let status = self.manager?.connection.status ?? .invalid
-        if status == .connected { self.startStatusClient() }
+        if status == .connected {
+          self.startStatusClient()
+          self.startLogClient()
+          self.startGroupClient()
+        }
         result(self.stateName(status))
       }
     case "networkInfo":
@@ -96,6 +115,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private static let ruleSetBaseToken = "__NOVA_BASE__"
 
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
+                     xrayConfig: String?,
                      result: @escaping FlutterResult) {
     // Write the config where the extension can read it (shared App Group).
     guard let container = FileManager.default
@@ -113,6 +133,14 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         of: Self.ruleSetBaseToken, with: container.path)
       try resolved.write(to: container.appendingPathComponent("config.json"),
                          atomically: true, encoding: .utf8)
+      // The Xray config for an xhttp node, or remove a stale one so a normal
+      // node never starts a leftover Xray in the extension.
+      let xrayURL = container.appendingPathComponent("xray.json")
+      if let xrayConfig, !xrayConfig.isEmpty {
+        try xrayConfig.write(to: xrayURL, atomically: true, encoding: .utf8)
+      } else if FileManager.default.fileExists(atPath: xrayURL.path) {
+        try FileManager.default.removeItem(at: xrayURL)
+      }
     } catch {
       result(FlutterError(code: "write", message: error.localizedDescription, details: nil))
       return
@@ -186,13 +214,18 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   @objc private func statusChanged() {
     let status = manager?.connection.status ?? .invalid
     emit(["type": "state", "value": stateName(status)])
+    publishWidgetState(stateName(status))
     // Attach/detach the libbox status client so the dashboard gets live
     // download/upload throughput, not a frozen zero.
     switch status {
     case .connected:
       startStatusClient()
+      startLogClient()
+      startGroupClient()
     default:
       stopStatusClient()
+      stopLogClient()
+      stopGroupClient()
     }
   }
 
@@ -220,7 +253,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   /// freezing for a beat when it's cold-launched (returned to) while the tunnel
   /// is already up. A serial queue also makes every `statusClient` mutation
   /// thread-safe.
-  private let statusQueue = DispatchQueue(label: "online.novaproxy.novaClient.status")
+  private let statusQueue = DispatchQueue(label: "tech.innovatenorth.novaedge.status")
 
   private func startStatusClient() {
     statusQueue.async { [weak self] in
@@ -261,6 +294,147 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     }
   }
 
+  /// Attaches a second command client for the core's log stream, which backs
+  /// Settings -> Logs. Separate from the status client on purpose: the status
+  /// stream drives the dashboard's live speed meter and must not depend on the
+  /// log subscription's lifecycle. How much this carries is decided by the
+  /// config's `log.level`, which the Dart side raises to `info` only when the
+  /// user turns on detailed logs.
+  private func startLogClient() {
+    statusQueue.async { [weak self] in
+      guard let self, self.logClient == nil else { return }
+      self.ensureNovacoreSetup()
+      let options = NovacoreCommandClientOptions()
+      options.addCommand(NovacoreCommandLog)
+      guard let client = NovacoreNewCommandClient(LogHandler(host: self), options)
+      else { return }
+      self.logClient = client
+      self.connectLogClientLocked(client, attempt: 0)
+      self.startXrayLogTail()
+    }
+  }
+
+  /// Polls the shared xray.log the NE writes and emits any new lines into the same
+  /// `{type:"log"}` channel as sing-box's, tagged like Android ("[xray]", warn).
+  /// Runs on `statusQueue`. The NE truncates the file on each connect, so a line
+  /// count below what we've emitted means a fresh session — reset and re-read.
+  private func startXrayLogTail() {
+    guard xrayLogTimer == nil else { return }
+    xrayLogSeen = 0
+    guard let url = FileManager.default
+      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup)?
+      .appendingPathComponent("xray.log") else { return }
+    let timer = DispatchSource.makeTimerSource(queue: statusQueue)
+    timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+    timer.setEventHandler { [weak self] in
+      guard let self else { return }
+      guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+      var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+      if lines.last == "" { lines.removeLast() }
+      if lines.count < self.xrayLogSeen { self.xrayLogSeen = 0 } // new session
+      guard lines.count > self.xrayLogSeen else { return }
+      let fresh = lines[self.xrayLogSeen..<lines.count]
+      self.xrayLogSeen = lines.count
+      // level 3 == warn, so it survives the Dart quiet-log filter, same as Android.
+      let batch = fresh.map { ["level": 3, "message": "[xray] \($0)"] as [String: Any] }
+      self.emit(["type": "log", "lines": batch])
+    }
+    xrayLogTimer = timer
+    timer.resume()
+  }
+
+  private func stopXrayLogTail() {
+    xrayLogTimer?.cancel()
+    xrayLogTimer = nil
+    xrayLogSeen = 0
+  }
+
+  /// Runs on `statusQueue`.
+  private func connectLogClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
+    do {
+      try client.connect()
+    } catch {
+      guard logClient === client, attempt < 5 else { return }
+      statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        guard let self, self.logClient === client else { return }
+        self.connectLogClientLocked(client, attempt: attempt + 1)
+      }
+    }
+  }
+
+  private func stopLogClient() {
+    statusQueue.async { [weak self] in
+      guard let self else { return }
+      self.stopXrayLogTail()
+      guard let client = self.logClient else { return }
+      self.logClient = nil
+      try? client.disconnect()
+    }
+  }
+
+  /// Attaches a third command client for the core's outbound-group stream: the
+  /// auto-selector plus each pool node's urltest latency, measured through the
+  /// running tunnel (so the SNI-block bypass is already applied). This is what
+  /// lets the server list show a real ping, and which server is selected, for
+  /// the clean-IP nodes that cannot be probed from outside the tunnel. Separate
+  /// client for the same independent-lifecycle reason as the log one.
+  private func startGroupClient() {
+    statusQueue.async { [weak self] in
+      guard let self, self.groupClient == nil else { return }
+      self.ensureNovacoreSetup()
+      let options = NovacoreCommandClientOptions()
+      options.addCommand(NovacoreCommandGroup)
+      options.statusInterval = Int64(NSEC_PER_SEC) * 3 // one group push per 3s
+      guard let client = NovacoreNewCommandClient(GroupHandler(host: self), options)
+      else { return }
+      self.groupClient = client
+      self.connectGroupClientLocked(client, attempt: 0)
+    }
+  }
+
+  /// Runs on `statusQueue`.
+  private func connectGroupClientLocked(_ client: NovacoreCommandClient, attempt: Int) {
+    do {
+      try client.connect()
+      // Force the urltest so every pool node is measured now, instead of some
+      // sitting unmeasured until the group's own 3-min interval (which is what
+      // left nodes reading "not testable"). A few tries, because the router may
+      // not be routing the instant the command socket accepts. Best-effort.
+      for delay in [1.5, 4.0, 9.0] {
+        statusQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+          guard let self, self.groupClient === client else { return }
+          try? client.urlTest("proxy")
+        }
+      }
+    } catch {
+      guard groupClient === client, attempt < 5 else { return }
+      statusQueue.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        guard let self, self.groupClient === client else { return }
+        self.connectGroupClientLocked(client, attempt: attempt + 1)
+      }
+    }
+  }
+
+  private func stopGroupClient() {
+    statusQueue.async { [weak self] in
+      guard let self, let client = self.groupClient else { return }
+      self.groupClient = nil
+      try? client.disconnect()
+    }
+  }
+
+  /// Forwards a batch of core log lines. Batched because the core emits them in
+  /// bursts and each event is a hop to the main thread.
+  fileprivate func onLogs(_ list: NovacoreLogIteratorProtocol) {
+    var batch: [[String: Any]] = []
+    while list.hasNext() {
+      guard let entry = list.next() else { continue }
+      batch.append(["level": entry.level, "message": entry.message])
+    }
+    guard !batch.isEmpty else { return }
+    emit(["type": "log", "lines": batch])
+  }
+
   fileprivate func onStatus(_ message: NovacoreStatusMessage) {
     emit([
       "type": "traffic",
@@ -271,12 +445,55 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     ])
   }
 
+  /// Flattens the core's outbound-group snapshot (auto-selector + per-node
+  /// urltest delays) into plain dictionaries for the Dart side, which maps the
+  /// `node-i` tags back to real servers.
+  fileprivate func onGroups(_ iterator: NovacoreOutboundGroupIteratorProtocol) {
+    var groups: [[String: Any]] = []
+    while iterator.hasNext() {
+      guard let group = iterator.next() else { continue }
+      var items: [[String: Any]] = []
+      if let itemIterator = group.getItems() {
+        while itemIterator.hasNext() {
+          guard let item = itemIterator.next() else { continue }
+          // urlTestDelay is ms; 0 means no successful test yet.
+          items.append(["tag": item.tag, "delay": item.urlTestDelay])
+        }
+      }
+      groups.append([
+        "tag": group.tag,
+        "selected": group.selected,
+        "items": items,
+      ])
+    }
+    guard !groups.isEmpty else { return }
+    emit(["type": "groups", "groups": groups])
+  }
+
   private func stateName(_ s: NEVPNStatus) -> String {
     switch s {
     case .connected: return "connected"
     case .connecting, .reasserting: return "connecting"
     case .disconnecting: return "disconnecting"
     default: return "disconnected"
+    }
+  }
+
+  // MARK: - Home-screen widget
+
+  /// The active profile name, shown by the widget. Set on start; cosmetic.
+  private var profileLabel: String?
+
+  /// Mirror the tunnel state (and profile name) into the shared App Group so the
+  /// WidgetKit extension can render it, then ask WidgetKit to refresh. The widget
+  /// is a separate process, so this shared defaults store is how it learns the
+  /// state; it never touches the tunnel itself.
+  private func publishWidgetState(_ state: String) {
+    let defaults = UserDefaults(suiteName: Self.appGroup)
+    defaults?.set(state, forKey: "nova.widget.state")
+    defaults?.set(profileLabel, forKey: "nova.widget.label")
+    if #available(iOS 14.0, *) {
+      WidgetCenter.shared.reloadAllTimelines()
     }
   }
 
@@ -317,5 +534,49 @@ private final class StatusHandler: NSObject, NovacoreCommandClientHandlerProtoco
   func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
   // Added in sing-box 1.13's command-client handler; we drive log level from the
   // config, so this is a no-op.
+  func setDefaultLogLevel(_ level: Int32) {}
+}
+
+/// Receives the libbox log stream and forwards it to the host. Every other
+/// callback is a required-but-unused protocol stub.
+private final class LogHandler: NSObject, NovacoreCommandClientHandlerProtocol {
+  private weak var host: NovaProxyHost?
+  init(host: NovaProxyHost) { self.host = host }
+
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {
+    guard let messageList else { return }
+    host?.onLogs(messageList)
+  }
+
+  func writeStatus(_ message: NovacoreStatusMessage?) {}
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {}
+  func setDefaultLogLevel(_ level: Int32) {}
+}
+
+/// Receives the libbox outbound-group stream and forwards the per-node urltest
+/// snapshot to the host. Every other callback is a required-but-unused stub.
+private final class GroupHandler: NSObject, NovacoreCommandClientHandlerProtocol {
+  private weak var host: NovaProxyHost?
+  init(host: NovaProxyHost) { self.host = host }
+
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {
+    guard let message else { return }
+    host?.onGroups(message)
+  }
+
+  func writeStatus(_ message: NovacoreStatusMessage?) {}
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
   func setDefaultLogLevel(_ level: Int32) {}
 }

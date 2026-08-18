@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'core/models/proxy_profile.dart';
 import 'core/proxy/conn_info_controller.dart';
 import 'core/proxy/proxy_controller.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
@@ -15,7 +19,7 @@ import 'l10n/nova_strings.dart';
 import 'theme/nova_theme.dart';
 import 'theme/theme_controller.dart';
 import 'widgets/nova_app_shell.dart';
-import 'widgets/nova_logo.dart';
+import 'widgets/nova_splash.dart';
 import 'widgets/nova_scope.dart';
 
 /// The Nova Client application root. Owns the long-lived controllers, exposes
@@ -97,22 +101,91 @@ class _RootGate extends StatefulWidget {
 
 class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
   String? _startAction;
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
+
+  // Hold the branded splash for a short minimum so its tagline is actually seen,
+  // instead of flashing past the instant prefs finish loading.
+  bool _minSplash = true;
+  Timer? _splashTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Sync the real tunnel state once the tree is up (covers cold launch while
-    // the VPN is already running).
+    // Start the minimum-splash hold only AFTER the first frame actually paints.
+    // Measuring it from initState would race the first build on a slow cold
+    // start (the timer and the frame come due together on the one isolate), so
+    // the splash could flash past unseen. Post-frame guarantees a full hold from
+    // the moment the splash is on screen.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) NovaScope.of(context).proxy.syncStatus();
+      if (!mounted) return;
+      NovaScope.of(context).proxy.syncStatus();
+      _splashTimer = Timer(const Duration(milliseconds: 1400), () {
+        if (mounted) setState(() => _minSplash = false);
+      });
     });
+    _initDeepLinks();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _splashTimer?.cancel();
+    _linkSub?.cancel();
     super.dispose();
+  }
+
+  /// The panel's share page offers a one-tap import as `nova://install-config?
+  /// url=<sub url>` (also accept the app's own `novaclient://`). Register both
+  /// schemes so the OS hands the link to us instead of Safari saying the address
+  /// is invalid, then add the subscription. Handles cold start and while running.
+  Future<void> _initDeepLinks() async {
+    try {
+      final Uri? initial = await _appLinks.getInitialLink();
+      if (initial != null) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _handleUri(initial));
+      }
+    } catch (_) {/* no initial link */}
+    _linkSub = _appLinks.uriLinkStream.listen(_handleUri, onError: (_) {});
+  }
+
+  void _handleUri(Uri uri) {
+    // nova://install-config?url=<encoded sub url>. The action is the host
+    // (nova://install-config) or the first path segment, depending on the OS.
+    final String action =
+        uri.host.isNotEmpty ? uri.host : (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : '');
+    if (action != 'install-config') return;
+    final String sub = (uri.queryParameters['url'] ?? '').trim();
+    if (sub.isEmpty) return;
+    _importSubscription(sub);
+  }
+
+  void _importSubscription(String url) {
+    if (!mounted) return;
+    final NovaScope scope = NovaScope.of(context);
+    ProxyProfile? existing;
+    for (final ProxyProfile p in scope.profiles.profiles) {
+      if (p.subscriptionUrl == url) {
+        existing = p;
+        break;
+      }
+    }
+    final ProxyProfile profile = existing ??
+        ProxyProfile(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          name: 'Nova subscription',
+          kind: ProxyKind.subscription,
+          uri: '',
+          subscriptionUrl: url,
+          updatedAt: DateTime.now(),
+        );
+    if (existing == null) scope.profiles.add(profile);
+    scope.profiles.setActive(profile.id);
+    scope.proxy.selectProfile(profile);
+    // The new subscription shows in the server list and becomes active; the
+    // ProfilesController notifies listeners, so the UI updates on its own.
   }
 
   @override
@@ -129,8 +202,8 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: widget.theme,
       builder: (context, _) {
-        if (!widget.theme.loaded) {
-          return const Scaffold(body: Center(child: NovaLogo(size: 72)));
+        if (!widget.theme.loaded || _minSplash) {
+          return const NovaSplash();
         }
         if (!widget.theme.onboarded) {
           return NovaOnboarding(

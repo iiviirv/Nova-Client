@@ -1,0 +1,5 @@
+* Faster first connect (no slow pre-connect server check).
+* AmneziaWG configs that use a domain endpoint now connect.
+* xhttp servers are supported and join the auto-select pool.
+* Cleaner core log: routine "blocked" lines are no longer shown as errors.
+* Properly release-signed builds (fixes the "unsafe app" install warning).

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
+import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 
 /// High-level connection lifecycle states surfaced to the UI.
@@ -32,6 +33,48 @@ class TrafficStats {
   static const TrafficStats zero = TrafficStats();
 }
 
+/// Per-node latency the running core measured for the auto-select pool.
+///
+/// [delayMsByKey] maps [proxyNodeKey] to the round-trip the core's urltest saw
+/// through that node (only nodes that answered are present; a delay of 0 from
+/// the core means "failed/untested" and is dropped). [selectedKey] is the node
+/// the auto-selector is currently routing through, so the list can mark which
+/// server is actually carrying traffic.
+class CoreNodeHealth {
+  const CoreNodeHealth({
+    required this.delayMsByKey,
+    this.testedKeys = const <String>{},
+    this.selectedKey,
+  });
+
+  static const CoreNodeHealth empty =
+      CoreNodeHealth(delayMsByKey: <String, int>{});
+
+  final Map<String, int> delayMsByKey;
+
+  /// Every node the core's urltest actually measured this round, whether or not
+  /// it answered. A key here with no [delayMsByKey] entry means the core tried
+  /// the node through the tunnel and got no successful round-trip: it is a dead
+  /// or unusable exit, not one that "can't be tested". The list uses this to say
+  /// "no response" instead of the misleading "not testable".
+  final Set<String> testedKeys;
+
+  final String? selectedKey;
+
+  bool get isEmpty =>
+      delayMsByKey.isEmpty && testedKeys.isEmpty && selectedKey == null;
+
+  /// The core's latency for [node], or null if the core has no live figure.
+  int? delayFor(ProxyNode node) => delayMsByKey[proxyNodeKey(node)];
+
+  /// The core measured [node] this round (it may still have failed, see
+  /// [delayFor]). False for a node outside the auto-select pool.
+  bool wasTested(ProxyNode node) => testedKeys.contains(proxyNodeKey(node));
+
+  bool isSelected(ProxyNode node) =>
+      selectedKey != null && proxyNodeKey(node) == selectedKey;
+}
+
 /// The boundary between Nova Client's UI and the underlying proxy core.
 ///
 /// Nova Client is an optimised Karing-style client: the actual data path is a
@@ -48,7 +91,24 @@ class TrafficStats {
 enum ProxyNotice {
   /// A manually pinned server was dead, so Nova failed over to the fastest
   /// working one.
+  ///
+  /// No longer fired: an explicit choice is never overridden silently. Kept so
+  /// older persisted state and tests that name it still compile.
   failoverToWorkingServer,
+
+  /// The server the user picked came up but is not passing traffic. Nova keeps
+  /// the choice (it is the user's) and says so, instead of quietly connecting
+  /// through a different server than the one shown as selected.
+  pinnedExitNoTraffic,
+
+  /// The pinned server is no longer in the subscription (panels rotate clean
+  /// IPs), so this session had to auto-select. Announced rather than silent.
+  pinnedExitGone,
+
+  /// Every server in the subscription came up but carried nothing, so Nova
+  /// turned on the SNI-block bypass for it and reconnected. Persisted; the
+  /// user can turn it off in the node list.
+  sniBypassOn,
 
   /// The tunnel is up but repeated probes (and one full rebuild) never got any
   /// traffic through: "connected but no internet". Fired once, when the
@@ -71,6 +131,18 @@ abstract class ProxyController extends ChangeNotifier {
   /// a code (not a string) so the message follows the app language. Kept separate
   /// from [lastError] so an informational message doesn't read as a failure.
   final ValueNotifier<ProxyNotice?> notice = ValueNotifier<ProxyNotice?>(null);
+
+  /// Live per-node latency the running core measured for the auto-select pool,
+  /// keyed by [proxyNodeKey]. This is the only honest health signal for the
+  /// nodes the SNI-block bypass is for: a clean-IP fronted node cannot be probed
+  /// from outside the tunnel (the bypass fragments the ClientHello in a way only
+  /// the core can), so the server list shows "tested when you connect" for it.
+  /// Once the tunnel is up, the core's own urltest has real numbers for every
+  /// node in the pool, measured through the exact same bypass, and this surfaces
+  /// them so the list can finally show which servers actually work and which one
+  /// is carrying traffic. Empty when not connected or on a single-node profile.
+  final ValueNotifier<CoreNodeHealth> coreHealth =
+      ValueNotifier<CoreNodeHealth>(CoreNodeHealth.empty);
 
   /// True when the tunnel reports connected but the controller has exhausted
   /// its traffic probes and its one self-heal rebuild without a single request
@@ -132,6 +204,11 @@ abstract class ProxyController extends ChangeNotifier {
   /// Desktop returns `PROXY 127.0.0.1:<port>` while connected so those probes go
   /// through the exit like every other platform.
   String? get proxyUri => null;
+
+  /// The panel's name for the node with this [proxyNodeKey], or null when the
+  /// controller has no name for it (or is a mock). Lets the dashboard show
+  /// "Connected via `name`" instead of a clean-IP node's Cloudflare address.
+  String? exitName(String? key) => null;
 
   /// Selects the profile to connect with (does not connect).
   void selectProfile(ProxyProfile? profile);

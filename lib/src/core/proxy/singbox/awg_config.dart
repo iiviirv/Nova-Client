@@ -283,6 +283,40 @@ class AwgPeer {
   final int? keepalive;
 }
 
+/// The `Endpoint` host from a WireGuard/AmneziaWG `.conf`, or null if absent.
+/// Used to resolve a domain endpoint to an IP before the core sees it (the
+/// AmneziaWG core parses the endpoint with ParseAddr and rejects a hostname).
+String? awgEndpointHost(String conf) {
+  for (final String raw in conf.split('\n')) {
+    final String line = raw.trim();
+    final int eq = line.indexOf('=');
+    if (eq < 0) continue;
+    if (line.substring(0, eq).trim().toLowerCase() != 'endpoint') continue;
+    final (String host, int _) = _splitHostPort(line.substring(eq + 1).trim());
+    return host.isEmpty ? null : host;
+  }
+  return null;
+}
+
+/// Returns [conf] with the `Endpoint` line's host replaced by [ip] (port kept).
+/// A no-op if there is no Endpoint line. IPv6 IPs are bracketed.
+String rewriteAwgEndpointHost(String conf, String ip) {
+  final String rendered = ip.contains(':') ? '[$ip]' : ip;
+  final List<String> out = <String>[];
+  for (final String raw in conf.split('\n')) {
+    final String line = raw.trim();
+    final int eq = line.indexOf('=');
+    if (eq >= 0 &&
+        line.substring(0, eq).trim().toLowerCase() == 'endpoint') {
+      final (String _, int port) = _splitHostPort(line.substring(eq + 1).trim());
+      out.add('Endpoint = $rendered:$port');
+    } else {
+      out.add(raw);
+    }
+  }
+  return out.join('\n');
+}
+
 /// Split a WireGuard `Endpoint` into host + port, handling bracketed IPv6
 /// (`[2001:db8::1]:51820`) as well as `host:port`.
 (String, int) _splitHostPort(String ep) {

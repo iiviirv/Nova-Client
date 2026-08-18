@@ -14,6 +14,8 @@ import 'proxy_node.dart';
 ///   * `tuic://uuid:password@host:port?sni=..&congestion_control=bbr&udp_relay_mode=native#name`
 ///   * `ss://base64(method:password)@host:port#name`  (SIP002)
 ///   * `ss://base64(method:password@host:port)#name`  (legacy)
+///   * `wireguard://privateKey@host:port?publickey=..&address=..&mtu=..#name`
+///     (also `awg://`, which additionally carries the AmneziaWG junk params)
 ///
 /// Returns `null` for unsupported schemes or malformed links rather than
 /// throwing, so callers can surface a friendly error.
@@ -43,7 +45,14 @@ ProxyNode? parseShareLink(String raw) {
       'hysteria2' || 'hy2' => _parseHysteria2(input),
       'tuic' => _parseTuic(input),
       'ss' => _parseShadowsocks(input),
+      'wireguard' || 'awg' => _parseWireguard(input),
       'socks' || 'socks5' => _parseSocksHttp(input, NodeProtocol.socks),
+      // NaiveProxy. The scheme names the transport it runs over, and only the
+      // https (HTTP/2 over TLS) form is one the core can dial.
+      'naive+https' => _parseNaive(input),
+      // mieru (enfein/mieru): the simple mierus:// form. server + one port +
+      // TCP/UDP is enough to build the outbound the core now runs.
+      'mieru' || 'mierus' => _parseMieru(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -85,7 +94,7 @@ ProxyNode? _parseUserInfoLink(String input, NodeProtocol protocol) {
     password: protocol == NodeProtocol.trojan ? credential : null,
     tls: tls,
     sni: q['sni'] ?? q['peer'] ?? (tls ? host : null),
-    allowInsecure: q['allowInsecure'] == '1' || q['allow_insecure'] == 'true',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']),
     fingerprint: (q['fp'] ?? '').isNotEmpty
         ? q['fp']
@@ -97,7 +106,24 @@ ProxyNode? _parseUserInfoLink(String input, NodeProtocol protocol) {
     grpcServiceName: network == 'grpc' ? (q['serviceName'] ?? q['path'] ?? '') : null,
     realityPublicKey: (pbk != null && pbk.isNotEmpty) ? pbk : null,
     realityShortId: reality ? q['sid'] : null,
+    // PattNG / cf-optimizor extensions: `cs` is a colon-separated TLS 1.2
+    // cipher list, `fm` an Xray finalmask JSON, and `fp=unsafe` (read above)
+    // means Go's own TLS instead of a browser fingerprint. Together they are
+    // the SNI-block bypass profile; see ProxyNode.isHardenedTls.
+    cipherSuites: _splitCiphers(q['cs']),
+    fragmentMask: (q['fm'] ?? '').trim().isEmpty ? null : q['fm']!.trim(),
   );
+}
+
+/// `cs=` is colon-separated in the links PattNG writes (the same shape Xray's
+/// own `cipherSuites` field takes).
+List<String> _splitCiphers(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const <String>[];
+  return raw
+      .split(':')
+      .map((String c) => c.trim())
+      .where((String c) => c.isNotEmpty)
+      .toList();
 }
 
 /// VMess share links are `vmess://` + base64 of a JSON object (the v2rayN
@@ -130,6 +156,9 @@ ProxyNode? _parseVmess(String input) {
     vmessSecurity: s('scy').isEmpty ? 'auto' : s('scy'),
     tls: tls,
     sni: tls ? (sni.isEmpty ? host : sni) : null,
+    // Nova's node panel writes this into the vmess JSON as "allowInsecure":"1"
+    // for a self-signed (no-domain) node. Without it the handshake fails.
+    allowInsecure: _insecureFlag(s),
     alpn: _splitAlpn(s('alpn')),
     fingerprint: s('fp').isEmpty ? null : s('fp'),
     network: network,
@@ -161,7 +190,7 @@ ProxyNode? _parseHysteria2(String input) {
     password: password.isEmpty ? null : password,
     tls: true,
     sni: q['sni'] ?? q['peer'] ?? host,
-    allowInsecure: q['insecure'] == '1' || q['allowInsecure'] == '1',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']),
     obfsType: obfs == 'salamander' ? 'salamander' : null,
     obfsPassword: (q['obfs-password'] ?? q['obfs_password']),
@@ -192,7 +221,7 @@ ProxyNode? _parseTuic(String input) {
     password: password,
     tls: true,
     sni: q['sni'] ?? q['peer'] ?? host,
-    allowInsecure: q['allow_insecure'] == '1' || q['insecure'] == '1',
+    allowInsecure: _insecureFlag((String k) => q[k]),
     alpn: _splitAlpn(q['alpn']?.isNotEmpty == true ? q['alpn'] : 'h3'),
     congestionControl:
         (q['congestion_control'] ?? '').isEmpty ? 'bbr' : q['congestion_control'],
@@ -310,6 +339,211 @@ ProxyNode? _parseSocksHttp(String input, NodeProtocol proto) {
   );
 }
 
+/// A NaiveProxy link, as Nova Server writes it:
+///   `naive+https://user:pass@host:port?security=tls&insecure=0#name`
+///
+/// The authority host is also the TLS name: Naive carries no separate SNI, so
+/// there is nothing to front it with and the link never has one. `insecure` (or
+/// `allowInsecure`) follows the node's real certificate, which is the difference
+/// between a self-signed node that works and one that cannot complete a
+/// handshake, so it is read rather than assumed.
+///
+/// Only `naive+https` reaches here. The `naive+quic` form exists in the wild and
+/// sing-box cannot dial it, so it is left to fall through as unsupported instead
+/// of being silently downgraded to TLS.
+/// A mieru link. The simple form is
+///   `mierus://username:password@server[:port]?port=..&protocol=TCP&multiplexing=..#name`
+/// (port in the authority or the `port`/`portRange` query param). Only the
+/// outbound is built: server, one port, TCP/UDP, and the multiplexing level map
+/// straight onto the mbox mieru outbound now compiled into the core.
+ProxyNode? _parseMieru(String input) {
+  final int schemeEnd = input.indexOf('://');
+  final String rest = input.substring(schemeEnd + 3);
+  // Only the human-readable form carries `user:pass@`; the base64 `mieru://`
+  // full-config form is not emitted by Nova Server, so skip it.
+  if (!rest.contains('@')) return null;
+  final Uri uri = Uri.parse('https://$rest');
+  final String host = uri.host;
+  if (host.isEmpty) return null;
+
+  final String raw = uri.userInfo;
+  final int c = raw.indexOf(':');
+  if (c < 0) return null;
+  final String user = Uri.decodeComponent(raw.substring(0, c));
+  final String pass = Uri.decodeComponent(raw.substring(c + 1));
+  if (user.isEmpty || pass.isEmpty) return null;
+
+  final Map<String, String> q = uri.queryParameters;
+  // Uri.port defaults to 443 under the https:// normalisation, so read an
+  // explicit authority port (host:port) from the raw text, then fall back to the
+  // `port`/`portRange` query param (the form mieru's simple links actually use).
+  final String authority = rest.split(RegExp(r'[?#/]')).first;
+  final String hostPort =
+      authority.contains('@') ? authority.split('@').last : authority;
+  int port = hostPort.contains(':')
+      ? (int.tryParse(hostPort.split(':').last) ?? 0)
+      : 0;
+  if (port == 0) {
+    final String pr = q['port'] ?? q['portRange'] ?? '';
+    port = int.tryParse(pr.split(RegExp(r'[-,]')).first.trim()) ?? 0;
+  }
+  if (port == 0) return null;
+
+  final String transport =
+      (q['protocol'] ?? q['transport'] ?? 'TCP').toUpperCase() == 'UDP'
+          ? 'UDP'
+          : 'TCP';
+
+  return ProxyNode(
+    protocol: NodeProtocol.mieru,
+    server: host,
+    port: port,
+    tag: _name(uri, host),
+    uuid: user, // username in the uuid slot, as socks/http/naive do
+    password: pass,
+    mieruTransport: transport,
+    mieruMultiplexing: q['multiplexing'] ?? 'MULTIPLEXING_LOW',
+  );
+}
+
+ProxyNode? _parseNaive(String input) {
+  // Uri cannot parse a `+` scheme reliably across platforms, so normalise it to
+  // https:// and read the standard authority from that.
+  final int schemeEnd = input.indexOf('://');
+  final Uri uri = Uri.parse('https://${input.substring(schemeEnd + 3)}');
+  final String host = uri.host;
+  final int port = uri.port == 0 ? 443 : uri.port;
+  if (host.isEmpty) return null;
+
+  final String rawUserInfo = uri.userInfo;
+  if (rawUserInfo.isEmpty) return null;
+  final int c = rawUserInfo.indexOf(':');
+  if (c < 0) return null;
+  final String user = Uri.decodeComponent(rawUserInfo.substring(0, c));
+  final String pass = Uri.decodeComponent(rawUserInfo.substring(c + 1));
+  if (user.isEmpty || pass.isEmpty) return null;
+
+  final Map<String, String> q = uri.queryParameters;
+  final String insecure =
+      (q['insecure'] ?? q['allowInsecure'] ?? '0').toLowerCase();
+
+  return ProxyNode(
+    protocol: NodeProtocol.naive,
+    server: host,
+    port: port,
+    tag: _name(uri, host),
+    uuid: user,
+    password: pass,
+    // Naive is HTTP/2 CONNECT inside TLS; the TLS is not optional. No alpn is
+    // set on purpose: sing-box rejects the outbound with "alpn is not supported
+    // on naive outbound" (cronet negotiates it itself). The reachability probe
+    // pins h2 on its own TLS handshake independently of this node field.
+    tls: true,
+    sni: host,
+    allowInsecure: insecure == '1' || insecure == 'true',
+  );
+}
+
+/// A WireGuard or AmneziaWG link:
+///   `wireguard://privateKey@host:port?publickey=..&address=10.7.0.2/32&mtu=1420#name`
+/// An `awg://` link (or a `wireguard://` one carrying junk params) additionally
+/// supplies `jc`/`jmin`/`jmax`, `s1`-`s4`, `h1`-`h4` and `i1`-`i5`.
+///
+/// Nova's node panel emits the `wireguard://` form with the private key
+/// percent-encoded, because a raw `/` in a base64 key would break the authority.
+/// Rather than duplicate the endpoint logic, this rebuilds the equivalent
+/// `.conf` and hands it to the parser the `.conf` import path already uses, so a
+/// plain link yields a stock `wireguard` endpoint (which every shipped core can
+/// run) and a junk-bearing one yields an `awg` endpoint.
+ProxyNode? _parseWireguard(String input) {
+  final Uri uri = Uri.parse(input);
+  final String host = uri.host;
+  final int port = uri.port == 0 ? 51820 : uri.port;
+  final String privateKey = Uri.decodeComponent(uri.userInfo);
+  if (host.isEmpty || privateKey.isEmpty) return null;
+  // Values below are interpolated into INI text, and Uri decodes %0A to a real
+  // newline, so a control character (or a stray section header) could inject or
+  // override keys the link never named. Reject rather than sanitize: these are
+  // base64 keys, addresses, and integers, none of which contain these.
+  if (_hasIniControlChars(privateKey)) return null;
+
+  // Clients disagree on separators and casing (`public_key` vs `publickey`), so
+  // normalize once and look up the flattened form.
+  final Map<String, String> q = <String, String>{};
+  uri.queryParameters.forEach((String k, String v) {
+    q[k.toLowerCase().replaceAll('_', '').replaceAll('-', '')] = v;
+  });
+  String? pick(List<String> keys) {
+    for (final String k in keys) {
+      final String? v = q[k];
+      if (v == null) continue;
+      final String t = v.trim();
+      if (t.isNotEmpty && !_hasIniControlChars(t)) return t;
+    }
+    return null;
+  }
+
+  final String? publicKey = pick(<String>['publickey', 'peerpublickey', 'pbk']);
+  if (publicKey == null) return null;
+
+  final StringBuffer conf = StringBuffer()
+    ..writeln('[Interface]')
+    ..writeln('PrivateKey = $privateKey')
+    ..writeln('Address = ${pick(<String>['address', 'addr', 'ip']) ?? '10.7.0.2/32'}');
+  final String? dns = pick(<String>['dns']);
+  if (dns != null) conf.writeln('DNS = $dns');
+  final String? mtu = pick(<String>['mtu']);
+  if (mtu != null) conf.writeln('MTU = $mtu');
+  for (final String k in const <String>[
+    'jc', 'jmin', 'jmax',
+    's1', 's2', 's3', 's4',
+    'h1', 'h2', 'h3', 'h4',
+    'i1', 'i2', 'i3', 'i4', 'i5',
+  ]) {
+    final String? v = pick(<String>[k]);
+    if (v != null) conf.writeln('$k = $v');
+  }
+  conf
+    ..writeln()
+    ..writeln('[Peer]')
+    ..writeln('PublicKey = $publicKey')
+    ..writeln('Endpoint = $host:$port')
+    ..writeln('AllowedIPs = ${pick(<String>['allowedips']) ?? '0.0.0.0/0, ::/0'}');
+  final String? psk = pick(<String>['presharedkey', 'psk']);
+  if (psk != null) conf.writeln('PresharedKey = $psk');
+  conf.writeln(
+      'PersistentKeepalive = ${pick(<String>['persistentkeepalive', 'keepalive']) ?? '25'}');
+
+  final String label =
+      uri.fragment.isEmpty ? '' : Uri.decodeComponent(uri.fragment);
+  try {
+    return ProxyNode.fromAwgConf(conf.toString(),
+        name: label.isEmpty ? null : label);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// True if [v] contains anything that would change the shape of the INI text
+/// [_parseWireguard] synthesizes: a line break, or a section header bracket.
+bool _hasIniControlChars(String v) =>
+    v.contains('\n') || v.contains('\r') || v.contains('[') || v.contains(']');
+
+bool _truthy(String? v) {
+  final String s = (v ?? '').trim().toLowerCase();
+  return s == '1' || s == 'true';
+}
+
+/// Reads the "skip certificate verification" flag, which every client spells
+/// differently. Nova's server emits `allowInsecure=1` on URIs and
+/// `"allowInsecure":"1"` inside vmess JSON, while Hysteria2 and TUIC links in the
+/// wild use `insecure` or `allow_insecure`. Accept all three, as `1` or `true`,
+/// so a self-signed node works no matter which spelling produced the link.
+bool _insecureFlag(String? Function(String key) get) =>
+    _truthy(get('allowInsecure')) ||
+    _truthy(get('allow_insecure')) ||
+    _truthy(get('insecure'));
+
 String _name(Uri uri, String fallback) {
   final String fragment = uri.fragment;
   if (fragment.isEmpty) return fallback;
@@ -344,9 +578,13 @@ String _normalizeNetwork(String type) {
   };
 }
 
-/// Transports that carry an HTTP-style `path` + `host` (ws, http/2, httpupgrade).
+/// Transports that carry an HTTP-style `path` + `host` (ws, http/2, httpupgrade,
+/// and xhttp/SplitHTTP, which the Xray core needs the path for).
 bool _carriesPath(String network) =>
-    network == 'ws' || network == 'http' || network == 'httpupgrade';
+    network == 'ws' ||
+    network == 'http' ||
+    network == 'httpupgrade' ||
+    network == 'xhttp';
 
 List<String> _splitAlpn(String? alpn) {
   if (alpn == null || alpn.isEmpty) return const <String>[];

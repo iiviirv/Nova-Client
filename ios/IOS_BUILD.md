@@ -13,7 +13,7 @@ the whole Flutter UI and Dart logic work unchanged.
   PlatformInterface: openTun + interface monitor + service lifecycle), plus
   `Info.plist` and `NovaTunnel.entitlements`.
 - **Entitlements**: `ios/Runner/Runner.entitlements` (NetworkExtension + App
-  Group `group.online.novaproxy.novaClient`).
+  Group `group.tech.innovatenorth.novaedge`).
 - **Dart**: `main.dart` already routes iOS to `SingboxProxyController`.
 
 ## Remaining (Xcode, with the Apple Developer account @irnova_proxy)
@@ -21,7 +21,7 @@ These steps create the extension target and wire the provided files into it.
 
 1. **Add the target**: File > New > Target > **Network Extension** (Packet Tunnel
    Provider). Name it **NovaTunnel**, bundle id
-   `online.novaproxy.novaClient.NovaTunnel`. Delete the auto-generated
+   `tech.innovatenorth.novaedge.NovaTunnel`. Delete the auto-generated
    `PacketTunnelProvider.swift`/`Info.plist` and instead **add the existing files**
    from `ios/NovaTunnel/` to this target.
 2. **Add `NovaProxyHost.swift`** to the Runner target (if not auto-added).
@@ -29,7 +29,7 @@ These steps create the extension target and wire the provided files into it.
    target ("Do Not Embed").
 4. **Signing & Capabilities** on **both** Runner and NovaTunnel:
    - Network Extensions (Packet Tunnel)
-   - App Groups -> `group.online.novaproxy.novaClient`
+   - App Groups -> `group.tech.innovatenorth.novaedge`
    - Point each target at its `.entitlements` file (already provided).
    - Select your team; let Xcode create the provisioning profiles.
 5. **Run on a real device** (the simulator's NE support is limited).

@@ -26,9 +26,14 @@ class MainActivity : FlutterActivity() {
 
     private var pendingResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
+    private var pendingXrayConfig: String? = null
+    private var pendingLabel: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // So the home-screen widget can be repainted from state changes even
+        // before the VpnService has run once this process.
+        NovaProxyBridge.appContext = applicationContext
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         MethodChannel(messenger, controlChannel).setMethodCallHandler { call, result ->
@@ -39,13 +44,19 @@ class MainActivity : FlutterActivity() {
                         result.error("no_config", "configJson missing", null)
                         return@setMethodCallHandler
                     }
+                    // Present only for an xhttp node: the Xray core config.
+                    val xrayConfig = call.argument<String>("xrayConfigJson")
+                    // Cosmetic profile name for the ongoing notification.
+                    val label = call.argument<String>("label")
                     val consent = VpnService.prepare(this)
                     if (consent != null) {
                         pendingResult = result
                         pendingConfig = config
+                        pendingXrayConfig = xrayConfig
+                        pendingLabel = label
                         startActivityForResult(consent, vpnRequestCode)
                     } else {
-                        startVpn(config)
+                        startVpn(config, xrayConfig, label)
                         result.success(null)
                     }
                 }
@@ -76,6 +87,24 @@ class MainActivity : FlutterActivity() {
                     result.success(info)
                 }
 
+                // What the bundled core can actually do. The Dart config layer
+                // emits AmneziaWG endpoints, and a core built without AmneziaWG
+                // takes them and does nothing visible with them, so the Dart
+                // side asks before it hands one over. The probe builds a small
+                // userspace stack, so it runs off the main thread.
+                "coreFeatures" -> {
+                    Thread {
+                        val supported = NovaCore.supportsAwg(applicationContext)
+                        val info = HashMap<String, Any>()
+                        // Left out entirely when the probe could not answer, so
+                        // the Dart side records "unknown" instead of a verdict.
+                        if (supported != null) info["amneziawg"] = supported
+                        info["coreVersion"] = NovaCore.version()
+                        NovaCore.awgFailureReason()?.let { info["amneziawgReason"] = it }
+                        runOnUiThread { result.success(info) }
+                    }.start()
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -93,9 +122,15 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun startVpn(config: String) {
+    private fun startVpn(config: String, xrayConfig: String? = null, label: String? = null) {
         val intent = Intent(this, NovaVpnService::class.java)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)
+        if (!xrayConfig.isNullOrEmpty()) {
+            intent.putExtra(NovaVpnService.EXTRA_XRAY_CONFIG, xrayConfig)
+        }
+        if (!label.isNullOrEmpty()) {
+            intent.putExtra(NovaVpnService.EXTRA_LABEL, label)
+        }
         startService(intent)
     }
 
@@ -112,10 +147,14 @@ class MainActivity : FlutterActivity() {
         if (requestCode != vpnRequestCode) return
         val result = pendingResult
         val config = pendingConfig
+        val xrayConfig = pendingXrayConfig
+        val label = pendingLabel
         pendingResult = null
         pendingConfig = null
+        pendingXrayConfig = null
+        pendingLabel = null
         if (resultCode == Activity.RESULT_OK && config != null) {
-            startVpn(config)
+            startVpn(config, xrayConfig, label)
             result?.success(null)
         } else {
             NovaProxyBridge.emitError("VPN permission denied")

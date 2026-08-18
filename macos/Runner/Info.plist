@@ -38,6 +38,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>novaclient</string>
+				<string>nova</string>
 			</array>
 		</dict>
 	</array>

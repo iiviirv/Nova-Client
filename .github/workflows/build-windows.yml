@@ -45,10 +45,24 @@ jobs:
       - name: Bundle sing-box core next to the app
         run: Copy-Item assets/bin/sing-box-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
 
+      # Xray is the second core, for xhttp/SplitHTTP exits sing-box can't run.
+      # DesktopProxyController starts it next to the .exe; without it, xhttp
+      # servers report "no Xray core" and every other protocol is unaffected.
+      - name: Bundle Xray core next to the app
+        run: Copy-Item assets/bin/xray-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
+
       # wintun.dll is required for TUN (full-device) mode; sing-box loads it from
       # beside the core. Proxy mode (the default) doesn't need it.
       - name: Bundle wintun.dll next to the app
         run: Copy-Item assets/bin/wintun.dll -Destination build/windows/x64/runner/Release/ -Force
+
+      # libcronet.dll is Chromium's network stack, which the core loads (lazily,
+      # from beside itself) for NaiveProxy servers. The Windows core is built
+      # with purego so the Go side stays cross-compilable; the DLL is the native
+      # half. See tool/core/build-desktop.sh. Without it a NaiveProxy server
+      # fails with "cronet: library not found"; every other protocol is unaffected.
+      - name: Bundle libcronet.dll next to the app
+        run: Copy-Item assets/bin/libcronet.dll -Destination build/windows/x64/runner/Release/ -Force
 
       - name: Package Nova-Windows.zip
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Nova-Windows.zip

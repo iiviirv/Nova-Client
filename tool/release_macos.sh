@@ -11,8 +11,22 @@ PROJ="$PWD"
 B="${1:?usage: release_macos.sh <build-number>}"
 ISSUER="048b417e-9426-428a-a694-f18b1384a7d0"
 KEYID="4NF8HTUX29"
-ID="Developer ID Application: the Nova team (A53J987N2C)"
+# The signing identity, by certificate SHA-1 rather than by name. A hash is
+# what codesign matches most reliably, it survives the certificate's common name
+# not being what a script expects, and it is not a person's name in the repo.
+# `security find-identity -v -p codesigning` lists it. Override with
+# NOVA_CODESIGN_ID for a different Mac or a renewed certificate.
+ID="${NOVA_CODESIGN_ID:-86D5AC8632E81F27B2CAFA6C843AF1114E16A7A9}"
+# Optional dedicated signing keychain (password novakc). When it is absent (it
+# lives in /tmp and does not survive a reboot) the login keychain, where the
+# Developer ID identity normally lives, is used as-is.
 KC=/tmp/nova-signing.keychain-db
+KCARGS=()
+if [[ -f "$KC" ]]; then
+  security unlock-keychain -p novakc "$KC"
+  security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"') >/dev/null 2>&1
+  KCARGS=(--keychain "$KC")
+fi
 KEY=~/.appstoreconnect/private_keys/AuthKey_$KEYID.p8
 ZIP=/tmp/Nova-macOS-arm64-b$B.zip
 DMG=/tmp/Nova-macOS-arm64-b$B.dmg
@@ -23,21 +37,28 @@ APP="$PROJ/build/macos/Build/Products/Release/nova_client.app"
 if [[ ! -d "$APP" ]]; then echo "!! macOS app not produced"; exit 1; fi
 cp "$PROJ/assets/bin/sing-box-macos-arm64" "$APP/Contents/Resources/sing-box-macos-arm64"
 echo "core bundled: $(ls -lh "$APP/Contents/Resources/sing-box-macos-arm64" | awk '{print $5}')"
+# Second core, Xray, for xhttp exits. Best-effort: an older tree without it just
+# ships without xhttp support (the app says so at connect time).
+if [[ -f "$PROJ/assets/bin/xray-macos-arm64" ]]; then
+  cp "$PROJ/assets/bin/xray-macos-arm64" "$APP/Contents/Resources/xray-macos-arm64"
+  echo "xray core bundled: $(ls -lh "$APP/Contents/Resources/xray-macos-arm64" | awk '{print $5}')"
+fi
 
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
-security unlock-keychain -p novakc "$KC"
-security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"') >/dev/null 2>&1
 # Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
 # (e.g. flutter_secure_storage_macos) left with its build-time signature fails
 # notarization ("not signed with a valid Developer ID certificate").
 for dylib in "$APP"/Contents/Frameworks/*.dylib(N); do
-  codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$dylib" 2>&1 | tail -1
+  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$dylib" 2>&1 | tail -1
 done
 for fw in "$APP"/Contents/Frameworks/*.framework(N); do
-  codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$fw" 2>&1 | tail -1
+  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw" 2>&1 | tail -1
 done
-codesign --force --options runtime --timestamp -s "$ID" --keychain "$KC" "$APP/Contents/Resources/sing-box-macos-arm64" 2>&1 | tail -1
-codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" --keychain "$KC" "$APP" 2>&1 | tail -1
+codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/sing-box-macos-arm64" 2>&1 | tail -1
+if [[ -f "$APP/Contents/Resources/xray-macos-arm64" ]]; then
+  codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$APP/Contents/Resources/xray-macos-arm64" 2>&1 | tail -1
+fi
+codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" "${KCARGS[@]}" "$APP" 2>&1 | tail -1
 codesign --verify --deep --strict "$APP" 2>&1 | tail -2 && echo "signature valid"
 
 echo "--- notarize app ---"
@@ -60,7 +81,7 @@ ln -s /Applications "$STAGE/Applications"
 # -fs "HFS+" is required; the APFS default fails with "image not recognized"
 hdiutil detach "/Volumes/Nova" 2>/dev/null
 hdiutil create -volname "Nova" -srcfolder "$STAGE" -fs "HFS+" -format UDZO -ov "$DMG" 2>&1 | tail -2
-codesign --force --timestamp -s "$ID" --keychain "$KC" "$DMG" 2>&1 | tail -1
+codesign --force --timestamp -s "$ID" "${KCARGS[@]}" "$DMG" 2>&1 | tail -1
 
 echo "--- notarize DMG ---"
 xcrun notarytool submit "$DMG" --key "$KEY" --key-id "$KEYID" --issuer "$ISSUER" --wait 2>&1 | tail -6

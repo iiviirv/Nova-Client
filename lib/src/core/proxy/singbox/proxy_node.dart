@@ -1,3 +1,5 @@
+import 'dart:io' show InternetAddress;
+
 import 'awg_config.dart';
 
 /// A single proxy node parsed from a share link.
@@ -20,6 +22,18 @@ enum NodeProtocol {
   awg,
   socks,
   http,
+
+  /// NaiveProxy: HTTP/2 CONNECT inside TLS, with padding that makes the
+  /// request/response sizes look like ordinary browsing. Nova Server has always
+  /// been able to create a Naive inbound, and the mobile cores are built with
+  /// `with_naive_outbound`, but the app could not read the `naive+https://`
+  /// link, so an operator who made one watched it appear in no client at all.
+  naive,
+
+  /// mieru: an obfuscated socks5 transport (enfein/mieru) served by a
+  /// mieru/mita server. Credentials are a username + password; transport is
+  /// TCP or UDP. Ported into the sing-box core as a native outbound.
+  mieru,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -34,6 +48,8 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.awg => 'awg',
         NodeProtocol.socks => 'socks',
         NodeProtocol.http => 'http',
+        NodeProtocol.naive => 'naive',
+        NodeProtocol.mieru => 'mieru',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -56,6 +72,8 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.awg => 'AmneziaWG',
         NodeProtocol.socks => 'SOCKS',
         NodeProtocol.http => 'HTTP',
+        NodeProtocol.naive => 'NaiveProxy',
+        NodeProtocol.mieru => 'mieru',
       };
 }
 
@@ -89,6 +107,10 @@ class ProxyNode {
     this.hy2UpMbps,
     this.hy2DownMbps,
     this.awgConf,
+    this.mieruTransport = 'TCP',
+    this.mieruMultiplexing = 'MULTIPLEXING_LOW',
+    this.cipherSuites = const <String>[],
+    this.fragmentMask,
   });
 
   /// Build an AmneziaWG node from a raw `awg-quick` `.conf`. The peer endpoint
@@ -139,7 +161,8 @@ class ProxyNode {
 
   // VMess.
   final int vmessAlterId; // "aid" (0 for AEAD)
-  final String? vmessSecurity; // "scy": auto | aes-128-gcm | chacha20-poly1305 | none
+  final String?
+      vmessSecurity; // "scy": auto | aes-128-gcm | chacha20-poly1305 | none
 
   // Hysteria2 (QUIC). Auth uses [password]; salamander obfuscation is optional.
   final String? obfsType; // "salamander" when set
@@ -158,9 +181,43 @@ class ProxyNode {
   // AmneziaWG / WireGuard: the raw `.conf` text. Parsed to a sing-box `awg`
   // endpoint (keys, address, peer, and the junk params) at config-build time.
   final String? awgConf;
+  /// mieru transport: 'TCP' or 'UDP'.
+  final String mieruTransport;
+  /// mieru multiplexing level, e.g. 'MULTIPLEXING_LOW'.
+  final String mieruMultiplexing;
+
+  // The SNI-block bypass profile, as PattNG-style links carry it (`cs=` and
+  // `fm=`, with `fp=unsafe`). See [isHardenedTls]. [cipherSuites] is the TLS 1.2
+  // cipher list in preference order; [fragmentMask] is the raw Xray finalmask
+  // JSON, kept verbatim so a link can be re-shared unchanged. The sing-box core
+  // has no per-segment lengths or delays, so the mask's presence selects its
+  // TLS-record and TCP-segment fragmentation rather than reproducing the exact
+  // sizes.
+  final List<String> cipherSuites;
+  final String? fragmentMask;
 
   bool get isReality =>
       (realityPublicKey != null && realityPublicKey!.isNotEmpty);
+
+  /// True when the link asked for the SNI-block bypass profile: `fp=unsafe` in
+  /// Xray terms means "no browser fingerprint, Go's own TLS with my cipher
+  /// list", and it travels with a fragment mask. Nova treats either signal as
+  /// the request, since a link from cf-optimizor carries all three.
+  bool get isHardenedTls =>
+      fingerprint == 'unsafe' ||
+      cipherSuites.isNotEmpty ||
+      (fragmentMask != null && fragmentMask!.isNotEmpty);
+
+  /// The node is a Cloudflare-fronted worker reached through a clean IP: the
+  /// address is an IP literal and the TLS name (SNI or Host) is a real domain.
+  /// These are the nodes the SNI-block bypass is for. A domain-addressed node
+  /// is left alone, which is what the operators asked for.
+  bool get isCleanIpFronted {
+    if (!tls) return false;
+    if (InternetAddress.tryParse(server) == null) return false;
+    final String name = (sni ?? wsHost ?? '').trim();
+    return name.isNotEmpty && name != server;
+  }
 
   bool get hasTls => tls;
 
@@ -173,6 +230,10 @@ class ProxyNode {
     String? tag,
     String? sni,
     String? wsHost,
+    List<String>? cipherSuites,
+    String? fragmentMask,
+    String? fingerprint,
+    String? awgConf,
   }) {
     return ProxyNode(
       protocol: protocol,
@@ -186,7 +247,6 @@ class ProxyNode {
       sni: sni ?? this.sni,
       allowInsecure: allowInsecure,
       alpn: alpn,
-      fingerprint: fingerprint,
       flow: flow,
       network: network,
       wsPath: wsPath,
@@ -202,7 +262,69 @@ class ProxyNode {
       udpRelayMode: udpRelayMode,
       hy2UpMbps: hy2UpMbps,
       hy2DownMbps: hy2DownMbps,
-      awgConf: awgConf,
+      awgConf: awgConf ?? this.awgConf,
+      cipherSuites: cipherSuites ?? this.cipherSuites,
+      fragmentMask: fragmentMask ?? this.fragmentMask,
+      fingerprint: fingerprint ?? this.fingerprint,
+    );
+  }
+
+  /// This node with the SNI-block bypass profile applied: Go's own TLS instead
+  /// of a browser fingerprint (`unsafe`), the cipher list PattNG uses, and a
+  /// fragment mask. Idempotent, and it never touches a node that already
+  /// carries its own hardening from the link.
+  ProxyNode hardened({
+    String? fingerprint,
+    List<String>? cipherSuites,
+    String? fragmentMask,
+  }) {
+    if (isHardenedTls) return this;
+    return copyWith(
+      fingerprint: fingerprint ?? 'unsafe',
+      cipherSuites: cipherSuites ?? kBypassCipherSuites,
+      fragmentMask: fragmentMask ?? kBypassFragmentMask,
     );
   }
 }
+
+/// The cipher list the field-tested PattNG recipe sends, in its order. TLS 1.3
+/// suites first (Go fixes their order regardless), then ECDHE GCM and ChaCha,
+/// then the two CBC-SHA suites Go still ships as secure. The recipe also lists
+/// TLS_ECDHE_ECDSA/RSA_WITH_AES_128_CBC_SHA256; the sing-box core refuses those
+/// two ("unknown cipher_suite", they are in Go's insecure set), so they are not
+/// here. That is the one place this ClientHello differs from PattNG's.
+const List<String> kBypassCipherSuites = <String>[
+  'TLS_AES_256_GCM_SHA384',
+  'TLS_CHACHA20_POLY1305_SHA256',
+  'TLS_AES_128_GCM_SHA256',
+  'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
+  'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384',
+  'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
+  'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256',
+  'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256',
+  'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
+  'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA',
+  'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA',
+];
+
+/// The Xray finalmask the field-tested recipe uses, kept verbatim so a hardened
+/// node re-shares as a link PattNG accepts. Two stages: the ClientHello split
+/// into TLS records of 5, 94, then 1 byte each (one TCP write), then that first
+/// write split into TCP segments of 109 and then 1 byte with 1 ms between them.
+const String kBypassFragmentMask =
+    '{"tcp":[{"type":"fragment","settings":{"packets":"tlshello",'
+    '"lengths":["5","94","1"],"delays":["0"],"maxSplit":"0"}},'
+    '{"type":"fragment","settings":{"packets":"1-1","lengths":["109","1"],'
+    '"delays":["1"],"maxSplit":"355"}}]}';
+
+/// Stable identity for selecting and latency-ranking a node.
+///
+/// A subscription can expose several protocols or WebSocket paths on the same
+/// address and port, so `server:port` alone is ambiguous.
+String proxyNodeKey(ProxyNode node) =>
+    '${node.server}:${node.port}:${node.protocol.name}:${node.wsPath ?? ''}';
+
+/// Accept the full key used by current builds and the old `server:port` key
+/// already persisted by earlier releases.
+bool proxyNodeMatchesKey(ProxyNode node, String key) =>
+    key == proxyNodeKey(node) || key == '${node.server}:${node.port}';

@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/conn_info_controller.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/subscription.dart';
+import '../../core/update/update_checker.dart';
 import '../../core/util/format.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -14,7 +16,6 @@ import '../../theme/nova_theme.dart';
 import '../../widgets/nova_button.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
-import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
 import '../cloudflare/cloudflare_controller.dart';
@@ -24,10 +25,21 @@ import '../radar/radar_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
 
-/// The home screen — a faithful port of the native Android dashboard:
-/// a Summary/Configs segmented header, a Cloudflare chip, the connect orb with
-/// a live uptime timer, a metrics block (exit country/IP/ping + up/down speed),
-/// the active config card, and a tools row.
+/// The home screen: a Summary/Configs segmented header, a Cloudflare status
+/// line, the connect orb with a live uptime timer, one connection panel (exit
+/// country, IP, ping and live throughput), the active config card, and a
+/// tools strip.
+///
+/// Rebuilds are scoped on purpose. The proxy controller notifies once a second
+/// while connected (traffic samples), so nothing above the hero listens to it:
+/// the header, tabs and Cloudflare line only rebuild for their own reasons, and
+/// each block below listens to exactly the controllers it reads.
+/// Temporarily hidden from the dashboard pending a product decision, kept fully
+/// wired so re-enabling is a one-line flip. Mutable (not `const`) on purpose so
+/// the widgets they gate still count as referenced.
+bool kShowCloudflareLine = false; // the "Connect Cloudflare" row above the hero
+bool kShowDashboardTools = false; // the Radar / Deploy / Panel strip
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, this.resetToSummary});
 
@@ -72,60 +84,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final scope = NovaScope.of(context);
     final s = NovaStrings.of(context);
 
-    return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[
-        scope.proxy,
-        scope.profiles,
-        scope.cloudflare,
-        // So the hero's "Verifying…/Secure" subtitle flips the moment a probe
-        // confirms traffic is actually getting through the tunnel.
-        scope.connInfo,
-      ]),
-      builder: (context, _) {
-        final proxy = scope.proxy;
-        final active = scope.profiles.active;
-        // Keep the proxy's selected profile in sync with the active profile.
-        if (proxy.activeProfile?.id != active?.id) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            proxy.selectProfile(active);
-          });
-        }
-
-        final int configCount = scope.profiles.profiles.length;
-
-        return Center(
-          child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-              children: <Widget>[
-                const _HomeHeader(),
-                const SizedBox(height: 14),
-                NovaSegmentedTabs(
-                  selected: _tab,
-                  onChanged: (i) => setState(() => _tab = i),
-                  segments: <NovaSegment>[
-                    NovaSegment(label: s.t('home.summary'), icon: Icons.home_rounded),
-                    NovaSegment(
-                      label: s.t('home.configs'),
-                      icon: Icons.grid_view_rounded,
-                      badge: configCount,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const _CloudflareChip(),
-                const SizedBox(height: 14),
-                if (_tab == 0)
-                  _SummaryView(proxy: proxy)
-                else
-                  const ServersBody(compact: true),
-              ],
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              NovaSpace.lg, NovaSpace.sm, NovaSpace.lg, NovaSpace.xl),
+          children: <Widget>[
+            const _HomeHeader(),
+            const SizedBox(height: NovaSpace.md),
+            ListenableBuilder(
+              listenable: scope.profiles,
+              builder: (context, _) => NovaSegmentedTabs(
+                selected: _tab,
+                onChanged: (i) => setState(() => _tab = i),
+                segments: <NovaSegment>[
+                  NovaSegment(
+                      label: s.t('home.summary'), icon: Icons.home_rounded),
+                  NovaSegment(
+                    label: s.t('home.configs'),
+                    icon: Icons.grid_view_rounded,
+                    badge: scope.profiles.profiles.length,
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+            const SizedBox(height: NovaSpace.xs),
+            const _UpdateBanner(),
+            if (kShowCloudflareLine) ...<Widget>[
+              const _CloudflareLine(),
+              const SizedBox(height: NovaSpace.sm),
+            ],
+            if (_tab == 0)
+              const _SummaryView()
+            else
+              const ServersBody(compact: true),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -136,167 +132,244 @@ class _HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = NovaStrings.of(context);
-    return Row(
-      children: <Widget>[
-        Text(
-          s.t('home.title'),
-          style: Theme.of(context)
-              .textTheme
-              .headlineMedium
-              ?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const Spacer(),
-        const NovaLogo(size: 34),
-      ],
+    return NovaScreenHeader(
+      title: s.t('home.title'),
+      subtitle: s.t('home.subtitle'),
     );
   }
 }
 
-/// Full-width Cloudflare status chip → opens the Cloudflare hub.
-class _CloudflareChip extends StatelessWidget {
-  const _CloudflareChip();
+/// Cloudflare status as a quiet, borderless line rather than another boxed
+/// card: it is a secondary status, and the hero below is the focal element.
+/// Opens the Cloudflare hub.
+class _CloudflareLine extends StatelessWidget {
+  const _CloudflareLine();
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     final s = NovaStrings.of(context);
     final cf = NovaScope.of(context).cloudflare;
-    final bool connected = cf.phase == CfPhase.connected;
     final text = Theme.of(context).textTheme;
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
-      ),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-        decoration: BoxDecoration(
-          color: nova.surface,
-          borderRadius: NovaRadii.chipR,
-          border: Border.all(color: nova.border.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          children: <Widget>[
-            Icon(Icons.cloud_rounded, size: 17, color: nova.cyan),
-            const SizedBox(width: 10),
-            Expanded(
-              child: connected
-                  ? Text.rich(
-                      TextSpan(children: <InlineSpan>[
-                        TextSpan(
-                          text: '${s.cfConnectedTo}  ',
-                          style: text.labelLarge
-                              ?.copyWith(color: nova.muted, fontSize: 12),
-                        ),
-                        TextSpan(
-                          text: cf.accountName.isEmpty ? '·' : cf.accountName,
-                          style: text.labelLarge?.copyWith(
-                            color: NovaSemantics.successGreen,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ]),
-                      overflow: TextOverflow.ellipsis,
-                    )
-                  : Text(
-                      s.cfConnect,
-                      style: text.labelLarge?.copyWith(
-                        color: nova.muted,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
+    return ListenableBuilder(
+      listenable: cf,
+      builder: (context, _) {
+        final bool connected = cf.phase == CfPhase.connected;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: NovaRadii.smR,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
             ),
-            Icon(Icons.chevron_right_rounded, size: 18, color: nova.muted),
-          ],
-        ),
-      ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: NovaSpace.sm, vertical: NovaSpace.md),
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.cloud_rounded,
+                      size: 16,
+                      color: connected ? NovaSemantics.successGreen : nova.muted),
+                  const SizedBox(width: NovaSpace.sm),
+                  Expanded(
+                    child: connected
+                        ? Text.rich(
+                            TextSpan(children: <InlineSpan>[
+                              TextSpan(
+                                text: '${s.cfConnectedTo} ',
+                                style: text.labelMedium
+                                    ?.copyWith(color: nova.muted),
+                              ),
+                              TextSpan(
+                                text: cf.accountName.isEmpty
+                                    ? s.setCloudflare
+                                    : cf.accountName,
+                                style: text.labelMedium?.copyWith(
+                                  color: nova.text,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : Text(
+                            s.cfConnect,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.labelMedium?.copyWith(
+                              color: nova.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 18, color: nova.muted),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-/// The Summary tab: orb + uptime hero, metrics, config card, tools.
-class _SummaryView extends StatefulWidget {
-  const _SummaryView({required this.proxy});
-  final ProxyController proxy;
-
-  @override
-  State<_SummaryView> createState() => _SummaryViewState();
-}
-
-class _SummaryViewState extends State<_SummaryView> {
-  Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncTicker();
-  }
-
-  @override
-  void didUpdateWidget(_SummaryView old) {
-    super.didUpdateWidget(old);
-    _syncTicker();
-  }
-
-  void _syncTicker() {
-    if (widget.proxy.state.isActive) {
-      _ticker ??= Timer.periodic(
-          const Duration(seconds: 1), (_) => setState(() {}));
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
+/// A quiet "update available" prompt, shown only when the daily check found a
+/// newer release than this build. Tapping it opens the releases page. Driven by
+/// the global [novaUpdateTag] so it needs no controller wiring.
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner();
 
   @override
   Widget build(BuildContext context) {
-    final proxy = widget.proxy;
-    final scope = NovaScope.of(context);
-    final bool hasProfile = scope.profiles.active != null;
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return ValueListenableBuilder<String?>(
+      valueListenable: novaUpdateTag,
+      builder: (context, tag, _) {
+        if (tag == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: NovaSpace.sm),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: NovaRadii.cardR,
+              onTap: () => launchUrl(Uri.parse(kNovaReleasesUrl),
+                  mode: LaunchMode.externalApplication),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: NovaSpace.md, vertical: NovaSpace.md),
+                decoration: BoxDecoration(
+                  borderRadius: NovaRadii.cardR,
+                  color: nova.surface,
+                  border: Border.all(color: nova.border),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    NovaIconChip(
+                      icon: Icons.system_update_rounded,
+                      color: nova.cyan,
+                      size: 30,
+                      radius: 9,
+                    ),
+                    const SizedBox(width: NovaSpace.md),
+                    Expanded(
+                      child: Text(
+                        '${s.updateAvailable} ($tag)',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: NovaSpace.sm),
+                    Text(s.updateGet,
+                        style: text.labelMedium?.copyWith(
+                            color: nova.cyan, fontWeight: FontWeight.w700)),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 18, color: nova.cyan),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
+/// The Summary tab. A plain column of independently listening blocks, so a
+/// traffic sample repaints the hero and the connection panel and nothing else.
+class _SummaryView extends StatelessWidget {
+  const _SummaryView();
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const SizedBox(height: 6),
-        _ConnectHero(proxy: proxy, hasProfile: hasProfile),
-        // When the tunnel is up but no traffic is getting through the exit, the
-        // usual setup is being blocked. Offer the setup finder right here, this
-        // is where users hit the wall.
-        if (proxy.exitUnreachable) ...<Widget>[
-          const SizedBox(height: 18),
-          const _FindSetupPrompt(),
+        const _ProfileSync(),
+        const SizedBox(height: NovaSpace.sm),
+        const _ConnectHero(),
+        const SizedBox(height: NovaSpace.xl),
+        const _ConnectionPanel(),
+        const _ConfigCard(),
+        if (kShowDashboardTools) ...<Widget>[
+          const SizedBox(height: NovaSpace.md),
+          const _ToolsStrip(),
         ],
-        SizedBox(height: proxy.state.isActive ? 20 : 24),
-        _MetricsBlock(proxy: proxy),
-        if (hasProfile) ...<Widget>[
-          const SizedBox(height: 10),
-          _ConfigCard(),
-        ],
-        const SizedBox(height: 10),
-        const _ToolsRow(),
       ],
     );
   }
 }
 
+/// Keeps the proxy's selected profile in sync with the active profile. Renders
+/// nothing; it exists so the sync runs from a builder that listens to exactly
+/// the two controllers involved.
+class _ProfileSync extends StatelessWidget {
+  const _ProfileSync();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.profiles]),
+      builder: (context, _) {
+        final proxy = scope.proxy;
+        final active = scope.profiles.active;
+        if (proxy.activeProfile?.id != active?.id) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            proxy.selectProfile(active);
+          });
+        }
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
+
 /// The centered connect hero: a single status pill, the orb, and a state
-/// headline + subtitle. Centering the primary control (rather than the old
-/// orb-left / text-right split) matches the pattern top VPN clients use — the
-/// connect action is the emotional centerpiece of the screen.
+/// headline + subtitle. The connect action is the one thing this screen is
+/// for, so it owns the middle of the screen and the most contrast.
 class _ConnectHero extends StatelessWidget {
-  const _ConnectHero({required this.proxy, required this.hasProfile});
+  const _ConnectHero();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    return ListenableBuilder(
+      // connInfo is included so the "Verifying / Secure" subtitle flips the
+      // moment a probe confirms traffic is actually getting through.
+      listenable: Listenable.merge(
+          <Listenable>[scope.proxy, scope.profiles, scope.connInfo]),
+      builder: (context, _) => _ConnectHeroBody(
+        proxy: scope.proxy,
+        hasProfile: scope.profiles.active != null,
+        reachable: scope.connInfo.info.reachable,
+      ),
+    );
+  }
+}
+
+class _ConnectHeroBody extends StatelessWidget {
+  const _ConnectHeroBody({
+    required this.proxy,
+    required this.hasProfile,
+    required this.reachable,
+  });
 
   final ProxyController proxy;
   final bool hasProfile;
+
+  /// Honest reachability: the tunnel can report "connected" while a dead exit
+  /// (or an urltest that hasn't settled on a live node yet) carries no traffic.
+  /// Until a probe actually gets through we say "Verifying", not "Secure", so
+  /// a green orb never lies about a working connection.
+  final bool reachable;
 
   @override
   Widget build(BuildContext context) {
@@ -305,14 +378,9 @@ class _ConnectHero extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final ProxyConnectionState state = proxy.state;
     final bool connected = state == ProxyConnectionState.connected;
-    // Honest reachability: the tunnel can report "connected" while a dead exit
-    // (or an urltest that hasn't settled on a live node yet) carries no traffic.
-    // Until a probe actually gets through we say "Verifying…", not "Secure", so
-    // a green orb never lies about a working connection.
-    final bool reachable = NovaScope.of(context).connInfo.info.reachable;
 
-    // Status pill — distinct color/label per state, not just active/inactive,
-    // so "Connecting…" and errors read correctly instead of "Not connected".
+    // Status pill: distinct colour and label per state, not just
+    // active/inactive, so "Connecting" and errors read correctly.
     final (Color, String) badge = switch (state) {
       ProxyConnectionState.connected => (NovaSemantics.successGreen, s.connected),
       ProxyConnectionState.connecting ||
@@ -322,16 +390,14 @@ class _ConnectHero extends StatelessWidget {
       ProxyConnectionState.disconnected => (nova.muted, s.disconnected),
     };
 
-    // Headline + optional subtitle. The subtitle is dropped when it would just
-    // echo the pill (idle / connecting), so the same words never appear twice.
-    String headline;
+    // Headline + subtitle. Each state gets one line of explanation under the
+    // headline; the same words never appear twice on the hero.
+    Widget headline;
     String? subtitle;
     Color subtitleColor = nova.muted;
-    bool headlineIsTimer = false;
     switch (state) {
       case ProxyConnectionState.connected:
-        headline = Fmt.uptime(proxy.connectedSince);
-        headlineIsTimer = true;
+        headline = _UptimeText(since: proxy.connectedSince);
         // Three honest levels: probe got through (Secure), still checking
         // (Verifying), or the controller gave up after its probes and one
         // rebuild (No traffic). The last one must not read as "in progress".
@@ -347,50 +413,134 @@ class _ConnectHero extends StatelessWidget {
         }
       case ProxyConnectionState.connecting:
       case ProxyConnectionState.disconnecting:
-        headline = s.connecting;
+        headline = _Headline(s.connecting);
       case ProxyConnectionState.error:
-        headline = s.dashError;
+        headline = _Headline(s.dashError);
         subtitle = proxy.lastError;
         subtitleColor = nova.danger;
       case ProxyConnectionState.disconnected:
-        headline = s.tapToConnect;
+        headline = _Headline(s.tapToConnect);
+        subtitle = s.dashNotProtectedBody;
     }
 
     return Column(
       children: <Widget>[
         NovaStatusBadge(label: badge.$2, color: badge.$1),
-        const SizedBox(height: 22),
+        const SizedBox(height: NovaSpace.xl),
         NovaConnectOrb(
           state: state,
           size: 172,
+          statusText: badge.$2,
           onTap: hasProfile || connected ? proxy.toggle : null,
         ),
-        const SizedBox(height: 22),
-        Text(
-          headline,
-          textAlign: TextAlign.center,
-          style: headlineIsTimer
-              ? text.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 44,
-                  height: 1.0,
-                  letterSpacing: -1,
-                  fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-                )
-              : text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
+        const SizedBox(height: NovaSpace.xl),
+        headline,
         if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: text.titleSmall?.copyWith(
-              color: subtitleColor,
-              fontWeight: FontWeight.w600,
+          const SizedBox(height: NovaSpace.sm),
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: NovaSpace.xl),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: text.bodySmall?.copyWith(
+                color: subtitleColor,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
+        // When the tunnel is up but no traffic is getting through the exit, the
+        // usual setup is being blocked. Offer the setup finder right here, this
+        // is where users hit the wall.
+        if (proxy.exitUnreachable) ...<Widget>[
+          const SizedBox(height: NovaSpace.lg),
+          const _FindSetupPrompt(),
+        ],
       ],
+    );
+  }
+}
+
+class _Headline extends StatelessWidget {
+  const _Headline(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: Theme.of(context)
+          .textTheme
+          .headlineSmall
+          ?.copyWith(fontWeight: FontWeight.w800),
+    );
+  }
+}
+
+/// The big uptime clock. Owns its one-second ticker so the tick rebuilds this
+/// one Text and nothing around it.
+class _UptimeText extends StatefulWidget {
+  const _UptimeText({required this.since});
+  final DateTime? since;
+
+  @override
+  State<_UptimeText> createState() => _UptimeTextState();
+}
+
+class _UptimeTextState extends State<_UptimeText> with WidgetsBindingObserver {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startTicker();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // No point ticking the uptime once per second while the app is in the
+    // background: nobody is watching it and each tick is a rebuild. Pause it and
+    // catch up with a single refresh when the user comes back.
+    if (state == AppLifecycleState.resumed) {
+      if (_ticker == null) {
+        _startTicker();
+        if (mounted) setState(() {});
+      }
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      Fmt.uptime(widget.since),
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+        fontWeight: FontWeight.w800,
+        fontSize: 44,
+        height: 1.0,
+        letterSpacing: -1,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      ),
     );
   }
 }
@@ -409,8 +559,8 @@ class _FindSetupPrompt extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(NovaSpace.md),
       decoration: BoxDecoration(
-        color: nova.warning.withValues(alpha: 0.12),
-        borderRadius: NovaRadii.heroR,
+        color: nova.warning.withValues(alpha: 0.10),
+        borderRadius: NovaRadii.cardR,
         border: Border.all(color: nova.warning.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -447,144 +597,141 @@ class _FindSetupPrompt extends StatelessWidget {
   }
 }
 
-/// Country/IP/ping row + download/upload speed tiles.
-class _MetricsBlock extends StatelessWidget {
-  const _MetricsBlock({required this.proxy});
-  final ProxyController proxy;
+/// One connection panel while connected: exit location, IP and ping on the
+/// first line, live throughput on the second, split by a hairline. Idle it
+/// renders nothing; three dashes in a box would only push the config card and
+/// the tools below the fold.
+class _ConnectionPanel extends StatelessWidget {
+  const _ConnectionPanel();
 
   @override
   Widget build(BuildContext context) {
-    final nova = context.nova;
-    final connInfo = NovaScope.of(context).connInfo;
-    final bool active = proxy.state.isActive;
-
+    final scope = NovaScope.of(context);
     return ListenableBuilder(
-      listenable: connInfo,
+      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.connInfo]),
       builder: (context, _) {
-        final ConnInfo info = connInfo.info;
-        final bool loading = connInfo.loading;
-        final String country = !active
-            ? '—'
-            : info.hasGeo
-                ? (info.countryCode ?? '—')
-                : (loading ? '…' : '—');
-        final String ip = !active
-            ? '—'
-            : (info.ip ?? (loading ? '…' : '—'));
-        final String ping = !active
-            ? '—'
-            : info.pingMs != null
-                ? '${info.pingMs} ms'
-                : (loading ? '…' : '—');
-
-        return Column(
-          children: <Widget>[
-            // Connection-detail card: a clean labeled Location / IP / Ping strip
-            // when connected, or a calm "not protected" prompt when idle (rather
-            // than repeating "Not connected" in a near-empty card).
-            if (active)
-              _ConnDetailStrip(
-                country: country,
-                countryCode: info.hasGeo ? info.countryCode : null,
-                ip: ip,
-                ping: ping,
-                pingMs: info.pingMs,
-              )
-            else
-              const _NotProtectedCard(),
-            // Live throughput tiles only matter while connected — when idle
-            // they would just read "—" and push the tools row below the fold.
-            if (active) ...<Widget>[
-              const SizedBox(height: 12),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: _SpeedTile(
-                      label: NovaStrings.of(context).download,
-                      icon: Icons.arrow_downward_rounded,
-                      color: nova.cyan,
-                      value: Fmt.bps(proxy.traffic.downlinkBps),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _SpeedTile(
-                      label: NovaStrings.of(context).upload,
-                      icon: Icons.arrow_upward_rounded,
-                      color: nova.violet,
-                      value: Fmt.bps(proxy.traffic.uplinkBps),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
+        final proxy = scope.proxy;
+        if (!proxy.state.isActive) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: NovaSpace.md),
+          child: _ConnectionPanelBody(
+            info: scope.connInfo.info,
+            loading: scope.connInfo.loading,
+            downBps: proxy.traffic.downlinkBps,
+            upBps: proxy.traffic.uplinkBps,
+          ),
         );
       },
     );
   }
 }
 
-/// The live connection detail: three labeled stats (location, IP, ping) split
-/// by hairline dividers. Reads like a status panel in an enterprise console.
-class _ConnDetailStrip extends StatelessWidget {
-  const _ConnDetailStrip({
-    required this.country,
-    required this.countryCode,
-    required this.ip,
-    required this.ping,
-    required this.pingMs,
+class _ConnectionPanelBody extends StatelessWidget {
+  const _ConnectionPanelBody({
+    required this.info,
+    required this.loading,
+    required this.downBps,
+    required this.upBps,
   });
 
-  final String country;
-  final String? countryCode;
-  final String ip;
-  final String ping;
-  final int? pingMs;
+  final ConnInfo info;
+  final bool loading;
+  final num downBps;
+  final num upBps;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     final s = NovaStrings.of(context);
-    final Widget divider = Container(width: 1, color: nova.border);
+    final String pending = loading ? '…' : '-';
+    final String country =
+        info.hasGeo ? (info.countryCode ?? pending) : pending;
+    final String ip = info.ip ?? pending;
+    final int? pingMs = info.pingMs;
+    final String ping = pingMs != null ? '$pingMs ms' : pending;
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
       decoration: BoxDecoration(
         color: nova.surface,
         borderRadius: NovaRadii.heroR,
         border: Border.all(color: nova.border),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: _DetailStat(
-                label: s.dashLocation,
-                value: country,
-                leading: countryCode != null
-                    ? NovaCountryFlag(iso2: countryCode, size: 15)
-                    : null,
+      child: Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                vertical: NovaSpace.lg, horizontal: NovaSpace.sm),
+            child: IntrinsicHeight(
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _Stat(
+                      label: s.dashLocation,
+                      value: country,
+                      leading: info.hasGeo
+                          ? NovaCountryFlag(iso2: info.countryCode, size: 15)
+                          : null,
+                    ),
+                  ),
+                  const _VRule(),
+                  Expanded(child: _Stat(label: s.dashIp, value: ip)),
+                  const _VRule(),
+                  Expanded(
+                    child: _Stat(
+                      label: s.dashPing,
+                      value: ping,
+                      valueColor:
+                          pingMs != null ? NovaSemantics.ping(pingMs) : null,
+                    ),
+                  ),
+                ],
               ),
             ),
-            divider,
-            Expanded(child: _DetailStat(label: s.dashIp, value: ip)),
-            divider,
-            Expanded(
-              child: _DetailStat(
-                label: 'PING',
-                value: ping,
-                valueColor: pingMs != null ? NovaSemantics.ping(pingMs) : null,
-              ),
+          ),
+          Divider(height: 1, color: nova.border),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                vertical: NovaSpace.md, horizontal: NovaSpace.lg),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _Throughput(
+                    label: s.download,
+                    icon: Icons.arrow_downward_rounded,
+                    color: nova.cyan,
+                    value: Fmt.bps(downBps),
+                  ),
+                ),
+                const SizedBox(width: NovaSpace.lg),
+                Expanded(
+                  child: _Throughput(
+                    label: s.upload,
+                    icon: Icons.arrow_upward_rounded,
+                    color: nova.violet,
+                    value: Fmt.bps(upBps),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _DetailStat extends StatelessWidget {
-  const _DetailStat({
+class _VRule extends StatelessWidget {
+  const _VRule();
+
+  @override
+  Widget build(BuildContext context) =>
+      Container(width: 1, color: context.nova.border);
+}
+
+/// A label over a value, centred. Labels are eyebrows in Latin and plain in
+/// Farsi (uppercasing and tracking are Latin treatments).
+class _Stat extends StatelessWidget {
+  const _Stat({
     required this.label,
     required this.value,
     this.leading,
@@ -600,15 +747,20 @@ class _DetailStat extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      // Top-aligned so the three labels sit on one line even when one value
+      // row is taller (the flag next to the country code).
+      mainAxisAlignment: MainAxisAlignment.start,
       children: <Widget>[
         Text(
-          label.toUpperCase(),
+          rtl ? label : label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: text.labelSmall?.copyWith(
             color: nova.muted,
             fontSize: 10,
-            letterSpacing: 1.2,
+            letterSpacing: rtl ? 0 : 1.2,
           ),
         ),
         const SizedBox(height: 6),
@@ -622,11 +774,17 @@ class _DetailStat extends StatelessWidget {
             Flexible(
               child: Text(
                 value,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
+                // Values are Latin (an IP, "14 ms"): keep them LTR in Farsi.
+                textDirection: TextDirection.ltr,
                 style: text.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   color: valueColor,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures()
+                  ],
                 ),
               ),
             ),
@@ -637,57 +795,11 @@ class _DetailStat extends StatelessWidget {
   }
 }
 
-/// Idle connection card: a calm "you're not protected yet" prompt that nudges
-/// the user to connect, replacing a near-empty card that just said "Not
-/// connected" again.
-class _NotProtectedCard extends StatelessWidget {
-  const _NotProtectedCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final nova = context.nova;
-    final s = NovaStrings.of(context);
-    final text = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: nova.surface,
-        borderRadius: NovaRadii.heroR,
-        border: Border.all(color: nova.border),
-      ),
-      child: Row(
-        children: <Widget>[
-          NovaIconChip(
-            icon: Icons.shield_outlined,
-            color: nova.muted,
-            size: 42,
-            radius: 12,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  s.dashNotProtected,
-                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  s.dashNotProtectedBody,
-                  style: text.bodySmall?.copyWith(color: nova.muted),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SpeedTile extends StatelessWidget {
-  const _SpeedTile({
+/// A throughput reading: a small tinted arrow, the value in tabular figures,
+/// and the direction as a muted caption. Weight and colour carry the hierarchy,
+/// not another box.
+class _Throughput extends StatelessWidget {
+  const _Throughput({
     required this.label,
     required this.icon,
     required this.color,
@@ -703,55 +815,94 @@ class _SpeedTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: nova.surface,
-        borderRadius: NovaRadii.cardR,
-        border: Border.all(color: nova.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+    return Row(
+      children: <Widget>[
+        NovaIconChip(icon: icon, color: color, size: 28, radius: 8),
+        const SizedBox(width: NovaSpace.sm + 2),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              NovaIconChip(icon: icon, color: color, size: 26, radius: 8),
-              const SizedBox(width: 8),
-              Text(label.toUpperCase(),
-                  style: text.labelSmall?.copyWith(
-                    color: nova.muted,
-                    letterSpacing: 0.6,
-                  )),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textDirection: TextDirection.ltr,
+                style: text.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures()
+                  ],
+                ),
+              ),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall?.copyWith(color: nova.muted),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(value,
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// The active config / server summary card.
+/// The active config / server summary card. Listens to the profiles only, so
+/// traffic ticks never touch it. Renders nothing when there is no profile.
 class _ConfigCard extends StatelessWidget {
+  const _ConfigCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    return ListenableBuilder(
+      listenable: scope.profiles,
+      builder: (context, _) {
+        final ProxyProfile? active = scope.profiles.active;
+        if (active == null) return const SizedBox.shrink();
+        return _ConfigCardBody(active: active);
+      },
+    );
+  }
+}
+
+class _ConfigCardBody extends StatelessWidget {
+  const _ConfigCardBody({required this.active});
+  final ProxyProfile active;
+
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     final s = NovaStrings.of(context);
-    final scope = NovaScope.of(context);
-    final active = scope.profiles.active!;
     final text = Theme.of(context).textTheme;
     final int? latency = active.lastLatencyMs;
+    final SubInfo? sub = subInfoFor(active.subscriptionUrl);
+
+    final String data;
+    if (sub == null) {
+      data = '∞';
+    } else if (sub.total > 0) {
+      data = '${Fmt.bytes(sub.used)} / ${Fmt.bytes(sub.total)}';
+    } else {
+      data = Fmt.bytes(sub.used);
+    }
+    final DateTime? e = sub?.expire;
+    final String expiry = e == null
+        ? '-'
+        : '${e.year}-${e.month.toString().padLeft(2, '0')}-'
+            '${e.day.toString().padLeft(2, '0')}';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(NovaSpace.lg),
       decoration: BoxDecoration(
         color: nova.surface,
         borderRadius: NovaRadii.heroR,
         border: Border.all(color: nova.border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             children: <Widget>[
@@ -761,91 +912,189 @@ class _ConfigCard extends StatelessWidget {
                     : Icons.dns_rounded,
                 color: nova.indigo,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: NovaSpace.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Row(
+                    Text(active.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: NovaSpace.xs),
+                    Wrap(
+                      spacing: NovaSpace.sm,
+                      runSpacing: NovaSpace.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: <Widget>[
-                        Flexible(
-                          child: Text(active.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: text.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700)),
-                        ),
-                        const SizedBox(width: 8),
                         NovaProtocolBadge(
                           label: active.kind.label,
                           color: nova.cyan,
                         ),
+                        Text(
+                          active.isSubscription
+                              ? s.nodesCount(active.nodeCount)
+                              : s.homeSingleConfig,
+                          style: text.bodySmall?.copyWith(color: nova.muted),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      active.isSubscription
-                          ? s.nodesCount(active.nodeCount)
-                          : s.homeSingleConfig,
-                      style: text.bodySmall?.copyWith(color: nova.muted),
-                    ),
                   ],
                 ),
               ),
-              if (latency != null)
-                Row(
-                  children: <Widget>[
-                    Text('$latency ms',
-                        style: text.titleSmall?.copyWith(
-                          color: NovaSemantics.successGreen,
-                          fontWeight: FontWeight.w700,
-                        )),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: NovaSemantics.successGreen,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
+              if (latency != null) ...<Widget>[
+                const SizedBox(width: NovaSpace.sm),
+                _LatencyTag(ms: latency),
+              ],
             ],
           ),
+          // The live "connected via" line: which server is actually carrying
+          // traffic right now, kept accurate through every auto or manual switch.
+          _ActiveExitLine(active: active),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: const EdgeInsets.symmetric(vertical: NovaSpace.md),
             child: Divider(height: 1, color: nova.border),
           ),
+          // Uptime is intentionally omitted here: the hero already shows it
+          // as the big timer. This card sticks to plan info (data + expiry).
           Row(
             children: <Widget>[
-              // Uptime is intentionally omitted here — the hero already shows it
-              // as the big timer, so repeating it as a "TIME" metric was
-              // redundant. This card sticks to plan info (data + expiry).
-              _ConfigMetric(
-                icon: Icons.data_usage_rounded,
-                label: s.homeData,
-                value: () {
-                  final SubInfo? s = subInfoFor(active.subscriptionUrl);
-                  if (s == null) return '∞';
-                  return s.total > 0
-                      ? '${Fmt.bytes(s.used)} / ${Fmt.bytes(s.total)}'
-                      : Fmt.bytes(s.used);
-                }(),
+              Expanded(
+                child: _ConfigMetric(
+                  icon: Icons.data_usage_rounded,
+                  label: s.homeData,
+                  value: data,
+                ),
               ),
-              _ConfigMetric(
-                icon: Icons.calendar_month_rounded,
-                label: s.homeExpiry,
-                value: () {
-                  final DateTime? e = subInfoFor(active.subscriptionUrl)?.expire;
-                  if (e == null) return '—';
-                  return '${e.year}-${e.month.toString().padLeft(2, '0')}-'
-                      '${e.day.toString().padLeft(2, '0')}';
-                }(),
+              const SizedBox(width: NovaSpace.md),
+              Expanded(
+                child: _ConfigMetric(
+                  icon: Icons.calendar_month_rounded,
+                  label: s.homeExpiry,
+                  value: expiry,
+                ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The server currently carrying traffic, shown only while connected. It
+/// listens to the proxy state and the core's live health, so it stays accurate
+/// through every switch: the auto-selector moving to a faster exit, a manual
+/// pin, or a reconnect. The address comes from the core's selected node (or the
+/// pinned node), so it is what is really on the wire, not a stale label.
+class _ActiveExitLine extends StatelessWidget {
+  const _ActiveExitLine({required this.active});
+  final ProxyProfile active;
+
+  /// The `server:port` out of a [proxyNodeKey] (`server:port:proto:path`), for a
+  /// compact, honest address. Hostname and IPv4 keys split cleanly; anything odd
+  /// falls back to the whole key rather than guessing.
+  String _addr(String key) {
+    final List<String> p = key.split(':');
+    return p.length >= 2 ? '${p[0]}:${p[1]}' : key;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return ListenableBuilder(
+      listenable: scope.proxy,
+      builder: (context, _) {
+        if (!scope.proxy.state.isActive) return const SizedBox.shrink();
+        return ValueListenableBuilder<CoreNodeHealth>(
+          valueListenable: scope.proxy.coreHealth,
+          builder: (context, health, __) {
+            final String? key = health.selectedKey ?? active.pinnedNode;
+            // Prefer the panel's own name for the server; a clean-IP node's
+            // address is a meaningless Cloudflare IP. Fall back to the address
+            // only when there is no name, wrapped in LRI/PDI isolates so it
+            // still reads left-to-right inside Farsi RTL copy.
+            final String? name = scope.proxy.exitName(key);
+            final String value = name != null && name.trim().isNotEmpty
+                ? name
+                : key != null
+                    ? '\u2066${_addr(key)}\u2069'
+                    : s.homeConnectedAuto;
+            return Padding(
+              padding: const EdgeInsets.only(top: NovaSpace.sm),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                        color: NovaSemantics.connectGreen,
+                        shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: NovaSpace.sm),
+                  // One ellipsizing line so a long address or a large text scale
+                  // can never overflow the card.
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: <InlineSpan>[
+                        TextSpan(
+                          text: '${s.homeConnectedVia} ',
+                          style: text.labelSmall?.copyWith(color: nova.muted),
+                        ),
+                        TextSpan(
+                          text: value,
+                          style: text.labelSmall?.copyWith(
+                            color: nova.text,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// The measured latency of the profile's best node, coloured by the shared
+/// ping scale, with the dot as a second (non-colour) signal of a live reading.
+class _LatencyTag extends StatelessWidget {
+  const _LatencyTag({required this.ms});
+  final int ms;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color c = NovaSemantics.ping(ms);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text('$ms ms',
+            textDirection: TextDirection.ltr,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: c,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures()
+                  ],
+                )),
+      ],
     );
   }
 }
@@ -865,63 +1114,38 @@ class _ConfigMetric extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
-    return Expanded(
-      child: Column(
-        children: <Widget>[
-          Icon(icon, size: 14, color: nova.muted),
-          const SizedBox(height: 5),
-          Text(label.toUpperCase(),
-              style: text.labelSmall
-                  ?.copyWith(color: nova.muted, fontSize: 10, letterSpacing: 0.6)),
-          const SizedBox(height: 3),
-          Text(value,
-              style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Radar / Deploy / Panel quick-access tiles.
-class _ToolsRow extends StatelessWidget {
-  const _ToolsRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final nova = context.nova;
-    final s = NovaStrings.of(context);
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
+        Icon(icon, size: 16, color: nova.muted),
+        const SizedBox(width: NovaSpace.sm),
         Expanded(
-          child: _ToolCard(
-            icon: Icons.radar_rounded,
-            label: s.navRadar,
-            color: nova.cyan,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const RadarScreen()),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ToolCard(
-            icon: Icons.cloud_upload_rounded,
-            label: s.toolDeploy,
-            color: nova.indigo,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ToolCard(
-            icon: Icons.dashboard_rounded,
-            label: s.toolPanel,
-            color: nova.violet,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(rtl ? label : label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.labelSmall?.copyWith(
+                    color: nova.muted,
+                    fontSize: 10,
+                    letterSpacing: rtl ? 0 : 1.0,
+                  )),
+              const SizedBox(height: 2),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  // "138 KB / 50 GB" and dates are Latin runs; without an
+                  // explicit direction the RTL paragraph reorders them.
+                  textDirection: TextDirection.ltr,
+                  style: text.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures()
+                    ],
+                  )),
+            ],
           ),
         ),
       ],
@@ -929,8 +1153,68 @@ class _ToolsRow extends StatelessWidget {
   }
 }
 
-class _ToolCard extends StatelessWidget {
-  const _ToolCard({
+/// Radar / Deploy / Panel quick access as one strip of three cells split by
+/// hairlines: secondary destinations, so one quiet surface rather than three
+/// competing cards.
+class _ToolsStrip extends StatelessWidget {
+  const _ToolsStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final s = NovaStrings.of(context);
+    return Material(
+      color: nova.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: NovaRadii.toolR,
+        side: BorderSide(color: nova.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: _ToolCell(
+                icon: Icons.radar_rounded,
+                label: s.navRadar,
+                color: nova.cyan,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const RadarScreen()),
+                ),
+              ),
+            ),
+            const _VRule(),
+            Expanded(
+              child: _ToolCell(
+                icon: Icons.cloud_upload_rounded,
+                label: s.toolDeploy,
+                color: nova.indigo,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
+                ),
+              ),
+            ),
+            const _VRule(),
+            Expanded(
+              child: _ToolCell(
+                icon: Icons.dashboard_rounded,
+                label: s.toolPanel,
+                color: nova.violet,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                      builder: (_) => const CloudflareScreen()),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolCell extends StatelessWidget {
+  const _ToolCell({
     required this.icon,
     required this.label,
     required this.color,
@@ -944,22 +1228,19 @@ class _ToolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nova = context.nova;
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: nova.surface,
-          borderRadius: NovaRadii.toolR,
-          border: Border.all(color: nova.border),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            vertical: NovaSpace.md, horizontal: NovaSpace.sm),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            NovaIconChip(icon: icon, color: color, size: 44, radius: 22),
-            const SizedBox(height: 8),
+            NovaIconChip(icon: icon, color: color, size: 34, radius: 10),
+            const SizedBox(height: NovaSpace.sm),
             Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context)
                     .textTheme
                     .labelMedium

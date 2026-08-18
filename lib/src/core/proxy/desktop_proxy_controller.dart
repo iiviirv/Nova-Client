@@ -7,11 +7,15 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
+import 'core_features.dart';
 import 'proxy_controller.dart';
+import 'singbox_proxy_controller.dart' show isBlockedConnectionNoise;
 import 'subscription.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
+import 'xray/xray_config.dart';
 
 /// Drives the proxy on **desktop** (macOS, Windows, Linux) from pure Dart, no
 /// native plugin required: it extracts the bundled sing-box binary, runs it as a
@@ -63,6 +67,15 @@ class DesktopProxyController extends ProxyController {
   Process? _process;
   Process? _elevated;
   File? _runFlag;
+
+  /// The second core, Xray, for xhttp/SplitHTTP nodes sing-box cannot run. When
+  /// the exit is xhttp, sing-box bridges its inbound to Xray's local SOCKS (same
+  /// two-core path as mobile), and Xray does the xhttp. Only wired for the
+  /// unprivileged system-proxy path for now; TUN mode would need Xray's dials
+  /// route-excluded from sing-box's tunnel to avoid a loop.
+  Process? _xrayProcess;
+  String? _pendingXrayConfig;
+  static const int _xraySocksPort = XrayConfig.defaultSocksPort;
 
   /// Rolling tail of the core's stdout+stderr (last ~40 lines) so a startup
   /// failure can report the actual FATAL reason instead of a generic timeout.
@@ -119,9 +132,39 @@ class DesktopProxyController extends ProxyController {
     try {
       final String config = await _buildConfig(profile);
       final String binary = await _ensureBinary();
+      // Ask the bundled core what it can run, the way the Android host asks
+      // libbox, instead of assuming. The desktop cores now ship from the same
+      // pinned source and patch as Android (tool/core/build-desktop.sh) with
+      // WireGuard, AmneziaWG and NaiveProxy in them, but a swapped or stale
+      // binary would silently undo that, and the symptom of handing such a core
+      // an `awg` endpoint is a process that exits at startup with the user told
+      // only that it "did not come up in time". A `check` on a tiny probe
+      // document surfaces "<x> is not included in this build" in under a
+      // second, and the answer is cached per binary.
+      if (CoreFeatures.usesAwg(config) && !await _coreSupports(binary, 'awg')) {
+        _fail("This build's VPN core has no AmneziaWG support, so an AmneziaWG "
+            "server cannot be used here. Use one of the server's other "
+            'protocols, or update Nova.');
+        return;
+      }
+      if (CoreFeatures.usesNaive(config) &&
+          !await _coreSupports(binary, 'naive')) {
+        _fail("This build's VPN core has no NaiveProxy support, so a NaiveProxy "
+            "server cannot be used here. Use one of the server's other "
+            'protocols, or update Nova.');
+        return;
+      }
       final Directory dir = await getApplicationSupportDirectory();
       final File cfgFile = File('${dir.path}/nova-singbox.json');
       await cfgFile.writeAsString(config);
+
+      // xhttp exit: start Xray first so its local SOCKS is up before sing-box
+      // bridges to it. Works in both proxy and TUN mode; in TUN mode the loop is
+      // avoided by routing the server IP direct in the bridge config (see
+      // buildXraySocksBridgeMap's directServerIp).
+      if (_pendingXrayConfig != null) {
+        if (!await _startXray(dir, _pendingXrayConfig!)) return;
+      }
 
       if (tunMode) {
         // Whole-device TUN: sing-box creates the utun/wintun device and routes
@@ -144,7 +187,8 @@ class DesktopProxyController extends ProxyController {
         await _killStaleCores(cfgFile.path);
 
         _process =
-            await Process.start(binary, <String>['run', '-c', cfgFile.path]);
+            await Process.start(binary, <String>['run', '-c', cfgFile.path],
+                environment: _coreEnv);
         // Capture BOTH streams into the rolling tail and the log file, so a
         // startup FATAL is visible in release builds (not just debugPrint).
         _pipeCore(_process!.stdout, 'out');
@@ -220,6 +264,26 @@ class DesktopProxyController extends ProxyController {
     _autoHealTried = true;
     _healing = true;
     try {
+      // Spend the one rebuild on the SNI-block bypass when the subscription has
+      // clean-IP fronted nodes and none carried traffic (the mobile controller
+      // does the same; see its _escalateToBypass). Persisted, and announced.
+      if (!profile.hardenTls) {
+        List<ProxyNode> nodes = const <ProxyNode>[];
+        try {
+          nodes = await resolveProfileNodes(profile, fetch: subFetcher);
+        } catch (_) {/* fall through to a plain rebuild */}
+        if (nodes.any((ProxyNode n) => n.isCleanIpFronted)) {
+          final ProxyProfile hardened = profile.copyWith(hardenTls: true);
+          _active = hardened;
+          await persistProfile?.call(hardened);
+          NovaLog.instance.write(
+            'Turning on the SNI-block bypass for "${profile.name}" (no traffic '
+            'on any server).',
+            level: NovaLogLevel.warn,
+          );
+          notice.value = ProxyNotice.sniBypassOn;
+        }
+      }
       await reconnect();
     } finally {
       _healing = false;
@@ -300,11 +364,38 @@ class DesktopProxyController extends ProxyController {
       // with fragment on). Keeping fragmentation matters in Iran, without it the
       // SNI is exposed in one packet and DPI can block the tunnel to the worker.
       // If a future desktop core ever lacks the key, add `tlsFragment: false`.
-      final SingboxRouteOptions opts =
-          routeOptions.copyWith(localRuleSets: true);
-      cfg = nodes.length == 1
-          ? SingboxConfig.buildMap(nodes.first, options: opts)
-          : SingboxConfig.buildMultiMap(nodes, options: opts);
+      final SingboxRouteOptions opts = routeOptions.copyWith(
+        localRuleSets: true,
+        // The SNI-block bypass, per profile (see the mobile controller).
+        hardenTls: profile.hardenTls,
+        // Windows: keep the bypass's TLS-record split but drop its TCP-segment
+        // split, whose ACK-wait an unelevated Windows core cannot drive (see
+        // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.
+        hardenPacketFragment: !Platform.isWindows,
+      );
+      // xhttp is an Xray-only transport. When the exit is a single/pinned xhttp
+      // node, hand the transport to Xray: sing-box gets a bridge config (its
+      // inbound forwarded to Xray's local SOCKS) and Xray runs the real xhttp.
+      // Same two-core path as mobile; the server host is resolved to an IP first
+      // (Xray can't resolve it before the tunnel is up). The pool case (xhttp
+      // mixed with other nodes) is a follow-up.
+      _pendingXrayConfig = null;
+      if (nodes.length == 1 && nodes.first.network == 'xhttp') {
+        final ProxyNode x = await _resolveXhttpServer(nodes.first);
+        _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort);
+        // Pass the resolved server IP so the sing-box side routes it direct. In
+        // TUN mode this is what stops Xray's own dial from looping back through
+        // the tunnel; in proxy mode it's harmless (the server IP is the tunnel
+        // endpoint, which belongs direct anyway).
+        final String? serverIp =
+            InternetAddress.tryParse(x.server) != null ? x.server : null;
+        cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort,
+            options: opts, directServerIp: serverIp);
+      } else {
+        cfg = nodes.length == 1
+            ? SingboxConfig.buildMap(nodes.first, options: opts)
+            : SingboxConfig.buildMultiMap(nodes, options: opts);
+      }
     }
     // System-proxy mode swaps the builder's TUN inbound for a local `mixed`
     // (SOCKS+HTTP) inbound so the core runs unprivileged. TUN mode keeps the
@@ -356,6 +447,21 @@ class DesktopProxyController extends ProxyController {
     return dir.path.replaceAll(r'\', '/');
   }
 
+  /// Environment the core process runs with.
+  ///
+  /// The desktop core is the sing-box CLI, and unlike libbox on the phones the
+  /// CLI enforces deprecations: on 1.13 it refuses to start on the legacy DNS
+  /// server format the app still emits ("to continuing using this feature, set
+  /// environment variable ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true"). The
+  /// phones only get a warning for the same document, which is why this never
+  /// showed up there. The proper fix is migrating `dns.servers` to the 1.12
+  /// typed format for every platform, and that has to happen before a 1.14
+  /// core, which removes the legacy form outright. Until then this keeps the
+  /// desktop core starting.
+  static const Map<String, String> _coreEnv = <String, String>{
+    'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS': 'true',
+  };
+
   /// Copy the bundled core binary to a writable, executable path (cached).
   ///
   /// The core is shipped next to the app executable (see [_bundledBinary]), not
@@ -382,6 +488,11 @@ class DesktopProxyController extends ProxyController {
       // packages it) and mirror it into the run dir. Proxy mode doesn't use it,
       // so a missing dll only affects TUN mode.
       await _ensureWintun(dir);
+      // NaiveProxy on Windows: the core is built with purego and loads
+      // Chromium's cronet from libcronet.dll in its own directory (see
+      // tool/core/build-desktop.sh). Lazily, so a user who never opens a Naive
+      // server never touches it; but when they do, it has to be next to the exe.
+      await _ensureSideDll(dir, 'libcronet.dll');
     }
     return out.path;
   }
@@ -401,6 +512,75 @@ class DesktopProxyController extends ProxyController {
     if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
       await src.copy(out.path);
     }
+  }
+
+  /// Mirror a DLL that ships beside the core into the run directory, so the
+  /// core finds it in its own directory at load time. No-op when it was not
+  /// shipped (an older bundle), which just leaves the matching feature off.
+  Future<void> _ensureSideDll(Directory dir, String name) async {
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    final File src = <File>[
+      File('${exeDir.path}\\$name'),
+      File('assets/bin/$name'),
+    ].firstWhere((File f) => f.existsSync(),
+        orElse: () => File('${exeDir.path}\\$name'));
+    if (!src.existsSync()) return;
+    final File out = File('${dir.path}/$name');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+    }
+  }
+
+  /// What the staged core said it can run, keyed by `binary path|type`, so
+  /// the probe runs once per binary and type for the life of the process.
+  final Map<String, bool> _coreSupportCache = <String, bool>{};
+
+  /// True when the bundled core can build a [type] (`awg` endpoint or `naive`
+  /// outbound), measured by running `check` on a minimal document. Unreadable
+  /// answers (the binary would not run at all) count as supported: this gate is
+  /// for naming a missing protocol clearly, not for blocking a connect on a
+  /// probe failure the real start would report anyway.
+  Future<bool> _coreSupports(String binary, String type) async {
+    final String key = '$binary|$type';
+    final bool? cached = _coreSupportCache[key];
+    if (cached != null) return cached;
+    final Directory dir = await getApplicationSupportDirectory();
+    final File probe = File('${dir.path}/nova-probe-$type.json');
+    // Loopback peers and throwaway keys: nothing here is dialed by `check`.
+    final String doc = type == 'awg'
+        ? '{"log":{"level":"error"},"endpoints":[{"type":"awg","tag":"p",'
+            '"address":["10.9.0.2/32"],'
+            '"private_key":"yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",'
+            '"peers":[{"address":"127.0.0.1","port":1,'
+            '"public_key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=",'
+            '"allowed_ips":["0.0.0.0/0"]}],'
+            '"jc":4,"jmin":40,"jmax":70,"s1":0,"s2":0,"h1":1,"h2":2,"h3":3,"h4":4}]}'
+        : '{"log":{"level":"error"},"outbounds":[{"type":"naive","tag":"p",'
+            '"server":"127.0.0.1","server_port":1,"username":"u","password":"p",'
+            '"tls":{"enabled":true,"server_name":"example.invalid"}}]}';
+    bool ok = true;
+    try {
+      await probe.writeAsString(doc);
+      final ProcessResult r = await Process.run(
+        binary,
+        <String>['check', '-c', probe.path],
+        environment: _coreEnv,
+      ).timeout(const Duration(seconds: 8));
+      final String out = '${r.stdout}\n${r.stderr}'.toLowerCase();
+      if (out.contains('not included in this build') ||
+          out.contains('library not found')) {
+        ok = false;
+      }
+    } catch (_) {
+      ok = true;
+    } finally {
+      try {
+        if (probe.existsSync()) probe.deleteSync();
+      } catch (_) {/* best effort */}
+    }
+    _coreSupportCache[key] = ok;
+    NovaLog.instance.write('Core capability: $type ${ok ? 'yes' : 'NO'}');
+    return ok;
   }
 
   /// Locates the core binary shipped alongside the app executable:
@@ -426,6 +606,94 @@ class DesktopProxyController extends ProxyController {
     if (Platform.isMacOS) return 'sing-box-macos-$arch';
     if (Platform.isWindows) return 'sing-box-windows-$arch.exe';
     return 'sing-box-linux-$arch';
+  }
+
+  // ---- second core: Xray, for xhttp exits ----
+
+  String _xrayAssetName() {
+    final String arch = _arch();
+    if (Platform.isMacOS) return 'xray-macos-$arch';
+    if (Platform.isWindows) return 'xray-windows-$arch.exe';
+    return 'xray-linux-$arch';
+  }
+
+  /// The bundled Xray binary, found the same way as the sing-box one (macOS
+  /// arm64, Windows amd64, Linux amd64 all ship). A target with no binary returns
+  /// a non-existent path, which [_startXray] turns into a clear "no Xray core"
+  /// message rather than a crash.
+  File _bundledXrayBinary() {
+    final String name = _xrayAssetName();
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    if (Platform.isMacOS) {
+      final File f = File('${exeDir.parent.path}/Resources/$name');
+      if (f.existsSync()) return f;
+    } else if (Platform.isWindows) {
+      final File f = File('${exeDir.path}\\$name');
+      if (f.existsSync()) return f;
+    }
+    return File('assets/bin/$name');
+  }
+
+  /// Stages the Xray binary into app-support (chmod +x on POSIX) and returns its
+  /// path, or null when this build carries no Xray core for the platform.
+  Future<String?> _ensureXrayBinary() async {
+    final File src = _bundledXrayBinary();
+    if (!src.existsSync()) return null;
+    final Directory dir = await getApplicationSupportDirectory();
+    final String exe = Platform.isWindows ? 'xray.exe' : 'xray';
+    final File out = File('${dir.path}/$exe');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', <String>['+x', out.path]);
+      }
+    }
+    return out.path;
+  }
+
+  /// Starts Xray with [xrayJson] so its local SOCKS is up before sing-box bridges
+  /// to it. Returns false (and fails the connect) when the core is missing.
+  Future<bool> _startXray(Directory dir, String xrayJson) async {
+    final String? bin = await _ensureXrayBinary();
+    if (bin == null) {
+      _fail('This build has no Xray core, so xhttp servers cannot run on '
+          '${Platform.operatingSystem} yet.');
+      return false;
+    }
+    final File cfg = File('${dir.path}/nova-xray.json');
+    await cfg.writeAsString(xrayJson);
+    _xrayProcess = await Process.start(
+      bin,
+      <String>['run', '-c', cfg.path],
+      environment: _coreEnv,
+    );
+    _pipeCore(_xrayProcess!.stdout, 'xray');
+    _pipeCore(_xrayProcess!.stderr, 'xray');
+    // Give Xray a moment to bind its SOCKS inbound before sing-box dials it. A
+    // dead process here means a bad config, surfaced by the sing-box side failing
+    // to reach the bridge right after.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    return true;
+  }
+
+  void _stopXray() {
+    _xrayProcess?.kill();
+    _xrayProcess = null;
+    _pendingXrayConfig = null;
+  }
+
+  /// An xhttp node with its server host resolved to an IPv4 address (Xray needs a
+  /// numeric server before the tunnel is up; the SNI/Host stay the domain).
+  /// Best-effort: an unresolvable host passes through unchanged.
+  Future<ProxyNode> _resolveXhttpServer(ProxyNode n) async {
+    if (InternetAddress.tryParse(n.server) != null) return n;
+    try {
+      final List<InternetAddress> a = await InternetAddress
+          .lookup(n.server, type: InternetAddressType.IPv4)
+          .timeout(const Duration(seconds: 4));
+      if (a.isNotEmpty) return n.copyWith(server: a.first.address);
+    } catch (_) {/* fall through with the domain */}
+    return n;
   }
 
   String _arch() {
@@ -517,6 +785,16 @@ class DesktopProxyController extends ProxyController {
   }
 
   /// Tee a core output stream to the rolling tail, the log file, and debugPrint.
+  /// sing-box writes its level as a word in the line; the desktop core is a
+  /// process rather than libbox, so there is no numeric level to read.
+  NovaLogLevel _coreLineLevel(String line) {
+    final String l = line.toUpperCase();
+    if (l.contains('FATAL') || l.contains('ERROR')) return NovaLogLevel.error;
+    if (l.contains('WARN')) return NovaLogLevel.warn;
+    if (l.contains('DEBUG') || l.contains('TRACE')) return NovaLogLevel.debug;
+    return NovaLogLevel.info;
+  }
+
   void _pipeCore(Stream<List<int>> stream, String label) {
     stream
         .transform(utf8.decoder)
@@ -528,6 +806,14 @@ class DesktopProxyController extends ProxyController {
           raw.replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '').trim();
       if (line.isEmpty) return;
       debugPrint('[sing-box:$label] $line');
+      // Feed the in-app log too, so the desktop builds have the same Settings ->
+      // Logs view as mobile instead of only a file on disk. The by-design `block`
+      // outbound rejections (QUIC on a TCP-only exit, ad/geo blocks) are filtered
+      // from the quiet log exactly like mobile; the on-disk core log below still
+      // keeps every line.
+      if (routeOptions.verboseCoreLog || !isBlockedConnectionNoise(line)) {
+        NovaLog.instance.writeCore(line, level: _coreLineLevel(line));
+      }
       _coreTail.add(line);
       if (_coreTail.length > 40) _coreTail.removeAt(0);
       try {
@@ -592,6 +878,7 @@ class DesktopProxyController extends ProxyController {
       // then stop it. `-Verb RunAs` raises the single UAC prompt.
       final File wrapper = File('${dir.path}/nova-tun.ps1');
       await wrapper.writeAsString(
+        "${_coreEnv.entries.map((MapEntry<String, String> e) => "\$env:${e.key}='${e.value}'").join('\n')}\n"
         "\$p = Start-Process -FilePath '$binary' "
         "-ArgumentList @('run','-c','${cfgFile.path}') "
         "-WindowStyle Hidden -PassThru\n"
@@ -611,8 +898,11 @@ class DesktopProxyController extends ProxyController {
     }
 
     // macOS / Linux: run via an admin AppleScript (macOS) so the core gets root.
+    final String envPrefix = _coreEnv.entries
+        .map((MapEntry<String, String> e) => '${e.key}=${_shq(e.value)}')
+        .join(' ');
     final String cmd =
-        '${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
+        '$envPrefix ${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
         'SB=\$!; while [ -e ${_shq(flag.path)} ]; do sleep 1; done; '
         'kill \$SB 2>/dev/null';
     if (Platform.isMacOS) {
@@ -754,6 +1044,7 @@ class DesktopProxyController extends ProxyController {
     _elevated = null;
     _process?.kill();
     _process = null;
+    _stopXray();
     // Flush and close the tee log so the last core output (a FATAL reason) is
     // on disk for the user to send.
     try {

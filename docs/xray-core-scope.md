@@ -1,0 +1,216 @@
+# Adding an Xray core to Nova Client — cost and plan
+
+## Phase-4 DONE (2026-08-17): xhttp in the auto-select pool + live pings ✅
+
+xhttp nodes now join the auto-select pool, not just a single/pinned profile.
+The trick is to expose each xhttp node to sing-box as a plain local `socks`
+outbound:
+
+- `XrayConfig.buildMulti(xhttpNodes, basePort)` gives each xhttp node its own
+  Xray `socks` inbound (`basePort + i`) routed to its own xhttp outbound.
+- `SingboxConfig.pickedMultiNodes(..., includeXhttp: true)` keeps the
+  VLESS-over-xhttp nodes (ordered at the back so real sing-box exits fill the
+  pool first), and `buildMultiMap(..., includeXhttp: true, xhttpBasePort)` emits
+  each as a `socks` outbound in the urltest group at the matching port.
+- So every xhttp node sits in the ordinary `urltest` group: it is measured,
+  auto-picked, and shown with a live ping and a "Connected via …" line through
+  the **existing** sing-box command surface. No separate Xray stats/observatory
+  channel was needed — that item is closed by this design.
+
+The native hosts are unchanged: they already start Xray from a config JSON, and
+the multi-inbound config starts the same way. Controller branch:
+`singbox_proxy_controller._buildSingboxConfig` builds the Xray multi config and
+the socks-wrapped sing-box pool whenever a >1-node profile contains xhttp and the
+combined core is present (Android/iOS).
+
+**Verified on the emulator (2026-08-17):** a 2-node all-xhttp subscription,
+Auto mode — the app connected, went Secure, and reported **"Connected via
+XhttpA"** with a real exit IP, i.e. the urltest measured the socks-wrapped xhttp
+nodes and picked one, and the `node-i -> real node` mapping resolved correctly.
+(Proven with the debug `freedom` outbound since there was no live xhttp server,
+exactly like Phase-3; a real xhttp server swaps that outbound only.)
+Unit-covered by `test/xray_pool_test.dart`.
+
+**Still open on Xray:** iOS on-device runtime test (needs a device + a live xhttp
+server; NE can't run in the simulator) and the **desktop** binding. Desktop is
+not just a build target: it needs an `xray` binary shipped per OS/arch and, in
+the elevated-TUN mode, a route-exclusion so Xray's own dials don't loop back
+through sing-box's TUN. That can only be validated on real desktop OSes with
+elevation, so it is deferred rather than shipped unverified.
+
+## Phase-3 DONE (2026-08-16): combined core + xhttp works on device ✅
+
+The two-gomobile-AAR blocker is solved by building both cores into ONE module:
+
+- **`tool/core/build-combined-core.sh`** clones sing-box, applies the AmneziaWG +
+  nova_fragment patches, copies `tool/core/xray/novaxray/xray.go` into the tree,
+  adds `xray-core v1.260327.0` to sing-box's go.mod (they resolve together, no
+  conflict), patches `build_libbox` to bind `./novaxray` next to
+  `./experimental/libbox`, and produces **one `libbox.aar`** that exports
+  `io.nekohasekai.libbox.*` AND `io.nekohasekai.novaxray.*` with a single
+  `go.Seq`. One `libbox.so` per ABI carries BOTH AmneziaWG (`jmin`) and Xray
+  xhttp (`splithttp`). CI (`build-apk.yml`) now runs this script.
+- The Android host (`NovaVpnService`) starts Xray with the socket protector
+  before sing-box, and `kXrayXhttpEnabled = true`. A single pinned/single-link
+  xhttp node runs on Xray while sing-box bridges the TUN.
+- **Verified end to end on the emulator**: an xhttp profile connected, went
+  Secure, resolved a real exit IP and ping, and carried traffic — through
+  TUN -> sing-box -> local SOCKS -> Xray -> internet, with Xray's dials protected
+  (no TUN loop). Proven with Xray's outbound temporarily set to `freedom` (there
+  was no live xhttp server); a real xhttp server just swaps that outbound, which
+  Phase-1 proved the core loads and starts.
+
+**iOS: combined core + wiring done (2026-08-16).**
+`tool/core/build-combined-core-ios.sh` builds the combined **Novacore.xcframework**
+(sing-box renamed novacore + novaxray, xray-core folded into go.mod), exporting
+both `NovacoreCommandClient*` and `NovaxrayStart/Stop/SetProtector`. The NE
+(`PacketTunnelProvider`) starts Xray from `xray.json` before sing-box (no socket
+protector needed — an iOS extension's own sockets bypass its tunnel), and the app
+host writes `xray.json` next to `config.json`. The Dart two-core branch now covers
+iOS too. Compiles end to end (`flutter build ios`). **iOS runtime is unverified**
+— the NE tunnel can't run in the simulator, so it needs an on-device test with a
+real xhttp server (the Android path is proven, and the design is identical).
+
+Remaining before this is a full user-facing feature: auto-select support for
+xhttp (today only a single/pinned xhttp node takes the path), the Xray stats
+surface for the live pings/logs on xhttp nodes, and the **desktop** binding. Those
+are incremental; the hard core work (Android proven, iOS built + wired) is done.
+
+---
+
+# (Original scope) Adding an Xray core to Nova Client — cost and plan
+
+## Phase-1 spike RESULT (2026-08-16): feasible ✅
+
+Proven end to end on this machine:
+
+- **Xray builds for Android via gomobile.** `tool/core/xray/novaxray` is a tiny
+  wrapper (`Start(json)/Stop()/Version()`) around `xray-core v1.260327.0` with
+  `distro/all` imported. `tool/core/build-xray.sh` gomobile-binds it to a 20 MB
+  `libxray.aar` (arm64 built in ~18s); the AAR exports
+  `online.novaproxy.xray.novaxray.Novaxray.start/stop/version`.
+- **The xhttp transport is compiled in and a config starts the core**
+  (`tool/core/xray/novaxray/xray_test.go`).
+- **The client can translate an xhttp node to Xray JSON.**
+  `lib/src/core/proxy/xray/xray_config.dart` turns a VLESS-over-xhttp node into a
+  minimal Xray config (local socks inbound + xhttp outbound), and the **real Xray
+  core accepted and started the client-generated config** (verified by feeding the
+  Dart output into the Go wrapper). `test/xray_config_spike_test.dart` covers the
+  translation. Also fixed: the share-link parser now captures `path` for xhttp.
+
+So the core feasibility question — *can Nova build Xray for Android and run a
+client-generated xhttp config through it* — is **yes**. None of this is wired into
+the shipped app yet.
+
+## Phase-2 progress + the blocker (2026-08-16)
+
+Built and tested, all behind `kXrayXhttpEnabled = false` (dormant, app unchanged):
+
+- **The two-core data path is designed and both halves validate.** sing-box owns
+  the TUN and bridges it to a local SOCKS that Xray serves; Xray does the xhttp.
+  `SingboxConfig.buildXraySocksBridge` (TUN -> SOCKS at 127.0.0.1:port) is
+  accepted by the real sing-box core; `XrayConfig` (socks inbound + xhttp
+  outbound) is accepted by the real Xray core.
+- **Socket protection is solved.** The wrapper gained `SetProtector` +
+  `internet.RegisterDialerController`, so Xray's outbound dials get
+  `VpnService.protect` and don't loop back through the TUN. The AAR exports
+  `setProtector(Protector{ protect(fd: Long) })`.
+- **The controller + Android host are wired** (EXTRA_XRAY_CONFIG, start Xray
+  before libbox, stop on cleanup) as a skeleton.
+
+**BLOCKER found: two gomobile AARs cannot coexist.** libbox (sagernet's gomobile
+fork) and libxray (upstream gomobile) each ship the `go/*` runtime support
+classes, and the APK build fails `CheckDuplicates` on them; the two Go runtimes
+also can't share one `go.Seq`. The fix is the standard one (NekoBox/Karing
+libcore): **build sing-box AND xray-core into a SINGLE gomobile module** — one
+`.aar`, one `go.Seq`, one runtime. So Phase-3 is a build-system task: add
+`novaxray` (and xray-core) into the libbox build (sagernet's `build_libbox`, same
+gomobile fork) and expose it from there, then flip `kXrayXhttpEnabled` and
+uncomment the native calls (already in place). Nothing else in the path changes.
+
+### What Phase-2 still needs (unchanged from below)
+1. A **tun2socks bridge** from the VpnService TUN to Xray's local socks inbound
+   (Xray has no TUN inbound). This is the missing data path.
+2. A **Kotlin bridge** in NovaVpnService to call `Novaxray.start/stop`, and
+   **core-per-node routing** (xhttp -> Xray, everything else -> sing-box).
+3. An **Xray stats/observatory** equivalent for the coreHealth pings / logs /
+   traffic that currently read libbox.
+4. **Desktop binaries** and the **iOS binding + ~50 MB memory** work.
+5. **End-to-end test against a real xhttp server** (the spike proves start/accept,
+   not a live tunnel — no xhttp server was available).
+
+---
+
+# (Original scope) Adding an Xray core to Nova Client — cost and plan
+
+Scoping for feedback item #5 (xhttp / SplitHTTP configs) and, adjacent, #6
+(mieru). Nova Client today ships a single data core: a patched **sing-box**
+(AmneziaWG + nova_fragment), bound natively per platform. xhttp is an
+**Xray-only** transport (sing-box has no XHTTP outbound), so those configs cannot
+connect no matter what we do in Dart. Supporting them means shipping a **second
+core**.
+
+## What "add Xray" actually is
+
+1. **A second native binding per platform.** Xray-core (Go) has to be built the
+   same way libbox is:
+   - Android + iOS: `gomobile bind` of a small wrapper around
+     `github.com/xtls/xray-core` (an `.aar` and an `.xcframework`), like
+     libbox/Novacore today. Each is 25-60 MB.
+   - Windows + macOS + Linux desktop: an `xray` binary per OS/arch, invoked and
+     managed like the desktop sing-box process.
+   This roughly **doubles the core build surface** (8 more build targets) and the
+   app download size (**+25-40 MB per platform**).
+
+2. **Config translation.** Nova speaks sing-box JSON everywhere (routing, DNS,
+   rule-sets, the urltest pool, nova_fragment, the bypass). Xray uses a different
+   JSON schema (inbounds/outbounds/routing/DNS all shaped differently). We would
+   need an `XrayConfig` builder that reproduces, in Xray's schema, what
+   `SingboxConfig` does: the TUN inbound, the auto-select (Xray `balancer` +
+   `observatory` instead of sing-box `urltest`), routing rules, DNS, and the
+   per-node fragment/bypass. This is the largest single piece.
+
+3. **Routing between the two cores.** Only nodes whose transport is Xray-only
+   (xhttp today) go to Xray; everything else stays on sing-box. The client has to
+   pick the core per profile (or per node), run the right one, and keep the group
+   /health/log/traffic command surfaces working for BOTH (the coreHealth pings,
+   the "Connected via" line, Logs, the speed meter all currently read libbox).
+
+4. **The command surface.** Everything built this month (live pings via
+   `CommandGroup`, the reachability probe, Logs via `CommandLog`, traffic via
+   `CommandStatus`) is libbox-specific. Xray exposes its stats/observatory over a
+   gRPC API instead, so each of those features needs an Xray equivalent or a
+   graceful "not available on this core" state.
+
+5. **iOS memory.** The Network Extension's ~50 MB cap already forces the lean
+   config. Running Xray there (another Go runtime + GC) is the real risk; it may
+   only be viable on Android/desktop first, with iOS xhttp deferred.
+
+## Effort
+
+- **Phase 1 (spike, ~1 session):** gomobile-bind Xray for Android, a minimal
+  `XrayConfig` for a single xhttp node, run it as a second core on Android only,
+  prove an xhttp config connects. No auto-select, no routing polish, no iOS.
+- **Phase 2:** config translation to parity (routing/DNS/balancer), desktop
+  binaries, the command surface (stats/observatory), core-per-node selection.
+- **Phase 3:** iOS binding + the memory work, or a decision to keep xhttp
+  Android/desktop-only.
+
+Realistically **several focused sessions**, and it grows the app materially.
+This is the biggest single item in the backlog.
+
+## Recommendation
+
+xhttp is not yet common in Nova subscriptions. Unless a lot of users have
+xhttp-only configs, the cost/benefit favors **waiting**: keep emitting the honest
+"this transport needs the Xray core" skip note (already done), and revisit if
+xhttp adoption grows. If we do proceed, do **Phase 1 as a spike first** so we
+learn the real integration cost on one platform before committing to all four.
+
+## #6 mieru
+
+Same shape, worse: mieru is neither a sing-box nor an Xray outbound, so it needs
+its own client (the `mieru` Go client, which Nova Server already runs as a
+daemon) bound natively, or a mieru outbound written for one of the cores. Treat
+it as its own effort after (or independently of) Xray; it does not come "for
+free" with Xray.

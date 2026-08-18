@@ -21,7 +21,20 @@ class SingboxRouteOptions {
     this.hy2DownMbps = 0,
     this.fingerprintOverride,
     this.autoOptimizeCarrier = false,
+    this.verboseCoreLog = false,
+    this.hardenTls = false,
+    this.hardenPacketFragment = true,
+    this.bypassFingerprint,
+    this.bypassCipherSuites,
+    this.bypassFragmentMask,
   });
+
+  /// Per-profile SNI-block bypass overrides from the editor, each null to use
+  /// Nova's field-tested default (`unsafe` / [kBypassCipherSuites] /
+  /// [kBypassFragmentMask]). Only consulted when [hardenTls] is on.
+  final String? bypassFingerprint;
+  final List<String>? bypassCipherSuites;
+  final String? bypassFragmentMask;
 
   final SingboxMode mode;
   final bool blockAds;
@@ -89,6 +102,45 @@ class SingboxRouteOptions {
   /// (no SIM) and whenever the user disables it.
   final bool autoOptimizeCarrier;
 
+  /// Raise the core's log level from `warn` to `info` so the Logs screen shows
+  /// what the core is doing per connection, not just its complaints.
+  ///
+  /// Off by default and deliberately opt-in: at `info` sing-box logs a line for
+  /// every connection it routes, which on a phone is a steady stream of work
+  /// (formatting, the command socket, the ring buffer) for a screen nobody has
+  /// open. A user who is diagnosing something turns it on; everyone else pays
+  /// nothing for it.
+  final bool verboseCoreLog;
+
+  /// The `log.level` this produces.
+  String get logLevel => verboseCoreLog ? 'info' : 'warn';
+
+  /// Apply the SNI-block bypass profile to every clean-IP fronted node in the
+  /// config (see [ProxyNode.isCleanIpFronted] and [ProxyNode.hardened]).
+  ///
+  /// This exists for the day the censor blocks the SNI of `workers.dev` and
+  /// `pages.dev` outright, which field reports say has started. The profile
+  /// (Go's own TLS with the PattNG cipher list, TLS-record and TCP-segment
+  /// fragmentation of the ClientHello) is what got through on those networks in
+  /// PattNG. It is not the default because it costs speed and because a browser
+  /// fingerprint is the better disguise where the SNI itself is not the trigger,
+  /// so the controller turns it on for a subscription only after every node in
+  /// it failed to carry traffic, and the user can force it either way.
+  final bool hardenTls;
+
+  /// Whether the SNI-block bypass includes the TCP-segment fragment stage (the
+  /// recipe's second stage) on top of the TLS-record split.
+  ///
+  /// True everywhere except Windows. On Windows sing-box implements per-segment
+  /// fragmentation with a "wait for the ACK" step that goes through the TCP
+  /// EStats API (winiphlpapi), which an unelevated core cannot drive, so the
+  /// handshake stalls and the connection never comes up: exactly the "Windows
+  /// never connects with the bypass on" report. The TLS-record split, which is
+  /// the part that stops DPI matching the SNI in one packet, uses a different
+  /// path with no ACK-wait and works. So Windows keeps the record split and
+  /// drops the segment split; the desktop controller sets this.
+  final bool hardenPacketFragment;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -98,6 +150,12 @@ class SingboxRouteOptions {
     int? hy2DownMbps,
     String? fingerprintOverride,
     bool? autoOptimizeCarrier,
+    bool? verboseCoreLog,
+    bool? hardenTls,
+    bool? hardenPacketFragment,
+    String? bypassFingerprint,
+    List<String>? bypassCipherSuites,
+    String? bypassFragmentMask,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -113,6 +171,13 @@ class SingboxRouteOptions {
         hy2DownMbps: hy2DownMbps ?? this.hy2DownMbps,
         fingerprintOverride: fingerprintOverride ?? this.fingerprintOverride,
         autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
+        verboseCoreLog: verboseCoreLog ?? this.verboseCoreLog,
+        hardenTls: hardenTls ?? this.hardenTls,
+        hardenPacketFragment:
+            hardenPacketFragment ?? this.hardenPacketFragment,
+        bypassFingerprint: bypassFingerprint ?? this.bypassFingerprint,
+        bypassCipherSuites: bypassCipherSuites ?? this.bypassCipherSuites,
+        bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
       );
 }
 
@@ -142,13 +207,124 @@ class SingboxConfig {
     return const JsonEncoder.withIndent('  ').convert(buildMap(node, options: options));
   }
 
-  /// Returns the config as a map (useful for tests / further mutation).
-  static Map<String, dynamic> buildMap(
-    ProxyNode node, {
+  /// A sing-box config whose only exit is a local SOCKS proxy: the TUN traffic
+  /// is forwarded to `127.0.0.1:[socksPort]`, where the Xray core is listening.
+  ///
+  /// This is the bridge half of the two-core xhttp path: sing-box owns the TUN
+  /// (as always) and hands everything to Xray, which speaks the xhttp transport
+  /// sing-box cannot. Xray then dials the real server on protected sockets. The
+  /// rest of the document (TUN, DNS, route) is the normal one, so ad-blocking and
+  /// the Iran bypass still apply to what flows through.
+  static String buildXraySocksBridge(
+    int socksPort, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? directServerIp,
+  }) =>
+      const JsonEncoder.withIndent('  ').convert(buildXraySocksBridgeMap(
+          socksPort,
+          options: options,
+          directServerIp: directServerIp));
+
+  /// [directServerIp], when set, routes that IP straight out `direct`. On desktop
+  /// TUN (whole-device) mode this is what stops an xhttp loop: Xray is a separate
+  /// process, so its own connection to the server would be captured by sing-box's
+  /// tunnel and fed back into the socks->Xray chain forever. Sending the server IP
+  /// direct (Xray dials the resolved IP, so this rule matches it) breaks that
+  /// cycle. Harmless in proxy mode, where nothing is captured; pass null there.
+  static Map<String, dynamic> buildXraySocksBridgeMap(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? directServerIp,
   }) {
     return <String, dynamic>{
-      'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+      }),
+      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
+      'outbounds': <Map<String, dynamic>>[
+        // The Xray core's local SOCKS inbound. Tagged `proxy` so the shared route
+        // targets it exactly like any real exit.
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': socksPort,
+          'version': '5',
+        },
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      // QUIC stays blocked: the xhttp exit is TCP, and letting UDP escape direct
+      // would leak outside the tunnel.
+      'route': _routeResolvingForXray(options, directServerIp: directServerIp),
+    };
+  }
+
+  /// The normal route, plus a trailing `resolve` action for the two-core xhttp
+  /// bridge. sing-box sniffs each connection's domain (TLS SNI / HTTP Host) and,
+  /// without this, forwards that domain to Xray's local SOCKS — where Xray, which
+  /// has no resolver in this path, fails it ("dns: exchange failed for a name")
+  /// and no traffic flows (only the DoH lookups, which already dial an IP, get
+  /// through). Resolving the sniffed name back to an IP here — via sing-box's own
+  /// DNS, already warm from the app's lookup of the same name — means Xray only
+  /// ever receives IPs and never needs to resolve anything. The action is placed
+  /// LAST, after the domain-based direct/block rules (so those still match on the
+  /// name) and before `final: proxy`, so it only touches proxy-bound connections.
+  static Map<String, dynamic> _routeResolvingForXray(SingboxRouteOptions o,
+      {String? directServerIp}) {
+    final Map<String, dynamic> route = _route(o, blockQuic: true);
+    final List<dynamic> rules = route['rules'] as List<dynamic>;
+    // Break the TUN loop before anything else: the server IP goes direct, so
+    // Xray's own dial to it (captured by the tunnel) exits on the real interface
+    // instead of re-entering the socks->Xray chain. Placed first so no later rule
+    // can steer it back into the proxy. IPv4 only (the resolver returns v4).
+    if (directServerIp != null &&
+        directServerIp.isNotEmpty &&
+        !directServerIp.contains(':')) {
+      rules.insert(0, <String, dynamic>{
+        'ip_cidr': <String>['$directServerIp/32'],
+        'outbound': 'direct',
+      });
+    }
+    rules.add(<String, dynamic>{
+      'action': 'resolve',
+      'strategy': 'prefer_ipv4',
+    });
+    return route;
+  }
+
+  /// Returns the config as a map (useful for tests / further mutation).
+  static Map<String, dynamic> buildMap(
+    ProxyNode inputNode, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) {
+    final ProxyNode node = _maybeHarden(inputNode, options);
+    // xhttp / SplitHTTP is Xray-only; sing-box has no implementation, so
+    // _transport() would return null and the node would be built as plain TCP,
+    // which connects nowhere. buildMultiMap filters these out of the auto pool,
+    // but a single pinned node lands here directly. Fail with something the user
+    // can act on (connect() surfaces a FormatException message verbatim) rather
+    // than handing the core a config that silently cannot work.
+    if (node.network == 'xhttp') {
+      throw const FormatException(
+          'This node uses the xhttp transport, which Nova cannot run. '
+          'Ask for a ws, gRPC, httpupgrade, or Reality config instead.');
+    }
+    // A NaiveProxy server on a self-signed certificate cannot be dialed by this
+    // core: the naive outbound has no `insecure` option (cronet validates the
+    // certificate itself and there is no way to tell it not to). Building the
+    // config anyway produces a core that starts and then fails every dial with
+    // a certificate error, which reads as a dead server. Say the real reason.
+    if (node.protocol == NodeProtocol.naive && node.allowInsecure) {
+      throw const FormatException(
+          'This NaiveProxy server uses a self-signed certificate, which the '
+          'VPN core cannot accept for NaiveProxy. Ask for a NaiveProxy config '
+          'on a real domain, or use one of the server\'s other protocols.');
+    }
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
       'dns': _dns(options,
           directDomains: <String>{
             ..._directDomains(<ProxyNode>[node]),
@@ -164,7 +340,8 @@ class SingboxConfig {
               fragment: options.tlsFragment,
               hy2Up: options.hy2UpMbps,
               hy2Down: options.hy2DownMbps,
-              fingerprintOverride: options.fingerprintOverride),
+              fingerprintOverride: options.fingerprintOverride,
+              hardenPacketFragment: options.hardenPacketFragment),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
@@ -194,15 +371,31 @@ class SingboxConfig {
   static String buildMulti(
     List<ProxyNode> nodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
+    int xhttpBasePort = 10808,
   }) {
-    return const JsonEncoder.withIndent('  ')
-        .convert(buildMultiMap(nodes, options: options));
+    return const JsonEncoder.withIndent('  ').convert(buildMultiMap(nodes,
+        options: options,
+        includeXhttp: includeXhttp,
+        xhttpBasePort: xhttpBasePort));
   }
 
-  static Map<String, dynamic> buildMultiMap(
-    List<ProxyNode> nodes, {
+  /// The nodes that actually end up behind the auto-selector, in the exact order
+  /// they are tagged `node-0`, `node-1`, ... in the config, after hardening,
+  /// dropping cores the transport can't run, pushing gRPC to the back, deduping,
+  /// and applying the per-platform cap.
+  ///
+  /// Exposed so the controller can map the core's per-node urltest results (which
+  /// come back keyed by those `node-i` tags) back to real nodes, and show a live
+  /// "which server actually works" latency once the tunnel is up. The keys line
+  /// up with [orderedMultiNodeKeys].
+  static List<ProxyNode> pickedMultiNodes(
+    List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
   }) {
+    final List<ProxyNode> nodes =
+        inputNodes.map((ProxyNode n) => _maybeHarden(n, options)).toList();
     // The lean (iOS) path trims the node pool to stay under the extension's
     // ~50MB memory cap. Fewer idle outbounds (each holds a periodic urltest
     // probe) means more headroom for the throughput burst of a speed test, which
@@ -212,8 +405,14 @@ class SingboxConfig {
     final int cap = options.lean ? 12 : kMaxAutoNodes;
     // Drop transports the sing-box core can't carry at all (xhttp / SplitHTTP is
     // Xray only) so they never sit in the urltest pool as dead exits.
-    final List<ProxyNode> usable =
-        nodes.where((ProxyNode n) => n.network != 'xhttp').toList();
+    final List<ProxyNode> usable = nodes
+        .where((ProxyNode n) =>
+            n.network != 'xhttp' &&
+            // Same reason as buildMap: the naive outbound cannot skip
+            // certificate validation, so a self-signed naive server would sit
+            // in the pool as a dead exit.
+            !(n.protocol == NodeProtocol.naive && n.allowInsecure))
+        .toList();
     // gRPC is a softer case: sing-box speaks standard gRPC (a real external gRPC
     // server works), but the Nova worker's gRPC is Xray "gun" framing that
     // sing-box can't talk to, so Nova gRPC nodes fail to connect. We can't tell
@@ -221,24 +420,107 @@ class SingboxConfig {
     // fills its pool with ws/Trojan first (and never opens on a dead gRPC node),
     // while a sub that is *only* gRPC still gets used. Order within each group is
     // preserved, so the caller's ping ranking still holds.
-    final List<ProxyNode> ordered = <ProxyNode>[
-      ...usable.where((ProxyNode n) => n.network != 'grpc'),
-      ...usable.where((ProxyNode n) => n.network == 'grpc'),
-    ];
+    final Iterable<ProxyNode> nonGrpc =
+        usable.where((ProxyNode n) => n.network != 'grpc');
+    final Iterable<ProxyNode> grpc =
+        usable.where((ProxyNode n) => n.network == 'grpc');
+    // xhttp is Xray-only. When the combined core is available ([includeXhttp]),
+    // keep the VLESS-over-xhttp nodes and place them at the BACK of the pool:
+    // sing-box reaches them through a local Xray socks inbound, so a real
+    // sing-box exit is always cheaper and should fill the measured pool first.
+    // A non-VLESS xhttp node still can't be translated, so it stays dropped.
+    final List<ProxyNode> xhttp = includeXhttp
+        ? nodes
+            .where((ProxyNode n) =>
+                n.network == 'xhttp' && n.protocol == NodeProtocol.vless)
+            .toList()
+        : const <ProxyNode>[];
+    final List<ProxyNode> ordered = options.hardenTls
+        // Bypass on: a domain-addressed node can't pass the SNI block that is the
+        // whole reason the bypass is on, so it would just sit in the limited pool
+        // failing (and, on iOS where the pool is small, crowd out the clean-IP
+        // nodes that actually work and get a live ping). Let the clean-IP fronted
+        // nodes fill the measured pool first.
+        ? <ProxyNode>[
+            ...nonGrpc.where((ProxyNode n) => n.isCleanIpFronted),
+            ...nonGrpc.where((ProxyNode n) => !n.isCleanIpFronted),
+            ...grpc,
+            ...xhttp,
+          ]
+        : <ProxyNode>[...nonGrpc, ...grpc, ...xhttp];
+    // NB: never fall back to the unfiltered `nodes` here. Doing so reintroduced
+    // the xhttp nodes, and without [includeXhttp] they were then built as plain
+    // TCP exits that could not connect.
+    return _dedupe(ordered).take(cap).toList();
+  }
+
+  /// The stable node keys for [pickedMultiNodes], in `node-i` tag order. Empty
+  /// when a single-node profile is built (there is no urltest group then).
+  static List<String> orderedMultiNodeKeys(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
+  }) {
     final List<ProxyNode> picked =
-        _dedupe(ordered.isEmpty ? nodes : ordered).take(cap).toList();
-    if (picked.length <= 1) {
-      return buildMap(
-        picked.isEmpty ? nodes.first : picked.first,
-        options: options,
-      );
+        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
+    if (picked.length < 2) return const <String>[];
+    return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
+  }
+
+  /// The xhttp nodes that will sit in the auto pool, in the same order they take
+  /// in [pickedMultiNodes]/[buildMultiMap]. The controller feeds these to
+  /// [XrayConfig.buildMulti] so the i-th xhttp node's Xray socks inbound port
+  /// lines up with the socks outbound sing-box emits for it.
+  static List<ProxyNode> pickedXhttpNodes(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) =>
+      pickedMultiNodes(inputNodes, options: options, includeXhttp: true)
+          .where((ProxyNode n) => n.network == 'xhttp')
+          .toList();
+
+  static Map<String, dynamic> buildMultiMap(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    bool includeXhttp = false,
+    int xhttpBasePort = 10808,
+  }) {
+    final List<ProxyNode> picked =
+        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
+    if (picked.isEmpty) {
+      throw const FormatException(
+          'None of this subscription\'s nodes use a transport Nova can run '
+          '(they are all xhttp). Ask for ws, gRPC, httpupgrade, or Reality.');
+    }
+    // A single non-xhttp survivor collapses to the plain single-node config.
+    // A single xhttp survivor cannot (sing-box has no xhttp outbound); it falls
+    // through to the socks-wrapped pool below, which handles a one-entry urltest.
+    if (picked.length == 1 && picked.first.network != 'xhttp') {
+      return buildMap(picked.first, options: options);
     }
     final List<Map<String, dynamic>> nodeOutbounds = <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> nodeEndpoints = <Map<String, dynamic>>[];
     final List<String> tags = <String>[];
+    int xhttpSeq = 0;
     for (int i = 0; i < picked.length; i++) {
       final String tag = 'node-$i';
       tags.add(tag);
+      // An xhttp node runs on the Xray core; sing-box reaches it through a local
+      // Xray socks inbound (one per xhttp node, at xhttpBasePort + its order).
+      // As a plain socks outbound it sits in the urltest pool like any exit, so
+      // it gets measured, picked and shown with a live ping through the same
+      // command surface. The port order here matches XrayConfig.buildMulti.
+      if (picked[i].network == 'xhttp') {
+        nodeOutbounds.add(<String, dynamic>{
+          'type': 'socks',
+          'tag': tag,
+          'server': '127.0.0.1',
+          'server_port': xhttpBasePort + xhttpSeq,
+          'version': '5',
+        });
+        xhttpSeq++;
+        continue;
+      }
       // AmneziaWG nodes are endpoints; the urltest still lists their tag, so the
       // auto-selector measures and picks them alongside outbound nodes.
       if (picked[i].protocol.isEndpoint) {
@@ -249,11 +531,12 @@ class SingboxConfig {
             fragment: options.tlsFragment,
             hy2Up: options.hy2UpMbps,
             hy2Down: options.hy2DownMbps,
-            fingerprintOverride: options.fingerprintOverride));
+            fingerprintOverride: options.fingerprintOverride,
+            hardenPacketFragment: options.hardenPacketFragment));
       }
     }
     return <String, dynamic>{
-      'log': <String, dynamic>{'level': 'warn', 'timestamp': true},
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
       'dns': _dns(options,
           directDomains: <String>{
             ..._directDomains(picked),
@@ -416,6 +699,7 @@ class SingboxConfig {
     int hy2Up = 0,
     int hy2Down = 0,
     String? fingerprintOverride,
+    bool hardenPacketFragment = true,
   }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
@@ -463,16 +747,37 @@ class SingboxConfig {
       case NodeProtocol.http:
         if (n.uuid != null) o['username'] = n.uuid;
         if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.naive:
+        // HTTP/2 CONNECT inside TLS. The credentials are a plain username and
+        // password (the parser puts the username in the uuid slot, as socks and
+        // http already do), and the transport is fixed: naive has no ws/grpc
+        // variant, so the transport block below must not add one.
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
+      case NodeProtocol.mieru:
+        // enfein/mieru outbound (ported into the core from mbox). Username sits
+        // in the uuid slot like socks/http/naive; transport is TCP/UDP and the
+        // multiplexing level rides on the node. server/server_port set above.
+        if (n.uuid != null) o['username'] = n.uuid;
+        if (n.password != null) o['password'] = n.password;
+        o['transport'] = n.mieruTransport.toUpperCase() == 'UDP' ? 'UDP' : 'TCP';
+        o['multiplexing'] = n.mieruMultiplexing;
       case NodeProtocol.awg:
         // AmneziaWG is a sing-box endpoint, not an outbound; callers must use
         // _endpoint(). Reaching here is a wiring bug.
         throw StateError('awg is an endpoint, not an outbound');
     }
     if (n.tls) {
-      o['tls'] = _tls(n, fragment: fragment, fingerprintOverride: fingerprintOverride);
+      o['tls'] = _tls(n,
+          fragment: fragment,
+          fingerprintOverride: fingerprintOverride,
+          hardenPacketFragment: hardenPacketFragment);
     }
-    // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport.
-    if (!n.protocol.isUdpNative) {
+    // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport, and
+    // naive's transport is fixed by the protocol (HTTP/2 over TLS): a `type=tcp`
+    // in the link is v2rayN filling in a field naive does not have, and emitting
+    // a transport block for it makes the outbound invalid.
+    if (!n.protocol.isUdpNative && n.protocol != NodeProtocol.naive) {
       final Map<String, dynamic>? transport = _transport(n);
       if (transport != null) o['transport'] = transport;
     }
@@ -491,6 +796,7 @@ class SingboxConfig {
     ProxyNode n, {
     bool fragment = true,
     String? fingerprintOverride,
+    bool hardenPacketFragment = true,
   }) {
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
@@ -510,6 +816,50 @@ class SingboxConfig {
             : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
                 ? n.fingerprint!
                 : 'chrome';
+    // NaiveProxy's TLS belongs to cronet (Chromium's network stack), not to
+    // sing-box: measured against the 1.13.13 core, the naive outbound rejects
+    // `alpn`, `utls`, `fragment` AND `insecure` outright ("<x> is not supported
+    // on naive outbound"), so its block is the bare minimum. Chromium's own
+    // ClientHello is the fingerprint, which is the point of the protocol.
+    if (n.protocol == NodeProtocol.naive) {
+      return <String, dynamic>{
+        'enabled': true,
+        'server_name': n.sni ?? n.server,
+      };
+    }
+    // The SNI-block bypass profile. `fp=unsafe` in Xray means no browser
+    // fingerprint at all: Go's own TLS with the given cipher list. So uTLS is
+    // off, the cipher list is what the link (or the app's default) says.
+    // `record_fragment` (the recipe's first stage: the ClientHello split into
+    // many TLS records) is always on, since that is what stops DPI matching the
+    // SNI in one packet. The `fragment` TCP-segment split (its second stage) is
+    // gated on [hardenPacketFragment] because its ACK-wait breaks on an
+    // unelevated Windows core. The exact 5/94/1-byte record and 109/1-byte
+    // segment sizes are not expressible here, which is the known gap against the
+    // field-tested PattNG configuration. Reality keeps its own handshake.
+    if (n.isHardenedTls && !n.isReality) {
+      final List<String> suites =
+          (n.cipherSuites.isEmpty ? kBypassCipherSuites : n.cipherSuites)
+              .where(_coreCipherSuites.contains)
+              .toList();
+      return <String, dynamic>{
+        'enabled': true,
+        'server_name': n.sni ?? n.server,
+        if (n.allowInsecure) 'insecure': true,
+        if (n.alpn.isNotEmpty) 'alpn': n.alpn,
+        if (suites.isNotEmpty) 'cipher_suites': suites,
+        // Exact, byte-for-byte fragmentation via the patched core's
+        // `nova_fragment` (a port of Xray's finalmask). The stages come from the
+        // node's own `fm` mask when the link carried one, else the field-tested
+        // default. This is what matches PattNG on strict DPI, where sing-box's
+        // own random-point `record_fragment` was not enough. On Windows the
+        // TCP-segment stage is dropped, since only that stage needs the
+        // ACK-wait an unelevated Windows core cannot drive; the TLS-record
+        // stage, which defeats the SNI match, stays.
+        'nova_fragment': _novaFragmentStages(n, hardenPacketFragment),
+        'utls': <String, dynamic>{'enabled': false},
+      };
+    }
     return <String, dynamic>{
       'enabled': true,
       'server_name': n.sni ?? n.server,
@@ -536,6 +886,116 @@ class SingboxConfig {
       'utls': <String, dynamic>{'enabled': true, 'fingerprint': fingerprint},
     };
   }
+
+  /// The node with the SNI-block bypass applied when [SingboxRouteOptions
+  /// .hardenTls] asks for it and the node is the kind it is for. Domain-
+  /// addressed nodes and nodes that already carry their own profile from the
+  /// link pass through unchanged.
+  /// The `nova_fragment` stages for a hardened node.
+  ///
+  /// If the node carries an `fm` mask (a PattNG / cf-optimizor link), its stages
+  /// are used verbatim, so the bytes match what that tool produces. Otherwise
+  /// the field-tested default is used. When [packetStage] is false (Windows) the
+  /// TCP-segment stage (packets other than the tlshello record split) is
+  /// dropped, keeping only the record split.
+  static List<Map<String, dynamic>> _novaFragmentStages(
+      ProxyNode n, bool packetStage) {
+    List<Map<String, dynamic>> stages;
+    final String? fm = n.fragmentMask;
+    if (fm != null && fm.isNotEmpty) {
+      try {
+        final Object? doc = jsonDecode(fm);
+        final Object? tcp = doc is Map ? doc['tcp'] : null;
+        stages = (tcp is List)
+            ? tcp
+                .whereType<Map>()
+                .map((Map m) => (m['settings'] as Map?)?.cast<String, dynamic>())
+                .whereType<Map<String, dynamic>>()
+                .map(_fmStage)
+                .toList()
+            : _defaultNovaFragment;
+      } catch (_) {
+        stages = _defaultNovaFragment;
+      }
+    } else {
+      stages = _defaultNovaFragment;
+    }
+    if (!packetStage) {
+      // Keep only the TLS-record split (packets: tlshello).
+      stages = stages
+          .where((Map<String, dynamic> st) =>
+              (st['packets'] as String?)?.toLowerCase() == 'tlshello')
+          .toList();
+    }
+    return stages;
+  }
+
+  /// One Xray finalmask fragment stage, normalised to string fields (lengths,
+  /// delays and maxSplit are strings in the links PattNG writes).
+  static Map<String, dynamic> _fmStage(Map<String, dynamic> settings) {
+    List<String> strs(Object? v) => v is List
+        ? v.map((Object? e) => '$e').toList()
+        : (v == null ? const <String>[] : <String>['$v']);
+    return <String, dynamic>{
+      if (settings['packets'] != null) 'packets': '${settings['packets']}',
+      if (settings['lengths'] != null) 'lengths': strs(settings['lengths']),
+      if (settings['delays'] != null) 'delays': strs(settings['delays']),
+      if (settings['maxSplit'] != null) 'maxSplit': '${settings['maxSplit']}',
+    };
+  }
+
+  /// The field-tested finalmask: ClientHello into TLS records of 5, 94, then 1
+  /// byte, merged into one write; that write split into TCP segments of 109 then
+  /// 1 byte, 1 ms apart, capped at 355.
+  static const List<Map<String, dynamic>> _defaultNovaFragment =
+      <Map<String, dynamic>>[
+    <String, dynamic>{
+      'packets': 'tlshello',
+      'lengths': <String>['5', '94', '1'],
+      'delays': <String>['0'],
+      'maxSplit': '0',
+    },
+    <String, dynamic>{
+      'packets': '1-1',
+      'lengths': <String>['109', '1'],
+      'delays': <String>['1'],
+      'maxSplit': '355',
+    },
+  ];
+
+  static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) =>
+      (o.hardenTls && n.isCleanIpFronted)
+          ? n.hardened(
+              fingerprint: o.bypassFingerprint,
+              cipherSuites: o.bypassCipherSuites,
+              fragmentMask: o.bypassFragmentMask,
+            )
+          : n;
+
+  /// The cipher suite names the sing-box core accepts, measured against the
+  /// 1.13.13 binary: it looks names up in Go's secure list only, so anything in
+  /// Go's insecure list ("unknown cipher_suite: TLS_ECDHE_ECDSA_WITH_AES_128_
+  /// CBC_SHA256", which the PattNG recipe includes) is dropped here rather than
+  /// handed to a core that refuses the whole outbound over it.
+  static const Set<String> _coreCipherSuites = <String>{
+    'TLS_AES_128_GCM_SHA256',
+    'TLS_AES_256_GCM_SHA384',
+    'TLS_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256',
+    'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384',
+    'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384',
+    'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
+    'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA',
+    'TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA',
+    'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA',
+    'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA',
+    'TLS_RSA_WITH_AES_128_GCM_SHA256',
+    'TLS_RSA_WITH_AES_256_GCM_SHA384',
+    'TLS_RSA_WITH_AES_128_CBC_SHA',
+    'TLS_RSA_WITH_AES_256_CBC_SHA',
+  };
 
   static Map<String, dynamic>? _transport(ProxyNode n) {
     switch (n.network) {
@@ -626,6 +1086,7 @@ class SingboxConfig {
         if (leanRuleSets.isNotEmpty) 'rule_set': leanRuleSets,
         'final': o.mode == SingboxMode.direct ? 'direct' : 'proxy',
         'auto_detect_interface': true,
+        'default_domain_resolver': _defaultDomainResolver,
       };
     }
 
@@ -678,8 +1139,23 @@ class SingboxConfig {
       if (ruleSets.isNotEmpty) 'rule_set': ruleSets,
       'final': finalOutbound,
       'auto_detect_interface': true,
+      'default_domain_resolver': _defaultDomainResolver,
     };
   }
+
+  /// How an outbound resolves its own server hostname (sing-box 1.12+).
+  ///
+  /// The DNS rules already send every proxy server's name to the `local`
+  /// (direct) resolver, so this states the same intent where the 1.13 core now
+  /// insists on it. Without it the CLI core refuses to start ("missing
+  /// `route.default_domain_resolver` ... will be removed in sing-box 1.14.0"),
+  /// and the NaiveProxy outbound refuses independently ("missing domain
+  /// resolver for domain server address") because cronet does its own dialing.
+  /// libbox on the phones only warned, which is why Android and iOS kept
+  /// working; the desktop binary is the CLI and it does not. Every shipped core
+  /// is 1.13, so this is safe everywhere.
+  static const Map<String, dynamic> _defaultDomainResolver =
+      <String, dynamic>{'server': 'local'};
 
   /// The hosts the remote rule-sets are fetched from. They resolve via the
   /// direct DNS (see [_dns]) so the download never waits on the proxy.

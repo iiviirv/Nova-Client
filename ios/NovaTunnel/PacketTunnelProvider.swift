@@ -2,6 +2,7 @@ import Foundation
 import Novacore
 import Network
 import NetworkExtension
+import UserNotifications
 // sing-box 1.13's libbox references UIKit (UIApplication background-task APIs)
 // that 1.12 did not. The extension's own Swift never touches UIKit, but importing
 // it here auto-links UIKit.framework so the libbox symbols resolve at link time.
@@ -16,9 +17,11 @@ import UIKit
 /// ExtensionPlatformInterface; if you hit routing edge cases, cross-check against
 /// that reference (it is built against this same Novacore.xcframework).
 class PacketTunnelProvider: NEPacketTunnelProvider {
-  static let appGroup = "group.online.novaproxy.novaClient"
+  static let appGroup = "group.tech.innovatenorth.novaedge"
 
   private var commandServer: NovacoreCommandServer?
+  private var xrayStarted = false
+  private var xrayLogSink: XrayLogSink?
   private var pathMonitor: NWPathMonitor?
 
   override func startTunnel(options _: [String: NSObject]?) async throws {
@@ -37,6 +40,30 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     NovacoreSetup(setup, &setupErr)
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"), encoding: .utf8)
+
+    // xhttp node: start the Xray core first (from xray.json) so its local SOCKS
+    // inbound is up before sing-box bridges the TUN to it. On iOS the extension's
+    // own sockets bypass its tunnel, so no socket protector is needed here (unlike
+    // Android's VpnService). Xray and sing-box share this one Novacore framework.
+    let xrayURL = container.appendingPathComponent("xray.json")
+    if let xrayCfg = try? String(contentsOf: xrayURL, encoding: .utf8),
+       !xrayCfg.isEmpty {
+      // Bridge Xray's own log to the app. The NE is a separate process, so it
+      // can't push to the Flutter engine the way Android's in-process VpnService
+      // does; instead the sink writes to a shared App Group file that the app
+      // tails into the Core log (see NovaProxyHost). Start each connection with a
+      // fresh file so the app's tail offset lines up.
+      let logURL = container.appendingPathComponent("xray.log")
+      try? Data().write(to: logURL)
+      xrayLogSink = XrayLogSink(url: logURL)
+      NovaxraySetLogger(xrayLogSink)
+      let xerr = NovaxrayStart(xrayCfg)
+      if !xerr.isEmpty {
+        throw NSError(domain: "Nova", code: 4,
+                      userInfo: [NSLocalizedDescriptionKey: "Xray: \(xerr)"])
+      }
+      xrayStarted = true
+    }
 
     // sing-box 1.13 folded the box service into the command server: instead of
     // NovacoreNewService(config, platform) + a separate command server, the command
@@ -57,15 +84,77 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     commandServer = server
   }
 
-  override func stopTunnel(with _: NEProviderStopReason) async {
+  override func stopTunnel(with reason: NEProviderStopReason) async {
     pathMonitor?.cancel()
     pathMonitor = nil
     try? commandServer?.closeService()
     try? commandServer?.close()
     commandServer = nil
+    if xrayStarted {
+      xrayStarted = false
+      NovaxraySetLogger(nil)
+      _ = NovaxrayStop()
+    }
+    xrayLogSink = nil
+    notifyIfUnexpected(reason)
+  }
+
+  /// iOS already shows the system VPN pill on connect, so the only notification
+  /// worth posting is an unexpected drop: the moment traffic stops being
+  /// protected without the user asking for it. A user-initiated stop (they hit
+  /// Disconnect, switched servers, signed out, or the config was replaced) stays
+  /// silent. Delivered with provisional authorization so it lands quietly in
+  /// Notification Center with no permission prompt.
+  private func notifyIfUnexpected(_ reason: NEProviderStopReason) {
+    switch reason {
+    case .userInitiated, .superceded, .userLogout, .userSwitch, .configurationDisabled,
+         .configurationRemoved, .configurationChanged, .noNetworkAvailable:
+      // Expected, user-driven, or a transient network change iOS will retry.
+      return
+    default:
+      break
+    }
+    let content = UNMutableNotificationContent()
+    content.title = "Nova disconnected"
+    content.body = "Your traffic is no longer protected. Open Nova to reconnect."
+    content.sound = nil
+    let request = UNNotificationRequest(
+      identifier: "nova.vpn.dropped",
+      content: content,
+      trigger: nil,
+    )
+    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
   }
 
   private lazy var commandServerHandler = CommandServerHandler(provider: self)
+}
+
+/// Sinks Xray's log records to a shared App Group file the app tails. The NE is a
+/// separate process from the app, so — unlike Android's in-process VpnService,
+/// which pushes straight to the Flutter engine — Xray's lines have to cross to the
+/// app through shared storage. Keeps a bounded in-memory ring and rewrites the
+/// whole file atomically per line (Xray runs at warning level, so the volume is
+/// low); rewriting the whole ring means the app never has to track a byte offset
+/// across truncation.
+final class XrayLogSink: NSObject, NovaxrayLoggerProtocol {
+  private let url: URL
+  private let queue = DispatchQueue(label: "online.novaproxy.xraylog")
+  private var ring: [String] = []
+  private static let maxLines = 500
+
+  init(url: URL) { self.url = url }
+
+  func log(_ line: String?) {
+    guard let line = line, !line.isEmpty else { return }
+    queue.async {
+      self.ring.append(line)
+      if self.ring.count > Self.maxLines {
+        self.ring.removeFirst(self.ring.count - Self.maxLines)
+      }
+      let body = self.ring.joined(separator: "\n") + "\n"
+      try? body.data(using: .utf8)?.write(to: self.url, options: .atomic)
+    }
+  }
 }
 
 /// Minimal command-server handler. The traffic/status stream the app consumes
