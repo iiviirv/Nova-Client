@@ -134,6 +134,30 @@ jobs:
       # 32-bit ARM is not a rounding error in this app's user base. Narrowing
       # this list without narrowing PLATFORMS, or the other way round, ships an
       # app that installs on a device it cannot serve; the next step refuses it.
+      # Sign the release APK with the permanent Nova upload key so it is a real,
+      # updatable, trusted build (a debug-signed APK trips Play Protect's "unsafe
+      # app" warning on sideload). The key lives only in GitHub secrets; without
+      # them the build still runs but falls back to debug signing (build.gradle.kts).
+      - name: Set up release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret set; release APK will be debug-signed."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/nova-release.jks
+          cat > android/key.properties <<EOF
+          storeFile=nova-release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "Release signing configured (keystore staged, key.properties written)."
+
       - name: Build release APK
         run: flutter build apk --release
 
