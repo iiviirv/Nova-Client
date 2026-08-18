@@ -34,6 +34,42 @@ bool isBlockedConnectionNoise(String message) =>
     message.contains('outbound/block[block]') &&
     message.contains('operation not permitted');
 
+/// True for a core log line that is a routine *consequence* of the device's
+/// network changing (Wi-Fi to cellular, a tunnel, a lift, a doze wake) rather
+/// than a fault. Two shapes, both logged by the core at ERROR:
+///
+/// * `connection download|upload closed: ... software caused connection abort`
+///   — the OS tore down live sockets because the network under them went away.
+///   One line per open connection, so a single handover can log a dozen at once.
+/// * `report handshake success: connection refused` — misleading wording: by
+///   that point the dial to the server has already succeeded (see sing-box
+///   `route/conn.go`), and what failed was reporting that success back to the
+///   local app, which gave up mid-handshake. Nothing refused us.
+///
+/// Without this a normal commute fills the log with red and reads as Nova being
+/// broken. Filtered from the quiet log, kept when Detailed core log is on.
+///
+/// The `missing default interface` line that *explains* the event is
+/// deliberately NOT filtered (see [coreLogLevelFor]) so the cause survives
+/// without its flood of consequences.
+bool isNetworkChurnNoise(String message) =>
+    (message.contains('software caused connection abort') &&
+        (message.contains('connection download closed') ||
+            message.contains('connection upload closed'))) ||
+    (message.contains('report handshake success') &&
+        message.contains('connection refused'));
+
+/// The level a core line should be shown at.
+///
+/// `network: missing default interface` is the core saying the device has no
+/// underlying network right now, so it pauses until one returns. That is real,
+/// useful context (it is the one line that explains a batch of dropped
+/// connections) but it is an event, not a fault, and the core emits it at ERROR.
+/// Show it as a warning so it stays visible in the quiet log without reading as
+/// something broken.
+NovaLogLevel coreLogLevelFor(String message, NovaLogLevel level) =>
+    message.contains('missing default interface') ? NovaLogLevel.warn : level;
+
 /// The real [ProxyController] backed by a modified **sing-box** core.
 ///
 /// This is the **integration boundary** for the native data path. The Dart side
@@ -161,10 +197,15 @@ class SingboxProxyController extends ProxyController {
             // DESIGN (see isBlockedConnectionNoise); hide that flood unless the
             // user turned on Detailed core log.
             if (!verbose && isBlockedConnectionNoise(message)) continue;
+            // Sockets torn down because the device changed network are expected
+            // (see isNetworkChurnNoise); hide the per-connection flood but keep
+            // the one line that explains it.
+            if (!verbose && isNetworkChurnNoise(message)) continue;
+            final NovaLogLevel shown = coreLogLevelFor(message, level);
             // Quiet means what `log.level: warn` was supposed to mean: the core's
             // complaints, not a line per routed connection.
-            if (!verbose && level.index < NovaLogLevel.warn.index) continue;
-            NovaLog.instance.writeCore(message, level: level);
+            if (!verbose && shown.index < NovaLogLevel.warn.index) continue;
+            NovaLog.instance.writeCore(message, level: shown);
           }
         }
       case 'state':
