@@ -22,7 +22,7 @@ import 'bypass_editor_screen.dart';
 
 /// Lists the nodes of a subscription with a live TCP latency for each, and lets
 /// the user pin a specific exit (or fall back to auto-select). Pinning updates
-/// the profile and reconnects through the chosen node — this is the "switch to
+/// the profile and reconnects through the chosen node. This is the "switch to
 /// a better IP" control.
 class NodeListScreen extends StatefulWidget {
   const NodeListScreen({super.key, required this.profileId});
@@ -991,36 +991,59 @@ class _NodeRow extends StatelessWidget {
       ..._nodeDetail(node),
     ];
 
+    // A calm left rail marks the pinned exit (indigo) or, more strongly, the
+    // node carrying traffic right now (green). The 3px is always reserved in
+    // the border box so a row never shifts sideways when the rail lights up.
+    final Color rail = active
+        ? NovaSemantics.connectGreen
+        : (selected ? nova.indigo : Colors.transparent);
+
     return Material(
-      color: selected ? nova.indigo.withValues(alpha: 0.07) : Colors.transparent,
+      color: selected ? nova.indigo.withValues(alpha: 0.06) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Semantics(
           selected: selected,
           child: Container(
-            decoration: showDivider
-                ? BoxDecoration(
-                    border: Border(bottom: BorderSide(color: nova.border)))
-                : null,
-            padding: const EdgeInsets.symmetric(
-                horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(color: rail, width: 3),
+                bottom: showDivider
+                    ? BorderSide(color: nova.border)
+                    : BorderSide.none,
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(
+                NovaSpace.lg - 3, NovaSpace.md, NovaSpace.lg, NovaSpace.md),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                SizedBox(
-                  width: 30,
+                // A country token: the flag (or a globe for a fronted/unknown
+                // address) on its own quiet surface, so the leading column
+                // keeps a steady rhythm down the list.
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: nova.surface,
+                    borderRadius: NovaRadii.smR,
+                    border: Border.all(color: nova.border),
+                  ),
                   child: cc.isNotEmpty
                       ? Text(_flagEmoji(cc),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 22))
-                      : Icon(Icons.public_rounded,
-                          color: nova.muted, size: 22),
+                          style: const TextStyle(fontSize: 20, height: 1))
+                      : Icon(Icons.public_rounded, color: nova.muted, size: 20),
                 ),
                 const SizedBox(width: NovaSpace.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      // Primary line: the protocol tag and the node's name. The
+                      // name follows the ambient direction, so a Farsi name
+                      // reads right-to-left and a Latin one left-to-right, each
+                      // ellipsizing on its own trailing edge.
                       Row(
                         children: <Widget>[
                           _ProtoBadge(protocol: node.protocol),
@@ -1029,42 +1052,53 @@ class _NodeRow extends StatelessWidget {
                             child: Text(primary,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: text.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w600)),
+                                style: text.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.15,
+                                    letterSpacing: -0.1)),
                           ),
                         ],
                       ),
-                      const SizedBox(height: NovaSpace.xs),
-                      // The address stays LTR even in Farsi: a mirrored
-                      // host:port is unreadable.
+                      const SizedBox(height: 5),
+                      // Secondary line: the address (always LTR) trailed by the
+                      // quiet transport chips. Wraps tidily on a narrow screen
+                      // instead of fighting the name for width.
                       Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 6,
+                        spacing: NovaSpace.sm,
                         runSpacing: 4,
                         children: <Widget>[
                           Directionality(
                             textDirection: TextDirection.ltr,
                             child: Text(addr,
-                                style: text.bodySmall
-                                    ?.copyWith(color: nova.muted)),
+                                style: text.bodySmall?.copyWith(
+                                  color: nova.muted,
+                                  fontWeight: FontWeight.w500,
+                                  fontFeatures: const <FontFeature>[
+                                    FontFeature.tabularFigures()
+                                  ],
+                                )),
                           ),
                           for (final String t in transport) _MiniTag(text: t),
                         ],
                       ),
                       if (detail.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 3),
-                        // One line, each part truncating on its own, so a
-                        // long SNI host never pushes the row to five lines.
+                        const SizedBox(height: 4),
+                        // Tertiary line: the deep TLS details, kept to one dim
+                        // line. Each part truncates on its own so a long SNI
+                        // host never grows the row.
                         Row(
                           children: <Widget>[
                             for (int i = 0; i < detail.length; i++) ...<Widget>[
-                              if (i > 0) const SizedBox(width: NovaSpace.md),
+                              if (i > 0) const SizedBox(width: NovaSpace.sm),
                               Flexible(
                                 child: Text(detail[i],
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: text.labelSmall
-                                        ?.copyWith(color: nova.muted)),
+                                    style: text.labelSmall?.copyWith(
+                                        color:
+                                            nova.muted.withValues(alpha: 0.8),
+                                        height: 1.2)),
                               ),
                             ],
                           ],
@@ -1074,21 +1108,32 @@ class _NodeRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: NovaSpace.md),
-                _Verdict(
-                    probe: probe,
-                    coreDelayMs: coreDelayMs,
-                    coreTested: coreTested),
-                // The live green dot is the answer to "which one is connected":
-                // the auto-selector is routing through this node right now.
-                if (active) ...<Widget>[
-                  const SizedBox(width: NovaSpace.sm),
-                  Icon(Icons.circle, color: NovaSemantics.connectGreen, size: 10),
-                ],
-                if (selected) ...<Widget>[
-                  const SizedBox(width: NovaSpace.sm),
-                  Icon(Icons.check_circle_rounded,
-                      color: nova.indigo, size: 20),
-                ],
+                // The verdict sits in a reserved slot so the latency figures
+                // line up as a column the eye can run straight down.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 54),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _Verdict(
+                        probe: probe,
+                        coreDelayMs: coreDelayMs,
+                        coreTested: coreTested),
+                  ),
+                ),
+                // A fixed trailing zone for the pinned / live marks, so their
+                // presence never nudges the verdict column. A green rail
+                // already flags the live node, so the check wins the slot when
+                // a node is both pinned and carrying traffic.
+                SizedBox(
+                  width: 24,
+                  child: selected
+                      ? Icon(Icons.check_circle_rounded,
+                          color: nova.indigo, size: 20)
+                      : (active
+                          ? const Icon(Icons.circle,
+                              color: NovaSemantics.connectGreen, size: 9)
+                          : null),
+                ),
               ],
             ),
           ),
@@ -1123,19 +1168,19 @@ class _ProtoBadge extends StatelessWidget {
     final nova = context.nova;
     final Color c = _color(nova);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(5),
+        color: c.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         protocol.label.toUpperCase(),
         style: TextStyle(
             color: c,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
             fontSize: 10,
-            height: 1.2,
-            letterSpacing: 0.4),
+            height: 1.1,
+            letterSpacing: 0.6),
       ),
     );
   }
@@ -1151,9 +1196,9 @@ class _MiniTag extends StatelessWidget {
   Widget build(BuildContext context) {
     final nova = context.nova;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
         color: nova.surface2,
       ),
       child: Text(text,
@@ -1161,7 +1206,8 @@ class _MiniTag extends StatelessWidget {
               color: nova.muted,
               fontWeight: FontWeight.w600,
               fontSize: 10,
-              height: 1.2)),
+              height: 1.1,
+              letterSpacing: 0.2)),
     );
   }
 }
@@ -1194,28 +1240,15 @@ class _Verdict extends StatelessWidget {
     final NovaStrings s = NovaStrings.of(context);
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
-    // A live figure from the core (through the actual tunnel) is the truest
-    // verdict, so it leads whenever the tunnel is up and reporting for this node.
+    // A live figure from the running core (measured through the actual tunnel,
+    // bypass included) is the truest verdict, so it leads when present. A bolt,
+    // not a check: measured live right now is a stronger claim than "reachable".
     final int? live = coreDelayMs;
     if (live != null) {
-      final Color c = NovaSemantics.ping(live);
-      return _VerdictPill(
-        label: '$live ms',
-        color: c,
-        // A bolt, not the outside probe's check: this is measured live through
-        // the tunnel right now, which is a stronger claim than "reachable".
-        icon: Icons.bolt_rounded,
-        filled: true,
-        style: text.labelMedium?.copyWith(
-          color: c,
-          fontWeight: FontWeight.w700,
-          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-        ),
-      );
+      return _LatencyBadge(ms: live, icon: Icons.bolt_rounded, filled: true);
     }
-    // The core tried this node through the tunnel and it did not answer. That is
-    // an honest verdict on a dead/unusable exit, and the reason a node keeps
-    // reading "not testable" would be misleading here: it WAS tested.
+    // The core tried this node through the tunnel and got nothing back: an
+    // honest "no response", not the misleading "not testable" (it WAS tested).
     if (coreTested) {
       return _VerdictPill(
         label: s.nodeNoResponse,
@@ -1225,8 +1258,8 @@ class _Verdict extends StatelessWidget {
     final NodeProbeResult? p = probe;
     if (p == null) {
       return const SizedBox(
-        width: 14,
-        height: 14,
+        width: 15,
+        height: 15,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
     }
@@ -1238,49 +1271,118 @@ class _Verdict extends StatelessWidget {
           filled: true,
         );
       case NodeProbeQuality.untestable:
-        return _VerdictPill(label: s.nodeUntested, color: nova.muted);
+        // The quietest verdict of all: a node you cannot judge from outside a
+        // tunnel is not a problem, so it whispers in muted text rather than
+        // wearing a pill that would read as an alarm.
+        return Text(
+          s.nodeUntested,
+          textAlign: TextAlign.end,
+          style: text.labelSmall?.copyWith(
+              color: nova.muted, fontWeight: FontWeight.w500, height: 1.1),
+        );
       case NodeProbeQuality.proxied:
       case NodeProbeQuality.handshake:
         final int ms = p.latencyMs ?? 0;
-        final Color c = NovaSemantics.ping(ms);
         final bool proven = p.quality == NodeProbeQuality.proxied;
-        return _VerdictPill(
-          label: '$ms ms',
-          color: c,
+        // Proven traffic gets the verified mark on a tinted pill; a
+        // handshake-only figure stays plain so it does not overclaim.
+        return _LatencyBadge(
+          ms: ms,
           icon: proven ? Icons.verified_rounded : null,
           filled: proven,
-          style: text.labelMedium?.copyWith(
-            color: c,
-            fontWeight: proven ? FontWeight.w700 : FontWeight.w600,
-            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-          ),
         );
     }
   }
 }
 
+/// A latency reading rendered as a confident, tabular figure: the number leads
+/// at full weight, the "ms" unit is demoted to the same hue at lower emphasis,
+/// and both take the ping color (green fast, amber middling, red slow). A
+/// proven or live reading also earns a tinted pill and a leading mark; a
+/// handshake-only number stays plain so it never looks stronger than it is.
+class _LatencyBadge extends StatelessWidget {
+  const _LatencyBadge({required this.ms, this.icon, this.filled = false});
+
+  final int ms;
+  final IconData? icon;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color c = NovaSemantics.ping(ms);
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: filled ? NovaSpace.sm : 0, vertical: 3),
+      decoration: filled
+          ? BoxDecoration(
+              color: c.withValues(alpha: 0.13),
+              borderRadius: NovaRadii.iconChipR,
+            )
+          : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Icon(icon, size: 14, color: c),
+            const SizedBox(width: 4),
+          ],
+          // "42 ms" is a Latin run, held LTR so it is never mirrored in Farsi.
+          Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: '$ms',
+                  style: TextStyle(
+                    color: c,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    height: 1,
+                    letterSpacing: -0.2,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures()
+                    ],
+                  ),
+                ),
+                TextSpan(
+                  text: ' ms',
+                  style: TextStyle(
+                    color: c.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 10.5,
+                    height: 1,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+            textDirection: TextDirection.ltr,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A short word verdict on a tint: "blocked" (red) or "no response" (amber).
+/// Filled so the word reads as a state, never colour alone; the latency figures
+/// use [_LatencyBadge] instead.
 class _VerdictPill extends StatelessWidget {
   const _VerdictPill({
     required this.label,
     required this.color,
-    this.icon,
     this.filled = false,
-    this.style,
   });
 
   final String label;
   final Color color;
-  final IconData? icon;
   final bool filled;
-  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle base = style ??
-        Theme.of(context).textTheme.labelMedium!.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
-            );
+    final TextStyle base = Theme.of(context).textTheme.labelMedium!.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        );
     return Container(
       padding: EdgeInsets.symmetric(
           horizontal: filled ? NovaSpace.sm : 0, vertical: 4),
@@ -1290,17 +1392,9 @@ class _VerdictPill extends StatelessWidget {
               borderRadius: NovaRadii.iconChipR,
             )
           : null,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (icon != null) ...<Widget>[
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 4),
-          ],
-          // "14 ms" is a Latin run; a lone Farsi word is unaffected by LTR.
-          Text(label, style: base, textDirection: TextDirection.ltr),
-        ],
-      ),
+      // A lone Farsi word ("مسدود") is unaffected by the LTR hint, and an
+      // English word stays upright too.
+      child: Text(label, style: base, textDirection: TextDirection.ltr),
     );
   }
 }
