@@ -3,6 +3,7 @@ import Foundation
 import Novacore
 import NetworkExtension
 import CoreTelephony
+import WidgetKit
 
 /// iOS implementation of the `nova.proxy/control` MethodChannel + `nova.proxy/events`
 /// EventChannel that the Flutter `SingboxProxyController` drives. It manages the
@@ -53,6 +54,9 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       // Present only for an xhttp node: the Xray core config the extension runs
       // alongside the sing-box TUN->SOCKS bridge.
       let xrayConfig = args["xrayConfigJson"] as? String
+      // Cosmetic profile name for the home-screen widget.
+      profileLabel = (args["label"] as? String)?.isEmpty == false
+        ? (args["label"] as? String) : nil
       start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
             result: result)
     case "stop":
@@ -210,6 +214,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   @objc private func statusChanged() {
     let status = manager?.connection.status ?? .invalid
     emit(["type": "state", "value": stateName(status)])
+    publishWidgetState(stateName(status))
     // Attach/detach the libbox status client so the dashboard gets live
     // download/upload throughput, not a frozen zero.
     switch status {
@@ -471,6 +476,24 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     case .connecting, .reasserting: return "connecting"
     case .disconnecting: return "disconnecting"
     default: return "disconnected"
+    }
+  }
+
+  // MARK: - Home-screen widget
+
+  /// The active profile name, shown by the widget. Set on start; cosmetic.
+  private var profileLabel: String?
+
+  /// Mirror the tunnel state (and profile name) into the shared App Group so the
+  /// WidgetKit extension can render it, then ask WidgetKit to refresh. The widget
+  /// is a separate process, so this shared defaults store is how it learns the
+  /// state; it never touches the tunnel itself.
+  private func publishWidgetState(_ state: String) {
+    let defaults = UserDefaults(suiteName: Self.appGroup)
+    defaults?.set(state, forKey: "nova.widget.state")
+    defaults?.set(profileLabel, forKey: "nova.widget.label")
+    if #available(iOS 14.0, *) {
+      WidgetCenter.shared.reloadAllTimelines()
     }
   }
 
