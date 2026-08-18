@@ -19,7 +19,7 @@ import 'l10n/nova_strings.dart';
 import 'theme/nova_theme.dart';
 import 'theme/theme_controller.dart';
 import 'widgets/nova_app_shell.dart';
-import 'widgets/nova_logo.dart';
+import 'widgets/nova_splash.dart';
 import 'widgets/nova_scope.dart';
 
 /// The Nova Client application root. Owns the long-lived controllers, exposes
@@ -104,14 +104,26 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
 
+  // Hold the branded splash for a short minimum so its tagline is actually seen,
+  // instead of flashing past the instant prefs finish loading.
+  bool _minSplash = true;
+  Timer? _splashTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Sync the real tunnel state once the tree is up (covers cold launch while
-    // the VPN is already running).
+    // Start the minimum-splash hold only AFTER the first frame actually paints.
+    // Measuring it from initState would race the first build on a slow cold
+    // start (the timer and the frame come due together on the one isolate), so
+    // the splash could flash past unseen. Post-frame guarantees a full hold from
+    // the moment the splash is on screen.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) NovaScope.of(context).proxy.syncStatus();
+      if (!mounted) return;
+      NovaScope.of(context).proxy.syncStatus();
+      _splashTimer = Timer(const Duration(milliseconds: 1400), () {
+        if (mounted) setState(() => _minSplash = false);
+      });
     });
     _initDeepLinks();
   }
@@ -119,6 +131,7 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _splashTimer?.cancel();
     _linkSub?.cancel();
     super.dispose();
   }
@@ -189,8 +202,8 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: widget.theme,
       builder: (context, _) {
-        if (!widget.theme.loaded) {
-          return const Scaffold(body: Center(child: NovaLogo(size: 72)));
+        if (!widget.theme.loaded || _minSplash) {
+          return const NovaSplash();
         }
         if (!widget.theme.onboarded) {
           return NovaOnboarding(
