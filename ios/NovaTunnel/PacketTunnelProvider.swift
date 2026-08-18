@@ -107,11 +107,24 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   /// Notification Center with no permission prompt.
   private func notifyIfUnexpected(_ reason: NEProviderStopReason) {
     switch reason {
-    case .userInitiated, .superceded, .userLogout, .userSwitch, .configurationDisabled,
-         .configurationRemoved, .configurationChanged, .noNetworkAvailable:
-      // Expected, user-driven, or a transient network change iOS will retry.
+    case .userInitiated,        // they tapped Disconnect
+         .superceded,           // replaced by a newer connection
+         .userLogout,
+         .userSwitch,
+         .configurationDisabled,
+         .configurationRemoved,
+         .noNetworkAvailable,   // transient; iOS brings it back
+         .sleep,                // device slept
+         .appUpdate,            // the app is being updated
+         .idleTimeout:          // on-demand let an idle tunnel go
+      // Expected, or user-driven. Saying "you are unprotected" here would be
+      // both wrong and constant.
       return
     default:
+      // providerFailed, connectionFailed, unrecoverableNetworkChange,
+      // configurationFailed, internalError and friends: the tunnel went down
+      // and the user did not ask for it, which is the case worth telling them
+      // about.
       break
     }
     let content = UNMutableNotificationContent()
