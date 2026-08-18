@@ -2,6 +2,7 @@ import Foundation
 import Novacore
 import Network
 import NetworkExtension
+import UserNotifications
 // sing-box 1.13's libbox references UIKit (UIApplication background-task APIs)
 // that 1.12 did not. The extension's own Swift never touches UIKit, but importing
 // it here auto-links UIKit.framework so the libbox symbols resolve at link time.
@@ -83,7 +84,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     commandServer = server
   }
 
-  override func stopTunnel(with _: NEProviderStopReason) async {
+  override func stopTunnel(with reason: NEProviderStopReason) async {
     pathMonitor?.cancel()
     pathMonitor = nil
     try? commandServer?.closeService()
@@ -95,6 +96,34 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       _ = NovaxrayStop()
     }
     xrayLogSink = nil
+    notifyIfUnexpected(reason)
+  }
+
+  /// iOS already shows the system VPN pill on connect, so the only notification
+  /// worth posting is an unexpected drop: the moment traffic stops being
+  /// protected without the user asking for it. A user-initiated stop (they hit
+  /// Disconnect, switched servers, signed out, or the config was replaced) stays
+  /// silent. Delivered with provisional authorization so it lands quietly in
+  /// Notification Center with no permission prompt.
+  private func notifyIfUnexpected(_ reason: NEProviderStopReason) {
+    switch reason {
+    case .userInitiated, .superceded, .userLogout, .userSwitch, .configurationDisabled,
+         .configurationRemoved, .configurationChanged, .noNetworkAvailable:
+      // Expected, user-driven, or a transient network change iOS will retry.
+      return
+    default:
+      break
+    }
+    let content = UNMutableNotificationContent()
+    content.title = "Nova disconnected"
+    content.body = "Your traffic is no longer protected. Open Nova to reconnect."
+    content.sound = nil
+    let request = UNNotificationRequest(
+      identifier: "nova.vpn.dropped",
+      content: content,
+      trigger: nil,
+    )
+    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
   }
 
   private lazy var commandServerHandler = CommandServerHandler(provider: self)
