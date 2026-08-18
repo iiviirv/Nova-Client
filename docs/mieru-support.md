@@ -31,6 +31,22 @@ Build scripts to touch: `build-combined-core.sh` (Android AAR),
 `build-combined-core-ios.sh` (iOS xcframework), `build-desktop.sh` (desktop CLI).
 Same three cores as the AmneziaWG + Xray work.
 
+## Confirmed sing-box outbound (from mbox, verified via the GitHub API)
+
+- `protocol/mieru/outbound.go` (277 lines, `package mieru`, self-contained;
+  imports `github.com/enfein/mieru/v3/apis/*`).
+- `option/mieru.go` -> `MieruOutboundOptions`: embeds `DialerOptions` +
+  `ServerOptions`, plus `server_ports` (Listable[string]), `transport`
+  (TCP/UDP), `username`, `password`, `multiplexing`, `traffic_pattern`.
+- Registered in `include/registry.go` via `mieru.RegisterOutbound(registry)`.
+- go.mod dep: `github.com/enfein/mieru/v3 v3.36.0` (mbox is sing-box 1.13-based,
+  matching Nova's v1.13.13).
+
+So the emitted sing-box outbound JSON is:
+`{"type":"mieru","tag":"proxy","server":H,"server_port":P,"transport":"TCP|UDP",
+"username":U,"password":PW,"multiplexing":"MULTIPLEXING_LOW|...","traffic_pattern":...}`
+(`server_ports` for port ranges/multi-port).
+
 ## The `mieru://` / `mierus://` URI formats (from enfein/mieru discussion #60)
 
 - **Standard**: `mieru://<base64>` where the base64 is the full mieru client
