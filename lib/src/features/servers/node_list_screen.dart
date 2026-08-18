@@ -1045,16 +1045,21 @@ class _NodeRow extends StatelessWidget {
                       // reads right-to-left and a Latin one left-to-right, each
                       // ellipsizing on its own trailing edge.
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          _ProtoBadge(protocol: node.protocol),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1),
+                            child: _ProtoBadge(protocol: node.protocol),
+                          ),
                           const SizedBox(width: NovaSpace.sm),
                           Expanded(
                             child: Text(primary,
-                                maxLines: 1,
+                                maxLines: 2,
+                                softWrap: true,
                                 overflow: TextOverflow.ellipsis,
                                 style: text.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w600,
-                                    height: 1.15,
+                                    height: 1.2,
                                     letterSpacing: -0.1)),
                           ),
                         ],
