@@ -235,8 +235,28 @@ jobs:
       # stored as the IRNOVA_TOKEN secret; the default GITHUB_TOKEN only reaches
       # this source repo. Auto-notes are off because that repo has no source
       # history to derive them from; the body comes from body_path (CHANGELOG).
-      - name: Attach APK to the IRNova release
+      # Publish to THIS repo first, with the built-in GITHUB_TOKEN. This is the
+      # canonical release channel: it is the repo IzzyOnDroid tracks (their
+      # updater reads the APK off the source repo's releases), and it does not
+      # depend on a cross-org PAT that can expire.
+      - name: Publish the release here
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: dist/*.apk
+          body_path: notes.md
+          generate_release_notes: false
+
+      # Mirror to the IRNova/Nova-Client repo (binaries only, no source), which
+      # is where novaproxy.online's download links point. This needs a PAT with
+      # release-write on that repo, stored as IRNOVA_TOKEN; the default
+      # GITHUB_TOKEN only reaches this source repo. Non-fatal on purpose: an
+      # expired PAT must not fail a release that already published above, it
+      # should just show up as a skipped mirror to be fixed.
+      - name: Mirror the APK to the IRNova release
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           repository: IRNova/Nova-Client

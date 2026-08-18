@@ -82,8 +82,22 @@ jobs:
         shell: bash
         run: bash tool/release_notes.sh "${GITHUB_REF_NAME}" CHANGELOG.md > notes.md
 
-      - name: Attach Windows build to the IRNova release
+      # Publish here first with the built-in token, so a release always lands
+      # even if the cross-org PAT below has expired.
+      - name: Publish the Windows build here
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: Nova-Windows.zip
+          body_path: notes.md
+          generate_release_notes: false
+
+      # Mirror to IRNova (where the website's download links point). Non-fatal:
+      # an expired IRNOVA_TOKEN must not fail an otherwise good release.
+      - name: Mirror the Windows build to the IRNova release
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           repository: IRNova/Nova-Client
