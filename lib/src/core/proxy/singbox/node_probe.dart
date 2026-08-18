@@ -213,6 +213,16 @@ Future<NodeProbeResult> _probeStreamNode(
     return const NodeProbeResult.untestable(
         'this transport cannot be tested without connecting');
   }
+  if (transport == 'xhttp') {
+    // xhttp (SplitHTTP) is an Xray-only transport; this prober speaks sing-box's
+    // stream transports, not Xray's. A raw TLS probe here misreads xhttp as a
+    // dead node ("did not carry the test request"). It runs through the Xray
+    // socks bridge and is measured live when the tunnel is up (the auto-pool
+    // pings it there), so say that plainly instead of spending a connection to
+    // reach a wrong verdict.
+    return const NodeProbeResult.untestable(
+        'xhttp is verified when you connect');
+  }
   if (!n.tls && transport != 'ws' && transport != 'httpupgrade') {
     // Plaintext TCP with no application handshake we can speak: a completed
     // connect is the exact measurement that was lying before.
