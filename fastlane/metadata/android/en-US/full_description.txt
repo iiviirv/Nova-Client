@@ -18,4 +18,4 @@ FEATURES
 
 Nova bundles and sells nothing. Its networking layer is built on widely used
 open-source components, with original scanning, deployment, and interface on
-top. The app is MIT-licensed; the source is at github.com/iiviirv/Nova-Client.
+top. The app is licensed under GPL-3.0 (it builds on sing-box); the source is at github.com/iiviirv/Nova-Client.
