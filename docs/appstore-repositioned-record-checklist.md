@@ -69,3 +69,31 @@ store submission is pending or uncertain.
 
 Sideload / AltStore, and EU alternative marketplaces. Keep these open; per the
 package, treat the App Store itself as a maybe even with everything above done.
+
+---
+
+## 2026-08-18: rename parked, TestFlight unblocked
+
+The Nova Edge rename targets a bundle id that cannot be registered until the
+organization account exists, so any build made from it is unsignable and
+unuploadable today. That was blocking iOS entirely while Android and macOS
+shipped v1.11.0-beta.
+
+Decision: **ship iOS through TestFlight on the existing record** meanwhile.
+TestFlight has no Guideline 4.3 gate, and app record `6785367637` already has
+**1,766 external testers** on the `online.novaproxy.novaClient` id.
+
+- `main` builds the OLD identity again (bundle ids, App Group, display name).
+  See the commit "ios: build against the existing app record's bundle id again".
+- The rename is preserved **verbatim** on branch **`ios/nova-edge-rename`**.
+  Nothing is lost; merge it back when the org account is approved.
+- Android and macOS identity were never touched by either change.
+
+### When the org account lands
+
+1. Merge `ios/nova-edge-rename` into `main`.
+2. Register `tech.innovatenorth.novaedge` + `group.tech.innovatenorth.novaedge`
+   on the org account, and add the `NovaWidget` target (`docs/ios-widget.md`).
+3. Create the new app record and submit per this checklist.
+4. Existing TestFlight testers do NOT carry over to a new record; plan the
+   re-invite before switching them off the old build.
