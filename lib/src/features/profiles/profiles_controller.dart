@@ -30,9 +30,39 @@ class ProfilesController extends ChangeNotifier {
     return null;
   }
 
+  /// Profiles added, and ids removed, while [_prefs] was still null. The app
+  /// runs for a moment before SharedPreferences resolves; a deep-link import or
+  /// a quick user action in that window used to be wiped by [_load] the
+  /// instant prefs arrived (and a removal in that window came back). Replayed
+  /// on top of the persisted list in [attachPrefs], then persisted.
+  final List<ProxyProfile> _addedBeforePrefs = <ProxyProfile>[];
+  final Set<String> _removedBeforePrefs = <String>{};
+  String? _activeBeforePrefs;
+
   void attachPrefs(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
+    bool replayed = false;
+    if (_removedBeforePrefs.isNotEmpty) {
+      _profiles.removeWhere((p) => _removedBeforePrefs.contains(p.id));
+      replayed = true;
+    }
+    for (final ProxyProfile p in _addedBeforePrefs) {
+      if (_profiles.any((q) => q.id == p.id)) continue;
+      _profiles.add(p);
+      replayed = true;
+    }
+    if (_activeBeforePrefs != null &&
+        _profiles.any((p) => p.id == _activeBeforePrefs)) {
+      _activeId = _activeBeforePrefs;
+      _prefs?.setString(_kActiveKey, _activeId!);
+    } else if (_activeId == null && _profiles.isNotEmpty) {
+      _activeId = _profiles.first.id;
+    }
+    _addedBeforePrefs.clear();
+    _removedBeforePrefs.clear();
+    _activeBeforePrefs = null;
+    if (replayed) _persist();
     notifyListeners();
   }
 
@@ -74,6 +104,7 @@ class ProfilesController extends ChangeNotifier {
 
   void setActive(String id) {
     _activeId = id;
+    if (_prefs == null) _activeBeforePrefs = id;
     notifyListeners();
     _prefs?.setString(_kActiveKey, id);
   }
@@ -81,12 +112,20 @@ class ProfilesController extends ChangeNotifier {
   void add(ProxyProfile profile) {
     _profiles.add(profile);
     _activeId ??= profile.id;
+    if (_prefs == null) {
+      _addedBeforePrefs.add(profile);
+      _removedBeforePrefs.remove(profile.id);
+    }
     notifyListeners();
     _persist();
   }
 
   void remove(String id) {
     _profiles.removeWhere((p) => p.id == id);
+    if (_prefs == null) {
+      _removedBeforePrefs.add(id);
+      _addedBeforePrefs.removeWhere((p) => p.id == id);
+    }
     if (_activeId == id) {
       _activeId = _profiles.isNotEmpty ? _profiles.first.id : null;
       if (_activeId != null) _prefs?.setString(_kActiveKey, _activeId!);

@@ -119,8 +119,17 @@ class _ServersBodyState extends State<ServersBody> {
         for (final ProxyProfile profile in all) {
           _scheduleProfileMetadata(profiles, profile);
         }
+        // A filter for a kind that no longer exists (the user filtered to
+        // AmneziaWG, then deleted the only AmneziaWG config) would hide every
+        // remaining profile while the chip that could clear it is gone too:
+        // that read as "deleting my AWG config deleted my subscriptions".
+        // Treat a stale filter as All.
+        final ProxyKind? filter =
+            (_filter != null && all.any((p) => p.kind == _filter))
+                ? _filter
+                : null;
         final List<ProxyProfile> shown = all.where((p) {
-          if (_filter != null && p.kind != _filter) return false;
+          if (filter != null && p.kind != filter) return false;
           if (_query.isEmpty) return true;
           return p.name.toLowerCase().contains(_query.toLowerCase());
         }).toList();
@@ -139,13 +148,17 @@ class _ServersBodyState extends State<ServersBody> {
           if (kinds.length > 1) ...<Widget>[
             _FilterChips(
               kinds: kinds,
-              selected: _filter,
+              selected: filter,
               onChanged: (k) => setState(() => _filter = k),
             ),
             const SizedBox(height: NovaSpace.xs),
           ],
           for (final p in shown)
             Padding(
+              // Keyed by profile id so a row's State (the open overflow menu,
+              // for one) can never be handed to a neighbouring profile when the
+              // list shifts underneath it.
+              key: ValueKey<String>('server-row-${p.id}'),
               padding: const EdgeInsets.only(bottom: 10),
               child: _ServerRow(
                 profile: p,
@@ -154,7 +167,7 @@ class _ServersBodyState extends State<ServersBody> {
                 onSelect: () => _select(context, p),
                 onExtract: () => _openNodes(context, p),
                 onEdit: () => _editProfile(context, profiles, p),
-                onDelete: () => profiles.remove(p.id),
+                onDelete: () => _confirmDelete(context, profiles, p),
                 onManage: _panelFor(p) == null
                     ? null
                     : () => _vps!.openAdminFor(context, _panelFor(p)!),
@@ -218,6 +231,36 @@ class _ServersBodyState extends State<ServersBody> {
       ),
     );
     if (switching) unawaited(scope.proxy.reconnect());
+  }
+
+  /// Delete after a confirmation that names the profile, so a mis-tap on a
+  /// neighbouring row's menu cannot silently remove the wrong one.
+  Future<void> _confirmDelete(
+      BuildContext context, ProfilesController profiles, ProxyProfile p) async {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: nova.bgAlt,
+        shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
+        title: Text(s.serversDelete),
+        content: Text(s.serversDeleteConfirm(p.name)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: nova.danger),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.serversDelete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    profiles.remove(p.id);
   }
 
   /// Edit a profile's name and URL/link in place.

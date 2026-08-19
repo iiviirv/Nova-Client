@@ -679,6 +679,8 @@ class NovaStrings {
       t('servers.using').replaceFirst('{name}', name);
   String switchingProfile(String name) =>
       t('servers.switching').replaceFirst('{name}', name);
+  String serversDeleteConfirm(String name) =>
+      t('servers.deleteConfirm').replaceFirst('{name}', name);
 
   // ---- Node list ----
   String get nodeAuto => t('node.auto');
@@ -1083,6 +1085,8 @@ class NovaStrings {
     'servers.extract': 'Extract configs',
     'servers.edit': 'Edit',
     'servers.delete': 'Delete',
+    'servers.deleteConfirm':
+        'Remove "{name}" from your servers? Its saved servers go with it.',
     'servers.empty': 'No servers yet',
     'servers.emptySub':
         'Deploy your own panel, sign in to one, or add a config to get started.',
@@ -1779,6 +1783,8 @@ class NovaStrings {
     'servers.extract': 'استخراج پیکربندی‌ها',
     'servers.edit': 'ویرایش',
     'servers.delete': 'حذف',
+    'servers.deleteConfirm':
+        '«\u2066{name}\u2069» از سرورها حذف شود؟ سرورهای ذخیره‌شده‌اش هم حذف می‌شوند.',
     'servers.empty': 'هنوز سروری نیست',
     'servers.emptySub':
         'برای شروع، پنل خودتان را مستقر کنید، به یک پنل وارد شوید، یا یک پیکربندی اضافه کنید.',
