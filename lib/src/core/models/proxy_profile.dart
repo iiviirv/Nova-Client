@@ -12,6 +12,14 @@ enum ProxyKind {
   awg,
   socks,
   http,
+  // Added 2026-08-19: single links of these schemes used to be saved under
+  // whatever pill was selected (a hysteria2:// link became a "Subscription"),
+  // which mislabelled the row and muddled the add flow's kind logic. New
+  // values go at the end: persisted profiles store the enum by name, so
+  // order is free, but unknown names in an old build fall back to vless.
+  hysteria2,
+  vmess,
+  tuic,
 }
 
 /// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
@@ -28,6 +36,9 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.awg => 'AmneziaWG',
         ProxyKind.socks => 'SOCKS',
         ProxyKind.http => 'HTTP',
+        ProxyKind.hysteria2 => 'Hysteria2',
+        ProxyKind.vmess => 'VMess',
+        ProxyKind.tuic => 'TUIC',
       };
 }
 

@@ -1124,6 +1124,11 @@ ProxyKind? _detectKind(String raw) {
   if (l.startsWith('vless://')) return ProxyKind.vless;
   if (l.startsWith('trojan://')) return ProxyKind.trojan;
   if (l.startsWith('ss://')) return ProxyKind.shadowsocks;
+  if (l.startsWith('hysteria2://') || l.startsWith('hy2://')) {
+    return ProxyKind.hysteria2;
+  }
+  if (l.startsWith('vmess://')) return ProxyKind.vmess;
+  if (l.startsWith('tuic://')) return ProxyKind.tuic;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
   // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
   if (l.startsWith('awg://') ||

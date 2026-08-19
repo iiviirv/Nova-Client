@@ -15,6 +15,7 @@ import 'package:nova_client/src/features/relay/relay_controller.dart';
 import 'package:nova_client/src/features/relay/tunnel_controller.dart';
 import 'package:nova_client/src/features/servers/servers_screen.dart';
 import 'package:nova_client/src/features/settings/settings_controller.dart';
+import 'package:nova_client/src/core/update/update_checker.dart';
 import 'package:nova_client/src/features/settings/settings_screen.dart';
 import 'package:nova_client/src/features/vps/vps_controller.dart';
 import 'package:nova_client/src/l10n/nova_strings.dart';
