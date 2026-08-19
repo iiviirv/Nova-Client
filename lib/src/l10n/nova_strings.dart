@@ -51,6 +51,14 @@ class NovaStrings {
   String get panelTitle => t('panel.title');
   String get panelOpen => t('panel.open');
   String get panelOpenSub => t('panel.openSub');
+  String get panelUrlLabel => t('panel.urlLabel');
+  String get panelUrlHint => t('panel.urlHint');
+  String get panelUrlHelp => t('panel.urlHelp');
+  String get panelShortcut => t('panel.shortcut');
+  String get panelShortcutSub => t('panel.shortcutSub');
+  String get panelTab => t('panel.tab');
+  String get panelLoadFailed => t('panel.loadFailed');
+  String get panelNotSet => t('panel.notSet');
 
   // ---- SNI-block bypass editor ----
   String get bypassEdit => t('bypass.edit');
@@ -1006,6 +1014,15 @@ class NovaStrings {
     'panel.title': 'Server panel',
     'panel.open': 'Open server panel',
     'panel.openSub': 'Manage your Nova panel in the app',
+    'panel.urlLabel': 'Panel address',
+    'panel.urlHint': 'https://your-panel.example.com/admin',
+    'panel.urlHelp':
+        'The full address of your Nova Server admin panel, including its secret path. It is not the same as your subscription link.',
+    'panel.shortcut': 'Show Panel on the dashboard',
+    'panel.shortcutSub': 'Adds a Panel tab next to Summary and Configs',
+    'panel.tab': 'Panel',
+    'panel.loadFailed': 'Could not open the panel',
+    'panel.notSet': 'Set your panel address in Settings first',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
     'common.add': 'Add',
@@ -1692,6 +1709,15 @@ class NovaStrings {
     'common.save': 'ذخیره',
     'panel.title': 'پنل سرور',
     'panel.open': 'باز کردن پنل سرور',
+    'panel.urlLabel': 'آدرس پنل',
+    'panel.urlHint': '\u2066https://your-panel.example.com/admin\u2069',
+    'panel.urlHelp':
+        'آدرس کامل پنل مدیریت سرور نوا، همراه با مسیر مخفی آن. این با لینک اشتراک شما یکی نیست.',
+    'panel.shortcut': 'نمایش پنل در داشبورد',
+    'panel.shortcutSub': 'یک تب «پنل» کنار خلاصه و کانفیگ‌ها اضافه می‌کند',
+    'panel.tab': 'پنل',
+    'panel.loadFailed': 'پنل باز نشد',
+    'panel.notSet': 'اول آدرس پنل را در تنظیمات وارد کنید',
     'panel.openSub': 'پنل نوای خود را داخل برنامه مدیریت کنید',
     'common.cancel': 'لغو',
     'common.reset': 'بازنشانی',

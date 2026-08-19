@@ -292,6 +292,12 @@ void main() {
           NovaScope.of(tester.element(find.byType(SettingsScreen))).theme;
       await tester.scrollUntilVisible(find.text('Light'), 200,
           scrollable: find.byType(Scrollable).first);
+      // scrollUntilVisible stops as soon as the pill is *built*, which on the
+      // 640px test surface can still be inside the list's cache extent just
+      // below the fold (the panel section above it made Settings taller).
+      // ensureVisible brings it fully on screen so the tap lands.
+      await tester.ensureVisible(find.text('Light'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Light'));
       await tester.pump();
       expect(theme.themeMode, ThemeMode.light);

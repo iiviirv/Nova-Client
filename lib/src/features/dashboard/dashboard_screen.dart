@@ -22,6 +22,7 @@ import '../cloudflare/cloudflare_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
 import '../radar/radar_screen.dart';
+import '../panel/open_panel.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
 
@@ -94,20 +95,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const _HomeHeader(),
             const SizedBox(height: NovaSpace.md),
             ListenableBuilder(
-              listenable: scope.profiles,
-              builder: (context, _) => NovaSegmentedTabs(
-                selected: _tab,
-                onChanged: (i) => setState(() => _tab = i),
-                segments: <NovaSegment>[
-                  NovaSegment(
-                      label: s.t('home.summary'), icon: Icons.home_rounded),
-                  NovaSegment(
-                    label: s.t('home.configs'),
-                    icon: Icons.grid_view_rounded,
-                    badge: scope.profiles.profiles.length,
-                  ),
-                ],
-              ),
+              listenable: Listenable.merge(
+                  <Listenable>[scope.profiles, scope.settings]),
+              builder: (context, _) {
+                // A third "Panel" segment when the user set a panel address and
+                // turned the shortcut on in Settings. It is a destination, not a
+                // view: tapping it opens the panel and the switcher stays where
+                // it was, so the dashboard never shows an empty third pane.
+                final Uri? panel = scope.settings.panelShortcut
+                    ? scope.settings.panelUri
+                    : null;
+                return NovaSegmentedTabs(
+                  selected: _tab,
+                  onChanged: (i) {
+                    if (panel != null && i == 2) {
+                      openPanel(context, panel);
+                      return;
+                    }
+                    setState(() => _tab = i);
+                  },
+                  segments: <NovaSegment>[
+                    NovaSegment(
+                        label: s.t('home.summary'), icon: Icons.home_rounded),
+                    NovaSegment(
+                      label: s.t('home.configs'),
+                      icon: Icons.grid_view_rounded,
+                      badge: scope.profiles.profiles.length,
+                    ),
+                    if (panel != null)
+                      NovaSegment(
+                          label: s.panelTab,
+                          icon: Icons.dashboard_rounded),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: NovaSpace.xs),
             const _UpdateBanner(),

@@ -11,13 +11,13 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
-import '../../core/models/proxy_profile.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../logs/log_screen.dart';
-import '../panel/panel_webview_screen.dart';
+import '../panel/open_panel.dart';
 import '../radar/radar_screen.dart';
 import '../relay/relay_screen.dart';
 import '../routing/routing_screen.dart';
+import 'settings_controller.dart';
 
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
@@ -41,9 +41,10 @@ class SettingsScreen extends StatelessWidget {
     final s = NovaStrings.of(context);
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
-    // A Nova Server panel lives at the root of the subscription's host, so offer
-    // to open it in-app when the active profile is a subscription with a URL.
-    final String? panelUrl = _panelUrlFor(NovaScope.of(context).profiles.active);
+    // The user's own panel address from Settings. It used to be guessed as the
+    // subscription host's root, which opened a 404: a Nova Server panel lives
+    // behind a secret admin path that a subscription URL does not reveal.
+    final SettingsController settings = NovaScope.of(context).settings;
 
     return ListenableBuilder(
       listenable: theme,
@@ -65,17 +66,8 @@ class SettingsScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
-                        if (panelUrl != null) ...<Widget>[
-                          _NavRow(
-                            icon: Icons.dashboard_rounded,
-                            color: nova.cyan,
-                            title: s.panelOpen,
-                            subtitle: s.panelOpenSub,
-                            onTap: () => _push(
-                                context, PanelWebviewScreen(url: panelUrl)),
-                          ),
-                          _div(nova.border),
-                        ],
+                        _PanelSettings(settings: settings),
+                        _div(nova.border),
                         _NavRow(
                           icon: Icons.alt_route_rounded,
                           color: nova.violet,
@@ -285,19 +277,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  /// The panel URL to open for [active]: the root of a subscription profile's
-  /// host (`https://panel.example.com/`), where a Nova Server panel serves its
-  /// admin UI. Null for a non-subscription or a URL we can't parse to an https
-  /// origin, so the row simply doesn't appear.
-  static String? _panelUrlFor(ProxyProfile? active) {
-    if (active == null || !active.isSubscription) return null;
-    final String raw = active.subscriptionUrl ?? '';
-    if (raw.isEmpty) return null;
-    final Uri? uri = Uri.tryParse(raw);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
-    if (uri.scheme != 'https' && uri.scheme != 'http') return null;
-    return uri.replace(path: '/', query: '', fragment: '').toString();
-  }
 }
 
 /// A group: an eyebrow over the card. The eyebrow is uppercased and tracked in
@@ -468,6 +447,89 @@ class _LinkTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Panel address + dashboard shortcut toggle + an Open row. The address is the
+/// user's, entered once; opening it goes through [openPanel], which embeds the
+/// page where a webview exists and hands off to the system browser on
+/// Windows/Linux (where `webview_flutter` has no backend and rendered a blank,
+/// exit-less grey surface).
+class _PanelSettings extends StatefulWidget {
+  const _PanelSettings({required this.settings});
+  final SettingsController settings;
+
+  @override
+  State<_PanelSettings> createState() => _PanelSettingsState();
+}
+
+class _PanelSettingsState extends State<_PanelSettings> {
+  late final TextEditingController _url =
+      TextEditingController(text: widget.settings.panelUrl);
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    return ListenableBuilder(
+      listenable: widget.settings,
+      builder: (BuildContext context, _) {
+        final Uri? uri = widget.settings.panelUri;
+        return Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // The address is always LTR, whatever the UI language.
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: TextField(
+                      controller: _url,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      onChanged: widget.settings.setPanelUrl,
+                      decoration: InputDecoration(
+                        labelText: s.panelUrlLabel,
+                        hintText: s.panelUrlHint,
+                        prefixIcon: const Icon(Icons.dashboard_rounded),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(s.panelUrlHelp,
+                      style: text.bodySmall?.copyWith(color: nova.muted)),
+                ],
+              ),
+            ),
+            SwitchListTile(
+              value: widget.settings.panelShortcut,
+              onChanged: uri == null ? null : widget.settings.setPanelShortcut,
+              secondary: Icon(Icons.space_dashboard_rounded, color: nova.cyan),
+              title: Text(s.panelShortcut, style: text.bodyMedium),
+              subtitle: Text(s.panelShortcutSub,
+                  style: text.bodySmall?.copyWith(color: nova.muted)),
+            ),
+            _NavRow(
+              icon: Icons.open_in_new_rounded,
+              color: nova.cyan,
+              title: s.panelOpen,
+              subtitle: uri == null ? s.panelNotSet : s.panelOpenSub,
+              onTap: uri == null ? () {} : () => openPanel(context, uri),
+            ),
+          ],
+        );
+      },
     );
   }
 }

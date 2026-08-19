@@ -59,6 +59,8 @@ class SettingsController extends ChangeNotifier {
   static const String _kAutoIsp = 'nova.isp.autoOptimize';
   static const String _kFingerprint = 'nova.tls.fingerprint';
   static const String _kVerboseLog = 'nova.log.verboseCore';
+  static const String _kPanelUrl = 'nova.panel.url';
+  static const String _kPanelShortcut = 'nova.panel.shortcut';
 
   SharedPreferences? _prefs;
 
@@ -118,6 +120,29 @@ class SettingsController extends ChangeNotifier {
   bool _verboseCoreLog = false;
   bool get verboseCoreLog => _verboseCoreLog;
 
+  /// The user's own Nova Server admin panel URL, entered in Settings. A panel
+  /// lives behind a secret admin path that cannot be derived from a
+  /// subscription URL, so guessing the subscription host's root (what the app
+  /// used to do) opened a 404. Empty means not configured.
+  String _panelUrl = '';
+  String get panelUrl => _panelUrl;
+
+  /// Show a "Panel" entry on the dashboard's top switcher next to Summary and
+  /// Configs, so the panel is one tap away. Only meaningful with [panelUrl].
+  bool _panelShortcut = false;
+  bool get panelShortcut => _panelShortcut;
+
+  /// A usable https/http origin+path from [panelUrl], or null if it is empty
+  /// or not a URL we can open.
+  Uri? get panelUri {
+    final String raw = _panelUrl.trim();
+    if (raw.isEmpty) return null;
+    final Uri? u = Uri.tryParse(raw.contains('://') ? raw : 'https://$raw');
+    if (u == null || u.host.isEmpty) return null;
+    if (u.scheme != 'https' && u.scheme != 'http') return null;
+    return u;
+  }
+
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
@@ -156,6 +181,8 @@ class SettingsController extends ChangeNotifier {
     _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
     _fingerprint = p.getString(_kFingerprint) ?? '';
     _verboseCoreLog = p.getBool(_kVerboseLog) ?? false;
+    _panelUrl = p.getString(_kPanelUrl) ?? '';
+    _panelShortcut = p.getBool(_kPanelShortcut) ?? false;
   }
 
   void attachPrefs(SharedPreferences prefs) {
@@ -201,6 +228,21 @@ class SettingsController extends ChangeNotifier {
     _verboseCoreLog = v;
     notifyListeners();
     await _prefs?.setBool(_kVerboseLog, v);
+  }
+
+  Future<void> setPanelUrl(String v) async {
+    final String t = v.trim();
+    if (t == _panelUrl) return;
+    _panelUrl = t;
+    notifyListeners();
+    await _prefs?.setString(_kPanelUrl, t);
+  }
+
+  Future<void> setPanelShortcut(bool v) async {
+    if (v == _panelShortcut) return;
+    _panelShortcut = v;
+    notifyListeners();
+    await _prefs?.setBool(_kPanelShortcut, v);
   }
 
   Future<void> setBypassIran(bool v) async {
