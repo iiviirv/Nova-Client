@@ -659,7 +659,13 @@ class SingboxConfig {
           'type': 'urltest',
           'tag': 'proxy',
           'outbounds': tags,
-          'url': 'https://www.gstatic.com/generate_204',
+          // Plain http on purpose: the test already rides inside the
+          // encrypted tunnel, and an https target adds a second TLS
+          // handshake (one more round trip through the proxy) to every
+          // measurement. That extra handshake, plus our fragmented ClientHello
+          // to the proxy, is why Nova's pings read far above Karing's for the
+          // same server; this takes the avoidable half out.
+          'url': 'http://www.gstatic.com/generate_204',
           // Re-test every 3 min so a node that degrades is dropped reasonably
           // soon, without hammering the exits.
           'interval': '3m0s',
