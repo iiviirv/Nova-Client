@@ -983,11 +983,14 @@ class _ConfigDialogState extends State<_ConfigDialog> {
     }
   }
 
+  /// Shown under the field; a snackbar would land behind the dialog's scrim.
+  String? _fieldError;
+
   void _notConf(NovaStrings s, {String? detail}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(detail == null ? s.awgNotConf : '${s.awgNotConf} ($detail)'),
-    ));
+    setState(() {
+      _fieldError = detail == null ? s.awgNotConf : '${s.awgNotConf} ($detail)';
+    });
   }
 
   @override
@@ -1006,6 +1009,9 @@ class _ConfigDialogState extends State<_ConfigDialog> {
       backgroundColor: context.nova.bgAlt,
       shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
       title: Text(title, style: Theme.of(context).textTheme.titleLarge),
+      // Scrollable: with the AmneziaWG field at eight lines and the keyboard
+      // up, the fixed layout let the action row paint over the pills.
+      scrollable: true,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -1025,9 +1031,14 @@ class _ConfigDialogState extends State<_ConfigDialog> {
             keyboardType: _kind == ProxyKind.awg
                 ? TextInputType.multiline
                 : TextInputType.url,
+            onChanged: (_) {
+              if (_fieldError != null) setState(() => _fieldError = null);
+            },
             decoration: InputDecoration(
               hintText: widget.uriHint,
               labelText: widget.uriLabel,
+              errorText: _fieldError,
+              errorMaxLines: 4,
             ),
           ),
           if (widget.showKindPills) ...<Widget>[

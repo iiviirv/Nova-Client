@@ -130,6 +130,9 @@ class SingboxProxyController extends ProxyController {
   /// [disconnect]).
   Timer? _stopWatchdog;
 
+  /// One automatic retry per session for a rule-set read error at startup.
+  bool _ruleSetRetried = false;
+
   /// Guards the auto-mode self-heal (a single rebuild of a subscription tunnel
   /// that came up but carries no traffic) so a genuinely dead subscription can't
   /// loop reconnecting forever. Reset on each user-initiated connect/disconnect.
@@ -271,6 +274,16 @@ class SingboxProxyController extends ProxyController {
             .write('Error: $_lastError', level: NovaLogLevel.error);
         _state = ProxyConnectionState.error;
         notifyListeners();
+        // A rule-set that failed to read at startup is transient (the file is
+        // complete on disk); one automatic retry beats showing the user an
+        // error they can only answer by tapping connect again.
+        final String msg = (_lastError ?? '').toLowerCase();
+        if (msg.contains('rule-set') && msg.contains('eof') && !_ruleSetRetried) {
+          _ruleSetRetried = true;
+          NovaLog.instance.write('Rule-set read failed at startup; retrying once');
+          unawaited(Future<void>.delayed(
+              const Duration(milliseconds: 400), connect));
+        }
     }
   }
 
@@ -383,8 +396,12 @@ class SingboxProxyController extends ProxyController {
     measuring.value = true;
     try {
       final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
-      final SingboxRouteOptions opts =
-          routeOptions.copyWith(hardenTls: _active?.hardenTls ?? false);
+      // Same rule-set source as the tunnel: the bundled .srs on disk. The
+      // default would fetch them from GitHub at startup, which is blocked in
+      // Iran, and the measuring core would never come up.
+      final SingboxRouteOptions opts = routeOptions.copyWith(
+          hardenTls: _active?.hardenTls ?? false,
+          localRuleSets: Platform.isAndroid);
       // xhttp nodes run on the Xray core, reached by the measuring core as
       // local socks exits, exactly as the tunnel's auto pool does. Without
       // this they read "not testable" even though they connect.
@@ -415,9 +432,14 @@ class SingboxProxyController extends ProxyController {
       coreHealth.value = CoreNodeHealth.empty;
       NovaLog.instance
           .write('Measuring ${built.tagKeys.length} servers through the core');
+      String configJson = jsonEncode(built.config);
+      if (Platform.isAndroid) {
+        final String base = await _extractRuleSets();
+        configJson = configJson.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      }
       final Object? raw = await _control.invokeMethod<Object?>('measure',
           <String, dynamic>{
-            'configJson': jsonEncode(built.config),
+            'configJson': configJson,
             'tags': built.tagKeys.keys.toList(),
             if (xrayJson != null) 'xrayConfigJson': xrayJson,
           }).timeout(const Duration(seconds: 90));
@@ -897,23 +919,33 @@ class SingboxProxyController extends ProxyController {
   /// sets (geosite-ir, geosite-ads) are extracted; that's what [localRuleSets]
   /// references.
   Future<String> _extractRuleSets() async {
-    final Directory dir = await getApplicationSupportDirectory();
-    for (final String file in <String>[
-      SingboxConfig.kGeositeIrFile,
-      SingboxConfig.kGeositeAdsFile,
-    ]) {
-      final File out = File('${dir.path}/$file');
-      final ByteData data = await rootBundle.load('assets/rulesets/$file');
-      final int len = data.lengthInBytes;
-      if (!out.existsSync() || out.lengthSync() != len) {
-        await out.writeAsBytes(
+    // Serialised: two connects racing through here (a fast server switch right
+    // after a fresh install) must not both write. And each write is atomic
+    // (temp file + rename): a core that opens the file mid-write would read a
+    // truncated stream and die with "parse rule-set: unexpected EOF", which
+    // was seen once on the first switch after a fresh install.
+    return _ruleSetLock.synchronized(() async {
+      final Directory dir = await getApplicationSupportDirectory();
+      for (final String file in <String>[
+        SingboxConfig.kGeositeIrFile,
+        SingboxConfig.kGeositeAdsFile,
+      ]) {
+        final File out = File('${dir.path}/$file');
+        final ByteData data = await rootBundle.load('assets/rulesets/$file');
+        final int len = data.lengthInBytes;
+        if (out.existsSync() && out.lengthSync() == len) continue;
+        final File tmp = File('${dir.path}/$file.tmp');
+        await tmp.writeAsBytes(
           data.buffer.asUint8List(data.offsetInBytes, len),
           flush: true,
         );
+        await tmp.rename(out.path);
       }
-    }
-    return dir.path.replaceAll(r'\', '/');
+      return dir.path.replaceAll(r'\', '/');
+    });
   }
+
+  final _AsyncLock _ruleSetLock = _AsyncLock();
 
   /// After coming up on a manually pinned exit, confirm the exit really carries
   /// traffic. A pinned node builds a single-outbound config, so a dead exit still
@@ -1254,5 +1286,16 @@ class SingboxProxyController extends ProxyController {
     _watchdog?.cancel();
     _eventSub?.cancel();
     super.dispose();
+  }
+}
+
+/// A minimal mutex for async sections (no package dependency).
+class _AsyncLock {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> synchronized<T>(Future<T> Function() body) {
+    final Future<T> result = _tail.then((_) => body());
+    _tail = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
   }
 }
