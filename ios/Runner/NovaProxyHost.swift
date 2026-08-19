@@ -2,6 +2,7 @@ import Flutter
 import Foundation
 import Novacore
 import NetworkExtension
+import Network
 import CoreTelephony
 import WidgetKit
 
@@ -25,6 +26,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private var xrayLogTimer: DispatchSourceTimer?
   private var xrayLogSeen = 0
   private var libboxReady = false
+  private let measure = NovaMeasure()
 
   static func register(with registrar: FlutterPluginRegistrar) {
     let host = NovaProxyHost()
@@ -77,6 +79,35 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       }
     case "networkInfo":
       result(Self.networkInfo())
+    case "measure":
+      // "Test all servers through the core": a second, tunnel-less core in
+      // THIS process (not the extension). Refused while the tunnel is up or
+      // coming up: libbox keeps one command socket per App Group base path, and
+      // every dial would go through the tunnel anyway.
+      guard let args = call.arguments as? [String: Any],
+            let config = args["configJson"] as? String else {
+        result(FlutterError(code: "args", message: "configJson required", details: nil))
+        return
+      }
+      let tags = (args["tags"] as? [String]) ?? []
+      let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
+      let xrayConfig = args["xrayConfigJson"] as? String
+      loadManagerIfNeeded { [weak self] in
+        guard let self else { result(FlutterError(code: "gone", message: "host gone", details: nil)); return }
+        let status = self.manager?.connection.status ?? .invalid
+        if status == .connected || status == .connecting || status == .reasserting || status == .disconnecting {
+          result(FlutterError(code: "busy", message: "Disconnect first to measure all servers.", details: nil))
+          return
+        }
+        self.ensureNovacoreSetup()
+        self.measure.start(config: config, tags: tags, ruleSets: ruleSets, xrayConfig: xrayConfig,
+                           onGroups: { [weak self] g in self?.emit(["type": "groups", "groups": g]) },
+                           done: { delays in result(delays) },
+                           fail: { why in result(FlutterError(code: "measure_failed", message: why, details: nil)) })
+      }
+    case "measureCancel":
+      measure.cancel()
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -117,6 +148,9 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
                      xrayConfig: String?,
                      result: @escaping FlutterResult) {
+    // A measuring core still running would share the command socket path with
+    // the extension; stop it first (its caller gets what it has so far).
+    measure.cancel()
     // Write the config where the extension can read it (shared App Group).
     guard let container = FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else {
@@ -579,4 +613,305 @@ private final class GroupHandler: NSObject, NovacoreCommandClientHandlerProtocol
   func updateClashMode(_ newMode: String?) {}
   func write(_ events: NovacoreConnectionEvents?) {}
   func setDefaultLogLevel(_ level: Int32) {}
+}
+
+// MARK: - Measuring core ("test all servers through the core")
+
+/// A second libbox service with no TUN, run inside the app process, for the
+/// lightning button: every usable node behind the `proxy` urltest group, asked
+/// to test the group, its per-node delays streamed back as the same `groups`
+/// event the tunnel uses, and the final tag -> delay map returned when every
+/// node answered, after a quiet period, or at the budget. The iOS twin of
+/// Android's NovaMeasure and the desktop child process. Runs in-app, so the
+/// extension's memory cap does not apply.
+///
+/// The PlatformInterface is the extension's minus the TUN: openTun is never
+/// called without a tun inbound, sockets bind to the real default interface via
+/// the same NWPathMonitor scheme the extension uses.
+final class NovaMeasure: NSObject {
+  static let appGroup = NovaProxyHost.appGroup
+  private static let ruleSetBaseToken = "__NOVA_BASE__"
+  private static let groupTag = "proxy"
+  private static let budget: TimeInterval = 60
+  private static let quiet: TimeInterval = 8
+  private static let minRun: TimeInterval = 12
+
+  private let queue = DispatchQueue(label: "online.novaproxy.novaClient.measure")
+  private var server: NovacoreCommandServer?
+  private var client: NovacoreCommandClient?
+  private var xrayStarted = false
+  private var pathMonitor: NWPathMonitor?
+  private var runId = 0
+  private var latest: [String: Int] = [:]
+  private let latestLock = NSLock()
+
+  func start(config: String, tags: [String], ruleSets: [String: FlutterStandardTypedData],
+             xrayConfig: String?,
+             onGroups: @escaping ([[String: Any]]) -> Void,
+             done: @escaping ([String: Int]) -> Void,
+             fail: @escaping (String) -> Void) {
+    runId += 1
+    let id = runId
+    queue.async { [self] in
+      var finished = false
+      func finish(_ delays: [String: Int]?, _ error: String?) {
+        if finished { return }
+        finished = true
+        stopLocked()
+        DispatchQueue.main.async {
+          if let error { fail(error) } else { done(delays ?? [:]) }
+        }
+      }
+      stopLocked()
+      latestLock.lock(); latest = [:]; latestLock.unlock()
+      guard let container = FileManager.default
+        .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else {
+        return finish(nil, "App Group not configured")
+      }
+      // libbox's command server normally listens on a unix socket inside the
+      // base path; the App Group container path can exceed the 104-byte
+      // sun_path limit (it does on the Simulator: "bind: invalid argument"),
+      // and sharing the extension's socket path is wrong anyway. For the
+      // duration of the run, point libbox at a loopback TCP port instead;
+      // Setup is plain global assignment and the tunnel is down while this
+      // runs, so nothing else is using the socket. Restored in stopLocked.
+      Self.applySetup(container: container, port: Self.commandPort)
+      // Same rule-set files the tunnel uses, written into the shared container
+      // and the config's placeholder paths pointed at them.
+      for (name, data) in ruleSets {
+        try? data.data.write(to: container.appendingPathComponent(name), options: .atomic)
+      }
+      let resolved = config.replacingOccurrences(of: Self.ruleSetBaseToken, with: container.path)
+
+      // xhttp nodes in the pool run on the Xray core; the measuring core
+      // reaches them as local socks exits. Start Xray first.
+      if let xrayConfig, !xrayConfig.isEmpty {
+        let xerr = NovaxrayStart(xrayConfig)
+        if !xerr.isEmpty { return finish(nil, "Xray failed to start: \(xerr)") }
+        xrayStarted = true
+      }
+
+      var err: NSError?
+      guard let s = NovacoreNewCommandServer(MeasureServerHandler(), self, &err), err == nil else {
+        return finish(nil, err?.localizedDescription ?? "could not create the measuring core")
+      }
+      do {
+        try s.start()
+        server = s
+        try s.startOrReloadService(resolved, options: NovacoreOverrideOptions())
+      } catch {
+        return finish(nil, "Could not start the measuring core: \(error.localizedDescription)")
+      }
+      if id != runId { return finish(nil, "cancelled") }
+
+      // Group stream: per-node urltest delays as they land.
+      let options = NovacoreCommandClientOptions()
+      options.addCommand(NovacoreCommandGroup)
+      options.statusInterval = Int64(NSEC_PER_SEC) // 1s
+      let wanted = Set(tags)
+      let handler = MeasureGroupHandler { [weak self] iterator in
+        guard let self else { return }
+        // Record answered delays for the group we own, then forward the raw
+        // iterator payload as the live `groups` event. The iterator is single
+        // pass, so read it once into a buffer here.
+        var buffered: [[String: Any]] = []
+        while iterator.hasNext() {
+          guard let group = iterator.next() else { continue }
+          var items: [[String: Any]] = []
+          if let it = group.getItems() {
+            while it.hasNext() {
+              guard let item = it.next() else { continue }
+              let delay = Int(item.urlTestDelay)
+              items.append(["tag": item.tag, "delay": delay])
+              if group.tag == Self.groupTag, delay > 0, wanted.contains(item.tag) {
+                self.latestLock.lock(); self.latest[item.tag] = delay; self.latestLock.unlock()
+              }
+            }
+          }
+          buffered.append(["tag": group.tag, "selected": group.selected, "items": items])
+        }
+        if !buffered.isEmpty { onGroups(buffered) }
+      }
+      guard let c = NovacoreNewCommandClient(handler, options) else {
+        return finish(nil, "could not talk to the measuring core")
+      }
+      client = c
+      var connected = false
+      for _ in 0..<20 {
+        if (try? c.connect()) != nil { connected = true; break }
+        Thread.sleep(forTimeInterval: 0.25)
+      }
+      if !connected { return finish(nil, "could not talk to the measuring core") }
+      // Kick the test; the group also runs its own first pass at startup, and
+      // either lands in the stream above.
+      try? c.urlTest(Self.groupTag)
+
+      let startedAt = Date()
+      var lastChangeAt = startedAt
+      var lastCount = -1
+      while true {
+        Thread.sleep(forTimeInterval: 0.5)
+        if id != runId { break }
+        let now = Date()
+        latestLock.lock(); let count = latest.count; latestLock.unlock()
+        if count != lastCount { lastCount = count; lastChangeAt = now }
+        if count >= tags.count { break }
+        if now.timeIntervalSince(startedAt) > Self.budget { break }
+        if count > 0, now.timeIntervalSince(lastChangeAt) > Self.quiet,
+           now.timeIntervalSince(startedAt) > Self.minRun { break }
+      }
+      latestLock.lock(); let result = latest; latestLock.unlock()
+      finish(result, nil)
+    }
+  }
+
+  /// Stops a run in progress; its callback then fires with what it has.
+  func cancel() { runId += 1 }
+
+  /// Runs on `queue`.
+  private func stopLocked() {
+    if let c = client { try? c.disconnect() }
+    client = nil
+    if let s = server {
+      try? s.closeService()
+      s.close()
+    }
+    server = nil
+    if xrayStarted {
+      xrayStarted = false
+      NovaxrayStop()
+    }
+    pathMonitor?.cancel()
+    pathMonitor = nil
+    // Back to the unix-socket mode the extension's status/log/group clients
+    // need.
+    if let container = FileManager.default
+      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) {
+      Self.applySetup(container: container, port: 0)
+    }
+  }
+
+  /// Loopback TCP port for the measuring run's command server.
+  private static let commandPort: Int32 = 17893
+
+  static func applySetup(container: URL, port: Int32) {
+    let setup = NovacoreSetupOptions()
+    setup.basePath = container.path
+    setup.workingPath = container.appendingPathComponent("work").path
+    setup.tempPath = container.appendingPathComponent("tmp").path
+    setup.commandServerListenPort = port
+    var err: NSError?
+    NovacoreSetup(setup, &err)
+  }
+}
+
+private final class MeasureGroupHandler: NSObject, NovacoreCommandClientHandlerProtocol {
+  private let onGroups: (NovacoreOutboundGroupIteratorProtocol) -> Void
+  init(_ onGroups: @escaping (NovacoreOutboundGroupIteratorProtocol) -> Void) { self.onGroups = onGroups }
+  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {
+    guard let message else { return }
+    onGroups(message)
+  }
+  func writeStatus(_ message: NovacoreStatusMessage?) {}
+  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
+  func connected() {}
+  func disconnected(_ message: String?) {}
+  func clearLogs() {}
+  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
+  func updateClashMode(_ newMode: String?) {}
+  func write(_ events: NovacoreConnectionEvents?) {}
+  func setDefaultLogLevel(_ level: Int32) {}
+}
+
+private final class MeasureServerHandler: NSObject, NovacoreCommandServerHandlerProtocol {
+  func getSystemProxyStatus() throws -> NovacoreSystemProxyStatus {
+    let s = NovacoreSystemProxyStatus()
+    s.available = false
+    s.enabled = false
+    return s
+  }
+  func serviceStop() throws {}
+  func serviceReload() throws {}
+  func setSystemProxyEnabled(_ enabled: Bool) throws {}
+  func writeDebugMessage(_ message: String?) {}
+}
+
+extension NovaMeasure: NovacorePlatformInterfaceProtocol {
+  func openTun(_ options: NovacoreTunOptionsProtocol?, ret0_: UnsafeMutablePointer<Int32>?) throws {
+    throw NSError(domain: "Nova", code: 7, userInfo: [NSLocalizedDescriptionKey: "the measuring core has no TUN"])
+  }
+  func localDNSTransport() -> NovacoreLocalDNSTransportProtocol? { nil }
+  func systemCertificates() -> NovacoreStringIteratorProtocol? { nil }
+  func useProcFS() -> Bool { false }
+  func underNetworkExtension() -> Bool { false }
+  func includeAllNetworks() -> Bool { false }
+  func usePlatformAutoDetectControl() -> Bool { false }
+  func autoDetectControl(_: Int32) throws {}
+  func clearDNSCache() {}
+
+  func startDefaultInterfaceMonitor(_ listener: NovacoreInterfaceUpdateListenerProtocol?) throws {
+    guard let listener else { return }
+    let monitor = NWPathMonitor()
+    pathMonitor = monitor
+    let semaphore = DispatchSemaphore(value: 0)
+    monitor.pathUpdateHandler = { path in
+      self.report(listener, path)
+      semaphore.signal()
+      monitor.pathUpdateHandler = { path in self.report(listener, path) }
+    }
+    monitor.start(queue: DispatchQueue.global())
+    _ = semaphore.wait(timeout: .now() + 3)
+  }
+
+  private func report(_ listener: NovacoreInterfaceUpdateListenerProtocol, _ path: Network.NWPath) {
+    guard path.status != .unsatisfied, let iface = path.availableInterfaces.first else {
+      listener.updateDefaultInterface("", interfaceIndex: -1, isExpensive: false, isConstrained: false)
+      return
+    }
+    listener.updateDefaultInterface(iface.name, interfaceIndex: Int32(iface.index),
+                                    isExpensive: path.isExpensive, isConstrained: path.isConstrained)
+  }
+
+  func closeDefaultInterfaceMonitor(_: NovacoreInterfaceUpdateListenerProtocol?) throws {
+    pathMonitor?.cancel()
+    pathMonitor = nil
+  }
+
+  func getInterfaces() throws -> NovacoreNetworkInterfaceIteratorProtocol {
+    guard let path = pathMonitor?.currentPath, path.status != .unsatisfied else {
+      return MeasureInterfaceArray([])
+    }
+    var out: [NovacoreNetworkInterface] = []
+    for it in path.availableInterfaces {
+      let n = NovacoreNetworkInterface()
+      n.name = it.name
+      n.index = Int32(it.index)
+      switch it.type {
+      case .wifi: n.type = NovacoreInterfaceTypeWIFI
+      case .cellular: n.type = NovacoreInterfaceTypeCellular
+      case .wiredEthernet: n.type = NovacoreInterfaceTypeEthernet
+      default: n.type = NovacoreInterfaceTypeOther
+      }
+      out.append(n)
+    }
+    return MeasureInterfaceArray(out)
+  }
+
+  func findConnectionOwner(_: Int32, sourceAddress _: String?, sourcePort _: Int32,
+                           destinationAddress _: String?, destinationPort _: Int32) throws -> NovacoreConnectionOwner {
+    throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "unsupported"])
+  }
+  func readWIFIState() -> NovacoreWIFIState? { nil }
+  func send(_: NovacoreNotification?) throws {}
+}
+
+private final class MeasureInterfaceArray: NSObject, NovacoreNetworkInterfaceIteratorProtocol {
+  private var iterator: IndexingIterator<[NovacoreNetworkInterface]>
+  private var current: NovacoreNetworkInterface?
+  init(_ array: [NovacoreNetworkInterface]) { iterator = array.makeIterator() }
+  func hasNext() -> Bool {
+    current = iterator.next()
+    return current != nil
+  }
+  func next() -> NovacoreNetworkInterface? { current }
 }

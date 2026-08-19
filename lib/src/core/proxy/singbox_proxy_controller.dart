@@ -367,11 +367,13 @@ class SingboxProxyController extends ProxyController {
 
   // ---- "test all through the core": the measuring core (Android host) ----
 
-  // Android hosts NovaMeasure (a second libbox service with no TUN). iOS runs
-  // its core inside the Network Extension, so a tunnel-less measuring core
-  // there is a separate piece of work; the button stays hidden until then.
+  // Android hosts NovaMeasure (a second libbox service with no TUN); iOS hosts
+  // the same thing inside the app process (NovaProxyHost.swift's NovaMeasure),
+  // outside the Network Extension, so the extension's memory cap does not
+  // apply.
   @override
-  bool get canMeasureNodes => Platform.isAndroid || _measureForTest;
+  bool get canMeasureNodes =>
+      Platform.isAndroid || Platform.isIOS || _measureForTest;
 
   /// Tests run on a desktop VM where [Platform.isAndroid] is false; this lets
   /// the Android measuring path be exercised there.
@@ -399,13 +401,18 @@ class SingboxProxyController extends ProxyController {
       // Same rule-set source as the tunnel: the bundled .srs on disk. The
       // default would fetch them from GitHub at startup, which is blocked in
       // Iran, and the measuring core would never come up.
+      // iOS: lean is what makes the builder reference the bundled rule-sets
+      // by the placeholder path the host resolves (the bytes travel in the
+      // call); the pool cap lean implies is overridden by kMeasurePoolCap.
       final SingboxRouteOptions opts = routeOptions.copyWith(
           hardenTls: _active?.hardenTls ?? false,
-          localRuleSets: Platform.isAndroid);
+          localRuleSets: Platform.isAndroid,
+          lean: Platform.isIOS);
       // xhttp nodes run on the Xray core, reached by the measuring core as
       // local socks exits, exactly as the tunnel's auto pool does. Without
       // this they read "not testable" even though they connect.
-      final bool xhttpPool = kXrayXhttpEnabled && Platform.isAndroid;
+      final bool xhttpPool =
+          kXrayXhttpEnabled && (Platform.isAndroid || Platform.isIOS);
       String? xrayJson;
       if (xhttpPool) {
         final List<ProxyNode> xhttpNodes = SingboxConfig.pickedXhttpNodes(
@@ -437,11 +444,14 @@ class SingboxProxyController extends ProxyController {
         final String base = await _extractRuleSets();
         configJson = configJson.replaceAll(SingboxConfig.ruleSetBaseToken, base);
       }
+      final Map<String, Uint8List>? ruleSets =
+          Platform.isIOS ? await _leanRuleSets() : null;
       final Object? raw = await _control.invokeMethod<Object?>('measure',
           <String, dynamic>{
             'configJson': configJson,
             'tags': built.tagKeys.keys.toList(),
             if (xrayJson != null) 'xrayConfigJson': xrayJson,
+            if (ruleSets != null) 'ruleSets': ruleSets,
           }).timeout(const Duration(seconds: 90));
       final Map<String, int> delays = <String, int>{};
       if (raw is Map) {
@@ -458,10 +468,14 @@ class SingboxProxyController extends ProxyController {
           '${delays.length} answered');
       return null;
     } on FormatException catch (e) {
+      NovaLog.instance.write('Measure failed: ${e.message}', level: NovaLogLevel.warn);
       return e.message;
     } on PlatformException catch (e) {
+      NovaLog.instance.write('Measure failed: ${e.code} ${e.message}',
+          level: NovaLogLevel.warn);
       return e.message ?? 'Could not measure';
     } catch (e) {
+      NovaLog.instance.write('Measure failed: $e', level: NovaLogLevel.warn);
       return 'Could not measure: $e';
     } finally {
       _coreTagKeys = const <String, String>{};
