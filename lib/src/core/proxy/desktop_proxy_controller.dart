@@ -853,7 +853,9 @@ class DesktopProxyController extends ProxyController {
     }
     if (reason.isEmpty) {
       // No log means the elevated core never ran — almost always a dismissed
-      // Windows UAC (or macOS admin) prompt.
+      // Windows UAC (or macOS admin) prompt. (On Windows the core's stderr is
+      // redirected into this log, so a core that started and failed always
+      // leaves something here and never lands on this branch.)
       return 'The tunnel did not come up. Full-device mode needs the admin '
           '(UAC) prompt approved so it can create the network adapter. Approve '
           'it and try again, or turn off full-device mode in Settings to use '
@@ -1037,11 +1039,37 @@ class DesktopProxyController extends ProxyController {
     if (Platform.isWindows) {
       // A hidden elevated PowerShell wrapper: start the core, wait on the flag,
       // then stop it. `-Verb RunAs` raises the single UAC prompt.
+      //
+      // Two things this used to get wrong, both of which ended in the user
+      // being told "approve the UAC prompt" after they had approved it:
+      //
+      // 1. The core's output was never captured. sing-box logs to stderr, and
+      //    without -RedirectStandardError nothing was written, so
+      //    [_tunFailureMessage] found no log and fell back to the UAC text no
+      //    matter why the core actually died. It now writes stderr to
+      //    nova-tun.log (what the diagnosis reads) and stdout to
+      //    nova-tun.out.log (PowerShell refuses the same file for both).
+      // 2. Windows PowerShell 5.1 joins -ArgumentList with spaces and does not
+      //    quote elements that contain one, so a config path under a profile
+      //    like `C:\Users\Ali Reza\...` was split into several arguments and
+      //    the core never started. Paths are now quoted inside the element.
+      //
+      // A stale log from a previous run is removed first so a failure is never
+      // diagnosed from an older session's last lines.
+      final File errLog = File(log);
+      final File outLog = File('${dir.path}/nova-tun.out.log');
+      for (final File f in <File>[errLog, outLog]) {
+        try {
+          if (f.existsSync()) await f.delete();
+        } catch (_) {}
+      }
       final File wrapper = File('${dir.path}/nova-tun.ps1');
       await wrapper.writeAsString(
         "${_coreEnv.entries.map((MapEntry<String, String> e) => "\$env:${e.key}='${e.value}'").join('\n')}\n"
         "\$p = Start-Process -FilePath '$binary' "
-        "-ArgumentList @('run','-c','${cfgFile.path}') "
+        "-ArgumentList @('run','-c','\"${cfgFile.path}\"') "
+        "-RedirectStandardError '$log' "
+        "-RedirectStandardOutput '${outLog.path}' "
         "-WindowStyle Hidden -PassThru\n"
         "while (Test-Path '${flag.path}') { Start-Sleep -Seconds 1 }\n"
         "try { Stop-Process -Id \$p.Id -Force } catch {}\n",
@@ -1053,7 +1081,7 @@ class DesktopProxyController extends ProxyController {
         '-Command',
         "Start-Process powershell -Verb RunAs -WindowStyle Hidden "
             "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"
-            "'${wrapper.path}'",
+            "'\"${wrapper.path}\"'",
       ]);
       return;
     }
