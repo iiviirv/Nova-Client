@@ -11,7 +11,8 @@ import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
 import 'proxy_controller.dart';
-import 'singbox_proxy_controller.dart' show isBlockedConnectionNoise;
+import 'singbox_proxy_controller.dart'
+    show isBlockedConnectionNoise, SingboxProxyController;
 import 'subscription.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
@@ -80,6 +81,12 @@ class DesktopProxyController extends ProxyController {
   /// dashboard can say "Connected via" the server name (see [exitName]).
   Map<String, String> _keyToName = <String, String>{};
 
+  /// `node-i` outbound tag -> stable node key for the current auto-select pool,
+  /// so the core's per-node urltest results (which come back keyed by tag) can
+  /// be attributed to the right server. Empty for a single/pinned node, which
+  /// has no urltest group.
+  Map<String, String> _coreTagKeys = const <String, String>{};
+
   @override
   String? exitName(String? key) => key == null ? null : _keyToName[key];
   static const int _xraySocksPort = XrayConfig.defaultSocksPort;
@@ -100,6 +107,10 @@ class DesktopProxyController extends ProxyController {
   int? _coreExitCode;
 
   Timer? _trafficTimer;
+
+  /// Polls the core's per-node urltest history (slower than traffic: it only
+  /// changes when the urltest re-measures) into [coreHealth].
+  Timer? _healthTimer;
   int _lastUp = 0;
   int _lastDown = 0;
   bool _systemProxyOn = false;
@@ -463,6 +474,18 @@ class DesktopProxyController extends ProxyController {
         cfg = nodes.length == 1
             ? SingboxConfig.buildMap(nodes.first, options: opts)
             : SingboxConfig.buildMultiMap(nodes, options: opts);
+      }
+      // Remember which real node each `node-i` tag maps to, so the core's live
+      // per-node latency (read back from the Clash API) lands on the right
+      // server in the list. Only a real multi-node pool has a urltest group.
+      if (nodes.length == 1) {
+        _coreTagKeys = const <String, String>{};
+      } else {
+        final List<String> keys =
+            SingboxConfig.orderedMultiNodeKeys(nodes, options: opts);
+        _coreTagKeys = <String, String>{
+          for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
+        };
       }
     }
     // System-proxy mode swaps the builder's TUN inbound for a local `mixed`
@@ -905,6 +928,73 @@ class DesktopProxyController extends ProxyController {
     _lastDown = 0;
     _trafficTimer?.cancel();
     _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pollTraffic());
+    _healthTimer?.cancel();
+    _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollHealth());
+    // Prime it straight away so the list gets numbers as soon as the pool has
+    // been measured once, instead of waiting a full interval.
+    _pollHealth();
+  }
+
+  /// Read the core's per-node urltest results off the Clash API and publish
+  /// them as [coreHealth], the same shape the Android host streams. This is what
+  /// puts a real, through-the-tunnel ping on nodes the outside probe has to
+  /// call "not testable" (Reality, obfuscated Hysteria2, SS2022, xhttp): the
+  /// core measured them itself. Desktop never fed this before, so those nodes
+  /// stayed "not testable" even while connected through them.
+  ///
+  /// `GET /proxies` returns every outbound with a `history` of `{time, delay}`
+  /// and, for the urltest group, `now` (the selected member). We reshape that
+  /// into the `groups` payload [SingboxProxyController.parseCoreGroups] already
+  /// understands, so both platforms share one parser.
+  Future<void> _pollHealth() async {
+    if (_coreTagKeys.isEmpty) return;
+    try {
+      final r = await http
+          .get(Uri.parse('http://127.0.0.1:$clashPort/proxies'))
+          .timeout(const Duration(seconds: 3));
+      if (r.statusCode != 200) return;
+      final CoreNodeHealth next = healthFromClashProxies(
+          _coreTagKeys, (jsonDecode(r.body) as Map).cast<String, dynamic>());
+      final CoreNodeHealth cur = coreHealth.value;
+      if (next.selectedKey == cur.selectedKey &&
+          mapEquals(next.delayMsByKey, cur.delayMsByKey) &&
+          setEquals(next.testedKeys, cur.testedKeys)) {
+        return;
+      }
+      coreHealth.value = next;
+    } catch (_) {}
+  }
+
+  /// Reshape the Clash API's `GET /proxies` body into [CoreNodeHealth] for the
+  /// given `node-i` tag map. Pure, so it is unit-tested against the exact JSON
+  /// the shipped core returns.
+  @visibleForTesting
+  static CoreNodeHealth healthFromClashProxies(
+      Map<String, String> tagKeys, Map<String, dynamic> body) {
+      final Map<String, dynamic> all =
+          (body['proxies'] as Map).cast<String, dynamic>();
+      final Map<String, dynamic>? group =
+          (all['proxy'] as Map?)?.cast<String, dynamic>();
+      final List<Map<String, Object?>> items = <Map<String, Object?>>[];
+      for (final String tag in tagKeys.keys) {
+        final Map<String, dynamic>? p = (all[tag] as Map?)?.cast<String, dynamic>();
+        if (p == null) continue;
+        final List<dynamic> hist = (p['history'] as List<dynamic>?) ?? <dynamic>[];
+        // Newest sample last; a missing/failed measurement is 0, which the
+        // parser treats as "tested, no answer".
+        final int delay = hist.isEmpty
+            ? 0
+            : ((hist.last as Map)['delay'] as num?)?.toInt() ?? 0;
+        items.add(<String, Object?>{'tag': tag, 'delay': delay});
+      }
+      final Object groups = <Map<String, Object?>>[
+        <String, Object?>{
+          'tag': 'proxy',
+          'selected': group?['now'],
+          'items': items,
+        },
+      ];
+      return SingboxProxyController.parseCoreGroups(tagKeys, groups);
   }
 
   Future<void> _pollTraffic() async {
@@ -1098,6 +1188,11 @@ class DesktopProxyController extends ProxyController {
   Future<void> _cleanup() async {
     _trafficTimer?.cancel();
     _trafficTimer = null;
+    _healthTimer?.cancel();
+    _healthTimer = null;
+    // The core's per-node latency only means anything while the tunnel is up.
+    coreHealth.value = CoreNodeHealth.empty;
+    _coreTagKeys = const <String, String>{};
     if (_systemProxyOn) {
       await _setSystemProxy(false);
     }

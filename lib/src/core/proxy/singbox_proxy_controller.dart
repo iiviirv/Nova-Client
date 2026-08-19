@@ -282,10 +282,11 @@ class SingboxProxyController extends ProxyController {
   /// Turns the host's `groups` payload into a [CoreNodeHealth], mapping the
   /// config's `node-i` outbound tags back to real node keys with [tagKeys].
   ///
-  /// Exposed for tests because this is the fiddly part: it drops 0-delay items
-  /// (the core's "no successful test yet"), keeps only the auto-select group
-  /// `proxy`, and ignores tags it has no mapping for.
-  @visibleForTesting
+  /// Public because it is the fiddly part and is shared: the desktop
+  /// controller reshapes the Clash API's `/proxies` history into this same
+  /// payload so both hosts use one parser. It drops 0-delay items (the core's
+  /// "no successful test yet"), keeps only the auto-select group `proxy`, and
+  /// ignores tags it has no mapping for.
   static CoreNodeHealth parseCoreGroups(
       Map<String, String> tagKeys, Object? raw) {
     if (raw is! List) return CoreNodeHealth.empty;
