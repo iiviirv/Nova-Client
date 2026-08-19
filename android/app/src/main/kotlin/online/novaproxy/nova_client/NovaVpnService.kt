@@ -20,6 +20,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
@@ -113,19 +116,34 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     @Volatile
     private var running = false
 
+    // Every start and stop runs on this one thread, in the order it arrived, so a
+    // stop can never run cleanup() while a start is still bringing a core up on
+    // another thread. That overlap was the "switch servers quickly and the phone
+    // is stuck with a dead VPN" report: the stop found nothing to close yet and
+    // said "disconnected", the app sent the next start, a second core came up,
+    // then the first one finished, reported "connected" for the old server, and
+    // was left holding the TUN with nobody able to stop it.
+    private val worker: ExecutorService =
+        Executors.newSingleThreadExecutor { r -> Thread(r, "nova-vpn-worker") }
+
+    // Bumped by every start and stop request. A start whose generation is stale
+    // by the time its core is up was superseded (the user moved on); it tears
+    // that core down instead of reporting "connected", and the newest request
+    // owns the state the app sees.
+    private val generation = AtomicInteger(0)
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopBox(startId)
+            requestStop(startId)
             return START_NOT_STICKY
         }
         val config = intent?.getStringExtra(EXTRA_CONFIG)
         if (config.isNullOrEmpty()) {
-            stopSelf()
+            stopSelfSafely(startId)
             return START_NOT_STICKY
         }
         val xrayConfig = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
-        if (running) return START_NOT_STICKY
-        running = true
+        val gen = generation.incrementAndGet()
         profileLabel = intent?.getStringExtra(EXTRA_LABEL)?.takeIf { it.isNotBlank() }
         // Let the bridge repaint the home-screen widget on state changes.
         NovaProxyBridge.appContext = applicationContext
@@ -136,11 +154,51 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         // tunnel to finish coming up on the worker thread.
         startForegroundNotification(getString(R.string.vpn_state_connecting), ongoing = true)
         NovaProxyBridge.emitState("connecting")
-        Thread { startBox(config, xrayConfig) }.start()
+        worker.execute {
+            // A start while a tunnel is up is a switch, not a no-op (it used to be
+            // silently dropped, which left the app on "connecting" until its
+            // watchdog gave up): take the old core down first, on this thread.
+            if (running || commandServer != null) {
+                running = false
+                cleanup(keepForeground = true)
+            }
+            if (gen != generation.get()) {
+                // Superseded before it began; the newer request owns the state.
+                return@execute
+            }
+            running = true
+            startBox(config, xrayConfig, gen, startId)
+        }
         return START_NOT_STICKY
     }
 
-    private fun startBox(config: String, xrayConfig: String?) {
+    /// Queue a stop behind whatever the worker is doing. Always ends in a
+    /// "disconnected" state event, even when nothing was running (a start that
+    /// never got past the consent dialog, or was superseded): the app may be
+    /// waiting on that event to sequence the next start, and used to sit on an
+    /// eight-second timeout instead.
+    private fun requestStop(stopStartId: Int) {
+        val gen = generation.incrementAndGet()
+        worker.execute {
+            if (!running && commandServer == null) {
+                NovaProxyBridge.emitState("disconnected")
+                stopSelfSafely(stopStartId)
+                return@execute
+            }
+            running = false
+            NovaProxyBridge.emitState("disconnecting")
+            // If a newer start is already queued behind this stop, leave the
+            // foreground promotion its onStartCommand made in place.
+            cleanup(keepForeground = gen != generation.get())
+            NovaProxyBridge.emitState("disconnected")
+            stopSelfSafely(stopStartId)
+        }
+    }
+
+    /// Runs on the worker only. [gen] is this start's generation; [startId] the
+    /// command it came from, so a failure stops only this command and never a
+    /// newer start that raced in behind it.
+    private fun startBox(config: String, xrayConfig: String?, gen: Int, startId: Int) {
         try {
             // Two-core path: an xhttp node runs on Xray, and sing-box bridges the
             // TUN to it. Start Xray FIRST (with socket protection so its dials
@@ -152,6 +210,15 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             server.start()
             commandServer = server
             server.startOrReloadService(config, OverrideOptions())
+            if (gen != generation.get()) {
+                // A stop or a newer start arrived while this core was coming up.
+                // It is not the tunnel the user wants any more: take it down here,
+                // on the same thread, so the queued request starts clean, and say
+                // nothing; that request owns the state.
+                running = false
+                cleanup(keepForeground = true)
+                return
+            }
             NovaProxyBridge.emitState("connected")
             startForegroundNotification(getString(R.string.vpn_state_connected), ongoing = true)
             startStatusClient()
@@ -159,9 +226,12 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             startGroupClient()
         } catch (e: Exception) {
             running = false
-            NovaProxyBridge.emitError(e.message)
-            cleanup()
-            stopSelf()
+            // Only the request the user is still waiting on gets to report the
+            // error; a superseded one would paint a failure over the newer
+            // request's "connecting".
+            if (gen == generation.get()) NovaProxyBridge.emitError(e.message)
+            cleanup(keepForeground = gen != generation.get())
+            stopSelfSafely(startId)
         }
     }
 
@@ -205,20 +275,6 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         xrayRunning = false
         runCatching { io.nekohasekai.novaxray.Novaxray.setLogger(null) }
         runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
-    }
-
-    private fun stopBox(stopStartId: Int = -1) {
-        if (!running && commandServer == null) {
-            stopSelfSafely(stopStartId)
-            return
-        }
-        running = false
-        NovaProxyBridge.emitState("disconnecting")
-        Thread {
-            cleanup()
-            NovaProxyBridge.emitState("disconnected")
-            stopSelfSafely(stopStartId)
-        }.start()
     }
 
     /// Stop this service instance without killing a restart that raced in behind
@@ -438,7 +494,10 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun updateClashMode(newMode: String) {}
     }
 
-    private fun cleanup() {
+    /// Tears the core, Xray, the TUN and the clients down. [keepForeground]
+    /// leaves the foreground notification alone, for the switch case where a
+    /// newer start has already posted its own "connecting" card.
+    private fun cleanup(keepForeground: Boolean = false) {
         stopGroupClient()
         stopLogClient()
         stopStatusClient()
@@ -448,6 +507,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         stopXray()
         runCatching { pfd?.close() }
         pfd = null
+        if (keepForeground) return
         // Drop the ongoing notification. STOP_FOREGROUND_REMOVE clears it rather
         // than leaving a stale "Connected" card behind after we disconnect.
         runCatching {
@@ -546,19 +606,29 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
 
     override fun onDestroy() {
-        cleanup()
+        // Invalidate any start still in flight so it tears its core down when it
+        // finishes, then close what is up. Done on the worker so it can never
+        // run alongside a start; the worker keeps this object alive until done.
+        generation.incrementAndGet()
+        runCatching {
+            worker.execute {
+                running = false
+                cleanup()
+            }
+            worker.shutdown()
+        }
         super.onDestroy()
     }
 
     override fun onRevoke() {
-        stopBox()
+        requestStop(-1)
         super.onRevoke()
     }
 
     // ---- CommandServerHandler ----
 
     override fun serviceStop() {
-        stopBox()
+        requestStop(-1)
     }
 
     override fun serviceReload() {

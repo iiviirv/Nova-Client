@@ -118,6 +118,17 @@ class SingboxProxyController extends ProxyController {
   static const Duration _connectTimeout = Duration(seconds: 30);
   Timer? _watchdog;
 
+  /// Bumped by every connect() and disconnect(). A connect() that finds a newer
+  /// request arrived while it was resolving its subscription / building its
+  /// config stops before it sends `start`, so a fast server switch (or an
+  /// SNI-bypass toggle, which reconnects) can never start a stale tunnel on top
+  /// of the one the user actually asked for.
+  int _opSeq = 0;
+
+  /// Clears a `disconnecting` that the platform never answered (see
+  /// [disconnect]).
+  Timer? _stopWatchdog;
+
   /// Guards the auto-mode self-heal (a single rebuild of a subscription tunnel
   /// that came up but carries no traffic) so a genuinely dead subscription can't
   /// loop reconnecting forever. Reset on each user-initiated connect/disconnect.
@@ -219,6 +230,10 @@ class SingboxProxyController extends ProxyController {
         if (_state != ProxyConnectionState.connecting) {
           _watchdog?.cancel();
           _watchdog = null;
+        }
+        if (_state != ProxyConnectionState.disconnecting) {
+          _stopWatchdog?.cancel();
+          _stopWatchdog = null;
         }
         // The core's per-node latency only means anything while the tunnel is up;
         // drop it the moment we leave connected so a stale ping can't linger on
@@ -367,6 +382,9 @@ class SingboxProxyController extends ProxyController {
     // can't loop.
     if (!_healing) _autoHealTried = false;
     exitUnreachable = false;
+    final int seq = ++_opSeq;
+    _stopWatchdog?.cancel();
+    _stopWatchdog = null;
     _state = ProxyConnectionState.connecting;
     _lastError = null;
     NovaLog.instance.write(
@@ -391,12 +409,22 @@ class SingboxProxyController extends ProxyController {
       return;
     }
 
+    // Resolving a subscription can take seconds. If the user moved on in that
+    // time (switched server, toggled the bypass, disconnected), a newer request
+    // owns the tunnel now; starting this one would put a stale server up
+    // underneath it and leave the UI on "connecting" with nothing to wait for.
+    if (seq != _opSeq) {
+      NovaLog.instance.write('Connect superseded by a newer request; skipped');
+      return;
+    }
+
     // An AmneziaWG config handed to a core built without it produces a tunnel
     // that comes up and carries nothing, which reads as a broken server. Ask
     // the core first and say what is actually wrong. An unmeasurable host
     // leaves the verdict unknown and the connect proceeds unchanged.
     if (CoreFeatures.usesAwg(config)) {
       await _features.load();
+      if (seq != _opSeq) return;
       if (_features.awgUnsupported) {
         _lastError = _features.awgUnsupportedMessage;
         _state = ProxyConnectionState.error;
@@ -406,6 +434,9 @@ class SingboxProxyController extends ProxyController {
     }
 
     try {
+      final Map<String, Uint8List>? ruleSets =
+          Platform.isIOS ? await _leanRuleSets() : null;
+      if (seq != _opSeq) return;
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
         // Shown in the platform's ongoing VPN notification. Cosmetic only.
@@ -415,7 +446,7 @@ class SingboxProxyController extends ProxyController {
         if (_pendingXrayConfig != null) 'xrayConfigJson': _pendingXrayConfig,
         // Bundled rule-set files the lean iOS config references as local
         // rule-sets. The host writes them next to the config in the App Group.
-        if (Platform.isIOS) 'ruleSets': await _leanRuleSets(),
+        if (ruleSets != null) 'ruleSets': ruleSets,
       });
       _armWatchdog();
     } catch (e) {
@@ -459,6 +490,9 @@ class SingboxProxyController extends ProxyController {
   Future<void> disconnect() async {
     _watchdog?.cancel();
     _watchdog = null;
+    // Invalidate any connect() still resolving its config: it must not send
+    // `start` after this stop.
+    ++_opSeq;
     // A real user disconnect clears the heal guard so the next session can heal
     // again; the heal's own reconnect (which disconnects first) must not.
     if (!_healing) _autoHealTried = false;
@@ -467,6 +501,19 @@ class SingboxProxyController extends ProxyController {
     notifyListeners();
     try {
       await _control.invokeMethod<void>('stop');
+      // The host answers a stop with a `disconnected` state event (Android
+      // even when nothing was running). If it never comes, the app must not sit
+      // on "disconnecting" forever: settle it, so the user can connect again.
+      _stopWatchdog?.cancel();
+      _stopWatchdog = Timer(const Duration(seconds: 6), () {
+        if (_state == ProxyConnectionState.disconnecting) {
+          NovaLog.instance.write(
+              'Stop was not acknowledged by the host; treating as disconnected',
+              level: NovaLogLevel.warn);
+          _state = ProxyConnectionState.disconnected;
+          notifyListeners();
+        }
+      });
     } catch (e) {
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;

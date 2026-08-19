@@ -236,7 +236,35 @@ abstract class ProxyController extends ChangeNotifier {
   /// asynchronous, and calling start again while it's still stopping is dropped,
   /// which is exactly why switching servers used to silently leave you
   /// disconnected until you tapped connect again.
+  ///
+  /// Overlapping calls are coalesced: a reconnect that arrives while one is in
+  /// flight (the user taps through several servers, or toggles the SNI bypass
+  /// twice) does not start a second stop/start interleaved with the first. It
+  /// marks the in-flight one to go round once more when it finishes, and that
+  /// extra round picks up whatever selection is current by then. Without this,
+  /// two interleaved reconnects could each wait on the other's state changes,
+  /// time out, and both call connect(), which is how "stuck on connecting
+  /// after switching servers quickly" came about.
   Future<void> reconnect() async {
+    if (_reconnecting) {
+      _reconnectAgain = true;
+      return;
+    }
+    _reconnecting = true;
+    try {
+      do {
+        _reconnectAgain = false;
+        await _reconnectOnce();
+      } while (_reconnectAgain);
+    } finally {
+      _reconnecting = false;
+    }
+  }
+
+  bool _reconnecting = false;
+  bool _reconnectAgain = false;
+
+  Future<void> _reconnectOnce() async {
     final bool wasActive =
         state.isActive || state == ProxyConnectionState.connecting;
     if (!wasActive) return;
