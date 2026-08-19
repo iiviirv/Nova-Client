@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/geo/node_geo_store.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/proxy_controller.dart';
@@ -44,11 +45,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
   final Map<String, NodeProbeResult> _probe = <String, NodeProbeResult>{};
 
   /// key -> where the node really is, when that is knowable at all.
-  final Map<String, _Geo> _geo = <String, _Geo>{};
+  /// Persistent, shared across refreshes and restarts (see NodeGeoStore).
+  final NodeGeoStore _geoStore = NodeGeoStore.instance;
 
   /// host -> resolved geo, so the many nodes sharing one address (a panel hands
   /// out the same clean IP for every protocol) cost one lookup.
-  final Map<String, _Geo> _geoByHost = <String, _Geo>{};
+  final Map<String, NodeGeo> _geoByHost = <String, NodeGeo>{};
 
   /// What the subscription carried that Nova cannot run, so the list can say
   /// why it is shorter than the panel's own count.
@@ -82,6 +84,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
   @override
   void initState() {
     super.initState();
+    // Flags change when an exit country is learned while connected or a
+    // lookup lands; repaint the rows then.
+    _geoStore.addListener(_onGeoChanged);
     // Defer to after the first frame: _load() reads NovaScope.of(context),
     // which can't be looked up while initState is still running.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,9 +96,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
 
   @override
   void dispose() {
+    _geoStore.removeListener(_onGeoChanged);
     _http.close(force: true);
     _search.dispose();
     super.dispose();
+  }
+
+  void _onGeoChanged() {
+    if (mounted) setState(() {});
   }
 
   /// True when the node matches the current search text. Matches on the display
@@ -105,7 +115,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
       n.tag,
       n.protocol.label,
       '${n.server}:${n.port}',
-      _geo[_key(n)]?.place ?? '',
+      _geoStore[_key(n)]?.place ?? '',
       n.sni ?? '',
     ].join(' ').toLowerCase();
     return hay.contains(q);
@@ -354,9 +364,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// get a flag too, which they never used to.
   Future<void> _geoOne(ProxyNode n) async {
     final String host = n.server;
-    final _Geo? cached = _geoByHost[host];
+    final String key = _key(n);
+    // Already known (from a previous session, or the real exit observed while
+    // connected): keep it. The flag must not be re-guessed or lost on every
+    // refresh, and an observed exit beats any lookup.
+    final NodeGeo? known = _geoStore[key];
+    if (known != null) return;
+    final NodeGeo? cached = _geoByHost[host];
     if (cached != null) {
-      _geo[_key(n)] = cached;
+      _geoStore.setGuess(key, cached);
       return;
     }
     try {
@@ -372,9 +388,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
         (connection['isp'] as String?) ?? '',
       ].join(' ');
       final String? front = _cdnName(network, (connection['asn'] as num?)?.toInt());
-      final _Geo g;
+      final NodeGeo g;
       if (front != null) {
-        g = _Geo.fronted(front);
+        g = NodeGeo(frontedBy: front);
       } else {
         final cc = (j['country_code'] as String?)?.toUpperCase() ?? '';
         final country = (j['country'] as String?) ?? '';
@@ -383,10 +399,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
         // the country), kept short with the country code. Fall back to country.
         final String place =
             city.isNotEmpty ? (cc.isNotEmpty ? '$city, $cc' : city) : country;
-        g = _Geo(countryCode: cc, place: place);
+        g = NodeGeo(countryCode: cc, place: place);
       }
       _geoByHost[host] = g;
-      _geo[_key(n)] = g;
+      _geoStore.setGuess(key, g);
     } catch (_) {/* leave the row on its name */}
   }
 
@@ -555,7 +571,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         return _NodeRow(
           node: n,
           probe: _probe[_key(n)],
-          geo: _geo[_key(n)],
+          geo: _geoStore[_key(n)],
           selected: pinned == _key(n),
           // The core's live latency for this node (through the actual tunnel, so
           // with the bypass applied), whether the core tested it at all, and
@@ -984,7 +1000,7 @@ class _NodeRow extends StatelessWidget {
   final NodeProbeResult? probe;
 
   /// Null until the location resolves, and location-free for fronted addresses.
-  final _Geo? geo;
+  final NodeGeo? geo;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1014,9 +1030,11 @@ class _NodeRow extends StatelessWidget {
     // Lead with a real location when there is one. A fronted address has no
     // location to show, so the row falls back to the name the panel gave it
     // rather than printing the CDN edge's country as if it were the exit.
+    // The name is the server's own, always. Where the node is only drives the
+    // flag (and a small detail below); the owner's labels are what users
+    // recognise, and a guessed city used to replace them.
     final String location = geo?.place ?? '';
-    final String primary =
-        location.isNotEmpty ? location : (clean.isNotEmpty ? clean : addr);
+    final String primary = clean.isNotEmpty ? clean : addr;
     final List<String> transport = <String>[
       ..._transportTags(node),
       if (geo?.frontedBy != null) geo!.frontedBy!,
@@ -1026,6 +1044,7 @@ class _NodeRow extends StatelessWidget {
     final List<String> detail = <String>[
       if ((probe?.reason ?? '').isNotEmpty) probe!.reason!,
       ..._nodeDetail(node),
+      if (location.isNotEmpty) location,
     ];
 
     // A calm left rail marks the pinned exit (indigo) or, more strongly, the
@@ -1495,21 +1514,6 @@ class _VerdictPill extends StatelessWidget {
   }
 }
 /// Where a node is, or why that cannot be said.
-class _Geo {
-  const _Geo({this.countryCode = '', this.place = ''}) : frontedBy = null;
-
-  /// An address that belongs to a CDN's anycast edge. The country such an
-  /// address resolves to is the edge the *lookup* landed on, not where the
-  /// node's traffic comes out, so no location is claimed at all.
-  const _Geo.fronted(String cdn)
-      : countryCode = '',
-        place = '',
-        frontedBy = cdn;
-
-  final String countryCode;
-  final String place;
-  final String? frontedBy;
-}
 
 /// Names the CDN an address belongs to, or null for an ordinary host.
 ///

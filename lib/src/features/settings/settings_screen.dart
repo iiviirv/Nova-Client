@@ -11,11 +11,8 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
-import '../cloudflare/cloudflare_screen.dart';
 import '../logs/log_screen.dart';
 import '../panel/open_panel.dart';
-import '../radar/radar_screen.dart';
-import '../relay/relay_screen.dart';
 import '../routing/routing_screen.dart';
 import 'settings_controller.dart';
 
@@ -76,31 +73,13 @@ class SettingsScreen extends StatelessWidget {
                           onTap: () => _push(context, const RoutingScreen()),
                         ),
                         _div(nova.border),
-                        _NavRow(
-                          icon: Icons.radar_rounded,
-                          color: nova.cyan,
-                          title: s.navRadar,
-                          subtitle: s.setRadarSub,
-                          onTap: () => _push(context, const RadarScreen()),
-                        ),
-                        _div(nova.border),
-                        _NavRow(
-                          icon: Icons.cloud_rounded,
-                          color: nova.indigo,
-                          title: s.setCloudflare,
-                          subtitle: s.setCloudflareSub,
-                          onTap: () =>
-                              _push(context, const CloudflareScreen()),
-                        ),
-                        _div(nova.border),
-                        _NavRow(
-                          icon: Icons.hub_rounded,
-                          color: nova.info,
-                          title: s.setRelay,
-                          subtitle: s.setRelaySub,
-                          onTap: () => _push(context, const RelayScreen()),
-                        ),
-                        _div(nova.border),
+                        // Radar, Cloudflare and Google relay were removed
+                        // from Settings on the operator's request
+                        // (2026-08-19): they are panel-owner tools, not
+                        // something an end user should see here. The screens
+                        // and controllers stay (the relay still serves
+                        // subscription fetches when configured); only the
+                        // entry points went.
                         _NavRow(
                           icon: Icons.terminal_rounded,
                           color: nova.success,

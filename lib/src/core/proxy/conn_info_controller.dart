@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'proxy_controller.dart';
+import '../geo/node_geo_store.dart';
 
 /// Live connection info shown on the dashboard metrics block: the public exit
 /// IP, the country it geolocates to, and a round-trip ping. Mirrors the native
@@ -146,6 +147,7 @@ class ConnInfoController extends ChangeNotifier {
         pingMs: _info.pingMs ?? geo.pingMs,
       );
       notifyListeners();
+      _rememberExitCountry(geo);
     } catch (_) {
       // Geo is optional; "Secure" already stands on the core's proof.
     }
@@ -196,6 +198,19 @@ class ConnInfoController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The exit country just observed belongs to the node carrying traffic: the
+  /// pinned one, or the auto-selector's current pick. Remember it against the
+  /// node so its flag is right from now on (and is never re-guessed from the
+  /// address, which for a CDN-fronted node is not even where traffic exits).
+  void _rememberExitCountry(ConnInfo geo) {
+    final String? cc = geo.countryCode;
+    if (cc == null || cc.isEmpty) return;
+    final String? key = _proxy.coreHealth.value.selectedKey ??
+        _proxy.activeProfile?.pinnedNode;
+    if (key == null || key.isEmpty) return;
+    NodeGeoStore.instance.learnExit(key, cc, countryName: geo.countryName);
+  }
+
   Future<void> _refresh() async {
     final (bool reachable, int? probePing) = await _probe();
     final ConnInfo? geo = reachable ? await _fetchGeo() : null;
@@ -213,6 +228,7 @@ class ConnInfoController extends ChangeNotifier {
       pingMs: ping,
     );
     notifyListeners();
+    if (geo != null) _rememberExitCountry(geo);
   }
 
   /// A tiny `generate_204` request through the tunnel: its completion is the

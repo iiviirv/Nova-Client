@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/geo/node_geo_store.dart';
 import 'src/core/proxy/conn_info_controller.dart';
 import 'src/core/proxy/desktop_proxy_controller.dart';
 import 'src/core/proxy/mock_proxy_controller.dart';
@@ -98,6 +99,7 @@ Future<void> main() async {
     radar.attachPrefs(prefs);
     cloudflare.attachPrefs(prefs);
     settings.attachPrefs(prefs);
+    NodeGeoStore.instance.attachPrefs(prefs);
 
     // Persist each subscription's last good body so a blocked refresh
     // (workers.dev filtered) serves the saved servers instead of wiping the

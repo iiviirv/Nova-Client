@@ -15,7 +15,6 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
 import '../../widgets/nova_usage_bar_chart.dart';
-import '../cloudflare/cloudflare_controller.dart';
 import '../speedtest/speed_test_screen.dart';
 
 /// The Stats tab — session traffic at a glance: a total card with a live
@@ -251,8 +250,9 @@ class _StatsScreenState extends State<StatsScreen> with WidgetsBindingObserver {
                 ),
                 ..._planCards(context, scope),
                 const SizedBox(height: 12),
-                _WorkerUsageCard(cf: scope.cloudflare),
-                const SizedBox(height: 12),
+                // The Cloudflare Worker usage card was removed on the
+                // operator's request (2026-08-19): it is a panel-owner
+                // figure, not an end-user one.
                 _LiveSection(proxy: proxy, active: active),
               ],
             ),
@@ -369,96 +369,6 @@ class _StatCard extends StatelessWidget {
               Text(label, style: text.bodySmall?.copyWith(color: nova.muted)),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Cloudflare Worker request usage vs the free-plan daily allowance. Shows a
-/// usage bar when connected and analytics are available; otherwise a short hint.
-class _WorkerUsageCard extends StatelessWidget {
-  const _WorkerUsageCard({required this.cf});
-  final CloudflareController cf;
-
-  /// Thousands-separated integer (e.g. 12,345) without pulling in intl.
-  static String _grouped(int n) {
-    final String s = n.toString();
-    final StringBuffer b = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
-      b.write(s[i]);
-    }
-    return b.toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final nova = context.nova;
-    final s = NovaStrings.of(context);
-    final text = Theme.of(context).textTheme;
-    final bool connected = cf.phase == CfPhase.connected;
-    final int? used = connected ? cf.workerRequestsToday : null;
-    final int limit = cf.workerRequestLimit;
-    final double frac =
-        (used != null && limit > 0) ? (used / limit).clamp(0.0, 1.0) : 0.0;
-    final Color bar =
-        frac < 0.7 ? nova.success : (frac < 0.9 ? nova.warning : nova.danger);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: nova.surface,
-        borderRadius: NovaRadii.toolR,
-        border: Border.all(color: nova.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              NovaIconChip(
-                  icon: Icons.cloud_rounded,
-                  color: nova.indigo,
-                  size: 36,
-                  radius: 10),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      connected && used != null
-                          ? '${_grouped(used)} / ${_grouped(limit)}'
-                          : s.statsWorkerUsage,
-                      style: text.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    Text(
-                      !connected
-                          ? s.statsWorkerNoData
-                          : (used == null
-                              ? s.statsWorkerUsage
-                              : s.statsRequestsToday),
-                      style: text.bodySmall?.copyWith(color: nova.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (connected && used != null) ...<Widget>[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(NovaRadii.pill),
-              child: LinearProgressIndicator(
-                value: frac,
-                minHeight: 8,
-                color: bar,
-                backgroundColor: nova.surface2,
-              ),
-            ),
-          ],
         ],
       ),
     );
