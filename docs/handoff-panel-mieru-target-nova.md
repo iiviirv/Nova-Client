@@ -80,3 +80,21 @@ curl -s 'https://vpn.novaproxy.qzz.io/sub?u=<uid>&target=nova' \
 subscription: an "Azad mieru" node shows up and connects. The client-side proof
 that this shape imports correctly is
 `test/nova_target_subscription_test.dart` (`mieruReadiness`).
+
+## Also for `target=nova`: xhttp nodes are dropped (2026-08-19)
+
+A tester reports that the Nova-target subscription omits their xhttp servers,
+while the plain share-link subscription includes them and they work.
+
+Cause: `target=nova` emits sing-box JSON, and sing-box has no xhttp transport
+(xhttp is Xray-only), so the panel has nowhere to put an xhttp node in that
+format and leaves it out. The client is not dropping it: its importer preserves
+a `transport.type: "xhttp"` outbound if one is present (tested).
+
+Fix on the panel: for `target=nova`, emit xhttp nodes anyway, as a vless
+outbound whose transport is `{"type": "xhttp", "path": ..., "host": ...}` (the
+same fields the `vless://...type=xhttp` share link carries). Nova-Client reads
+that non-standard transport type and routes the node to its bundled Xray core,
+exactly as it does for the share-link form. Only Nova-Client consumes
+`target=nova`, so the non-standard type is safe there; do not do this for
+`target=singbox`/`hiddify`, which other apps read.
