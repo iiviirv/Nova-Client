@@ -15,6 +15,7 @@ import '../models/proxy_profile.dart';
 import 'fragment_proxy.dart';
 import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
+import 'singbox/singbox_outbound_import.dart';
 import 'singbox/share_link.dart';
 
 /// Fetches the raw body of a subscription URL. Injectable so tests don't hit
@@ -141,6 +142,19 @@ SkippedLinks lastSkippedLinks = SkippedLinks(<String, int>{});
 /// into nodes, skipping anything that doesn't parse.
 List<ProxyNode> parseSubscriptionBody(String body) {
   final String text = _maybeBase64Decode(body.trim());
+  // The panel's own `target=nova` returns a sing-box config document, not a
+  // list of share links; the line parser below finds nothing in it, which is
+  // how a Nova-target subscription imported with zero servers. Take that shape
+  // first (base64-wrapped or plain), then fall through to the link parser.
+  if (looksLikeSingboxConfig(text)) {
+    final List<ProxyNode> fromConfig = parseSingboxOutbounds(text)
+        .where((ProxyNode n) => !_isPlaceholderNode(n))
+        .toList();
+    if (fromConfig.isNotEmpty) {
+      lastSkippedLinks = SkippedLinks(const <String, int>{});
+      return fromConfig;
+    }
+  }
   final List<ProxyNode> nodes = <ProxyNode>[];
   final Map<String, int> skipped = <String, int>{};
   void note(String line) {

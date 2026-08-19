@@ -1,0 +1,224 @@
+{
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Nova",
+      "outbounds": [
+        "auto",
+        "Azad",
+        "Azad trojan",
+        "Azad (\ud83c\uddfa\ud83c\uddf8 United States)",
+        "Azad (\ud83c\uddf9\ud83c\uddf7 Turkey)",
+        "Azad (\ud83c\udde9\ud83c\uddea Germany)",
+        "Azad (\ud83c\uddf3\ud83c\uddf1 Netherlands)",
+        "Azad (\ud83c\uddec\ud83c\udde7 United Kingdom)"
+      ],
+      "default": "auto"
+    },
+    {
+      "type": "urltest",
+      "tag": "auto",
+      "outbounds": [
+        "Azad",
+        "Azad trojan",
+        "Azad (\ud83c\uddfa\ud83c\uddf8 United States)",
+        "Azad (\ud83c\uddf9\ud83c\uddf7 Turkey)",
+        "Azad (\ud83c\udde9\ud83c\uddea Germany)",
+        "Azad (\ud83c\uddf3\ud83c\uddf1 Netherlands)",
+        "Azad (\ud83c\uddec\ud83c\udde7 United Kingdom)"
+      ],
+      "url": "http://www.gstatic.com/generate_204",
+      "interval": "5m"
+    },
+    {
+      "type": "vless",
+      "tag": "Azad",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/novapanel2026",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "Azad trojan",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "password": "REDACTED-PASSWORD",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "Azad (\ud83c\uddfa\ud83c\uddf8 United States)",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova-geo-tor-us",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "Azad (\ud83c\uddf9\ud83c\uddf7 Turkey)",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova-geo-tor-tr",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "Azad (\ud83c\udde9\ud83c\uddea Germany)",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova-geo-tor-de",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "Azad (\ud83c\uddf3\ud83c\uddf1 Netherlands)",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova-geo-tor-nl",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "Azad (\ud83c\uddec\ud83c\udde7 United Kingdom)",
+      "server": "vpn.novaproxy.qzz.io",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "vpn.novaproxy.qzz.io",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/nova-geo-tor-gb",
+        "headers": {
+          "Host": "vpn.novaproxy.qzz.io"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain_suffix": [
+          ".ir"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geoip-ir"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ir",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ir.srs",
+        "download_detour": "Nova"
+      }
+    ],
+    "final": "Nova",
+    "auto_detect_interface": true
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

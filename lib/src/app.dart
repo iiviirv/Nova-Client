@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/models/proxy_profile.dart';
+import 'core/platform/windows_url_scheme.dart';
 import 'core/proxy/conn_info_controller.dart';
 import 'core/proxy/proxy_controller.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
@@ -125,6 +126,9 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
         if (mounted) setState(() => _minSplash = false);
       });
     });
+    // Windows has to register its own URL schemes (no manifest does it), and a
+    // nova:// link did nothing there until it did. No-op elsewhere.
+    registerWindowsUrlSchemes();
     _initDeepLinks();
   }
 
