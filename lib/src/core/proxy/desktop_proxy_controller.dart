@@ -1034,6 +1034,168 @@ class DesktopProxyController extends ProxyController {
     } catch (_) {}
   }
 
+  // ---- "test all through the core": a second, tunnel-less measuring core ----
+
+  @override
+  bool get canMeasureNodes => true;
+
+  Process? _measureProcess;
+
+  /// How long one measuring run may take end to end. sing-box tests the pool
+  /// ten nodes at a time with a 5s budget each, so a 60-node subscription fits
+  /// comfortably; a longer list still publishes what it got in time.
+  static const Duration _measureBudget = Duration(seconds: 60);
+
+  @override
+  Future<String?> measureNodes(List<ProxyNode> nodes) async {
+    if (measuring.value) return null;
+    if (nodes.isEmpty) return null;
+    if (tunMode && (_state.isActive || _state.isBusy)) {
+      // In full-device mode every dial the measuring core makes would itself
+      // go through the live tunnel, so the numbers would be the current exit
+      // plus the node, not the node. The live pool already has honest figures
+      // while connected; measuring everything needs the tunnel down.
+      return 'Disconnect first to measure all servers in full-device mode.';
+    }
+    measuring.value = true;
+    Process? proc;
+    final List<String> tail = <String>[];
+    try {
+      final int mixedPort = await _freeLoopbackPort();
+      final int apiPort = await _freeLoopbackPort();
+      final SingboxRouteOptions opts = routeOptions.copyWith(
+        localRuleSets: true,
+        hardenTls: _active?.hardenTls ?? false,
+        hardenPacketFragment: !Platform.isWindows,
+      );
+      final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
+      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
+          SingboxConfig.buildMeasureMap(resolved,
+              options: opts, mixedPort: mixedPort, clashPort: apiPort);
+      final String binary = await _ensureBinary();
+      final Directory dir = await getApplicationSupportDirectory();
+      final String base = await _extractRuleSets();
+      final File cfgFile = File('${dir.path}/nova-measure.json');
+      await cfgFile.writeAsString(const JsonEncoder.withIndent('  ')
+          .convert(built.config)
+          .replaceAll(SingboxConfig.ruleSetBaseToken, base));
+      NovaLog.instance.write(
+          'Measuring ${built.tagKeys.length} servers through the core');
+
+      proc = await Process.start(binary, <String>['run', '-c', cfgFile.path],
+          environment: _coreEnv);
+      _measureProcess = proc;
+      proc.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((String l) {
+        tail.add(l);
+        if (tail.length > 12) tail.removeAt(0);
+      });
+      unawaited(proc.stdout.drain<void>());
+      bool exited = false;
+      unawaited(proc.exitCode.then((_) => exited = true));
+
+      // Wait for the measuring core's API.
+      final Uri version = Uri.parse('http://127.0.0.1:$apiPort/version');
+      bool up = false;
+      for (int i = 0; i < 60 && !exited; i++) {
+        try {
+          final http.Response r =
+              await http.get(version).timeout(const Duration(milliseconds: 500));
+          if (r.statusCode == 200) {
+            up = true;
+            break;
+          }
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      if (!up) {
+        final String why = tail.isEmpty ? 'it did not start' : tail.join(' | ');
+        return 'Could not start the measuring core: $why';
+      }
+
+      // Kick the group's test. The urltest group also runs its own first pass
+      // at startup; either way the results land in each outbound's history,
+      // which is what is polled below, so a "test already running" reply here
+      // is fine. Not awaited: it returns only when the whole pool is done.
+      final bool single =
+          built.tagKeys.length == 1 && built.tagKeys.containsKey('proxy');
+      final Uri kick = Uri.parse(single
+          ? 'http://127.0.0.1:$apiPort/proxies/proxy/delay'
+              '?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000'
+          : 'http://127.0.0.1:$apiPort/group/proxy/delay'
+              '?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=60000');
+      unawaited(http.get(kick).timeout(_measureBudget).then((_) {},
+          onError: (Object _) {}));
+
+      // Poll the per-outbound history and publish as rows fill in, so the list
+      // updates live instead of all at once at the end. Stop when every node
+      // answered, or when nothing new has arrived for a while after the first
+      // results, or at the budget.
+      final Uri proxies = Uri.parse('http://127.0.0.1:$apiPort/proxies');
+      final Stopwatch clock = Stopwatch()..start();
+      int lastCount = 0;
+      int lastChangeMs = 0;
+      Map<String, int> delays = <String, int>{};
+      while (clock.elapsed < _measureBudget && !exited) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        try {
+          final http.Response r =
+              await http.get(proxies).timeout(const Duration(seconds: 3));
+          if (r.statusCode != 200) continue;
+          final CoreNodeHealth h = healthFromClashProxies(built.tagKeys,
+              (jsonDecode(r.body) as Map).cast<String, dynamic>());
+          delays = h.delayMsByKey;
+          // Keys still pending are not "tested" yet: only the ones that
+          // answered carry a verdict while the run is in progress.
+          coreHealth.value = CoreNodeHealth(
+              delayMsByKey: delays, testedKeys: delays.keys.toSet());
+        } catch (_) {
+          continue;
+        }
+        if (delays.length != lastCount) {
+          lastCount = delays.length;
+          lastChangeMs = clock.elapsedMilliseconds;
+        }
+        if (delays.length >= built.tagKeys.length) break;
+        // Quiet for 8s after the first answers (and at least 12s in): the rest
+        // are the ones that time out, which sing-box takes 5s each to give up
+        // on, ten at a time.
+        if (lastCount > 0 &&
+            clock.elapsedMilliseconds - lastChangeMs > 8000 &&
+            clock.elapsedMilliseconds > 12000) {
+          break;
+        }
+      }
+      // Final verdicts: everything in the pool was tried; a node with no
+      // delay is "no response", not "not testable".
+      coreHealth.value = CoreNodeHealth(
+          delayMsByKey: delays, testedKeys: built.tagKeys.values.toSet());
+      NovaLog.instance.write(
+          'Measured ${built.tagKeys.length} servers through the core: '
+          '${delays.length} answered');
+      return null;
+    } on FormatException catch (e) {
+      return e.message;
+    } catch (e) {
+      return 'Could not measure: $e';
+    } finally {
+      proc?.kill();
+      _measureProcess = null;
+      measuring.value = false;
+    }
+  }
+
+  /// A free TCP port on loopback for the measuring core's inbound and API, so
+  /// it never collides with the tunnel core's fixed ports or another app.
+  Future<int> _freeLoopbackPort() async {
+    final ServerSocket s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int port = s.port;
+    await s.close();
+    return port;
+  }
+
   /// Reshape the Clash API's `GET /proxies` body into [CoreNodeHealth] for the
   /// given `node-i` tag map. Pure, so it is unit-tested against the exact JSON
   /// the shipped core returns.
@@ -1363,6 +1525,9 @@ class DesktopProxyController extends ProxyController {
 
   @override
   void dispose() {
+    // A measuring core still running when the app closes must not outlive it.
+    _measureProcess?.kill();
+    _measureProcess = null;
     _cleanup();
     super.dispose();
   }

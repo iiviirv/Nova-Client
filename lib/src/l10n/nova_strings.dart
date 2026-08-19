@@ -686,6 +686,8 @@ class NovaStrings {
   String get nodeAuto => t('node.auto');
   String get nodeAutoSub => t('node.autoSub');
   String get nodeRefresh => t('node.refresh');
+  String get nodeMeasureAll => t('node.measureAll');
+  String get nodeMeasureDone => t('node.measureDone');
   String get nodeSearch => t('node.search');
   String get nodeClearSearch => t('node.clearSearch');
   String get nodeNoMatch => t('node.noMatch');
@@ -1389,6 +1391,8 @@ class NovaStrings {
     'node.auto': 'Auto (fastest)',
     'node.autoSub': 'Let Nova pick the lowest-latency node',
     'node.refresh': 'Refresh',
+    'node.measureAll': 'Test all servers through the core',
+    'node.measureDone': 'Measured {n} servers through the core',
     'node.search': 'Search nodes',
     'node.clearSearch': 'Clear search',
     'node.noMatch': 'No nodes match your search',
@@ -2084,6 +2088,8 @@ class NovaStrings {
     'node.auto': 'خودکار (سریع‌ترین)',
     'node.autoSub': 'نوا سریع‌ترین سرور را انتخاب می‌کند',
     'node.refresh': 'بازخوانی',
+    'node.measureAll': 'تست همه سرورها از طریق هسته',
+    'node.measureDone': '\u2066{n}\u2069 سرور از طریق هسته اندازه‌گیری شد',
     'node.search': 'جستجوی سرور',
     'node.clearSearch': 'پاک کردن جستجو',
     'node.noMatch': 'سروری با جستجوی شما پیدا نشد',

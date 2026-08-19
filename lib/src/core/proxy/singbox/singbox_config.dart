@@ -406,6 +406,7 @@ class SingboxConfig {
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     bool includeXhttp = false,
+    int? poolCap,
   }) {
     final List<ProxyNode> nodes =
         inputNodes.map((ProxyNode n) => _maybeHarden(n, options)).toList();
@@ -415,7 +416,9 @@ class SingboxConfig {
     // is what was pushing the extension over the limit and dropping the tunnel.
     // 12 is still plenty for the urltest to find a fast exit; roomier hosts
     // (desktop/Android) use the full budget.
-    final int cap = options.lean ? 12 : kMaxAutoNodes;
+    // [poolCap] overrides the budget: the measuring core (see buildMeasureMap)
+    // wants every node, not the first 24.
+    final int cap = poolCap ?? (options.lean ? 12 : kMaxAutoNodes);
     // Drop transports the sing-box core can't carry at all (xhttp / SplitHTTP is
     // Xray only) so they never sit in the urltest pool as dead exits.
     final List<ProxyNode> usable = nodes
@@ -473,11 +476,79 @@ class SingboxConfig {
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     bool includeXhttp = false,
+    int? poolCap,
   }) {
-    final List<ProxyNode> picked =
-        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
+    final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
+        options: options, includeXhttp: includeXhttp, poolCap: poolCap);
     if (picked.length < 2) return const <String>[];
     return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
+  }
+
+  /// The pool budget for a measuring run: every node a subscription is likely
+  /// to carry, with a ceiling so a pathological list cannot start a core with
+  /// thousands of idle outbounds.
+  static const int kMeasurePoolCap = 200;
+
+  /// A config for the MEASURING core: no TUN, no system proxy, just every
+  /// usable node as an outbound behind the `proxy` urltest group, a local
+  /// `mixed` inbound (so the core has an inbound at all) and, when [clashPort]
+  /// is given, the Clash API the desktop controller triggers the test through.
+  ///
+  /// This is what turns "not testable" into a number for nodes the outside
+  /// probe cannot judge (Reality, obfuscated Hysteria2, SS2022, xhttp-less
+  /// VLESS on a clean IP): the core dials each one exactly as a tunnel would
+  /// and reports the round-trip, no tunnel required. Same idea as Karing's
+  /// "test all through the core", and the same builder as the auto-select
+  /// config so a node measures exactly as it would run.
+  ///
+  /// Returns the config and the `node-i` tag -> stable node key map the
+  /// controller needs to land results on the right rows. Throws
+  /// [FormatException] when no node can be measured (all xhttp).
+  static ({Map<String, dynamic> config, Map<String, String> tagKeys})
+      buildMeasureMap(
+    List<ProxyNode> inputNodes, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    required int mixedPort,
+    int? clashPort,
+  }) {
+    final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
+        options: options, poolCap: kMeasurePoolCap);
+    if (picked.isEmpty) {
+      throw const FormatException(
+          'None of these servers use a transport Nova can measure.');
+    }
+    final Map<String, dynamic> cfg;
+    final Map<String, String> tagKeys;
+    if (picked.length == 1) {
+      // A single node has no urltest group; it is measured by its own tag.
+      cfg = buildMap(picked.first, options: options);
+      tagKeys = <String, String>{'proxy': proxyNodeKey(picked.first)};
+    } else {
+      cfg = buildMultiMap(picked, options: options, poolCap: kMeasurePoolCap);
+      final List<String> keys = orderedMultiNodeKeys(picked,
+          options: options, poolCap: kMeasurePoolCap);
+      tagKeys = <String, String>{
+        for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
+      };
+    }
+    cfg['inbounds'] = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'type': 'mixed',
+        'tag': 'measure-in',
+        'listen': '127.0.0.1',
+        'listen_port': mixedPort,
+      },
+    ];
+    if (clashPort != null) {
+      final Map<String, dynamic> experimental =
+          (cfg['experimental'] as Map?)?.cast<String, dynamic>() ??
+              <String, dynamic>{};
+      experimental['clash_api'] = <String, dynamic>{
+        'external_controller': '127.0.0.1:$clashPort',
+      };
+      cfg['experimental'] = experimental;
+    }
+    return (config: cfg, tagKeys: tagKeys);
   }
 
   /// The xhttp nodes that will sit in the auto pool, in the same order they take
@@ -497,9 +568,10 @@ class SingboxConfig {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     bool includeXhttp = false,
     int xhttpBasePort = 10808,
+    int? poolCap,
   }) {
-    final List<ProxyNode> picked =
-        pickedMultiNodes(inputNodes, options: options, includeXhttp: includeXhttp);
+    final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
+        options: options, includeXhttp: includeXhttp, poolCap: poolCap);
     if (picked.isEmpty) {
       throw const FormatException(
           'None of this subscription\'s nodes use a transport Nova can run '

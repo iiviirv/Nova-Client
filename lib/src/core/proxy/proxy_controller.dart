@@ -144,6 +144,23 @@ abstract class ProxyController extends ChangeNotifier {
   final ValueNotifier<CoreNodeHealth> coreHealth =
       ValueNotifier<CoreNodeHealth>(CoreNodeHealth.empty);
 
+  /// Whether this host can run a measuring core (see [measureNodes]). The node
+  /// list shows the "test all through the core" button only when true.
+  bool get canMeasureNodes => false;
+
+  /// True while a [measureNodes] run is in flight; drives the button's spinner.
+  final ValueNotifier<bool> measuring = ValueNotifier<bool>(false);
+
+  /// Measures every node in [nodes] through a second, tunnel-less core (no
+  /// TUN, no system proxy) and publishes the round-trips on [coreHealth], so
+  /// nodes the outside probe can only call "not testable" (Reality, obfuscated
+  /// Hysteria2, SS2022, a clean-IP VLESS behind an SNI block) get a real
+  /// number and a dead one reads "no response". The same builder as the
+  /// auto-select config is used, so a node measures exactly as it would run.
+  /// Returns the message to show when nothing could be measured, else null.
+  Future<String?> measureNodes(List<ProxyNode> nodes) async =>
+      'Not supported on this device yet';
+
   /// True when the tunnel reports connected but the controller has exhausted
   /// its traffic probes and its one self-heal rebuild without a single request
   /// getting through. The dashboard uses this to swap the amber "Verifying

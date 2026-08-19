@@ -219,6 +219,20 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
   }
 
+  /// The lightning button: measure every listed server through a measuring
+  /// core (see ProxyController.measureNodes). Results land on coreHealth, which
+  /// the rows already render as the live bolt badge / "no response".
+  Future<void> _measureAll() async {
+    if (_nodes.isEmpty) return;
+    final scope = NovaScope.of(context);
+    final NovaStrings s = NovaStrings.of(context);
+    final String? problem = await scope.proxy.measureNodes(List<ProxyNode>.of(_nodes));
+    if (!mounted) return;
+    final String msg = problem ??
+        s.nodeMeasureDone.replaceFirst('{n}', '${_nodes.length}');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   bool _sameKeys(List<ProxyNode> a, List<ProxyNode> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
@@ -428,6 +442,26 @@ class _NodeListScreenState extends State<NodeListScreen> {
       appBar: AppBar(
         title: Text(profile?.name ?? 'Nodes'),
         actions: <Widget>[
+          // "Test all through the core": a second, tunnel-less core dials
+          // every server exactly as a tunnel would and reports the round-trip,
+          // so the nodes the outside probe can only call "not testable"
+          // (Reality, obfuscated Hysteria2, SS2022, clean-IP VLESS behind an
+          // SNI block) get a real number. Only where the host can run one.
+          if (!_loading && NovaScope.of(context).proxy.canMeasureNodes)
+            ValueListenableBuilder<bool>(
+              valueListenable: NovaScope.of(context).proxy.measuring,
+              builder: (BuildContext context, bool busy, _) => IconButton(
+                tooltip: s.nodeMeasureAll,
+                icon: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bolt_rounded),
+                onPressed: busy ? null : _measureAll,
+              ),
+            ),
           if (!_loading)
             IconButton(
               tooltip: s.nodeRefresh,
