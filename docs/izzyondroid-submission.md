@@ -18,14 +18,28 @@ issue are Vahid's to do; the content below is ready to paste.
 
 Inclusion policy: https://izzyondroid.org/docs/general/AppInclusionPolicy/
 
+## Before you post: a name collision, and the AI question
+
+- An unrelated app also called "Nova" (a game streaming client by `papi-ux`)
+  was declined at IzzyOnDroid 3 months ago (repodata #159), for being
+  gaming-focused, not for AI. Expect the maintainer to notice the shared name;
+  the source URL and description make the difference obvious. Consider titling
+  the request `[AppRequest] Nova (proxy client)` so it does not look like a
+  resubmission.
+- In that thread the maintainer wrote that AI help with docs/testing is
+  acceptable and that "the most critical parts are where it touches your
+  code." Ours did touch the code. The disclosure below says so plainly and
+  explains the human review and test coverage around it. A decline on that
+  ground is a real possibility; do not soften the disclosure to avoid it.
+
 ## Readiness
 
 | Requirement | State |
 | --- | --- |
 | Public source repo | Yes, `github.com/iiviirv/Nova-Client` |
 | FOSS license | GPL-3.0, and `main` now reports it correctly |
-| Fastlane folder in the repo | Yes, `fastlane/metadata/android/en-US/` on `main` |
-| APK on a GitHub Release | v1.11.0-beta (build 83), published by CI |
+| Fastlane folder in the repo | Yes, on `main`, with changelogs 82-84 and four phone screenshots |
+| APK on a GitHub Release | v1.12.0-beta (build 84), published by CI to both repos |
 | Stable signing key | Yes, CI signs every release with the permanent upload key |
 | Not already listed | Confirm at https://apt.izzysoft.de/fdroid/ before posting |
 
@@ -33,7 +47,7 @@ Inclusion policy: https://izzyondroid.org/docs/general/AppInclusionPolicy/
 
 **Title**
 
-    [AppRequest] Nova
+    [AppRequest] Nova (proxy client)
 
 **Guidelines checkboxes:** tick "I am the developer of the app", "complies with
 the App Inclusion Policy", "not already listed" and "Fastlane folder available".
@@ -106,11 +120,22 @@ the App Inclusion Policy", "not already listed" and "Fastlane folder available".
 
 **What did the tools help with?**
 
-    Used throughout as a coding assistant: implementing protocol support and
-    the native Android/iOS tunnel plumbing, UI work, debugging (for example a
-    routing loop in the two-core data path), writing tests, and documentation.
-    Architecture decisions, the security model and all release decisions were
-    made by the developer.
+    Used throughout as a coding assistant, including in the code itself: protocol
+    support (mieru, AmneziaWG), the Android VpnService and iOS Network Extension
+    plumbing, UI, debugging, tests and documentation. Being direct about that,
+    since it is what your policy cares about most.
+
+    What is human, and how it is kept honest:
+    - Architecture, the security model, what ships and when: the developer.
+    - Every change is reviewed and edited by the developer before it lands.
+    - The core is not AI-authored: it is upstream sing-box (pinned by commit)
+      plus small, readable patches (AmneziaWG, TLS fragmentation) that are
+      SHA-pinned; the build refuses to run if the patch bytes change.
+    - 300+ automated tests (config building, share-link parsing, subscription
+      import, probe logic), run on every commit in CI, plus on-device testing
+      on an Android emulator and real hardware before each release. Several
+      release-blocking bugs this year were caught by that testing, not by
+      review alone.
 
 **AI Accountability:** tick both boxes only if true for you. For this project
 both hold: outputs were reviewed and edited, and changes were manually tested
