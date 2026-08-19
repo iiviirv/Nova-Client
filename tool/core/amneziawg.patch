@@ -678,7 +678,7 @@ new file mode 100644
 index 0000000..71ef01b
 --- /dev/null
 +++ b/transport/awg/device.go
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,134 @@
 +package awg
 +
 +import (
@@ -781,11 +781,29 @@ index 0000000..71ef01b
 +// caller is told the tunnel came up when nothing was built: the app reported
 +// "connected" with no tun and every byte leaving the device in the clear.
 +func (d *Device) Close() error {
++	// amneziawg-go's Device.Close() closes the tun it was handed
++	// (device.tun.device.Close() is the first thing it does), so the tun is
++	// already gone by the time it returns. Closing d.tun again here closed the
++	// same gvisor channel queue twice, which panics with "close of closed
++	// channel" and takes the whole process down: on Android the core runs
++	// in-process, so the app simply vanished every time a user disconnected an
++	// AmneziaWG profile.
++	//
++	// Only close the tun ourselves when no awg device ever took ownership of
++	// it (Start failed part-way, so nothing else will). Clearing both fields
++	// also makes a second Close a no-op instead of a second panic.
 +	if d.awgDevice != nil {
 +		d.awgDevice.Close()
 +		d.awgDevice = nil
++		d.tun = nil
++		return nil
 +	}
-+	return common.Close(d.tun)
++	if d.tun != nil {
++		err := common.Close(d.tun)
++		d.tun = nil
++		return err
++	}
++	return nil
 +}
 +
 +func (d *Device) DialContext(ctx context.Context, network string, destination metadata.Socksaddr) (net.Conn, error) {

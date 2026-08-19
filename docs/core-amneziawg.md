@@ -40,7 +40,7 @@ is a configuration key no other protocol uses, such as `jmin`.
 | --- | --- |
 | Upstream | `SagerNet/sing-box` tag `v1.13.13` |
 | Upstream commit | `78b2e12fbdd85e6ec956647d6f79cf0bba85c6ba` |
-| Patch | `tool/core/amneziawg.patch`, SHA-256 `a59362878c14227b9aa43ccee03da5dc6bbc0d867a029ba2a29cfc74e93c994f` |
+| Patch | `tool/core/amneziawg.patch`, SHA-256 `067aa9151015bd9687ad838285097f3b68e7dcd68ef214b2a5069d5bedac817b` |
 | AmneziaWG module | `github.com/amnezia-vpn/amneziawg-go v0.2.16` (MIT), `h1:XY6HOq/xtqH8ZXMncRWkjFs85EKdN10NLNnw23kTpE0=` |
 | gomobile / gobind | `github.com/sagernet/gomobile` `v0.1.12` |
 | Android NDK | `28.0.13004108` |
@@ -331,3 +331,32 @@ then `gomobile bind -target ios,iossimulator -libname=core -o Novacore.xcframewo
 gobind v0.1.12, JDK 17). The exported ObjC API is unchanged by the rebuild
 (novafrag adds no exported symbols), so the existing NovaProxyHost / PacketTunnel
 Swift links against it as-is. Script kept at tool/core (build-novacore-ios).
+
+## 2026-08-18: fixed a crash on disconnect (double-close of the tun)
+
+Users reported the app crashing and closing whenever they disconnected an
+AmneziaWG profile (Android), and macOS showed it directly in the UI as
+`panic on early start: close of closed channel` alongside
+`close endpoint/awg[proxy] take too much time to finish`.
+
+Reproduced with `sing-box run` on an `awg` endpoint plus SIGINT, which gave the
+full Go trace:
+
+    panic: close of closed channel
+      gvisor .../link/channel.(*queue).Close
+      gvisor .../link/channel.(*Endpoint).Close
+      amneziawg-go/tun/netstack.(*netTun).Close
+      sing/common.Close
+      sing-box/transport/awg.(*Device).Close   <- ours
+      sing-box/adapter/endpoint.(*Manager).Close
+
+Cause: `amneziawg-go`'s `device.Device.Close()` closes the tun it was handed
+(`device.tun.device.Close()` is the first thing it does). Our `Device.Close()`
+then called `common.Close(d.tun)` on the same tun, closing the gvisor channel
+queue twice. gvisor's `queue.Close` is not idempotent, so the second close
+panics. The core runs in-process on Android and desktop, so the panic took the
+whole app down rather than surfacing as an error.
+
+Fix: only close the tun ourselves when no awg device ever took ownership of it,
+and clear both fields so a second `Close` is a no-op. Verified with five
+start/stop cycles: zero panics, clean worker shutdown.
