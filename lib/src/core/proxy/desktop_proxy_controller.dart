@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../../features/cloudflare/doh_resolver.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
@@ -14,6 +15,7 @@ import 'proxy_controller.dart';
 import 'singbox_proxy_controller.dart'
     show isBlockedConnectionNoise, SingboxProxyController;
 import 'subscription.dart';
+import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'xray/xray_config.dart';
@@ -458,6 +460,13 @@ class DesktopProxyController extends ProxyController {
       // Same two-core path as mobile; the server host is resolved to an IP first
       // (Xray can't resolve it before the tunnel is up). The pool case (xhttp
       // mixed with other nodes) is a follow-up.
+      // AmneziaWG/WireGuard: the core parses the peer Endpoint with ParseAddr
+      // and rejects a hostname, so a `.conf` with `Endpoint = vpn.example.com`
+      // FATALs at startup. Mobile has resolved such endpoints to an IP since
+      // the AWG core shipped; desktop never did, which is why the same config
+      // connected on Android and failed on Windows (reported as a UAC problem,
+      // see _startElevatedTun) and macOS. Same rewrite here.
+      nodes = await _resolveEndpointHosts(nodes);
       _pendingXrayConfig = null;
       if (nodes.length == 1 && nodes.first.network == 'xhttp') {
         final ProxyNode x = await _resolveXhttpServer(nodes.first);
@@ -788,6 +797,64 @@ class DesktopProxyController extends ProxyController {
       if (a.isNotEmpty) return n.copyWith(server: a.first.address);
     } catch (_) {/* fall through with the domain */}
     return n;
+  }
+
+  /// Rewrites any AmneziaWG/WireGuard node whose peer Endpoint is a domain to
+  /// use a resolved IPv4, the way the mobile controller does. Non-endpoint
+  /// nodes and already-numeric endpoints pass through untouched; an
+  /// unresolvable host passes through too (the core then reports it).
+  @visibleForTesting
+  Future<List<ProxyNode>> resolveEndpointHostsForTest(List<ProxyNode> nodes) =>
+      _resolveEndpointHosts(nodes);
+
+  /// Test seam: replaces the system/DoH lookup used for endpoint hosts.
+  @visibleForTesting
+  Future<String?> Function(String host)? hostResolverOverride;
+
+  Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {
+    final List<ProxyNode> out = <ProxyNode>[];
+    for (final ProxyNode n in nodes) {
+      final String? conf = n.awgConf;
+      if (!n.protocol.isEndpoint || conf == null || conf.isEmpty) {
+        out.add(n);
+        continue;
+      }
+      final String? host = awgEndpointHost(conf);
+      if (host == null || InternetAddress.tryParse(host) != null) {
+        out.add(n);
+        continue;
+      }
+      final String? ip = await (hostResolverOverride ?? _resolveHostToIp)(host);
+      if (ip == null) {
+        NovaLog.instance.write(
+          'AWG endpoint $host did not resolve; the core may reject the name',
+          level: NovaLogLevel.warn,
+        );
+        out.add(n);
+      } else {
+        NovaLog.instance.write(
+            'AWG endpoint $host -> $ip (the core needs a numeric endpoint)');
+        out.add(n.copyWith(awgConf: rewriteAwgEndpointHost(conf, ip)));
+      }
+    }
+    return out;
+  }
+
+  /// System resolver first, DoH second (Iran's ISPs answer some names with
+  /// poison or nothing; DoH goes around that before the tunnel exists).
+  Future<String?> _resolveHostToIp(String host) async {
+    try {
+      final List<InternetAddress> a = await InternetAddress.lookup(host,
+              type: InternetAddressType.IPv4)
+          .timeout(const Duration(seconds: 4));
+      if (a.isNotEmpty) return a.first.address;
+    } catch (_) {}
+    try {
+      final List<String> a =
+          await DohResolver().resolveA(host).timeout(const Duration(seconds: 6));
+      if (a.isNotEmpty) return a.first;
+    } catch (_) {}
+    return null;
   }
 
   String _arch() {
