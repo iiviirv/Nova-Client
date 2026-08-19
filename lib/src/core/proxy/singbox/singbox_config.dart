@@ -929,6 +929,20 @@ class SingboxConfig {
         'server_name': n.sni ?? n.server,
       };
     }
+    // QUIC protocols (Hysteria2, TUIC) do their TLS inside QUIC. sing-box's
+    // QUIC dialer takes a standard TLS config and refuses a uTLS one ("open
+    // connection ... using outbound/hysteria2: unsupported usage for uTLS"),
+    // which is why every Hysteria2 node failed to connect, salamander or not
+    // (reproduced against a local sing-box hysteria2 inbound). Record
+    // fragmentation is a TCP trick too. So: plain TLS, SNI, insecure, ALPN.
+    if (n.protocol.isUdpNative) {
+      return <String, dynamic>{
+        'enabled': true,
+        'server_name': n.sni ?? n.server,
+        if (n.allowInsecure) 'insecure': true,
+        if (n.alpn.isNotEmpty) 'alpn': n.alpn,
+      };
+    }
     // The SNI-block bypass profile. `fp=unsafe` in Xray means no browser
     // fingerprint at all: Go's own TLS with the given cipher list. So uTLS is
     // off, the cipher list is what the link (or the app's default) says.
