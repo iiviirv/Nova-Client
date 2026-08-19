@@ -1,0 +1,8 @@
+- Connection status notification with one tap Disconnect
+- Home screen widget
+- mieru protocol support
+- Easier on your battery in the background
+- Cleaner look throughout; long server names no longer cut off
+- Bilingual (English/Farsi) opening screen
+- Import an AmneziaWG .conf straight from the Add screen
+- Panel nova:// links open Nova

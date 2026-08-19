@@ -1,0 +1,5 @@
+- Fixed a crash when disconnecting an AmneziaWG server
+- The Nova subscription now loads its servers as given
+- Quieter log during Wi-Fi/cellular handovers
+- Windows/macOS: chosen server is respected, dashboard names it, real pings
+- macOS: full-device mode works again; universal Intel + Apple Silicon build
