@@ -75,6 +75,13 @@ class DesktopProxyController extends ProxyController {
   /// route-excluded from sing-box's tunnel to avoid a loop.
   Process? _xrayProcess;
   String? _pendingXrayConfig;
+
+  /// Stable node key -> the panel-given name, rebuilt on every connect, so the
+  /// dashboard can say "Connected via" the server name (see [exitName]).
+  Map<String, String> _keyToName = <String, String>{};
+
+  @override
+  String? exitName(String? key) => key == null ? null : _keyToName[key];
   static const int _xraySocksPort = XrayConfig.defaultSocksPort;
 
   /// Rolling tail of the core's stdout+stderr (last ~40 lines) so a startup
@@ -339,7 +346,14 @@ class DesktopProxyController extends ProxyController {
 
   /// Build the sing-box config for [profile] and swap its TUN inbound for a
   /// local `mixed` inbound plus a Clash API controller, so it runs unprivileged.
-  Future<String> _buildConfig(ProxyProfile profile) async {
+  /// Test seam: the config this controller would run for [profile], without
+  /// starting anything. Lets the pin/name behaviour be asserted directly.
+  @visibleForTesting
+  Future<String> buildConfigForTest(ProxyProfile profile) =>
+      _buildConfig(profile, extractRuleSets: false);
+
+  Future<String> _buildConfig(ProxyProfile profile,
+      {bool extractRuleSets = true}) async {
     final String trimmed = profile.uri.trim();
     final Map<String, dynamic> cfg;
     if (profile.kind == ProxyKind.singboxConfig || trimmed.startsWith('{')) {
@@ -349,8 +363,56 @@ class DesktopProxyController extends ProxyController {
       // subscription profile can connect instead of failing as an invalid link.
       // A subscription expands to its whole node list so the core auto-picks the
       // fastest via a urltest; a single link is just the one node.
-      final List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
+      List<ProxyNode> nodes = await resolveProfileNodes(profile, fetch: subFetcher);
       if (nodes.isEmpty) throw emptyResolveMessage(profile);
+      // Remember each node's panel-given name by its stable key so the dashboard
+      // can say "Connected via <name>". Without this desktop showed a bare
+      // ip:port where mobile showed the server's name.
+      _keyToName = <String, String>{
+        for (final ProxyNode n in nodes) proxyNodeKey(n): n.tag,
+      };
+      // Honour a manually pinned exit. Desktop used to ignore the pin entirely
+      // and always hand the whole list to the urltest, so picking Germany still
+      // exited through whichever node was fastest (a user reported Holland).
+      // Match by stable key first, then by the pinned name, which survives a
+      // panel rotating its clean IP (that changes the key but not the name).
+      final String? pin = profile.pinnedNode;
+      if (pin != null) {
+        ProxyNode? chosen;
+        for (final ProxyNode n in nodes) {
+          if (proxyNodeMatchesKey(n, pin)) {
+            chosen = n;
+            break;
+          }
+        }
+        final String? pinName = profile.pinnedName;
+        if (chosen == null && (pinName ?? '').isNotEmpty) {
+          for (final ProxyNode n in nodes) {
+            if (n.tag == pinName) {
+              chosen = n;
+              NovaLog.instance.write(
+                  'Your chosen server\'s address changed; matched it by name '
+                  '("$pinName") so you stay on the same one.');
+              break;
+            }
+          }
+        }
+        if (chosen != null) {
+          nodes = <ProxyNode>[chosen];
+          NovaLog.instance.write(
+              'Using your chosen server ${chosen.server}:${chosen.port} '
+              '(${chosen.protocol.label})');
+        } else {
+          // Connecting through a different server than the one the list shows
+          // as selected must never be silent.
+          NovaLog.instance.write(
+            'The server you chose is no longer in this subscription; '
+            'auto-selecting instead',
+            level: NovaLogLevel.warn,
+          );
+          notice.value = ProxyNotice.pinnedExitGone;
+        }
+      }
       // Desktop uses BUNDLED local rule-sets. A remote rule-set that can't be
       // downloaded makes sing-box FATAL on startup ("initialize rule-set: i/o
       // timeout"), which is exactly what happens in Iran where the CDN
@@ -425,7 +487,10 @@ class DesktopProxyController extends ProxyController {
     cfg['experimental'] = experimental;
     // Point the config's local rule-set paths (the __NOVA_BASE__ token the
     // builder emits) at the extracted .srs directory on disk.
-    final String base = await _extractRuleSets();
+    // Tests skip the on-disk extraction (it needs a real platform for
+    // path_provider) and keep the placeholder token in the JSON.
+    final String base =
+        extractRuleSets ? await _extractRuleSets() : SingboxConfig.ruleSetBaseToken;
     return const JsonEncoder.withIndent('  ')
         .convert(cfg)
         .replaceAll(SingboxConfig.ruleSetBaseToken, base);
