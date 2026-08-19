@@ -477,10 +477,11 @@ class SingboxConfig {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     bool includeXhttp = false,
     int? poolCap,
+    bool forceGroup = false,
   }) {
     final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
         options: options, includeXhttp: includeXhttp, poolCap: poolCap);
-    if (picked.length < 2) return const <String>[];
+    if (picked.length < 2 && !forceGroup) return const <String>[];
     return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
   }
 
@@ -517,20 +518,16 @@ class SingboxConfig {
       throw const FormatException(
           'None of these servers use a transport Nova can measure.');
     }
-    final Map<String, dynamic> cfg;
-    final Map<String, String> tagKeys;
-    if (picked.length == 1) {
-      // A single node has no urltest group; it is measured by its own tag.
-      cfg = buildMap(picked.first, options: options);
-      tagKeys = <String, String>{'proxy': proxyNodeKey(picked.first)};
-    } else {
-      cfg = buildMultiMap(picked, options: options, poolCap: kMeasurePoolCap);
-      final List<String> keys = orderedMultiNodeKeys(picked,
-          options: options, poolCap: kMeasurePoolCap);
-      tagKeys = <String, String>{
-        for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
-      };
-    }
+    // Always a urltest group, even for one node: both hosts read the results
+    // off the group (desktop from its history via the Clash API, Android from
+    // the command client's group stream).
+    final Map<String, dynamic> cfg = buildMultiMap(picked,
+        options: options, poolCap: kMeasurePoolCap, forceGroup: true);
+    final List<String> keys = orderedMultiNodeKeys(picked,
+        options: options, poolCap: kMeasurePoolCap, forceGroup: true);
+    final Map<String, String> tagKeys = <String, String>{
+      for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
+    };
     cfg['inbounds'] = <Map<String, dynamic>>[
       <String, dynamic>{
         'type': 'mixed',
@@ -569,6 +566,7 @@ class SingboxConfig {
     bool includeXhttp = false,
     int xhttpBasePort = 10808,
     int? poolCap,
+    bool forceGroup = false,
   }) {
     final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
         options: options, includeXhttp: includeXhttp, poolCap: poolCap);
@@ -580,7 +578,10 @@ class SingboxConfig {
     // A single non-xhttp survivor collapses to the plain single-node config.
     // A single xhttp survivor cannot (sing-box has no xhttp outbound); it falls
     // through to the socks-wrapped pool below, which handles a one-entry urltest.
-    if (picked.length == 1 && picked.first.network != 'xhttp') {
+    // [forceGroup] keeps the urltest group even for one node: the measuring
+    // core reads results off the group stream, which has no entry for a lone
+    // outbound.
+    if (picked.length == 1 && picked.first.network != 'xhttp' && !forceGroup) {
       return buildMap(picked.first, options: options);
     }
     final List<Map<String, dynamic>> nodeOutbounds = <Map<String, dynamic>>[];

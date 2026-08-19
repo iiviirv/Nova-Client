@@ -70,6 +70,37 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
+                // "Test all servers through the core": run the measuring core
+                // (no TUN) over the given config and answer with tag -> delay ms
+                // for every node that responded. Live updates also stream out
+                // as `groups` events while it runs. Refused while the tunnel is
+                // up: libbox allows one command server per process, and every
+                // dial would go through the tunnel anyway.
+                "measure" -> {
+                    val config = call.argument<String>("configJson")
+                    val tags = call.argument<List<String>>("tags") ?: emptyList()
+                    if (config.isNullOrEmpty()) {
+                        result.error("no_config", "configJson missing", null)
+                        return@setMethodCallHandler
+                    }
+                    if (NovaProxyBridge.state != "disconnected" && NovaProxyBridge.state != "error") {
+                        result.error("busy", "Disconnect first to measure all servers.", null)
+                        return@setMethodCallHandler
+                    }
+                    NovaMeasure.start(
+                        this,
+                        config,
+                        tags,
+                        done = { delays -> result.success(delays) },
+                        fail = { why -> result.error("measure_failed", why, null) },
+                    )
+                }
+
+                "measureCancel" -> {
+                    NovaMeasure.cancel()
+                    result.success(null)
+                }
+
                 "status" -> result.success(NovaProxyBridge.state)
 
                 // Carrier identity for per-ISP optimization. networkOperator is
@@ -148,6 +179,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startVpn(config: String, xrayConfig: String? = null, label: String? = null) {
+        // A measuring core still running would fight the tunnel for the one
+        // command server; stop it first (its Dart caller gets what it had).
+        NovaMeasure.cancel()
         ensureNotificationPermission()
         val intent = Intent(this, NovaVpnService::class.java)
             .putExtra(NovaVpnService.EXTRA_CONFIG, config)

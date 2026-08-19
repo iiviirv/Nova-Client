@@ -1119,13 +1119,8 @@ class DesktopProxyController extends ProxyController {
       // at startup; either way the results land in each outbound's history,
       // which is what is polled below, so a "test already running" reply here
       // is fine. Not awaited: it returns only when the whole pool is done.
-      final bool single =
-          built.tagKeys.length == 1 && built.tagKeys.containsKey('proxy');
-      final Uri kick = Uri.parse(single
-          ? 'http://127.0.0.1:$apiPort/proxies/proxy/delay'
-              '?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=5000'
-          : 'http://127.0.0.1:$apiPort/group/proxy/delay'
-              '?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=60000');
+      final Uri kick = Uri.parse('http://127.0.0.1:$apiPort/group/proxy/delay'
+          '?url=https%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=60000');
       unawaited(http.get(kick).timeout(_measureBudget).then((_) {},
           onError: (Object _) {}));
 

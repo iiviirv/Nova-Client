@@ -52,10 +52,13 @@ void main() {
     expect(built.tagKeys['node-2'], proxyNodeKey(n[2]));
   });
 
-  test('a single node is measured by its own tag', () {
+  test('a single node still gets a urltest group (the group stream is what '
+      'Android reads)', () {
     final List<ProxyNode> n = nodes(1);
     final built = SingboxConfig.buildMeasureMap(n, mixedPort: 1, clashPort: 2);
-    expect(built.tagKeys, <String, String>{'proxy': proxyNodeKey(n[0])});
+    expect(built.tagKeys, <String, String>{'node-0': proxyNodeKey(n[0])});
+    final List<dynamic> outs = built.config['outbounds'] as List<dynamic>;
+    expect(outs.any((dynamic o) => (o as Map)['type'] == 'urltest'), isTrue);
     expect((built.config['inbounds'] as List<dynamic>).single['type'], 'mixed');
   });
 

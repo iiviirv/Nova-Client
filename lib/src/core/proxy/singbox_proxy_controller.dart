@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -341,6 +342,79 @@ class SingboxProxyController extends ProxyController {
   void selectProfile(ProxyProfile? profile) {
     _active = profile;
     notifyListeners();
+  }
+
+  // ---- "test all through the core": the measuring core (Android host) ----
+
+  // Android hosts NovaMeasure (a second libbox service with no TUN). iOS runs
+  // its core inside the Network Extension, so a tunnel-less measuring core
+  // there is a separate piece of work; the button stays hidden until then.
+  @override
+  bool get canMeasureNodes => Platform.isAndroid || _measureForTest;
+
+  /// Tests run on a desktop VM where [Platform.isAndroid] is false; this lets
+  /// the Android measuring path be exercised there.
+  static bool _measureForTest = false;
+  @visibleForTesting
+  static bool get measureSupportedForTest => true;
+  @visibleForTesting
+  static set measureForTest(bool v) => _measureForTest = v;
+
+  @visibleForTesting
+  void debugSetStateForTest(ProxyConnectionState s) {
+    _state = s;
+  }
+
+  @override
+  Future<String?> measureNodes(List<ProxyNode> nodes) async {
+    if (!canMeasureNodes || measuring.value || nodes.isEmpty) return null;
+    if (_state != ProxyConnectionState.disconnected &&
+        _state != ProxyConnectionState.error) {
+      return 'Disconnect first to measure all servers.';
+    }
+    measuring.value = true;
+    try {
+      final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
+      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
+          SingboxConfig.buildMeasureMap(resolved,
+              options: routeOptions.copyWith(
+                  hardenTls: _active?.hardenTls ?? false),
+              mixedPort: 0);
+      // Live updates arrive as `groups` events; map them with the measuring
+      // run's tags for as long as it runs.
+      _coreTagKeys = built.tagKeys;
+      coreHealth.value = CoreNodeHealth.empty;
+      NovaLog.instance
+          .write('Measuring ${built.tagKeys.length} servers through the core');
+      final Object? raw = await _control.invokeMethod<Object?>('measure',
+          <String, dynamic>{
+            'configJson': jsonEncode(built.config),
+            'tags': built.tagKeys.keys.toList(),
+          }).timeout(const Duration(seconds: 90));
+      final Map<String, int> delays = <String, int>{};
+      if (raw is Map) {
+        raw.forEach((Object? tag, Object? ms) {
+          final String? key = tag is String ? built.tagKeys[tag] : null;
+          if (key != null && ms is num && ms > 0) delays[key] = ms.toInt();
+        });
+      }
+      // Final verdicts: every node in the pool was tried.
+      coreHealth.value = CoreNodeHealth(
+          delayMsByKey: delays, testedKeys: built.tagKeys.values.toSet());
+      NovaLog.instance.write(
+          'Measured ${built.tagKeys.length} servers through the core: '
+          '${delays.length} answered');
+      return null;
+    } on FormatException catch (e) {
+      return e.message;
+    } on PlatformException catch (e) {
+      return e.message ?? 'Could not measure';
+    } catch (e) {
+      return 'Could not measure: $e';
+    } finally {
+      _coreTagKeys = const <String, String>{};
+      measuring.value = false;
+    }
   }
 
   /// Re-reads the real tunnel state from the platform. Called on app resume so
