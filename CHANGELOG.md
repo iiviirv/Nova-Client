@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.13.0-beta (2026-08-19)
+
+Test every server through the core, AmneziaWG working on Mac and Windows, and
+a stuck "connecting" state put right, by the Nova team.
+
+- New: a lightning button in the server list tests every server through the
+  core itself (Android, Mac and Windows). Servers that could only be called
+  "not testable" before (Reality, obfuscated Hysteria2, Shadowsocks 2022, a
+  clean-IP server behind an SNI block) now get a real number, measured the
+  way a tunnel would use them, and a dead one says "no response". Results
+  fill in live. Disconnect first; it needs the tunnel down.
+- Fixed: AmneziaWG servers whose Endpoint is a domain name failed on Mac and
+  Windows while working on Android. The desktop apps now resolve the address
+  the same way the phone does.
+- Fixed: on Windows, full-device mode reported "approve the UAC prompt" for
+  every failure, even when you had approved it or were running as
+  administrator. The real reason is shown now, and a user folder with a
+  space in its name no longer breaks the start.
+- Fixed: Windows was still carrying the AmneziaWG disconnect crash that was
+  fixed on the other platforms last release.
+- Fixed: after switching servers quickly a few times (or toggling the SNI
+  bypass), the app could sit on "connecting" and, on Android, leave the VPN
+  icon on with nothing flowing until a force close. Start and stop are now
+  strictly ordered and a switch mid-connect is handled cleanly.
+- Fixed: deleting an AmneziaWG config could make your other servers vanish
+  from the list until a restart. They were never deleted; a filter was left
+  behind. Deleting now asks for confirmation and names the profile.
+- New: Settings > Panel lets you set your panel's address, and an optional
+  "Panel" tab on the dashboard opens it in one tap. On Windows the panel
+  opens in your browser instead of a blank page that could not be closed.
+  A page that fails to load now says so and offers Retry.
+
 ## v1.12.0-beta (2026-08-19)
 
 A crash fixed, the Mac and Windows apps catching up with the phone, and the

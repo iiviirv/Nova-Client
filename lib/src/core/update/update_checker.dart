@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The GitHub release tag this build shipped as. The daily update check compares
 /// it to the latest release; if they differ, an update is offered. Bump this in
 /// step with the build number every release (see settings_screen's kNovaBuild).
-const String kNovaReleaseTag = 'v1.12.0-beta';
+const String kNovaReleaseTag = 'v1.13.0-beta';
 
 /// The public repo whose releases the app updates from.
 const String kNovaRepo = 'IRNova/Nova-Client';

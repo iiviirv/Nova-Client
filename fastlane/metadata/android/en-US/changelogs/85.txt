@@ -1,0 +1,6 @@
+- Lightning button: test every server through the core itself; "not testable" servers get a real ping
+- AmneziaWG with a domain Endpoint works on Mac and Windows
+- Windows full-device errors show the real reason, not a UAC message
+- Switching servers quickly no longer leaves the app stuck on "connecting"
+- Deleting an AmneziaWG config no longer hides your other servers
+- Settings > Panel: your panel address and an optional Panel tab
