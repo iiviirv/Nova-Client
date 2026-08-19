@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.13.2-beta (2026-08-19)
+
+A small follow-up to 1.13.1 from a full emulator pass, by the Nova team.
+
+- Fixed: on the very first server switch after a fresh install the
+  connection could fail with a rule-set read error. The bundled rule files
+  are now written atomically, a switch cannot race a write, and the one
+  case that still slips through retries on its own.
+- Fixed: "Test all servers through the core" on Android fetched its rule
+  lists from GitHub, which is blocked in Iran; it uses the bundled ones now,
+  like the tunnel.
+- The add dialog shows why an AmneziaWG entry was refused right under the
+  field, and it scrolls, so the Save button no longer sits on top of the
+  protocol pills when the keyboard is open.
+
 ## v1.13.1-beta (2026-08-19)
 
 Quick fixes for what you reported on 1.13 within the first hours, by the Nova

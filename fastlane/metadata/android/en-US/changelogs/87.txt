@@ -1,0 +1,3 @@
+- First server switch after a fresh install no longer fails with a rule-set error
+- Test all servers through the core uses the bundled rule lists (works in Iran)
+- Add dialog: AmneziaWG refusals shown under the field; no more overlapping Save button
