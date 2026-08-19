@@ -28,6 +28,8 @@ permissions:
   contents: write
 
 env:
+  # See the Set up Go step: never auto-switch toolchains mid-release.
+  GOTOOLCHAIN: local
   SINGBOX_VERSION: v1.13.13
   NDK_VERSION: "28.0.13004108"
 
@@ -58,10 +60,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Pinned to an exact 1.26.x and GOTOOLCHAIN=local: xray-core's go.mod says
+      # `go 1.26`, and with an older Go plus the default GOTOOLCHAIN=auto the go
+      # command switches to the LATEST 1.26 patch release. The day Go 1.26.7 was
+      # announced that lookup 404ed on the module proxy for hours and the
+      # release build died in `go get` (2026-08-19). An exact version does not
+      # move under a release.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.7"
+          go-version: "1.26.6"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
