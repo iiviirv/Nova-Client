@@ -106,6 +106,7 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
         tags: List<String>,
         done: (Map<String, Int>) -> Unit,
         fail: (String) -> Unit,
+        xrayConfig: String? = null,
     ) {
         appContext = context.applicationContext
         val id = ++runId
@@ -122,6 +123,15 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
             try {
                 stopInternal()
                 synchronized(latest) { latest.clear() }
+                // xhttp nodes in the pool run on the Xray core; the measuring
+                // core reaches them as local socks exits. Start Xray first so
+                // its inbounds are up before sing-box dials them. No socket
+                // protector: there is no VPN to escape while measuring.
+                if (!xrayConfig.isNullOrEmpty()) {
+                    val err = io.nekohasekai.novaxray.Novaxray.start(xrayConfig)
+                    if (!err.isNullOrEmpty()) return@Thread finish(null, "Xray failed to start: $err")
+                    xrayRunning = true
+                }
                 NovaCore.ensureSetup(appContext)
                 val s = CommandServer(this, this)
                 s.start()
@@ -180,6 +190,8 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
 
     val isRunning: Boolean get() = server != null
 
+    @Volatile private var xrayRunning = false
+
     private fun stopInternal() {
         val c = client
         client = null
@@ -188,6 +200,10 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
         server = null
         runCatching { s?.closeService() }
         runCatching { s?.close() }
+        if (xrayRunning) {
+            xrayRunning = false
+            runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
+        }
     }
 
     private class GroupHandler(private val wanted: Set<String>) : CommandClientHandler {

@@ -383,11 +383,32 @@ class SingboxProxyController extends ProxyController {
     measuring.value = true;
     try {
       final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
+      final SingboxRouteOptions opts =
+          routeOptions.copyWith(hardenTls: _active?.hardenTls ?? false);
+      // xhttp nodes run on the Xray core, reached by the measuring core as
+      // local socks exits, exactly as the tunnel's auto pool does. Without
+      // this they read "not testable" even though they connect.
+      final bool xhttpPool = kXrayXhttpEnabled && Platform.isAndroid;
+      String? xrayJson;
+      if (xhttpPool) {
+        final List<ProxyNode> xhttpNodes = SingboxConfig.pickedXhttpNodes(
+            resolved,
+            options: opts,
+            poolCap: SingboxConfig.kMeasurePoolCap);
+        if (xhttpNodes.isNotEmpty) {
+          final List<ProxyNode> resolvedX = <ProxyNode>[
+            for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
+          ];
+          xrayJson = XrayConfig.buildMulti(resolvedX,
+              basePort: XrayConfig.defaultSocksPort);
+        }
+      }
       final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
           SingboxConfig.buildMeasureMap(resolved,
-              options: routeOptions.copyWith(
-                  hardenTls: _active?.hardenTls ?? false),
-              mixedPort: 0);
+              options: opts,
+              mixedPort: 0,
+              includeXhttp: xrayJson != null,
+              xhttpBasePort: XrayConfig.defaultSocksPort);
       // Live updates arrive as `groups` events; map them with the measuring
       // run's tags for as long as it runs.
       _coreTagKeys = built.tagKeys;
@@ -398,6 +419,7 @@ class SingboxProxyController extends ProxyController {
           <String, dynamic>{
             'configJson': jsonEncode(built.config),
             'tags': built.tagKeys.keys.toList(),
+            if (xrayJson != null) 'xrayConfigJson': xrayJson,
           }).timeout(const Duration(seconds: 90));
       final Map<String, int> delays = <String, int>{};
       if (raw is Map) {

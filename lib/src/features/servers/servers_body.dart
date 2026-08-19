@@ -1017,7 +1017,14 @@ class _ConfigDialogState extends State<_ConfigDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _uriCtrl,
-            maxLines: widget.uriMaxLines,
+            // An AmneziaWG conf is multi-line. The field must be multi-line
+            // whenever that pill is selected, not only when the dialog was
+            // opened with a conf: a single-line field on Android drops the
+            // newlines of a pasted conf, which then cannot parse.
+            maxLines: _kind == ProxyKind.awg ? 8 : widget.uriMaxLines,
+            keyboardType: _kind == ProxyKind.awg
+                ? TextInputType.multiline
+                : TextInputType.url,
             decoration: InputDecoration(
               hintText: widget.uriHint,
               labelText: widget.uriLabel,

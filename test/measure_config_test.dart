@@ -62,6 +62,29 @@ void main() {
     expect((built.config['inbounds'] as List<dynamic>).single['type'], 'mixed');
   });
 
+  test('xhttp nodes join the pool as local socks exits when Xray is available',
+      () {
+    final List<ProxyNode> n = <ProxyNode>[
+      ...nodes(2),
+      parseShareLink('vless://00000000-0000-0000-0000-0000000000aa'
+          '@x.example.net:443?type=xhttp&security=tls&sni=x.example.net'
+          '&path=%2Fxh#X')!,
+    ];
+    final withX = SingboxConfig.buildMeasureMap(n,
+        mixedPort: 1, clashPort: 2, includeXhttp: true, xhttpBasePort: 10808);
+    expect(withX.tagKeys, hasLength(3));
+    final List<dynamic> outs = withX.config['outbounds'] as List<dynamic>;
+    final Map<String, dynamic> last = (outs.firstWhere((dynamic o) =>
+            (o as Map)['tag'] == 'node-2') as Map)
+        .cast<String, dynamic>();
+    expect(last['type'], 'socks');
+    expect(last['server_port'], 10808);
+    expect(withX.tagKeys['node-2'], proxyNodeKey(n[2]));
+    // Without Xray the xhttp node is left out, as before.
+    final without = SingboxConfig.buildMeasureMap(n, mixedPort: 1, clashPort: 2);
+    expect(without.tagKeys, hasLength(2));
+  });
+
   test('without a clash port no API is configured (mobile measuring core)', () {
     final built = SingboxConfig.buildMeasureMap(nodes(2), mixedPort: 1);
     final Map<String, dynamic>? exp =

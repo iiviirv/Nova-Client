@@ -93,6 +93,7 @@ class MainActivity : FlutterActivity() {
                         tags,
                         done = { delays -> result.success(delays) },
                         fail = { why -> result.error("measure_failed", why, null) },
+                        xrayConfig = call.argument<String>("xrayConfigJson"),
                     )
                 }
 

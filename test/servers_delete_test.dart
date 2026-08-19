@@ -161,6 +161,59 @@ void main() {
     });
   });
 
+  group('AmneziaWG entry guard', () {
+    Future<void> openManualAdd(WidgetTester tester) async {
+      await tester.tap(find.byIcon(Icons.add_rounded).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enter manually'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('AmneziaWG'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('garbage pasted as AmneziaWG is refused with a message',
+        (WidgetTester tester) async {
+      final ProfilesController profiles =
+          await _pumpServers(tester, <ProxyProfile>[_sub('s1', 'Germany sub')]);
+      await openManualAdd(tester);
+      await tester.enterText(find.byType(TextField).last, 'hello this is a photo caption');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('not a WireGuard/AmneziaWG config'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget, reason: 'dialog stays open');
+      expect(profiles.profiles.length, 1);
+      await _teardown(tester);
+    });
+
+    testWidgets('a conf missing its Endpoint is refused with the reason',
+        (WidgetTester tester) async {
+      final ProfilesController profiles =
+          await _pumpServers(tester, <ProxyProfile>[_sub('s1', 'Germany sub')]);
+      await openManualAdd(tester);
+      await tester.enterText(find.byType(TextField).last,
+          '[Interface]\nPrivateKey = x\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = y\n');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('need PrivateKey, Address, PublicKey, Endpoint'),
+          findsOneWidget);
+      expect(profiles.profiles.length, 1);
+      await _teardown(tester);
+    });
+
+    testWidgets('a real conf saves as an AmneziaWG profile',
+        (WidgetTester tester) async {
+      final ProfilesController profiles =
+          await _pumpServers(tester, <ProxyProfile>[_sub('s1', 'Germany sub')]);
+      await openManualAdd(tester);
+      await tester.enterText(find.byType(TextField).last, _awg('w', 'w').uri);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(profiles.profiles.length, 2);
+      expect(profiles.profiles.last.kind, ProxyKind.awg);
+      await _teardown(tester);
+    });
+  });
+
   group('ProfilesController before prefs attach', () {
     test('an add made before prefs arrive survives the load', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{

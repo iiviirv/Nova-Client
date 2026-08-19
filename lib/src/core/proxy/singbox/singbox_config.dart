@@ -511,9 +511,15 @@ class SingboxConfig {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     required int mixedPort,
     int? clashPort,
+    // With [includeXhttp] the xhttp nodes sit in the pool as local socks
+    // outbounds to an Xray instance the host runs alongside (one inbound per
+    // node from [xhttpBasePort] up, see XrayConfig.buildMulti), so they get
+    // measured too instead of reading "not testable".
+    bool includeXhttp = false,
+    int xhttpBasePort = 10808,
   }) {
     final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
-        options: options, poolCap: kMeasurePoolCap);
+        options: options, poolCap: kMeasurePoolCap, includeXhttp: includeXhttp);
     if (picked.isEmpty) {
       throw const FormatException(
           'None of these servers use a transport Nova can measure.');
@@ -522,9 +528,16 @@ class SingboxConfig {
     // off the group (desktop from its history via the Clash API, Android from
     // the command client's group stream).
     final Map<String, dynamic> cfg = buildMultiMap(picked,
-        options: options, poolCap: kMeasurePoolCap, forceGroup: true);
+        options: options,
+        poolCap: kMeasurePoolCap,
+        forceGroup: true,
+        includeXhttp: includeXhttp,
+        xhttpBasePort: xhttpBasePort);
     final List<String> keys = orderedMultiNodeKeys(picked,
-        options: options, poolCap: kMeasurePoolCap, forceGroup: true);
+        options: options,
+        poolCap: kMeasurePoolCap,
+        forceGroup: true,
+        includeXhttp: includeXhttp);
     final Map<String, String> tagKeys = <String, String>{
       for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
     };
@@ -555,8 +568,10 @@ class SingboxConfig {
   static List<ProxyNode> pickedXhttpNodes(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
+    int? poolCap,
   }) =>
-      pickedMultiNodes(inputNodes, options: options, includeXhttp: true)
+      pickedMultiNodes(inputNodes,
+              options: options, includeXhttp: true, poolCap: poolCap)
           .where((ProxyNode n) => n.network == 'xhttp')
           .toList();
 

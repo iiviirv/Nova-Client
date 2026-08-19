@@ -1069,11 +1069,29 @@ class DesktopProxyController extends ProxyController {
         hardenPacketFragment: !Platform.isWindows,
       );
       final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
-      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
-          SingboxConfig.buildMeasureMap(resolved,
-              options: opts, mixedPort: mixedPort, clashPort: apiPort);
       final String binary = await _ensureBinary();
       final Directory dir = await getApplicationSupportDirectory();
+      // xhttp nodes run on the Xray core (one local socks inbound each); the
+      // measuring core lists them as socks exits, so they get a number too.
+      // Only when this build carries an Xray binary; otherwise they stay out
+      // of the pool, as before.
+      bool xhttp = false;
+      final List<ProxyNode> xhttpNodes = SingboxConfig.pickedXhttpNodes(
+          resolved, options: opts, poolCap: SingboxConfig.kMeasurePoolCap);
+      if (xhttpNodes.isNotEmpty && await _ensureXrayBinary() != null) {
+        final List<ProxyNode> resolvedX = <ProxyNode>[
+          for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
+        ];
+        xhttp = await _startXray(dir,
+            XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort));
+      }
+      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
+          SingboxConfig.buildMeasureMap(resolved,
+              options: opts,
+              mixedPort: mixedPort,
+              clashPort: apiPort,
+              includeXhttp: xhttp,
+              xhttpBasePort: _xraySocksPort);
       final String base = await _extractRuleSets();
       final File cfgFile = File('${dir.path}/nova-measure.json');
       await cfgFile.writeAsString(const JsonEncoder.withIndent('  ')
@@ -1178,6 +1196,7 @@ class DesktopProxyController extends ProxyController {
     } finally {
       proc?.kill();
       _measureProcess = null;
+      _stopXray();
       measuring.value = false;
     }
   }
