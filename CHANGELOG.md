@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.12.0-beta (2026-08-19)
+
+A crash fixed, the Mac and Windows apps catching up with the phone, and the
+Nova subscription working properly, by the Nova team.
+
+- Fixed a crash: disconnecting an AmneziaWG server closed the app. On Android
+  it simply vanished; on Mac it showed a "close of closed channel" error. Both
+  are gone.
+- The Nova subscription now loads its servers. Importing the panel's own Nova
+  link saved the address but showed no servers until you removed part of the
+  URL by hand. It works as given now.
+- On Windows, links from the panel now open Nova. They did nothing before.
+- On Mac and Windows, choosing a specific server is respected. Picking Germany
+  used to still send you out through whichever server was fastest, which was
+  often a different country.
+- On Mac and Windows, the dashboard now names the server you are connected
+  through instead of showing a bare address and port.
+- On Mac and Windows, servers that could not be measured from outside (Reality,
+  obfuscated Hysteria2, Shadowsocks 2022, xhttp) now show a real ping while
+  you are connected, measured through the tunnel itself.
+- Full-device mode works on Mac again. It failed to start with a "bad tun name"
+  error on every Mac.
+- The log is quieter about network changes. Switching between Wi-Fi and
+  cellular no longer fills it with red errors for what is a normal handover.
+- iPhone: a proper opening screen instead of a white flash, and the
+  disconnect alert no longer fires every time the phone sleeps.
+- Mac: the download is one file for both Intel and Apple Silicon.
+
 ## v1.11.0-beta (2026-08-18)
 
 A status notification, a home-screen widget, a new protocol, and a lighter touch
