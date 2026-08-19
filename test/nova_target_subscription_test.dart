@@ -66,11 +66,54 @@ void main() {
     expect((azad['transport'] as Map)['type'], 'ws');
   });
 
+  mieruReadiness();
+
   test('a plain share-link subscription is untouched by the new path', () {
     const String links = 'vless://11111111-1111-1111-1111-111111111111@a.example.net:443'
         '?type=ws&security=tls#A\n';
     final List<ProxyNode> nodes = parseSubscriptionBody(links);
     expect(nodes, hasLength(1));
     expect(nodes.first.server, 'a.example.net');
+  });
+}
+
+/// mieru today only reaches clients through the Hiddify target; the plan is
+/// for the panel to emit it under target=nova as well. This is the exact
+/// outbound shape the panel already produces (captured from the live panel,
+/// secrets replaced), so the client is provably ready the moment the panel
+/// flips it on. Note the two mieru quirks: the credential arrives as
+/// `username` (the client keeps it in the uuid slot, like socks/naive) and the
+/// transport rides in `portBindings[].protocol`.
+void mieruReadiness() {
+  test('the panel\'s mieru outbound imports with credentials and transport', () {
+    const String body = '{"outbounds":[{"type":"mieru","tag":"Azad mieru",'
+        '"server":"vpn.novaproxy.qzz.io","server_port":6600,'
+        '"portBindings":[{"port":6600,"protocol":"TCP"}],'
+        '"username":"u059f4b58ba948f29b88ed04bc8aa8163","password":"REDACTED",'
+        '"multiplexing":"MULTIPLEXING_LOW"}]}';
+    final List<ProxyNode> nodes = parseSubscriptionBody(body);
+    expect(nodes, hasLength(1));
+    final ProxyNode n = nodes.single;
+    expect(n.protocol, NodeProtocol.mieru);
+    expect(n.server, 'vpn.novaproxy.qzz.io');
+    expect(n.port, 6600);
+    expect(n.uuid, 'u059f4b58ba948f29b88ed04bc8aa8163');
+    expect(n.password, 'REDACTED');
+    expect(n.mieruTransport, 'TCP');
+    expect(n.mieruMultiplexing, 'MULTIPLEXING_LOW');
+    // and it rebuilds into a mieru outbound the core understands
+    final Map<String, dynamic> cfg = SingboxConfig.buildMap(n);
+    final Map<String, dynamic> out = ((cfg['outbounds'] as List)
+            .whereType<Map>()
+            .firstWhere((o) => o['type'] == 'mieru'))
+        .cast<String, dynamic>();
+    expect(out['username'], 'u059f4b58ba948f29b88ed04bc8aa8163');
+    expect(out['transport'], 'TCP');
+  });
+
+  test('a UDP portBinding becomes the UDP transport', () {
+    const String body = '{"outbounds":[{"type":"mieru","server":"h","server_port":1,'
+        '"portBindings":[{"port":1,"protocol":"UDP"}],"username":"u","password":"p"}]}';
+    expect(parseSubscriptionBody(body).single.mieruTransport, 'UDP');
   });
 }

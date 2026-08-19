@@ -88,6 +88,26 @@ ProxyNode? _outboundToNode(Map<String, dynamic> o) {
       if (a is String) a,
   ];
 
+  // socks / http / naive / mieru carry their username in the uuid slot (that
+  // is how ProxyNode models them, and how the config builder emits them
+  // back as `username`). vless/vmess use a real `uuid`.
+  final String? uuid = (o['uuid'] as String?) ?? (o['username'] as String?);
+
+  // mieru: the panel emits `portBindings: [{port, protocol}]`; the protocol
+  // there is the transport (TCP/UDP). Fall back to a top-level string
+  // `transport` if that is what a config carries instead.
+  String mieruTransport = 'TCP';
+  final List<dynamic>? bindings = o['portBindings'] as List<dynamic>?;
+  if (bindings != null && bindings.isNotEmpty && bindings.first is Map) {
+    final String? proto =
+        ((bindings.first as Map)['protocol'] as String?)?.toUpperCase();
+    if (proto == 'UDP') mieruTransport = 'UDP';
+  } else if (o['transport'] is String) {
+    if ((o['transport'] as String).toUpperCase() == 'UDP') {
+      mieruTransport = 'UDP';
+    }
+  }
+
   return ProxyNode(
     protocol: protocol,
     server: server,
@@ -95,7 +115,7 @@ ProxyNode? _outboundToNode(Map<String, dynamic> o) {
     tag: (o['tag'] as String?)?.trim().isNotEmpty == true
         ? (o['tag'] as String).trim()
         : '$server:$port',
-    uuid: o['uuid'] as String?,
+    uuid: uuid,
     // Trojan/SS/Hysteria2/TUIC/mieru all carry the secret as `password`.
     password: o['password'] as String?,
     method: o['method'] as String?,
@@ -120,9 +140,7 @@ ProxyNode? _outboundToNode(Map<String, dynamic> o) {
     udpRelayMode: o['udp_relay_mode'] as String?,
     hy2UpMbps: (o['up_mbps'] as num?)?.toInt(),
     hy2DownMbps: (o['down_mbps'] as num?)?.toInt(),
-    mieruTransport: (o['transport'] is String)
-        ? (o['transport'] as String).toUpperCase()
-        : 'TCP',
+    mieruTransport: mieruTransport,
     mieruMultiplexing: o['multiplexing'] as String? ?? 'MULTIPLEXING_LOW',
   );
 }
