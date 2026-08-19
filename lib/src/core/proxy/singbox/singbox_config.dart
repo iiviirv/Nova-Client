@@ -27,7 +27,18 @@ class SingboxRouteOptions {
     this.bypassFingerprint,
     this.bypassCipherSuites,
     this.bypassFragmentMask,
+    this.tunInterfaceName,
   });
+
+  /// The name to give the TUN interface, or null to let the core choose.
+  ///
+  /// macOS only accepts `utun<N>` here: anything else fails the connect with
+  /// "configure tun interface: bad tun name", which is what a hardcoded
+  /// "nova-tun" did to every Mac in full-device mode. Windows (wintun) and
+  /// Linux take an arbitrary name, so the desktop controller passes one there
+  /// and leaves this null on macOS. Ignored on Android and iOS, where the
+  /// platform owns the interface.
+  final String? tunInterfaceName;
 
   /// Per-profile SNI-block bypass overrides from the editor, each null to use
   /// Nova's field-tested default (`unsafe` / [kBypassCipherSuites] /
@@ -156,6 +167,7 @@ class SingboxRouteOptions {
     String? bypassFingerprint,
     List<String>? bypassCipherSuites,
     String? bypassFragmentMask,
+    String? tunInterfaceName,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -178,6 +190,7 @@ class SingboxRouteOptions {
         bypassFingerprint: bypassFingerprint ?? this.bypassFingerprint,
         bypassCipherSuites: bypassCipherSuites ?? this.bypassCipherSuites,
         bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
+        tunInterfaceName: tunInterfaceName ?? this.tunInterfaceName,
       );
 }
 
@@ -601,7 +614,8 @@ class SingboxConfig {
       <String, dynamic>{
         'type': 'tun',
         'tag': 'tun-in',
-        'interface_name': 'nova-tun',
+        if (o.tunInterfaceName != null)
+          'interface_name': o.tunInterfaceName,
         // sing-box 1.12 removed the legacy `inet4_address`/`inet6_address`
         // fields in favour of a single `address` list. Both cores we ship
         // (iOS 1.12.x, Android 1.13.x) are past that cut, so the old field

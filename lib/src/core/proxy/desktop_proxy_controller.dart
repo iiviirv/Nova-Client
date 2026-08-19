@@ -372,6 +372,12 @@ class DesktopProxyController extends ProxyController {
         // split, whose ACK-wait an unelevated Windows core cannot drive (see
         // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.
         hardenPacketFragment: !Platform.isWindows,
+        // macOS will only accept a TUN named utun<N>; a custom name fails the
+        // connect outright with "configure tun interface: bad tun name", which
+        // is what the hardcoded "nova-tun" did to every Mac. Leave it unset
+        // there and let the core pick a utun. Windows (wintun) and Linux take
+        // an arbitrary name, and a recognisable one is worth having.
+        tunInterfaceName: Platform.isMacOS ? null : 'nova-tun',
       );
       // xhttp is an Xray-only transport. When the exit is a single/pinned xhttp
       // node, hand the transport to Xray: sing-box gets a bridge config (its
