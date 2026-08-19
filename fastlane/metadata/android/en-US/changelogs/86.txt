@@ -1,0 +1,5 @@
+- Panel: a panel that asks for a login gets a sign-in dialog instead of "HTTP 401"
+- AmneziaWG file import refuses non-conf files instead of crashing; pasted confs keep their line breaks
+- No more "1.12 is available" after updating to 1.13
+- Android: no freeze after a burst of server switches
+- Test all servers through the core now covers xhttp

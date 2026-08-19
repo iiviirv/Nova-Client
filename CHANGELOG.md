@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.13.1-beta (2026-08-19)
+
+Quick fixes for what you reported on 1.13 within the first hours, by the Nova
+team.
+
+- Fixed: the panel page showed "HTTP 401" instead of your panel's login. A
+  panel that asks for a username and password now gets a sign-in dialog, and
+  only a real dead page (404, server error) shows the error view. A missing
+  icon or blocked tracker on the page no longer counts as a failure either.
+- Fixed: importing an AmneziaWG file accepted any file and could take the app
+  down. The picker is limited to text files, oversized or non-conf files are
+  refused with a message, and an entry that does not parse cannot be saved.
+  Pasting a conf into the add dialog now keeps its line breaks.
+- Fixed: after updating, the dashboard kept offering the previous version
+  ("1.12 is available"). Versions are compared properly now.
+- Fixed (Android): a burst of server switches could freeze the app for a few
+  seconds ("isn't responding"). Network callbacks no longer block the main
+  thread while the core is starting or stopping.
+- Test all servers through the core now includes xhttp servers, run on the
+  Xray core for the test, so they get a real number instead of "not
+  testable".
+
 ## v1.13.0-beta (2026-08-19)
 
 Test every server through the core, AmneziaWG working on Mac and Windows, and
