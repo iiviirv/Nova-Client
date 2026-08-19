@@ -83,6 +83,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     // "Connected" without a subtitle.
     private var profileLabel: String? = null
 
+    private var largeIconCache: android.graphics.Bitmap? = null
+
     private var xrayRunning = false
 
     private val connectivity by lazy {
@@ -544,9 +546,13 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         // stays the simple mark. The large icon shows the real full-colour Nova
         // logo as the notification's main circle, which is what a user actually
         // recognises.
-        val largeIcon = runCatching {
+        // Decoded once and kept: this runs on the main thread inside
+        // onStartCommand, and re-decoding the launcher bitmap on every state
+        // change showed up as the top frame of an 'executing service' ANR on a
+        // slow device.
+        val largeIcon = largeIconCache ?: runCatching {
             BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
-        }.getOrNull()
+        }.getOrNull()?.also { largeIconCache = it }
 
         val builder = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_nova)
