@@ -1,0 +1,4 @@
+- Hysteria2 and TUIC servers connect now (with or without salamander)
+- Server names are shown as your server names them; flags remembered and learned from the real exit
+- Pings measured over plain http inside the tunnel: about half the old numbers
+- Settings: Radar, Cloudflare, Google relay removed; Stats: Worker usage removed

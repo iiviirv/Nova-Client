@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.14.0-beta (2026-08-19)
+
+Hysteria2 works, the lightning test reaches iPhone, and server names stay
+yours, by the Nova team.
+
+- Fixed: Hysteria2 (and TUIC) servers never connected, with or without
+  salamander obfuscation. The client was handing the QUIC dialer a browser
+  TLS fingerprint it cannot use. Verified against a real Hysteria2 server
+  with salamander.
+- New: "Test all servers through the core" on iPhone too. It now runs on
+  Android, iPhone, Mac and Windows.
+- Changed: the server list shows your servers' own names again instead of a
+  guessed city. The flag is remembered across refreshes and restarts, and
+  once you connect through a server its real exit country replaces any
+  guess for good.
+- Changed: pings are measured over plain http inside the tunnel (one TLS
+  handshake fewer per test), so the numbers are roughly half what they were
+  and closer to what other clients show for the same server.
+- Settings: Radar, Cloudflare and Google relay entries removed. Stats: the
+  Worker usage card removed.
+- Fixed: Settings showed an old version number in its footer.
+- A pasted hysteria2://, vmess:// or tuic:// link is labelled as such.
+
 ## v1.13.2-beta (2026-08-19)
 
 A small follow-up to 1.13.1 from a full emulator pass, by the Nova team.
