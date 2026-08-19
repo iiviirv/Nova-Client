@@ -932,11 +932,41 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   /// (looksLikeConf -> ProxyKind.awg). The name is filled from the file when the
   /// user left it blank. A cancelled or unreadable pick leaves the field as-is.
   Future<void> _pickConfFile() async {
+    final NovaStrings s = NovaStrings.of(context);
     try {
-      final XFile? file = await openFile();
+      // Ask for text / .conf only. Android's picker does not enforce an
+      // extension filter, so the content is checked below regardless.
+      final XFile? file = await openFile(acceptedTypeGroups: <XTypeGroup>[
+        const XTypeGroup(
+          label: 'WireGuard / AmneziaWG config',
+          extensions: <String>['conf', 'txt'],
+          mimeTypes: <String>['text/plain', 'application/octet-stream'],
+          uniformTypeIdentifiers: <String>['public.plain-text', 'public.data'],
+        ),
+      ]);
       if (file == null) return;
+      // A .conf is a few hundred bytes. Anything big is the wrong file (a
+      // photo, an APK); reading it whole into a text field used to take the
+      // app down, and decoding a binary as UTF-8 throws.
+      final int size = await file.length();
+      if (size > 64 * 1024) {
+        _notConf(s);
+        return;
+      }
       final String text = (await file.readAsString()).trim();
-      if (text.isEmpty || !mounted) return;
+      if (!mounted) return;
+      if (text.isEmpty || !AwgConfig.looksLikeConf(text)) {
+        _notConf(s);
+        return;
+      }
+      // Parse it now, so a conf missing its Endpoint or keys is refused here
+      // with a reason instead of becoming a profile that can never connect.
+      try {
+        AwgConfig.parseConf(text);
+      } on FormatException catch (e) {
+        _notConf(s, detail: e.message);
+        return;
+      }
       setState(() {
         _uriCtrl.text = text;
         _kind = ProxyKind.awg;
@@ -945,9 +975,19 @@ class _ConfigDialogState extends State<_ConfigDialog> {
               file.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
         }
       });
+    } on FormatException {
+      // Not UTF-8 text: a binary file was picked.
+      if (mounted) _notConf(s);
     } catch (_) {
-      // Best-effort import; a failure just leaves the dialog untouched.
+      // Best-effort import; any other failure leaves the dialog untouched.
     }
+  }
+
+  void _notConf(NovaStrings s, {String? detail}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(detail == null ? s.awgNotConf : '${s.awgNotConf} ($detail)'),
+    ));
   }
 
   @override
@@ -1020,11 +1060,30 @@ class _ConfigDialogState extends State<_ConfigDialog> {
           child: Text(s.cancel),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(
-            context,
-            _ConfigDialogResult(
-                _nameCtrl.text.trim(), _uriCtrl.text.trim(), _kind),
-          ),
+          onPressed: () {
+            final String uri = _uriCtrl.text.trim();
+            // An AmneziaWG entry must be a parseable conf. Saving anything
+            // else made a profile that could never connect (and a big enough
+            // paste could take the app down later).
+            final bool awg = _kind == ProxyKind.awg ||
+                (AwgConfig.looksLikeConf(uri) && _detectKind(uri) == ProxyKind.awg);
+            if (awg && uri.isNotEmpty) {
+              if (!AwgConfig.looksLikeConf(uri)) {
+                _notConf(s);
+                return;
+              }
+              try {
+                AwgConfig.parseConf(uri);
+              } on FormatException catch (e) {
+                _notConf(s, detail: e.message);
+                return;
+              }
+            }
+            Navigator.pop(
+              context,
+              _ConfigDialogResult(_nameCtrl.text.trim(), uri, _kind),
+            );
+          },
           child: Text(s.save),
         ),
       ],

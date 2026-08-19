@@ -21,6 +21,10 @@ class _PanelWebviewScreenState extends State<PanelWebviewScreen> {
   late final WebViewController _controller;
   int _progress = 0;
 
+  /// The URL of the page currently loading/loaded, so an HTTP error can be
+  /// attributed to the page itself rather than to one of its sub-resources.
+  String? _pageUrl;
+
   /// Set when the page failed to load (no network, DNS, 404 from the server).
   /// Rendering an explicit error with a Retry beats a blank view that looks
   /// hung: the user always has the AppBar back arrow, and now a reason.
@@ -35,7 +39,8 @@ class _PanelWebviewScreenState extends State<PanelWebviewScreen> {
         onProgress: (int p) {
           if (mounted) setState(() => _progress = p);
         },
-        onPageStarted: (_) {
+        onPageStarted: (String url) {
+          _pageUrl = url;
           if (mounted) setState(() => _error = null);
         },
         onPageFinished: (_) {
@@ -53,16 +58,102 @@ class _PanelWebviewScreenState extends State<PanelWebviewScreen> {
           }
         },
         onHttpError: (HttpResponseError e) {
+          // Android reports this for EVERY resource: a missing favicon or a
+          // blocked tracker must not flip the page into an error. Only the
+          // page itself counts (the platform gives no main-frame flag, so
+          // match the URL). And 401/403 are the panel asking for a login,
+          // not a dead page: leave the webview up, it renders the panel's own
+          // login or the Basic-auth dialog below. A tester's panel was hidden
+          // behind "HTTP 401" exactly this way on the first 1.13 build.
           final int? code = e.response?.statusCode;
-          if (code != null && code >= 400 && mounted) {
+          final String? failed = e.request?.uri.toString();
+          final bool isPage = failed != null &&
+              (failed == _pageUrl || _sameDoc(failed, widget.url));
+          if (!isPage || code == null || mounted == false) return;
+          if (code == 401 || code == 403) return;
+          if (code == 404 || code >= 500) {
             setState(() {
               _progress = 100;
               _error = 'HTTP $code';
             });
           }
         },
+        // A panel behind HTTP Basic auth (many Nova Server panels are) sends
+        // 401 + WWW-Authenticate; without this handler the webview cancels the
+        // request and shows a blank 401. Ask for the credentials and answer.
+        onHttpAuthRequest: (HttpAuthRequest req) => _askCredentials(req),
       ))
       ..loadRequest(Uri.parse(widget.url));
+  }
+
+  /// Same document ignoring a trailing slash and the fragment.
+  static bool _sameDoc(String a, String b) {
+    String norm(String u) {
+      final int hash = u.indexOf('#');
+      if (hash >= 0) u = u.substring(0, hash);
+      while (u.endsWith('/')) {
+        u = u.substring(0, u.length - 1);
+      }
+      return u;
+    }
+
+    return norm(a) == norm(b);
+  }
+
+  Future<void> _askCredentials(HttpAuthRequest req) async {
+    if (!mounted) {
+      req.onCancel();
+      return;
+    }
+    final NovaStrings s = NovaStrings.of(context);
+    final TextEditingController user = TextEditingController();
+    final TextEditingController pass = TextEditingController();
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(s.panelSignIn),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(req.realm?.isNotEmpty == true ? '${req.host} (${req.realm})' : req.host,
+                style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 12),
+            TextField(
+              controller: user,
+              autofocus: true,
+              autocorrect: false,
+              textDirection: TextDirection.ltr,
+              decoration: InputDecoration(labelText: s.panelUsername),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: pass,
+              obscureText: true,
+              autocorrect: false,
+              textDirection: TextDirection.ltr,
+              decoration: InputDecoration(labelText: s.panelPassword),
+              onSubmitted: (_) => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(s.cancel)),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(s.panelSignIn)),
+        ],
+      ),
+    );
+    if (ok == true) {
+      req.onProceed(WebViewCredential(user: user.text, password: pass.text));
+    } else {
+      req.onCancel();
+    }
+    user.dispose();
+    pass.dispose();
   }
 
   @override

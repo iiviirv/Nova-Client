@@ -17,6 +17,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
@@ -98,6 +99,18 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var pfd: ParcelFileDescriptor? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    // ConnectivityManager callbacks are delivered on THIS thread, never on main.
+    // report() hands the interface to libbox's updateDefaultInterface, which
+    // takes the core's network lock; while the worker is starting or stopping
+    // a core that lock is held for seconds, and with the callback on the main
+    // thread the whole app froze for that long ("Nova Client isn't
+    // responding", seen right after a burst of server switches). The Go side
+    // is thread-safe, so a dedicated thread costs nothing.
+    private val netmonThread: HandlerThread by lazy {
+        HandlerThread("nova-netmon").also { it.start() }
+    }
+    private val netmonHandler: Handler by lazy { Handler(netmonThread.looper) }
 
     // The underlying (non-VPN) default network. A bare INTERNET request is used
     // as a REQUEST (not a "default network" listen) on Android 9+ on purpose:
@@ -620,6 +633,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             worker.execute {
                 running = false
                 cleanup()
+                netmonThread.quitSafely()
             }
             worker.shutdown()
         }
@@ -731,7 +745,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     @SuppressLint("NewApi")
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
-        val callback = object : ConnectivityManager.NetworkCallback() {
+        val callback = object : ActiveNetworkCallback() {
             override fun onAvailable(network: Network) = report(listener, network)
             override fun onCapabilitiesChanged(
                 network: Network,
@@ -739,6 +753,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             ) = report(listener, network)
 
             override fun onLost(network: Network) {
+                if (!active) return
                 runCatching { listener.updateDefaultInterface("", -1, false, false) }
             }
         }
@@ -752,15 +767,19 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 // matching the request, excluding our VPN.
                 Build.VERSION.SDK_INT >= 31 ->
                     connectivity.registerBestMatchingNetworkCallback(
-                        defaultNetworkRequest, callback, mainHandler,
+                        defaultNetworkRequest, callback, netmonHandler,
                     )
                 // Android 9/10: registerDefaultNetworkCallback returns the VPN
                 // interface, so a REQUEST is required to get the physical uplink.
                 Build.VERSION.SDK_INT >= 28 ->
-                    connectivity.requestNetwork(defaultNetworkRequest, callback, mainHandler)
+                    connectivity.requestNetwork(defaultNetworkRequest, callback, netmonHandler)
                 // Pre-9 default callback still reports the underlying network.
                 else ->
-                    connectivity.registerDefaultNetworkCallback(callback)
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        connectivity.registerDefaultNetworkCallback(callback, netmonHandler)
+                    } else {
+                        connectivity.registerDefaultNetworkCallback(callback)
+                    }
             }
         }
         // Report the network we can already see, synchronously. Every
@@ -790,6 +809,8 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     private fun report(listener: InterfaceUpdateListener, network: Network) {
+        val cb = networkCallback as? ActiveNetworkCallback
+        if (cb != null && !cb.active) return
         runCatching {
             val name = connectivity.getLinkProperties(network)?.interfaceName ?: return
             val index = JavaNetworkInterface.getByName(name)?.index ?: -1
@@ -799,6 +820,9 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
         val callback = networkCallback ?: return
+        // A callback already queued for delivery must not reach a core that is
+        // being torn down (that call blocked on the core's lock, see netmonThread).
+        (callback as? ActiveNetworkCallback)?.active = false
         runCatching { connectivity.unregisterNetworkCallback(callback) }
         networkCallback = null
     }
@@ -846,6 +870,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun clearDNSCache() {}
 
     override fun sendNotification(notification: Notification) {}
+
+    /** A NetworkCallback that can be switched off before it is unregistered. */
+    private open class ActiveNetworkCallback : ConnectivityManager.NetworkCallback() {
+        @Volatile var active = true
+    }
 
     private class StringArray(private val iterator: Iterator<String>) : StringIterator {
         override fun len(): Int = 0

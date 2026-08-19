@@ -58,6 +58,9 @@ class NovaStrings {
   String get panelShortcutSub => t('panel.shortcutSub');
   String get panelTab => t('panel.tab');
   String get panelLoadFailed => t('panel.loadFailed');
+  String get panelSignIn => t('panel.signIn');
+  String get panelUsername => t('panel.username');
+  String get panelPassword => t('panel.password');
   String get panelNotSet => t('panel.notSet');
 
   // ---- SNI-block bypass editor ----
@@ -665,6 +668,7 @@ class NovaStrings {
 
   String get serversName => t('servers.name');
   String get awgImportConf => t('servers.awgImportConf');
+  String get awgNotConf => t('servers.awgNotConf');
   String get serversLink => t('servers.link');
   String get serversSubUrl => t('servers.subUrl');
   String get serversUriHint => t('servers.uriHint');
@@ -1026,6 +1030,9 @@ class NovaStrings {
     'panel.shortcutSub': 'Adds a Panel tab next to Summary and Configs',
     'panel.tab': 'Panel',
     'panel.loadFailed': 'Could not open the panel',
+    'panel.signIn': 'Sign in',
+    'panel.username': 'Username',
+    'panel.password': 'Password',
     'panel.notSet': 'Set your panel address in Settings first',
     'common.cancel': 'Cancel',
     'common.reset': 'Reset',
@@ -1376,6 +1383,7 @@ class NovaStrings {
     'inb.presetSs2022Sub': 'Modern Shadowsocks with a strong cipher.',
     'servers.name': 'Name',
     'servers.awgImportConf': 'Import .conf file',
+    'servers.awgNotConf': 'That is not a WireGuard/AmneziaWG config. Pick a .conf with [Interface] and [Peer] sections.',
     'servers.link': 'Link',
     'servers.subUrl': 'Subscription URL',
     'servers.uriHint': 'vless://…  or  https://…/sub',
@@ -1725,6 +1733,9 @@ class NovaStrings {
     'panel.shortcutSub': 'یک تب «پنل» کنار خلاصه و کانفیگ‌ها اضافه می‌کند',
     'panel.tab': 'پنل',
     'panel.loadFailed': 'پنل باز نشد',
+    'panel.signIn': 'ورود',
+    'panel.username': 'نام کاربری',
+    'panel.password': 'رمز عبور',
     'panel.notSet': 'اول آدرس پنل را در تنظیمات وارد کنید',
     'panel.openSub': 'پنل نوای خود را داخل برنامه مدیریت کنید',
     'common.cancel': 'لغو',
@@ -2073,6 +2084,7 @@ class NovaStrings {
     'inb.presetSs2022Sub': 'شادوساکس مدرن با رمز قوی.',
     'servers.name': 'نام',
     'servers.awgImportConf': 'وارد کردن فایل \u2066conf.\u2069',
+    'servers.awgNotConf': 'این فایل یک کانفیگ وایرگارد/آمنزیا نیست. یک فایل \u2066.conf\u2069 با بخش‌های \u2066[Interface]\u2069 و \u2066[Peer]\u2069 انتخاب کنید.',
     'servers.link': 'لینک',
     'servers.subUrl': 'نشانی اشتراک',
     'servers.uriHint': 'vless://…  یا  https://…/sub',

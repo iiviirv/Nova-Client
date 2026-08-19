@@ -285,7 +285,15 @@ class SingboxProxyController extends ProxyController {
     // No mapping means a single/pinned node with no urltest group; nothing to
     // attribute the numbers to.
     if (_coreTagKeys.isEmpty) return;
-    final CoreNodeHealth next = parseCoreGroups(_coreTagKeys, raw);
+    CoreNodeHealth next = parseCoreGroups(_coreTagKeys, raw);
+    if (measuring.value) {
+      // Mid-measure: the measuring group's own pick is not "carrying traffic"
+      // (nothing is connected), and a node that has not answered yet is
+      // pending, not "no response". Final verdicts land in measureNodes().
+      next = CoreNodeHealth(
+          delayMsByKey: next.delayMsByKey,
+          testedKeys: next.delayMsByKey.keys.toSet());
+    }
     final CoreNodeHealth cur = coreHealth.value;
     if (next.selectedKey == cur.selectedKey &&
         mapEquals(next.delayMsByKey, cur.delayMsByKey) &&

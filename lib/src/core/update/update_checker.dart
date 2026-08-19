@@ -65,12 +65,37 @@ Future<void> checkForNovaUpdate(
   }
 }
 
-/// A release tag counts as newer when it simply differs from the one this build
-/// shipped as. Releases only ever move forward and the latest endpoint is always
-/// the newest non-prerelease, so "different" is a safe, simple proxy for "newer"
-/// without a full semver parse of the `-beta` tags.
+/// A release tag counts as newer only when its version number is higher than
+/// the one this build shipped as. "Different" was the old test, and it misfired
+/// the day after every release: the tag remembered from yesterday's check
+/// (v1.12.0-beta) differed from the freshly installed v1.13.0-beta, so the
+/// just-updated app kept offering "1.12 is available".
 bool _isNewer(String latestTag) =>
-    latestTag.trim().isNotEmpty && latestTag.trim() != kNovaReleaseTag.trim();
+    compareReleaseTags(latestTag, kNovaReleaseTag) > 0;
+
+/// Compares two `vMAJOR.MINOR.PATCH[-suffix]` tags numerically. Positive when
+/// [a] is newer than [b]. A tag that does not parse is never newer.
+@visibleForTesting
+int compareReleaseTags(String a, String b) {
+  final List<int>? pa = _numbers(a);
+  final List<int>? pb = _numbers(b);
+  if (pa == null || pb == null) return 0;
+  for (int i = 0; i < 3; i++) {
+    if (pa[i] != pb[i]) return pa[i] > pb[i] ? 1 : -1;
+  }
+  return 0;
+}
+
+List<int>? _numbers(String tag) {
+  final RegExpMatch? m =
+      RegExp(r'^v?(\d+)\.(\d+)(?:\.(\d+))?').firstMatch(tag.trim());
+  if (m == null) return null;
+  return <int>[
+    int.parse(m.group(1)!),
+    int.parse(m.group(2)!),
+    int.parse(m.group(3) ?? '0'),
+  ];
+}
 
 Future<String> _get(Uri url) async {
   final HttpClient client = HttpClient()
