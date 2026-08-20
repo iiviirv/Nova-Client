@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Nova ribbon on the adaptive-icon canvas (108x108dp). The launcher only
-     ever shows the middle 66x66dp, so the mark is drawn to fill that safe zone:
-     the art's own 100x100 coordinates are placed by a group scale/translate,
-     which keeps the path identical to assets/brand/nova-logo-gradient.svg. -->
+     ever shows the middle 66x66dp, so the mark is drawn to fill that safe zone.
+
+     Orientation matters: the canonical mark (assets/brand/nova-mark.png, which
+     the app, the splash, the notification large icon and the old launcher PNGs
+     all use) arches at the TOP-LEFT and curves at the BOTTOM-RIGHT, with purple
+     at the bottom-left running to cyan at the top-right. The path in
+     assets/brand/nova-logo-gradient.svg is a vertical mirror of that, and
+     building this layer from it shipped an upside-down icon in v1.15.0-beta
+     (reported by a user the same evening). The path below is the corrected,
+     canonical orientation; check any change against nova-mark.png. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -14,19 +21,19 @@
         android:translateX="11.9"
         android:translateY="11.9">
         <path
-            android:pathData="M 28 22 L 28 64 A 13 13 0 0 0 54 64 L 54 36 A 13 13 0 0 1 80 36 L 80 78"
+            android:pathData="M 28 78 L 28 36 A 13 13 0 0 1 54 36 L 54 64 A 13 13 0 0 0 80 64 L 80 22"
             android:strokeWidth="15"
             android:strokeLineCap="round"
             android:strokeLineJoin="round">
             <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
                 <gradient
                     android:startX="28"
-                    android:startY="22"
+                    android:startY="78"
                     android:endX="80"
-                    android:endY="78"
+                    android:endY="22"
                     android:type="linear">
-                    <item android:offset="0" android:color="#FF22D3EE" />
-                    <item android:offset="1" android:color="#FFA855F7" />
+                    <item android:offset="0" android:color="#FFA855F7" />
+                    <item android:offset="1" android:color="#FF22D3EE" />
                 </gradient>
             </aapt:attr>
         </path>
