@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:app_links/app_links.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/models/proxy_profile.dart';
 import 'core/platform/windows_url_scheme.dart';
@@ -22,6 +23,7 @@ import 'theme/theme_controller.dart';
 import 'widgets/nova_app_shell.dart';
 import 'widgets/nova_splash.dart';
 import 'widgets/nova_scope.dart';
+import 'core/update/update_checker.dart';
 
 /// The Nova Client application root. Owns the long-lived controllers, exposes
 /// them through [NovaScope], and rebuilds [MaterialApp] when the theme or
@@ -198,6 +200,11 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
     // VPN isn't shown as off.
     if (state == AppLifecycleState.resumed && mounted) {
       NovaScope.of(context).proxy.syncStatus();
+      // Also look for a new release on return to the app, not only at a cold
+      // start: many users never fully quit it. Gated (see
+      // kUpdateCheckGateMs), best-effort, never blocks.
+      unawaited(SharedPreferences.getInstance().then((SharedPreferences p) =>
+          checkForNovaUpdate(p, nowMs: DateTime.now().millisecondsSinceEpoch)));
     }
   }
 

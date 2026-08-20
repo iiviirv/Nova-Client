@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The adaptive icon's background layer. Nova's near-black brand surface,
+         so the gradient ribbon reads the same on a light or dark launcher. -->
+    <color name="ic_launcher_background">#0B0D12</color>
+</resources>

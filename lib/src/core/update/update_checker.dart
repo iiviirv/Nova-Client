@@ -28,6 +28,13 @@ const String kNovaReleasesUrl = 'https://github.com/$kNovaRepo/releases/latest';
 /// notifier so the check needs no controller wiring.
 final ValueNotifier<String?> novaUpdateTag = ValueNotifier<String?>(null);
 
+/// How long between automatic checks. Three hours, not a day: during a beta
+/// the releases come faster than that, and a user who launched right after
+/// installing recorded their one daily check and then heard nothing about the
+/// next two releases (reported from the field on 2026-08-19). One tiny API
+/// call per three hours of use is not a cost worth saving.
+const int kUpdateCheckGateMs = 3 * 60 * 60 * 1000;
+
 const String _kLastCheckKey = 'nova.update.lastCheckMs';
 const String _kLatestTagKey = 'nova.update.latestTag';
 
@@ -49,10 +56,9 @@ Future<void> checkForNovaUpdate(
 
   final int now = nowMs;
   final int last = prefs.getInt(_kLastCheckKey) ?? 0;
-  const int dayMs = 24 * 60 * 60 * 1000;
   // now == 0 means "caller did not pass a clock" (startup path); only the gate
   // needs it, so a forced check still runs.
-  if (!force && now > 0 && last > 0 && now - last < dayMs) return;
+  if (!force && now > 0 && last > 0 && now - last < kUpdateCheckGateMs) return;
 
   try {
     final Uri api =
@@ -123,4 +129,24 @@ Future<String> _get(Uri url) async {
   } finally {
     client.close(force: true);
   }
+}
+
+/// What a manual "check for updates" found.
+enum NovaUpdateCheck { updateAvailable, upToDate, failed }
+
+/// Runs a forced check and says what happened, so the Settings row can answer
+/// the user instead of silently opening a web page.
+Future<NovaUpdateCheck> checkForNovaUpdateNow(
+  SharedPreferences prefs, {
+  int nowMs = 0,
+  Future<String> Function(Uri)? fetch,
+}) async {
+  final String? before = prefs.getString(_kLatestTagKey);
+  await checkForNovaUpdate(prefs,
+      force: true,
+      nowMs: nowMs == 0 ? DateTime.now().millisecondsSinceEpoch : nowMs,
+      fetch: fetch);
+  final String? after = prefs.getString(_kLatestTagKey);
+  if (after == null) return before == null ? NovaUpdateCheck.failed : NovaUpdateCheck.upToDate;
+  return _isNewer(after) ? NovaUpdateCheck.updateAvailable : NovaUpdateCheck.upToDate;
 }

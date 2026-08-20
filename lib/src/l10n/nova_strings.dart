@@ -360,6 +360,12 @@ class NovaStrings {
   String get routeTunSub => t('route.tunSub');
   String get routeSysProxy => t('route.sysProxy');
   String get urlTestTitle => t('urlTest.title');
+  String get updateFound => t('update.found');
+  String get updateFoundBody => t('update.foundBody');
+  String get updateOpen => t('update.open');
+  String get updateUpToDate => t('update.upToDate');
+  String get updateCheckFailed => t('update.checkFailed');
+  String get updateAvailableNow => t('update.availableNow');
   String get urlTestSub => t('urlTest.sub');
   String get urlTestUrl => t('urlTest.url');
   String get urlTestUrlHelp => t('urlTest.urlHelp');
@@ -1086,6 +1092,13 @@ class NovaStrings {
         'SOCKS5/HTTP proxy on 127.0.0.1 and can set it as the system proxy.',
     'route.sysProxy': 'Set system proxy automatically',
     'urlTest.title': 'URL test',
+    'update.found': 'Update available',
+    'update.foundBody': 'Nova {v} is out. Open the download page?',
+    'update.open': 'Open',
+    'update.upToDate': 'You are on the latest version.',
+    'update.checkFailed': 'Could not check for updates. This network may be '
+        'blocking GitHub; try again while connected.',
+    'update.availableNow': '{v} is available',
     'urlTest.sub': 'How servers are measured: the live auto-select group and '
         'the lightning test both use these.',
     'urlTest.url': 'Test URL',
@@ -1821,6 +1834,13 @@ class NovaStrings {
         'می‌تواند آن را پروکسی سیستم کند.',
     'route.sysProxy': 'تنظیم خودکار پروکسی سیستم',
     'urlTest.title': 'تست \u2066URL\u2069',
+    'update.found': 'به‌روزرسانی موجود است',
+    'update.foundBody': 'نوا \u2066{v}\u2069 منتشر شده. صفحهٔ دانلود باز شود؟',
+    'update.open': 'باز کن',
+    'update.upToDate': 'روی آخرین نسخه هستید.',
+    'update.checkFailed': 'بررسی به‌روزرسانی انجام نشد. ممکن است این شبکه '
+        '\u2066GitHub\u2069 را فیلتر کند؛ وصل که شدید دوباره امتحان کنید.',
+    'update.availableNow': '\u2066{v}\u2069 موجود است',
     'urlTest.sub': 'سرورها چطور اندازه‌گیری شوند: گروه انتخاب خودکار و تست ⚡ '
         'هر دو از همین‌ها استفاده می‌کنند.',
     'urlTest.url': 'آدرس تست',

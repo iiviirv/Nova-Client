@@ -34,7 +34,7 @@ void main() {
     expect(novaUpdateTag.value, isNull);
   });
 
-  test('the once-a-day gate skips a second check within 24h', () async {
+  test('the gate skips a second check inside the window, opens after it', () async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     int calls = 0;
     Future<String> fetch(Uri _) async {
@@ -44,12 +44,16 @@ void main() {
 
     const int t0 = 1000000000000;
     await checkForNovaUpdate(prefs, nowMs: t0, fetch: fetch);
-    // 12 hours later: still within the day, so no second network call.
-    await checkForNovaUpdate(prefs, nowMs: t0 + 12 * 3600 * 1000, fetch: fetch);
+    // Inside the window: no second network call.
+    await checkForNovaUpdate(prefs,
+        nowMs: t0 + kUpdateCheckGateMs ~/ 2, fetch: fetch);
     expect(calls, 1);
-    // 25 hours later: the gate opens again.
-    await checkForNovaUpdate(prefs, nowMs: t0 + 25 * 3600 * 1000, fetch: fetch);
+    // Past it: the gate opens again. Three hours, not a day: during a beta a
+    // daily gate meant a user two releases behind heard nothing.
+    await checkForNovaUpdate(prefs,
+        nowMs: t0 + kUpdateCheckGateMs + 1000, fetch: fetch);
     expect(calls, 2);
+    expect(kUpdateCheckGateMs, 3 * 60 * 60 * 1000);
   });
 
   test('a remembered newer tag restores the banner on next launch', () async {
@@ -63,5 +67,26 @@ void main() {
         nowMs: 1000000000000 + 3600 * 1000,
         fetch: (_) async => _release('v9.9.9-beta'));
     expect(novaUpdateTag.value, 'v9.9.9-beta');
+  });
+
+  test('a manual check reports what it found', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    expect(
+      await checkForNovaUpdateNow(prefs,
+          fetch: (Uri _) async => _release('v99.0.0-beta')),
+      NovaUpdateCheck.updateAvailable,
+    );
+    expect(
+      await checkForNovaUpdateNow(prefs,
+          fetch: (Uri _) async => _release(kNovaReleaseTag)),
+      NovaUpdateCheck.upToDate,
+    );
+    // An older tag than this build is not an update either.
+    expect(
+      await checkForNovaUpdateNow(prefs,
+          fetch: (Uri _) async => _release('v1.0.0-beta')),
+      NovaUpdateCheck.upToDate,
+    );
   });
 }

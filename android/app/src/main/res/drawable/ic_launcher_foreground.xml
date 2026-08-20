@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Nova ribbon on the adaptive-icon canvas (108x108dp). The launcher only
+     ever shows the middle 66x66dp, so the mark is drawn to fill that safe zone:
+     the art's own 100x100 coordinates are placed by a group scale/translate,
+     which keeps the path identical to assets/brand/nova-logo-gradient.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.78"
+        android:scaleY="0.78"
+        android:translateX="11.9"
+        android:translateY="11.9">
+        <path
+            android:pathData="M 28 22 L 28 64 A 13 13 0 0 0 54 64 L 54 36 A 13 13 0 0 1 80 36 L 80 78"
+            android:strokeWidth="15"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+                <gradient
+                    android:startX="28"
+                    android:startY="22"
+                    android:endX="80"
+                    android:endY="78"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#FF22D3EE" />
+                    <item android:offset="1" android:color="#FFA855F7" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

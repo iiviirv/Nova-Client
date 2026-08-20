@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon. Without one, launchers fall back to "legacy icon treatment":
+     they shrink the old PNG and drop it inside a themed tile, which is why Nova
+     looked small next to apps that ship an adaptive icon (field report with a
+     themed launcher, 2026-08-19).
+
+     The foreground draws the brand mark across the 108dp canvas so it fills the
+     66dp safe zone the launcher actually shows; <monochrome> gives Android 13+
+     themed icons the same mark as a silhouette instead of a shrunken bitmap. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

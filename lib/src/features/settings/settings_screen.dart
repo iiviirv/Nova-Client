@@ -15,6 +15,8 @@ import '../logs/log_screen.dart';
 import '../panel/open_panel.dart';
 import '../routing/routing_screen.dart';
 import 'settings_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../theme/nova_semantics.dart';
 
 /// Shown in the Settings "About" footer so a tester can confirm exactly which
 /// build is running. Keep in step with `pubspec.yaml`'s `version:` on release.
@@ -205,11 +207,7 @@ class SettingsScreen extends StatelessWidget {
                           url: 'https://github.com/IRNova',
                         ),
                         _div(nova.border),
-                        _LinkTile(
-                          icon: Icons.system_update_rounded,
-                          title: s.updateCheck,
-                          url: kNovaReleasesUrl,
-                        ),
+                        const _UpdateCheckTile(),
                       ],
                     ),
                   ),
@@ -507,6 +505,122 @@ class _PanelSettingsState extends State<_PanelSettings> {
           ],
         );
       },
+    );
+  }
+}
+
+/// "Check for updates": runs a real check and answers, instead of opening the
+/// releases page and leaving the user to compare version numbers. Shows the
+/// known-update state as a badge, so a user two releases behind sees it here
+/// even before the dashboard banner (field report, 2026-08-19).
+class _UpdateCheckTile extends StatefulWidget {
+  const _UpdateCheckTile();
+
+  @override
+  State<_UpdateCheckTile> createState() => _UpdateCheckTileState();
+}
+
+class _UpdateCheckTileState extends State<_UpdateCheckTile> {
+  bool _busy = false;
+
+  Future<void> _check() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final NovaStrings s = NovaStrings.of(context);
+    NovaUpdateCheck result;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      result = await checkForNovaUpdateNow(prefs);
+    } catch (_) {
+      result = NovaUpdateCheck.failed;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    final String? tag = novaUpdateTag.value;
+    switch (result) {
+      case NovaUpdateCheck.updateAvailable:
+        await showDialog<void>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            backgroundColor: ctx.nova.bgAlt,
+            shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
+            title: Text(s.updateFound),
+            content: Text(s.updateFoundBody.replaceFirst('{v}', tag ?? '')),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(s.cancel)),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  launchUrl(Uri.parse(kNovaReleasesUrl),
+                      mode: LaunchMode.externalApplication);
+                },
+                child: Text(s.updateOpen),
+              ),
+            ],
+          ),
+        );
+      case NovaUpdateCheck.upToDate:
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(s.updateUpToDate)));
+        }
+      case NovaUpdateCheck.failed:
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(s.updateCheckFailed)));
+        }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    return ValueListenableBuilder<String?>(
+      valueListenable: novaUpdateTag,
+      builder: (BuildContext context, String? tag, _) => InkWell(
+        onTap: _check,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+          child: Row(
+            children: <Widget>[
+              NovaIconChip(
+                  icon: Icons.system_update_rounded,
+                  color: tag == null ? nova.cyan : NovaSemantics.connectGreen,
+                  size: 32,
+                  radius: 9),
+              const SizedBox(width: NovaSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(s.updateCheck,
+                        style: Theme.of(context).textTheme.bodyMedium),
+                    if (tag != null) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(s.updateAvailableNow.replaceFirst('{v}', tag),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: NovaSemantics.connectGreen)),
+                    ],
+                  ],
+                ),
+              ),
+              if (_busy)
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                Icon(Icons.chevron_right_rounded, color: nova.muted, size: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
