@@ -6,6 +6,14 @@ import 'proxy_node.dart';
 /// Routing behaviour, mapping onto the controls on the Routing screen.
 enum SingboxMode { rule, global, direct }
 
+/// Defaults for the URL-test settings. Plain http on purpose: the test rides
+/// inside the encrypted tunnel and an https target adds a second TLS
+/// handshake to every measurement.
+const String kDefaultUrlTestUrl = 'http://www.gstatic.com/generate_204';
+const int kDefaultUrlTestTimeoutSec = 5;
+const int kDefaultUrlTestIntervalSec = 180;
+const int kDefaultUrlTestToleranceMs = 50;
+
 class SingboxRouteOptions {
   const SingboxRouteOptions({
     this.mode = SingboxMode.rule,
@@ -15,6 +23,10 @@ class SingboxRouteOptions {
     this.dns = '',
     this.lean = false,
     this.localRuleSets = false,
+    this.urlTestUrl = kDefaultUrlTestUrl,
+    this.urlTestTimeoutSec = kDefaultUrlTestTimeoutSec,
+    this.urlTestIntervalSec = kDefaultUrlTestIntervalSec,
+    this.urlTestToleranceMs = kDefaultUrlTestToleranceMs,
     this.tlsFragment = true,
     this.gvisorStack = false,
     this.hy2UpMbps = 0,
@@ -61,6 +73,16 @@ class SingboxRouteOptions {
   /// domain list still covers Iranian sites). The lean/iOS path already uses
   /// local rule-sets by its own branch; this brings the full path in line.
   final bool localRuleSets;
+
+  /// URL-test settings (Settings > Routing > URL test): the address every
+  /// latency measurement fetches (the tunnel's urltest group and the
+  /// measuring core alike), how long one node may take before it counts as
+  /// no response, how often the live group re-tests, and how much faster a
+  /// node must be before the group switches to it.
+  final String urlTestUrl;
+  final int urlTestTimeoutSec;
+  final int urlTestIntervalSec;
+  final int urlTestToleranceMs;
 
   /// Memory-lean profile for the iOS Network Extension (hard ~50 MB cap):
   /// fewer auto-select nodes, a normal MTU, and no downloaded rule-sets, so the
@@ -155,6 +177,10 @@ class SingboxRouteOptions {
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
+    String? urlTestUrl,
+    int? urlTestTimeoutSec,
+    int? urlTestIntervalSec,
+    int? urlTestToleranceMs,
     bool? tlsFragment,
     bool? gvisorStack,
     int? hy2UpMbps,
@@ -177,6 +203,10 @@ class SingboxRouteOptions {
         dns: dns,
         lean: lean ?? this.lean,
         localRuleSets: localRuleSets ?? this.localRuleSets,
+        urlTestUrl: urlTestUrl ?? this.urlTestUrl,
+        urlTestTimeoutSec: urlTestTimeoutSec ?? this.urlTestTimeoutSec,
+        urlTestIntervalSec: urlTestIntervalSec ?? this.urlTestIntervalSec,
+        urlTestToleranceMs: urlTestToleranceMs ?? this.urlTestToleranceMs,
         tlsFragment: tlsFragment ?? this.tlsFragment,
         gvisorStack: gvisorStack ?? this.gvisorStack,
         hy2UpMbps: hy2UpMbps ?? this.hy2UpMbps,
@@ -665,14 +695,14 @@ class SingboxConfig {
           // measurement. That extra handshake, plus our fragmented ClientHello
           // to the proxy, is why Nova's pings read far above Karing's for the
           // same server; this takes the avoidable half out.
-          'url': 'http://www.gstatic.com/generate_204',
+          'url': options.urlTestUrl.trim().isEmpty ? kDefaultUrlTestUrl : options.urlTestUrl.trim(),
           // Re-test every 3 min so a node that degrades is dropped reasonably
           // soon, without hammering the exits.
-          'interval': '3m0s',
+          'interval': '${options.urlTestIntervalSec.clamp(10, 86400)}s',
           // 50ms band: switch to a node only when it is meaningfully faster than
           // the current pick (>50ms), which ignores trivial jitter but still
           // homes in on the lowest-latency exit instead of clinging to node-0.
-          'tolerance': 50,
+          'tolerance': options.urlTestToleranceMs.clamp(0, 5000),
           'idle_timeout': '30m0s',
           // Never tear down live connections when the pick changes: an in-flight
           // download or stream stays on its node instead of being cut.

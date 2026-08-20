@@ -34,10 +34,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// the connected dashboard can be laid out without the conn-info controller
 /// starting its probe timers.
 class _StaticProxy extends ProxyController {
-  _StaticProxy(this._state, {this.profile});
+  _StaticProxy(this._state, {this.profile, this.localPort});
 
   final ProxyConnectionState _state;
   final ProxyProfile? profile;
+  final int? localPort;
+
+  @override
+  int? get localProxyPort => localPort;
 
   @override
   ProxyConnectionState get state => _state;
@@ -166,6 +170,35 @@ void main() {
       // (kShowDashboardTools), and with no profile there is no config card.
       expect(find.text('Radar'), findsNothing);
       expect(find.text('Single config'), findsNothing);
+      await _teardown(tester);
+    });
+
+    testWidgets('desktop proxy mode shows the local proxy address card',
+        (WidgetTester tester) async {
+      final ProxyProfile sub = _subscription();
+      await _pump(
+        tester,
+        const DashboardScreen(),
+        proxy: _StaticProxy(ProxyConnectionState.connected,
+            profile: sub, localPort: 2080),
+        profiles: <ProxyProfile>[sub],
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text('127.0.0.1:2080'), findsOneWidget);
+      expect(find.text('Set system proxy'), findsOneWidget);
+      await _teardown(tester);
+    });
+
+    testWidgets('no local proxy port (mobile / TUN): no proxy card',
+        (WidgetTester tester) async {
+      final ProxyProfile sub = _subscription();
+      await _pump(
+        tester,
+        const DashboardScreen(),
+        proxy: _StaticProxy(ProxyConnectionState.connected, profile: sub),
+        profiles: <ProxyProfile>[sub],
+      );
+      expect(find.text('Set system proxy'), findsNothing);
       await _teardown(tester);
     });
 

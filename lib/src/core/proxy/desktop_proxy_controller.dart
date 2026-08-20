@@ -131,6 +131,26 @@ class DesktopProxyController extends ProxyController {
   bool Function()? tunModeProvider;
   bool get tunMode => tunModeProvider?.call() ?? false;
 
+  /// Whether to set the OS system proxy automatically on connect in proxy
+  /// mode (Settings > Routing). Defaults to yes; a user who only wants the
+  /// local port for specific apps can turn it off.
+  bool Function()? autoSystemProxyProvider;
+  bool get autoSystemProxy =>
+      autoSystemProxyProvider?.call() ?? manageSystemProxy;
+
+  @override
+  int? get localProxyPort => tunMode ? null : socksPort;
+
+  @override
+  bool get systemProxyOn => _systemProxyOn;
+
+  @override
+  Future<bool> setSystemProxy(bool on) async {
+    await _setSystemProxy(on, force: true);
+    notifyListeners();
+    return _systemProxyOn == on;
+  }
+
   @override
   void selectProfile(ProxyProfile? profile) {
     _active = profile;
@@ -1137,8 +1157,14 @@ class DesktopProxyController extends ProxyController {
       // at startup; either way the results land in each outbound's history,
       // which is what is polled below, so a "test already running" reply here
       // is fine. Not awaited: it returns only when the whole pool is done.
+      // Per-node timeout and the test URL come from Settings > Routing >
+      // URL test. The group's own startup pass uses the same URL (it is in
+      // the config); this kick carries the timeout.
+      final int timeoutSec = opts.urlTestTimeoutSec.clamp(1, 60);
+      final String testUrl = Uri.encodeQueryComponent(
+          opts.urlTestUrl.trim().isEmpty ? kDefaultUrlTestUrl : opts.urlTestUrl.trim());
       final Uri kick = Uri.parse('http://127.0.0.1:$apiPort/group/proxy/delay'
-          '?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=60000');
+          '?url=$testUrl&timeout=${timeoutSec * 1000}');
       unawaited(http.get(kick).timeout(_measureBudget).then((_) {},
           onError: (Object _) {}));
 
@@ -1151,7 +1177,15 @@ class DesktopProxyController extends ProxyController {
       int lastCount = 0;
       int lastChangeMs = 0;
       Map<String, int> delays = <String, int>{};
-      while (clock.elapsed < _measureBudget && !exited) {
+      // The run ends [timeoutSec] after the last answer (a node that has not
+      // answered by then is "no response"), bounded by how many batches of
+      // ten the pool needs, never past the hard budget.
+      final int batches = (built.tagKeys.length / 10).ceil().clamp(1, 20);
+      final Duration budget = Duration(seconds: (timeoutSec * batches + 3))
+              .compareTo(_measureBudget) < 0
+          ? Duration(seconds: timeoutSec * batches + 3)
+          : _measureBudget;
+      while (clock.elapsed < budget && !exited) {
         await Future<void>.delayed(const Duration(milliseconds: 700));
         try {
           final http.Response r =
@@ -1172,12 +1206,10 @@ class DesktopProxyController extends ProxyController {
           lastChangeMs = clock.elapsedMilliseconds;
         }
         if (delays.length >= built.tagKeys.length) break;
-        // Quiet for 8s after the first answers (and at least 12s in): the rest
-        // are the ones that time out, which sing-box takes 5s each to give up
-        // on, ten at a time.
+        // Quiet for the timeout after the first answers: the rest are the
+        // ones that do not answer.
         if (lastCount > 0 &&
-            clock.elapsedMilliseconds - lastChangeMs > 8000 &&
-            clock.elapsedMilliseconds > 12000) {
+            clock.elapsedMilliseconds - lastChangeMs > timeoutSec * 1000) {
           break;
         }
       }
@@ -1356,27 +1388,45 @@ class DesktopProxyController extends ProxyController {
       s.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 
   /// Point the OS at our local proxy (or clear it). macOS/Windows for now.
-  Future<void> _setSystemProxy(bool on) async {
-    if (on && !manageSystemProxy) return;
+  /// [force] bypasses the auto-set preference (the dashboard's button).
+  Future<void> _setSystemProxy(bool on, {bool force = false}) async {
+    if (on && !force && !autoSystemProxy) return;
     if (Platform.isMacOS) {
       final List<String> services = await _macServices();
       final List<String> cmds = <String>[];
       for (final String s in services) {
         if (on) {
+          // SOCKS for apps that speak it, plus HTTP/HTTPS web proxy (the
+          // mixed inbound answers both), so apps that only honour the web
+          // proxy settings (many Electron and CLI tools) are covered too.
           cmds.add('networksetup -setsocksfirewallproxy "$s" 127.0.0.1 $socksPort');
           cmds.add('networksetup -setsocksfirewallproxystate "$s" on');
+          cmds.add('networksetup -setwebproxy "$s" 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setwebproxystate "$s" on');
+          cmds.add('networksetup -setsecurewebproxy "$s" 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setsecurewebproxystate "$s" on');
         } else {
           cmds.add('networksetup -setsocksfirewallproxystate "$s" off');
+          cmds.add('networksetup -setwebproxystate "$s" off');
+          cmds.add('networksetup -setsecurewebproxystate "$s" off');
         }
       }
       if (cmds.isEmpty) return;
       // One authorization prompt covers the whole batch.
       final String script = cmds.join(' && ').replaceAll('"', '\\"');
-      await Process.run('osascript', <String>[
+      final ProcessResult r = await Process.run('osascript', <String>[
         '-e',
         'do shell script "$script" with administrator privileges',
       ]);
-      _systemProxyOn = on;
+      // A declined admin prompt (or any failure) used to be recorded as "set",
+      // so the dashboard had nothing honest to show. Only a clean exit counts.
+      if (r.exitCode == 0) {
+        _systemProxyOn = on;
+      } else {
+        NovaLog.instance.write(
+            'System proxy not ${on ? 'set' : 'cleared'}: ${(r.stderr as String).trim()}',
+            level: NovaLogLevel.warn);
+      }
     } else if (Platform.isWindows) {
       const String key =
           r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';

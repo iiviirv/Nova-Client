@@ -124,17 +124,31 @@ class RoutingScreen extends StatelessWidget {
                   const SizedBox(height: NovaSpace.lg),
                   NovaCard(
                     padding: EdgeInsets.zero,
-                    child: _RuleSwitch(
-                      icon: Icons.devices_rounded,
-                      title: s.routeTun,
-                      subtitle: s.routeTunSub,
-                      value: settings.tunMode,
-                      onChanged: settings.setTunMode,
+                    child: Column(
+                      children: <Widget>[
+                        _RuleSwitch(
+                          icon: Icons.devices_rounded,
+                          title: s.routeTun,
+                          subtitle: s.routeTunSub,
+                          value: settings.tunMode,
+                          onChanged: settings.setTunMode,
+                        ),
+                        if (!settings.tunMode)
+                          _RuleSwitch(
+                            icon: Icons.settings_ethernet_rounded,
+                            title: s.routeSysProxy,
+                            subtitle: s.routeSysProxySub,
+                            value: settings.autoSystemProxy,
+                            onChanged: settings.setAutoSystemProxy,
+                          ),
+                      ],
                     ),
                   ),
                 ],
                 const SizedBox(height: NovaSpace.lg),
                 const _ConnectionTuningCard(),
+                const SizedBox(height: NovaSpace.lg),
+                _UrlTestCard(settings: settings),
                 const SizedBox(height: NovaSpace.lg),
                 NovaCard(
                   child: Column(
@@ -567,5 +581,107 @@ class _ConnectionTuningCardState extends State<_ConnectionTuningCard> {
       }
     }
     return spans;
+  }
+}
+
+/// Settings > Routing > URL test: what every latency measurement fetches, how
+/// long a node may take before it is "no response", how often the live
+/// auto-select group re-tests, and how much faster a node must be before the
+/// group switches. Shared by the tunnel's urltest group and the lightning
+/// measuring core. Text fields commit on change; bad numbers are ignored.
+class _UrlTestCard extends StatefulWidget {
+  const _UrlTestCard({required this.settings});
+  final SettingsController settings;
+
+  @override
+  State<_UrlTestCard> createState() => _UrlTestCardState();
+}
+
+class _UrlTestCardState extends State<_UrlTestCard> {
+  late final TextEditingController _url =
+      TextEditingController(text: widget.settings.urlTestUrl);
+  late final TextEditingController _timeout =
+      TextEditingController(text: '${widget.settings.urlTestTimeoutSec}');
+  late final TextEditingController _interval =
+      TextEditingController(text: '${widget.settings.urlTestIntervalSec}');
+  late final TextEditingController _tolerance =
+      TextEditingController(text: '${widget.settings.urlTestToleranceMs}');
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _timeout.dispose();
+    _interval.dispose();
+    _tolerance.dispose();
+    super.dispose();
+  }
+
+  Widget _num(BuildContext context, TextEditingController c, String label,
+      String unit, String help, void Function(int) onChanged) {
+    final nova = context.nova;
+    return Padding(
+      padding: const EdgeInsets.only(top: NovaSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          TextField(
+            controller: c,
+            keyboardType: TextInputType.number,
+            textDirection: TextDirection.ltr,
+            decoration: InputDecoration(labelText: label, suffixText: unit),
+            onChanged: (String v) {
+              final int? n = int.tryParse(v.trim());
+              if (n != null) onChanged(n);
+            },
+          ),
+          const SizedBox(height: 4),
+          Text(help,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: nova.muted)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(s.urlTestTitle,
+              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(s.urlTestSub,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.md),
+          TextField(
+            controller: _url,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            textDirection: TextDirection.ltr,
+            decoration: InputDecoration(
+              labelText: s.urlTestUrl,
+              hintText: kDefaultUrlTestUrl,
+            ),
+            onChanged: widget.settings.setUrlTestUrl,
+          ),
+          const SizedBox(height: 4),
+          Text(s.urlTestUrlHelp,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
+          _num(context, _timeout, s.urlTestTimeout, 's', s.urlTestTimeoutHelp,
+              widget.settings.setUrlTestTimeoutSec),
+          _num(context, _interval, s.urlTestInterval, 's',
+              s.urlTestIntervalHelp, widget.settings.setUrlTestIntervalSec),
+          _num(context, _tolerance, s.urlTestTolerance, 'ms',
+              s.urlTestToleranceHelp, widget.settings.setUrlTestToleranceMs),
+        ],
+      ),
+    );
   }
 }

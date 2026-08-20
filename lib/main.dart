@@ -75,6 +75,7 @@ Future<void> main() async {
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.
   if (proxy is DesktopProxyController) {
     proxy.tunModeProvider = () => settings.tunMode;
+    proxy.autoSystemProxyProvider = () => settings.autoSystemProxy;
   }
 
   runApp(NovaApp(

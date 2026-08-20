@@ -92,6 +92,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       let tags = (args["tags"] as? [String]) ?? []
       let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
       let xrayConfig = args["xrayConfigJson"] as? String
+      let timeoutSec = (args["timeoutSec"] as? Int) ?? 5
       loadManagerIfNeeded { [weak self] in
         guard let self else { result(FlutterError(code: "gone", message: "host gone", details: nil)); return }
         let status = self.manager?.connection.status ?? .invalid
@@ -101,6 +102,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         }
         self.ensureNovacoreSetup()
         self.measure.start(config: config, tags: tags, ruleSets: ruleSets, xrayConfig: xrayConfig,
+                           timeoutSec: timeoutSec,
                            onGroups: { [weak self] g in self?.emit(["type": "groups", "groups": g]) },
                            done: { delays in result(delays) },
                            fail: { why in result(FlutterError(code: "measure_failed", message: why, details: nil)) })
@@ -633,8 +635,6 @@ final class NovaMeasure: NSObject {
   private static let ruleSetBaseToken = "__NOVA_BASE__"
   private static let groupTag = "proxy"
   private static let budget: TimeInterval = 60
-  private static let quiet: TimeInterval = 8
-  private static let minRun: TimeInterval = 12
 
   private let queue = DispatchQueue(label: "online.novaproxy.novaClient.measure")
   private var server: NovacoreCommandServer?
@@ -646,7 +646,7 @@ final class NovaMeasure: NSObject {
   private let latestLock = NSLock()
 
   func start(config: String, tags: [String], ruleSets: [String: FlutterStandardTypedData],
-             xrayConfig: String?,
+             xrayConfig: String?, timeoutSec: Int = 5,
              onGroups: @escaping ([[String: Any]]) -> Void,
              done: @escaping ([String: Int]) -> Void,
              fail: @escaping (String) -> Void) {
@@ -746,6 +746,12 @@ final class NovaMeasure: NSObject {
       // either lands in the stream above.
       try? c.urlTest(Self.groupTag)
 
+      // The run ends timeoutSec after the last answer (anything still silent
+      // is "no response"), bounded by the batches of ten the pool needs,
+      // never past the hard budget.
+      let quiet = TimeInterval(min(max(timeoutSec, 1), 60))
+      let batches = Double(min(max((tags.count + 9) / 10, 1), 20))
+      let budget = min(Self.budget, quiet * batches + 3)
       let startedAt = Date()
       var lastChangeAt = startedAt
       var lastCount = -1
@@ -756,9 +762,8 @@ final class NovaMeasure: NSObject {
         latestLock.lock(); let count = latest.count; latestLock.unlock()
         if count != lastCount { lastCount = count; lastChangeAt = now }
         if count >= tags.count { break }
-        if now.timeIntervalSince(startedAt) > Self.budget { break }
-        if count > 0, now.timeIntervalSince(lastChangeAt) > Self.quiet,
-           now.timeIntervalSince(startedAt) > Self.minRun { break }
+        if now.timeIntervalSince(startedAt) > budget { break }
+        if count > 0, now.timeIntervalSince(lastChangeAt) > quiet { break }
       }
       latestLock.lock(); let result = latest; latestLock.unlock()
       finish(result, nil)

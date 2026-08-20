@@ -61,10 +61,6 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
     /** Whole-run budget. sing-box tests ten nodes at a time, 5s each. */
     private const val BUDGET_MS = 60_000L
 
-    /** After the first answers, stop when nothing new arrived for this long. */
-    private const val QUIET_MS = 8_000L
-
-    private const val MIN_RUN_MS = 12_000L
 
     private lateinit var appContext: Context
     private val connectivity: ConnectivityManager by lazy {
@@ -107,6 +103,7 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
         done: (Map<String, Int>) -> Unit,
         fail: (String) -> Unit,
         xrayConfig: String? = null,
+        timeoutSec: Int = 5,
     ) {
         appContext = context.applicationContext
         val id = ++runId
@@ -160,6 +157,12 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
                 // "test already running" reply here is fine.
                 runCatching { c.urlTest(GROUP_TAG) }
 
+                // The run ends timeoutSec after the last answer (anything still
+                // silent is "no response"), bounded by the batches of ten the
+                // pool needs, never past the hard budget.
+                val quietMs = timeoutSec.coerceIn(1, 60) * 1000L
+                val batches = ((tags.size + 9) / 10).coerceIn(1, 20)
+                val budgetMs = minOf(BUDGET_MS, quietMs * batches + 3000L)
                 val startedAt = System.currentTimeMillis()
                 lastChangeAt = startedAt
                 var lastCount = -1
@@ -173,8 +176,8 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
                         lastChangeAt = now
                     }
                     if (count >= tags.size) break
-                    if (now - startedAt > BUDGET_MS) break
-                    if (count > 0 && now - lastChangeAt > QUIET_MS && now - startedAt > MIN_RUN_MS) break
+                    if (now - startedAt > budgetMs) break
+                    if (count > 0 && now - lastChangeAt > quietMs) break
                 }
                 finish(synchronized(latest) { HashMap(latest) }, null)
             } catch (e: Throwable) {

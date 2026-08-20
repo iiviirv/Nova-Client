@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/proxy_profile.dart';
@@ -14,6 +15,7 @@ import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_button.dart';
+import '../../widgets/nova_card.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
 import '../../widgets/nova_scope.dart';
@@ -318,12 +320,140 @@ class _SummaryView extends StatelessWidget {
         const _ConnectHero(),
         const SizedBox(height: NovaSpace.xl),
         const _ConnectionPanel(),
+        const _ProxyModeCard(),
         const _ConfigCard(),
         if (kShowDashboardTools) ...<Widget>[
           const SizedBox(height: NovaSpace.md),
           const _ToolsStrip(),
         ],
       ],
+    );
+  }
+}
+
+/// Desktop, proxy mode (full-device tunnel off): where the proxy is. Field
+/// report from Windows and Mac: with the tunnel off it was not clear how apps
+/// reach the proxy at all. This says it plainly: the local SOCKS5/HTTP address
+/// (with copy), whether the OS system proxy currently points at it, and a
+/// button to set or clear that (macOS asks for admin approval). Hidden on
+/// mobile and in TUN mode, where there is nothing to point at.
+class _ProxyModeCard extends StatelessWidget {
+  const _ProxyModeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = NovaScope.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.settings]),
+      builder: (context, _) {
+        final ProxyController proxy = scope.proxy;
+        final int? port = proxy.localProxyPort;
+        if (port == null || !proxy.state.isActive) return const SizedBox.shrink();
+        final NovaStrings s = NovaStrings.of(context);
+        final nova = context.nova;
+        final TextTheme text = Theme.of(context).textTheme;
+        final String addr = '127.0.0.1:$port';
+        final bool sys = proxy.systemProxyOn;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: NovaSpace.md),
+          child: NovaCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    NovaIconChip(
+                        icon: Icons.settings_ethernet_rounded, color: nova.cyan),
+                    const SizedBox(width: NovaSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(s.proxyModeTitle,
+                              style: text.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(s.proxyModeLocal,
+                              style: text.bodySmall?.copyWith(color: nova.muted)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: NovaSpace.sm),
+                // The address on its own line, one tap to copy.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: addr));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${s.proxyModeCopied}: $addr')));
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: nova.bgAlt,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: nova.border),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(addr,
+                              textDirection: TextDirection.ltr,
+                              style: text.titleSmall?.copyWith(
+                                  fontFeatures: const <FontFeature>[
+                                    FontFeature.tabularFigures()
+                                  ],
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                        Icon(Icons.copy_rounded, size: 16, color: nova.muted),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: NovaSpace.sm),
+                Text(s.proxyModeHint,
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+                const SizedBox(height: NovaSpace.sm),
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      sys ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                      size: 18,
+                      color: sys ? NovaSemantics.connectGreen : nova.muted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(sys ? s.proxyModeSysOn : s.proxyModeSysOff,
+                          style: text.bodySmall),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: NovaSpace.sm),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: NovaButton(
+                    label: sys ? s.proxyModeClearSys : s.proxyModeSetSys,
+                    variant: NovaButtonVariant.secondary,
+                    onPressed: () async {
+                      final bool ok = await proxy.setSystemProxy(!sys);
+                      if (!context.mounted) return;
+                      if (!ok) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(s.proxyModeSetFailed)));
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -898,7 +1028,11 @@ class _ConfigCardBody extends StatelessWidget {
     final nova = context.nova;
     final s = NovaStrings.of(context);
     final text = Theme.of(context).textTheme;
-    final int? latency = active.lastLatencyMs;
+    // The card's ping is the subscription's best-node figure (what Auto would
+    // pick). With a server pinned it is not the pinned server's number, so
+    // it only shows in Auto mode; the pinned server's own ping lives on its
+    // row in the list and in the connection panel above.
+    final int? latency = active.pinnedNode == null ? active.lastLatencyMs : null;
     final SubInfo? sub = subInfoFor(active.subscriptionUrl);
 
     final String data;

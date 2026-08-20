@@ -446,13 +446,15 @@ class SingboxProxyController extends ProxyController {
       }
       final Map<String, Uint8List>? ruleSets =
           Platform.isIOS ? await _leanRuleSets() : null;
+      final int timeoutSec = opts.urlTestTimeoutSec.clamp(1, 60);
       final Object? raw = await _control.invokeMethod<Object?>('measure',
           <String, dynamic>{
             'configJson': configJson,
             'tags': built.tagKeys.keys.toList(),
+            'timeoutSec': timeoutSec,
             if (xrayJson != null) 'xrayConfigJson': xrayJson,
             if (ruleSets != null) 'ruleSets': ruleSets,
-          }).timeout(const Duration(seconds: 90));
+          }).timeout(Duration(seconds: 30 + timeoutSec * 20));
       final Map<String, int> delays = <String, int>{};
       if (raw is Map) {
         raw.forEach((Object? tag, Object? ms) {

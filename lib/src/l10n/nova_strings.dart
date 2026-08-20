@@ -358,6 +358,27 @@ class NovaStrings {
   String get routeBypassLanSub => t('route.bypassLanSub');
   String get routeTun => t('route.tun');
   String get routeTunSub => t('route.tunSub');
+  String get routeSysProxy => t('route.sysProxy');
+  String get urlTestTitle => t('urlTest.title');
+  String get urlTestSub => t('urlTest.sub');
+  String get urlTestUrl => t('urlTest.url');
+  String get urlTestUrlHelp => t('urlTest.urlHelp');
+  String get urlTestTimeout => t('urlTest.timeout');
+  String get urlTestTimeoutHelp => t('urlTest.timeoutHelp');
+  String get urlTestInterval => t('urlTest.interval');
+  String get urlTestIntervalHelp => t('urlTest.intervalHelp');
+  String get urlTestTolerance => t('urlTest.tolerance');
+  String get urlTestToleranceHelp => t('urlTest.toleranceHelp');
+  String get routeSysProxySub => t('route.sysProxySub');
+  String get proxyModeTitle => t('proxyMode.title');
+  String get proxyModeLocal => t('proxyMode.local');
+  String get proxyModeHint => t('proxyMode.hint');
+  String get proxyModeSysOn => t('proxyMode.sysOn');
+  String get proxyModeSysOff => t('proxyMode.sysOff');
+  String get proxyModeSetSys => t('proxyMode.setSys');
+  String get proxyModeClearSys => t('proxyMode.clearSys');
+  String get proxyModeCopied => t('proxyMode.copied');
+  String get proxyModeSetFailed => t('proxyMode.setFailed');
   String get routeDns => t('route.dns');
   String get routeDnsSub => t('route.dnsSub');
   String get routeApplyNote => t('route.applyNote');
@@ -1061,7 +1082,37 @@ class NovaStrings {
     'route.bypassLanSub': 'Private/local ranges stay direct',
     'route.tun': 'Full-device tunnel (TUN)',
     'route.tunSub': 'Route every app, not just proxy-aware ones. Needs '
-        'one admin approval when you connect.',
+        'one admin approval when you connect. Off: Nova runs a local '
+        'SOCKS5/HTTP proxy on 127.0.0.1 and can set it as the system proxy.',
+    'route.sysProxy': 'Set system proxy automatically',
+    'urlTest.title': 'URL test',
+    'urlTest.sub': 'How servers are measured: the live auto-select group and '
+        'the lightning test both use these.',
+    'urlTest.url': 'Test URL',
+    'urlTest.urlHelp': 'The address each server is asked to fetch. Plain http '
+        'is fine: the test already rides inside the tunnel.',
+    'urlTest.timeout': 'Timeout',
+    'urlTest.timeoutHelp': 'A server that has not answered by then counts as '
+        'no response, and the lightning test stops waiting.',
+    'urlTest.interval': 'Interval',
+    'urlTest.intervalHelp': 'How often the live auto-select group re-tests '
+        'its servers while connected.',
+    'urlTest.tolerance': 'Tolerance',
+    'urlTest.toleranceHelp': 'Auto switches servers only when the new one is '
+        'faster by more than this.',
+    'route.sysProxySub': 'In proxy mode, point the OS at Nova\'s local port '
+        'on connect. Turn off to use the port only in apps you choose.',
+    'proxyMode.title': 'Proxy mode',
+    'proxyMode.local': 'Local proxy',
+    'proxyMode.hint': 'SOCKS5 and HTTP on this address. Apps that do not '
+        'follow the system proxy can be pointed here directly.',
+    'proxyMode.sysOn': 'System proxy is set to Nova',
+    'proxyMode.sysOff': 'System proxy is not set',
+    'proxyMode.setSys': 'Set system proxy',
+    'proxyMode.clearSys': 'Clear',
+    'proxyMode.copied': 'Copied',
+    'proxyMode.setFailed': 'Could not change the system proxy (admin approval '
+        'needed).',
     'route.dns': 'DNS resolver',
     'route.dnsSub': 'Encrypted DNS over HTTPS, resolved through the tunnel.',
     'route.applyNote': 'Changes apply the next time you connect.',
@@ -1765,7 +1816,38 @@ class NovaStrings {
     'route.bypassLanSub': 'محدوده‌های خصوصی و محلی مستقیم می‌مانند',
     'route.tun': 'تونل کل دستگاه (TUN)',
     'route.tunSub': 'همهٔ برنامه‌ها را تونل می‌کند، نه فقط برنامه‌های سازگار با '
-        'پروکسی. هنگام اتصال به یک‌ بار تأیید مدیر نیاز دارد.',
+        'پروکسی. هنگام اتصال به یک‌ بار تأیید مدیر نیاز دارد. خاموش: نوا یک '
+        'پروکسی محلی \u2066SOCKS5/HTTP\u2069 روی \u2066127.0.0.1\u2069 اجرا می‌کند و '
+        'می‌تواند آن را پروکسی سیستم کند.',
+    'route.sysProxy': 'تنظیم خودکار پروکسی سیستم',
+    'urlTest.title': 'تست \u2066URL\u2069',
+    'urlTest.sub': 'سرورها چطور اندازه‌گیری شوند: گروه انتخاب خودکار و تست ⚡ '
+        'هر دو از همین‌ها استفاده می‌کنند.',
+    'urlTest.url': 'آدرس تست',
+    'urlTest.urlHelp': 'آدرسی که از هر سرور خواسته می‌شود. \u2066http\u2069 ساده کافی '
+        'است؛ تست خودش داخل تونل انجام می‌شود.',
+    'urlTest.timeout': 'مهلت',
+    'urlTest.timeoutHelp': 'سروری که تا این زمان پاسخ ندهد «بدون پاسخ» حساب '
+        'می‌شود و تست ⚡ بیشتر منتظر نمی‌ماند.',
+    'urlTest.interval': 'فاصلهٔ تکرار',
+    'urlTest.intervalHelp': 'گروه انتخاب خودکار هنگام اتصال هر چند وقت یک‌بار '
+        'سرورهایش را دوباره تست کند.',
+    'urlTest.tolerance': 'آستانه',
+    'urlTest.toleranceHelp': 'انتخاب خودکار فقط وقتی سرور را عوض می‌کند که '
+        'سرور جدید بیش از این مقدار سریع‌تر باشد.',
+    'route.sysProxySub': 'در حالت پروکسی، هنگام اتصال پروکسی سیستم را روی پورت '
+        'محلی نوا بگذار. خاموش کنید تا پورت را فقط در برنامه‌های دلخواه‌تان '
+        'استفاده کنید.',
+    'proxyMode.title': 'حالت پروکسی',
+    'proxyMode.local': 'پروکسی محلی',
+    'proxyMode.hint': '\u2066SOCKS5\u2069 و \u2066HTTP\u2069 روی این آدرس. برنامه‌هایی که '
+        'از پروکسی سیستم پیروی نمی‌کنند را می‌توانید مستقیم به این آدرس وصل کنید.',
+    'proxyMode.sysOn': 'پروکسی سیستم روی نوا تنظیم شده',
+    'proxyMode.sysOff': 'پروکسی سیستم تنظیم نشده',
+    'proxyMode.setSys': 'تنظیم پروکسی سیستم',
+    'proxyMode.clearSys': 'برداشتن',
+    'proxyMode.copied': 'کپی شد',
+    'proxyMode.setFailed': 'پروکسی سیستم تغییر نکرد (تایید مدیر لازم است).',
     'route.dns': 'حل‌کنندهٔ DNS',
     'route.dnsSub': 'DNS رمزگذاری‌شده روی HTTPS که از طریق تونل حل می‌شود.',
     'route.applyNote': 'تغییرات در اتصال بعدی اعمال می‌شوند.',

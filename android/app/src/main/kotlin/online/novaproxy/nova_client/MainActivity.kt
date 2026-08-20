@@ -94,6 +94,7 @@ class MainActivity : FlutterActivity() {
                         done = { delays -> result.success(delays) },
                         fail = { why -> result.error("measure_failed", why, null) },
                         xrayConfig = call.argument<String>("xrayConfigJson"),
+                        timeoutSec = call.argument<Int>("timeoutSec") ?: 5,
                     )
                 }
 

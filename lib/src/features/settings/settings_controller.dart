@@ -54,6 +54,11 @@ class SettingsController extends ChangeNotifier {
   static const String _kBypassLan = 'nova.route.bypassLan';
   static const String _kDns = 'nova.dns';
   static const String _kTunMode = 'nova.desktop.tun';
+  static const String _kAutoSysProxy = 'nova.desktop.autoSystemProxy';
+  static const String _kUrlTestUrl = 'nova.urltest.url';
+  static const String _kUrlTestTimeout = 'nova.urltest.timeout';
+  static const String _kUrlTestInterval = 'nova.urltest.interval';
+  static const String _kUrlTestTolerance = 'nova.urltest.tolerance';
   static const String _kHy2Down = 'nova.hy2.downMbps';
   static const String _kHy2Up = 'nova.hy2.upMbps';
   static const String _kAutoIsp = 'nova.isp.autoOptimize';
@@ -86,6 +91,22 @@ class SettingsController extends ChangeNotifier {
   /// to the unprivileged OS-proxy path. Mobile ignores this (it is always TUN).
   bool _tunMode = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   bool get tunMode => _tunMode;
+
+  /// Desktop proxy mode: set the OS system proxy to Nova's local port on
+  /// connect. Off means the user points apps at the port themselves.
+  bool _autoSystemProxy = true;
+  bool get autoSystemProxy => _autoSystemProxy;
+
+  /// URL-test settings (see SingboxRouteOptions): test address, per-node
+  /// timeout, live re-test interval, switch tolerance.
+  String _urlTestUrl = kDefaultUrlTestUrl;
+  int _urlTestTimeoutSec = kDefaultUrlTestTimeoutSec;
+  int _urlTestIntervalSec = kDefaultUrlTestIntervalSec;
+  int _urlTestToleranceMs = kDefaultUrlTestToleranceMs;
+  String get urlTestUrl => _urlTestUrl;
+  int get urlTestTimeoutSec => _urlTestTimeoutSec;
+  int get urlTestIntervalSec => _urlTestIntervalSec;
+  int get urlTestToleranceMs => _urlTestToleranceMs;
 
   /// Hysteria2 "speed boost": the user's line speed in Mbps. When >0 it turns on
   /// the Brutal congestion controller for Hysteria2 nodes (fixed-rate, ignores
@@ -158,6 +179,10 @@ class SettingsController extends ChangeNotifier {
         // alone (see SingboxProxyController), so manual always wins.
         fingerprintOverride: _fingerprint.isEmpty ? null : _fingerprint,
         verboseCoreLog: _verboseCoreLog,
+        urlTestUrl: _urlTestUrl,
+        urlTestTimeoutSec: _urlTestTimeoutSec,
+        urlTestIntervalSec: _urlTestIntervalSec,
+        urlTestToleranceMs: _urlTestToleranceMs,
       );
 
   void _load() {
@@ -176,6 +201,11 @@ class SettingsController extends ChangeNotifier {
     _dns = p.getString(_kDns) ?? '';
     _tunMode = p.getBool(_kTunMode) ??
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    _autoSystemProxy = p.getBool(_kAutoSysProxy) ?? true;
+    _urlTestUrl = p.getString(_kUrlTestUrl) ?? kDefaultUrlTestUrl;
+    _urlTestTimeoutSec = p.getInt(_kUrlTestTimeout) ?? kDefaultUrlTestTimeoutSec;
+    _urlTestIntervalSec = p.getInt(_kUrlTestInterval) ?? kDefaultUrlTestIntervalSec;
+    _urlTestToleranceMs = p.getInt(_kUrlTestTolerance) ?? kDefaultUrlTestToleranceMs;
     _hy2DownMbps = p.getInt(_kHy2Down) ?? 0;
     _hy2UpMbps = p.getInt(_kHy2Up) ?? 0;
     _autoOptimizeCarrier = p.getBool(_kAutoIsp) ?? true;
@@ -271,6 +301,45 @@ class SettingsController extends ChangeNotifier {
     _tunMode = v;
     notifyListeners();
     await _prefs?.setBool(_kTunMode, v);
+  }
+
+  Future<void> setUrlTestUrl(String v) async {
+    final String t = v.trim();
+    if (t == _urlTestUrl) return;
+    _urlTestUrl = t;
+    notifyListeners();
+    await _prefs?.setString(_kUrlTestUrl, t);
+  }
+
+  Future<void> setUrlTestTimeoutSec(int v) async {
+    final int c = v.clamp(1, 60);
+    if (c == _urlTestTimeoutSec) return;
+    _urlTestTimeoutSec = c;
+    notifyListeners();
+    await _prefs?.setInt(_kUrlTestTimeout, c);
+  }
+
+  Future<void> setUrlTestIntervalSec(int v) async {
+    final int c = v.clamp(10, 86400);
+    if (c == _urlTestIntervalSec) return;
+    _urlTestIntervalSec = c;
+    notifyListeners();
+    await _prefs?.setInt(_kUrlTestInterval, c);
+  }
+
+  Future<void> setUrlTestToleranceMs(int v) async {
+    final int c = v.clamp(0, 5000);
+    if (c == _urlTestToleranceMs) return;
+    _urlTestToleranceMs = c;
+    notifyListeners();
+    await _prefs?.setInt(_kUrlTestTolerance, c);
+  }
+
+  Future<void> setAutoSystemProxy(bool v) async {
+    if (v == _autoSystemProxy) return;
+    _autoSystemProxy = v;
+    notifyListeners();
+    await _prefs?.setBool(_kAutoSysProxy, v);
   }
 
   /// Set the Hysteria2 line-speed hints (Mbps). Pass 0/0 to turn the boost off

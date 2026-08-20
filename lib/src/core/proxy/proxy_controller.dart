@@ -144,6 +144,19 @@ abstract class ProxyController extends ChangeNotifier {
   final ValueNotifier<CoreNodeHealth> coreHealth =
       ValueNotifier<CoreNodeHealth>(CoreNodeHealth.empty);
 
+  /// Desktop proxy mode (full-device tunnel off): the local SOCKS5/HTTP port
+  /// apps should point at, or null where there is no such thing (mobile, or
+  /// TUN mode). The dashboard shows it so a user knows how to reach the proxy.
+  int? get localProxyPort => null;
+
+  /// True when the OS system proxy currently points at [localProxyPort].
+  bool get systemProxyOn => false;
+
+  /// Sets or clears the OS system proxy for [localProxyPort]. Returns whether
+  /// it took effect (macOS asks for admin approval; a declined prompt is a
+  /// false here, not a silent nothing).
+  Future<bool> setSystemProxy(bool on) async => false;
+
   /// Whether this host can run a measuring core (see [measureNodes]). The node
   /// list shows the "test all through the core" button only when true.
   bool get canMeasureNodes => false;
