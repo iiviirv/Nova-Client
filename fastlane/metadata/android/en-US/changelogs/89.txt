@@ -1,0 +1,5 @@
+- Mac/Windows: Proxy mode card with Nova's local SOCKS5/HTTP address and a system-proxy button
+- Settings > Routing > URL test: test address, timeout, interval, tolerance
+- Update checks every 3 hours and on return to the app; Check for updates really checks
+- Android: proper adaptive and themed app icon, no longer a small mark in a tile
+- Mac: connecting no longer waits on the admin prompt

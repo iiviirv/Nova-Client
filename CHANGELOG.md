@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.15.0-beta (2026-08-19)
+
+Proxy mode you can actually use, ping settings you can change, and updates
+you can see, by the Nova team.
+
+- New (Mac and Windows): with the full-device tunnel off, the dashboard now
+  shows a Proxy mode card while connected: Nova's local SOCKS5/HTTP address
+  (tap to copy), whether the system proxy points at Nova, and a button to
+  set or clear it. Settings > Routing gained "Set system proxy
+  automatically" for people who would rather point chosen apps at the port
+  themselves.
+- Fixed (Mac): connecting in proxy mode waited on the admin prompt, so the
+  app could sit on "Connecting..." while the tunnel was already up. It
+  connects first now and sets the system proxy in the background. Mac also
+  sets the web and secure-web proxies, not only SOCKS, and a declined
+  prompt is reported honestly instead of being shown as set.
+- New: Settings > Routing > URL test. The test address, the per-server
+  timeout (5s by default, and the lightning test now stops waiting that
+  long after the last answer), how often auto-select re-tests, and how much
+  faster a server must be before auto switches.
+- Fixed: the update check ran once a day, so a user two releases behind
+  could hear nothing. It runs every three hours and on returning to the
+  app, and Settings > Check for updates now really checks and answers,
+  showing the new version when there is one.
+- Fixed (Android): the app icon was a small mark inside a tile in themed
+  launchers, because it shipped only a legacy icon. It is a proper adaptive
+  icon now, with a themed (monochrome) version, and fills the shape like
+  other apps.
+- Changed: the subscription card's ping is the best-server figure, so it
+  shows only when the server choice is on Auto.
+
 ## v1.14.0-beta (2026-08-19)
 
 Hysteria2 works, the lightning test reaches iPhone, and server names stay
