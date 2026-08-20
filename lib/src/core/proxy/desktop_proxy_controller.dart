@@ -270,7 +270,14 @@ class DesktopProxyController extends ProxyController {
           throw 'Core failed to start: timed out waiting for the control API.'
               '${reason.isEmpty ? '' : ' Last output: $reason.'}$suffix';
         }
-        await _setSystemProxy(true);
+        // The system proxy needs an admin prompt on macOS. Setting it here,
+        // inline, held the whole connect: the core was already serving on the
+        // local port while the UI sat on "Connecting..." behind a password
+        // dialog the user might never answer (reproduced on macOS). The tunnel
+        // is up as soon as the core answers; point the OS at it in the
+        // background and let the dashboard's Proxy mode card report the
+        // result.
+        unawaited(_setSystemProxy(true).then((_) => notifyListeners()));
       }
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
