@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.15.1-beta (2026-08-20)
+
+- Fixed (Android): the new app icon in 1.15.0 was mirrored. It is the right
+  way round again and matches the icon you already had.
+
 ## v1.15.0-beta (2026-08-19)
 
 Proxy mode you can actually use, ping settings you can change, and updates

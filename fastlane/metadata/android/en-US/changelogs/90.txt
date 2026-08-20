@@ -1,0 +1,1 @@
+- The app icon introduced in 1.15.0 was mirrored; it is the right way round again
