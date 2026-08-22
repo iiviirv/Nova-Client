@@ -27,8 +27,32 @@ So the remaining step is ours: follow the enrollment link and submit Innovate
 Northtech Inc. (D-U-N-S 245850078). Shabir asked us to reply on the case to
 cancel, or if the enrollment throws an alert.
 
-**Do the iOS testing BEFORE submitting that form.** Submitting is what starts
-the blackout below, and automatic signing needs the portal that goes away.
+**Submitted 2026-08-22. Enrollment ID `ZS95GQN5L5`.** Apple pulled everything
+but the name and D-U-N-S from the D&B record, so what is now on file with them
+is:
+
+| Field | Value |
+| --- | --- |
+| Legal entity type | Company / Organization |
+| Legal entity name | Innovate Northtech Inc. |
+| D-U-N-S | 245850078 |
+| Address | 277 Miami Dr, Keswick, ONTARIO, L4P 2Z5, CA |
+| Website | www.innovatenorth.tech |
+| Phone | +1 (647) 916-2690 |
+| Signature-authority reference | vahid@innovatenorth.tech |
+
+Apple's confirmation: "Once we verify your authority to sign legal agreements,
+we'll email you with instructions on how to complete your enrollment." So the
+next move is theirs.
+
+**The blackout has started.** Certificates, Identifiers & Profiles now answers:
+
+> Unable to find a team with the given Team ID 'A53J987N2C' to which you belong.
+
+Automatic signing talks to that portal, so `flutter build ipa` may fail from
+here until the migration completes. Use the manual-signing fallback below. The
+last build made before the cutoff was **0.5.0 (91)**, signed and installed on
+the iPhone, and its IPA is in `build/ios/ipa/` if it is needed for TestFlight.
 
 **What is migrating:** the individual membership, Team ID `A53J987N2C`
 ("VAHID HASHEMI"), to an organization membership for **Innovate Northtech Inc.**
