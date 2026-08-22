@@ -47,6 +47,9 @@ team.
 - The country and flag next to a server are only ever learned while the tunnel
   is up, so a reading taken after disconnecting can no longer label a server
   with your own country.
+- The country on the dashboard no longer changes on its own. Nova asks several
+  location services and they disagree: one exit was called Sweden, Finland and
+  Lebanon by three of them. A country now stands for as long as the exit does.
 - The ping on the dashboard is the core's own figure now, measured through the
   tunnel, instead of a probe from outside it that read far too high.
 - Refresh means refresh: it fetches the current servers and takes no pings, and

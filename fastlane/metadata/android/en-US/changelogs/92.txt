@@ -3,3 +3,4 @@
 - Ping numbers are the real ones now (mieru 422ms -> 207ms)
 - Tap a server's ping to test just that one
 - Dead free servers disappear from the list by themselves
+- The exit country no longer changes by itself while you stay connected
