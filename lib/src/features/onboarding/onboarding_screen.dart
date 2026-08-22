@@ -170,10 +170,21 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             style: text.bodySmall?.copyWith(color: nova.muted),
             textAlign: TextAlign.center),
         const SizedBox(height: NovaSpace.xl),
+        // First and highlighted, because it is the only option that needs
+        // nothing from the person reading it: the free servers are already in
+        // the list, so this closes onboarding straight onto a Connect button
+        // that works. Everything below it asks for an account, a server or a
+        // link first.
+        _choice(context, Icons.card_giftcard_rounded,
+            _t('Use the free servers', 'استفاده از سرورهای رایگان'),
+            _t('Already set up. Just press Connect.',
+                'همین حالا آماده است. فقط اتصال را بزنید.'),
+            highlighted: true, onTap: () => widget.onFinish('free')),
+        const SizedBox(height: NovaSpace.sm + 2),
         _choice(context, Icons.cloud_upload_outlined,
             _t('Deploy your own panel', 'ساخت پنل اختصاصی'),
             _t('Create a free Cloudflare worker', 'ساخت ورکر رایگان کلودفلر'),
-            highlighted: true, onTap: () => widget.onFinish('deploy')),
+            onTap: () => widget.onFinish('deploy')),
         const SizedBox(height: NovaSpace.sm + 2),
         _choice(context, Icons.login_rounded,
             _t('Import from your panel', 'وارد کردن از پنل شما'),

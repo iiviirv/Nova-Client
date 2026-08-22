@@ -11,23 +11,15 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.system.OsConstants
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.CommandClientHandler
-import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
-import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
-import io.nekohasekai.libbox.LogIterator
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
-import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
@@ -42,12 +34,16 @@ import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
  * A second libbox service with no TUN inbound (so no VPN consent, no route
  * change and no conflict with the tunnel service, which must be down while this
  * runs: libbox allows one command server per process). It is handed the config
- * [SingboxConfig.buildMeasureMap] produces, every usable node behind the `proxy`
- * urltest group, asks the core to test the group, and forwards the group's
- * per-node delays to Dart through the same `groups` event the tunnel uses, so
- * the node list fills in live. When every node has answered, or the results
- * have been quiet for a while, or the budget is spent, it reports the final
- * delays and shuts the core down.
+ * [SingboxConfig.buildMeasureMap] produces: every usable node as a plain
+ * outbound, no routing, no DNS module, and the Clash API on a loopback port.
+ *
+ * This object only owns the core's LIFETIME. The measuring itself is driven
+ * from Dart over that Clash API (see MeasureRunner), one node at a time, so
+ * every node gets its own timeout window and gets dialled twice: the first dial
+ * pays whatever setup the protocol needs (a mieru session, a NaiveProxy TLS +
+ * HTTP/2 connection) and only the second is reported. Letting sing-box's
+ * urltest group sweep the pool instead is what used to report 400-800ms for
+ * servers that answer in ~110ms.
  *
  * The [PlatformInterface] here is the tunnel service's minus the VPN parts:
  * no TUN (openTun is never called without a tun inbound), no socket protection
@@ -55,12 +51,6 @@ import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
  * the real uplink.
  */
 object NovaMeasure : PlatformInterface, CommandServerHandler {
-
-    private const val GROUP_TAG = NovaVpnService.PROXY_GROUP_TAG
-
-    /** Whole-run budget. sing-box tests ten nodes at a time, 5s each. */
-    private const val BUDGET_MS = 60_000L
-
 
     private lateinit var appContext: Context
     private val connectivity: ConnectivityManager by lazy {
@@ -81,52 +71,41 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
     private val netmonHandler: Handler by lazy { Handler(netmonThread.looper) }
 
     @Volatile private var server: CommandServer? = null
-    @Volatile private var client: CommandClient? = null
     @Volatile private var runId = 0
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-    // Latest delays by tag, as the group handler reports them.
-    private val latest = HashMap<String, Int>()
-    @Volatile private var lastChangeAt = 0L
-
     /**
-     * Runs one measuring pass on a worker thread. [config] is the measuring
-     * config, [tags] the `node-i` tags (or the single `proxy`) to wait for.
-     * Calls [done] exactly once, on the main thread, with tag -> delay ms for
-     * every node that answered (a missing tag is "no response"), or [fail]
-     * with a reason if the core could not start.
+     * Starts the measuring core on a worker thread and calls [ready] (on the
+     * main thread) once its service is up, or [fail] with a reason. The caller
+     * then drives the run over the core's Clash API and calls [cancel] when it
+     * is done.
      */
     fun start(
         context: Context,
         config: String,
-        tags: List<String>,
-        done: (Map<String, Int>) -> Unit,
+        ready: () -> Unit,
         fail: (String) -> Unit,
         xrayConfig: String? = null,
-        timeoutSec: Int = 5,
     ) {
         appContext = context.applicationContext
         val id = ++runId
         Thread({
-            var finished = false
-            fun finish(result: Map<String, Int>?, error: String?) {
-                if (finished) return
-                finished = true
-                stopInternal()
-                mainHandler.post {
-                    if (error != null) fail(error) else done(result ?: emptyMap())
-                }
+            var answered = false
+            fun answer(error: String?) {
+                if (answered) return
+                answered = true
+                if (error != null) stopInternal()
+                mainHandler.post { if (error != null) fail(error) else ready() }
             }
             try {
                 stopInternal()
-                synchronized(latest) { latest.clear() }
                 // xhttp nodes in the pool run on the Xray core; the measuring
                 // core reaches them as local socks exits. Start Xray first so
                 // its inbounds are up before sing-box dials them. No socket
                 // protector: there is no VPN to escape while measuring.
                 if (!xrayConfig.isNullOrEmpty()) {
                     val err = io.nekohasekai.novaxray.Novaxray.start(xrayConfig)
-                    if (!err.isNullOrEmpty()) return@Thread finish(null, "Xray failed to start: $err")
+                    if (!err.isNullOrEmpty()) return@Thread answer("Xray failed to start: $err")
                     xrayRunning = true
                 }
                 NovaCore.ensureSetup(appContext)
@@ -134,61 +113,18 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
                 s.start()
                 server = s
                 s.startOrReloadService(config, OverrideOptions())
-                if (id != runId) return@Thread finish(null, "cancelled")
-
-                // Group stream: the per-node urltest delays as they land.
-                val options = CommandClientOptions().apply {
-                    addCommand(Libbox.CommandGroup)
-                    statusInterval = 1_000_000_000L // 1s
-                }
-                val c = CommandClient(GroupHandler(tags.toSet()), options)
-                client = c
-                var connected = false
-                for (attempt in 0 until 20) {
-                    if (runCatching { c.connect() }.isSuccess) {
-                        connected = true
-                        break
-                    }
-                    Thread.sleep(250)
-                }
-                if (!connected) return@Thread finish(null, "could not talk to the measuring core")
-                // Kick the test. The urltest group also runs its own first pass
-                // at startup; either lands in the group stream below. A
-                // "test already running" reply here is fine.
-                runCatching { c.urlTest(GROUP_TAG) }
-
-                // The run ends timeoutSec after the last answer (anything still
-                // silent is "no response"), bounded by the batches of ten the
-                // pool needs, never past the hard budget.
-                val quietMs = timeoutSec.coerceIn(1, 60) * 1000L
-                val batches = ((tags.size + 9) / 10).coerceIn(1, 20)
-                val budgetMs = minOf(BUDGET_MS, quietMs * batches + 3000L)
-                val startedAt = System.currentTimeMillis()
-                lastChangeAt = startedAt
-                var lastCount = -1
-                while (true) {
-                    Thread.sleep(500)
-                    if (id != runId) break
-                    val now = System.currentTimeMillis()
-                    val count = synchronized(latest) { latest.size }
-                    if (count != lastCount) {
-                        lastCount = count
-                        lastChangeAt = now
-                    }
-                    if (count >= tags.size) break
-                    if (now - startedAt > budgetMs) break
-                    if (count > 0 && now - lastChangeAt > quietMs) break
-                }
-                finish(synchronized(latest) { HashMap(latest) }, null)
+                if (id != runId) return@Thread answer("cancelled")
+                answer(null)
             } catch (e: Throwable) {
-                finish(null, e.message ?: e.toString())
+                answer(e.message ?: e.toString())
             }
         }, "nova-measure").start()
     }
 
-    /** Stops a run in progress; its [start] callback then fires with what it has. */
+    /** Stops the measuring core. Safe to call when nothing is running. */
     fun cancel() {
         runId++
+        stopInternal()
     }
 
     val isRunning: Boolean get() = server != null
@@ -196,9 +132,6 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
     @Volatile private var xrayRunning = false
 
     private fun stopInternal() {
-        val c = client
-        client = null
-        runCatching { c?.disconnect() }
         val s = server
         server = null
         runCatching { s?.closeService() }
@@ -207,38 +140,6 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
             xrayRunning = false
             runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
         }
-    }
-
-    private class GroupHandler(private val wanted: Set<String>) : CommandClientHandler {
-        override fun writeGroups(message: OutboundGroupIterator?) {
-            val groups = message ?: return
-            val out = ArrayList<Map<String, Any?>>()
-            while (groups.hasNext()) {
-                val group = groups.next() ?: continue
-                val items = ArrayList<Map<String, Any?>>()
-                val it = group.items
-                while (it != null && it.hasNext()) {
-                    val item = it.next() ?: continue
-                    val delay = item.urlTestDelay
-                    items.add(mapOf("tag" to item.tag, "delay" to delay))
-                    if (group.tag == GROUP_TAG && delay > 0 && wanted.contains(item.tag)) {
-                        synchronized(latest) { latest[item.tag] = delay }
-                    }
-                }
-                out.add(mapOf("tag" to group.tag, "selected" to group.selected, "items" to items))
-            }
-            if (out.isNotEmpty()) NovaProxyBridge.emitGroups(out)
-        }
-
-        override fun writeStatus(message: StatusMessage) {}
-        override fun connected() {}
-        override fun disconnected(message: String?) {}
-        override fun clearLogs() {}
-        override fun writeLogs(messageList: LogIterator?) {}
-        override fun writeConnectionEvents(events: ConnectionEvents?) {}
-        override fun setDefaultLogLevel(level: Int) {}
-        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
-        override fun updateClashMode(newMode: String) {}
     }
 
     // ---- CommandServerHandler ----

@@ -62,6 +62,21 @@ extension NodeProtocolName on NodeProtocol {
   /// AmneziaWG / WireGuard is a sing-box `endpoint`, not an `outbound`.
   bool get isEndpoint => this == NodeProtocol.awg;
 
+  /// Whether this protocol carries its own encryption, so a node using it is
+  /// still private with no TLS layer configured on top.
+  ///
+  /// Everything else (VLESS, VMess, Trojan, plain SOCKS/HTTP) is only as
+  /// private as the TLS wrapped around it, and without that wrapper the traffic
+  /// is readable on the wire. That matters for the servers Nova hands out
+  /// itself: a free list has to be safe to tap Connect on without reading it.
+  bool get encryptsItself =>
+      this == NodeProtocol.shadowsocks || // AEAD / 2022-blake3
+      this == NodeProtocol.hysteria2 || // QUIC, always TLS
+      this == NodeProtocol.tuic || // QUIC, always TLS
+      this == NodeProtocol.awg || // Noise (WireGuard)
+      this == NodeProtocol.naive || // TLS + HTTP/2 by definition
+      this == NodeProtocol.mieru; // its own AEAD
+
   String get label => switch (this) {
         NodeProtocol.vless => 'VLESS',
         NodeProtocol.trojan => 'Trojan',
@@ -207,6 +222,11 @@ class ProxyNode {
       fingerprint == 'unsafe' ||
       cipherSuites.isNotEmpty ||
       (fragmentMask != null && fragmentMask!.isNotEmpty);
+
+  /// Whether this node's traffic is encrypted at all: either the protocol does
+  /// it itself, or TLS is configured on top. A node that fails this is a
+  /// plaintext tunnel and never belongs in a list Nova hands the user.
+  bool get isEncrypted => tls || protocol.encryptsItself;
 
   /// The node is a Cloudflare-fronted worker reached through a clean IP: the
   /// address is an IP literal and the TLS name (SNI or Host) is a real domain.

@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
+import 'measure_runner.dart';
 import 'isp_optimizer.dart';
 import 'proxy_controller.dart';
 import 'singbox/node_probe.dart';
@@ -375,6 +376,30 @@ class SingboxProxyController extends ProxyController {
   bool get canMeasureNodes =>
       Platform.isAndroid || Platform.isIOS || _measureForTest;
 
+  /// Proxy mode: the loopback port to serve SOCKS5 + HTTP on instead of taking
+  /// the whole device with a TUN, or null for the ordinary full-device tunnel.
+  int? Function()? proxyPortProvider;
+
+  @override
+  int? get localProxyPort =>
+      _state.isActive ? proxyPortProvider?.call() : null;
+
+  /// In proxy mode the phone itself is NOT tunnelled, so anything the app
+  /// measures on its own sockets is measuring the user's real connection: the
+  /// dashboard read back their own IP and country as if it were the exit, which
+  /// is the same wrong answer the geo guard exists to prevent. Point the app's
+  /// own probes at the local proxy so they go where the user's traffic goes.
+  @override
+  String? get proxyUri {
+    final int? port = localProxyPort;
+    return port == null ? null : 'PROXY 127.0.0.1:$port';
+  }
+
+  /// iOS: whether to install an on-demand rule so the system re-establishes the
+  /// tunnel after it is torn down without the user asking. See
+  /// SettingsController.iosAutoReconnect for why the default is off.
+  bool Function()? autoReconnectProvider;
+
   /// Tests run on a desktop VM where [Platform.isAndroid] is false; this lets
   /// the Android measuring path be exercised there.
   static bool _measureForTest = false;
@@ -389,7 +414,7 @@ class SingboxProxyController extends ProxyController {
   }
 
   @override
-  Future<String?> measureNodes(List<ProxyNode> nodes) async {
+  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async {
     if (!canMeasureNodes || measuring.value || nodes.isEmpty) return null;
     if (_state != ProxyConnectionState.disconnected &&
         _state != ProxyConnectionState.error) {
@@ -398,16 +423,12 @@ class SingboxProxyController extends ProxyController {
     measuring.value = true;
     try {
       final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
-      // Same rule-set source as the tunnel: the bundled .srs on disk. The
-      // default would fetch them from GitHub at startup, which is blocked in
-      // Iran, and the measuring core would never come up.
-      // iOS: lean is what makes the builder reference the bundled rule-sets
-      // by the placeholder path the host resolves (the bytes travel in the
-      // call); the pool cap lean implies is overridden by kMeasurePoolCap.
-      final SingboxRouteOptions opts = routeOptions.copyWith(
-          hardenTls: _active?.hardenTls ?? false,
-          localRuleSets: Platform.isAndroid,
-          lean: Platform.isIOS);
+      // The measuring config has no route and no DNS module, so nothing here
+      // needs rule-sets any more (buildMeasureMap explains why). What still
+      // matters is anything that changes how a node is DIALLED, so it is
+      // measured exactly as it would run: the anti-censorship TLS settings.
+      final SingboxRouteOptions opts =
+          routeOptions.copyWith(hardenTls: _active?.hardenTls ?? false);
       // xhttp nodes run on the Xray core, reached by the measuring core as
       // local socks exits, exactly as the tunnel's auto pool does. Without
       // this they read "not testable" even though they connect.
@@ -427,44 +448,45 @@ class SingboxProxyController extends ProxyController {
               basePort: XrayConfig.defaultSocksPort);
         }
       }
+      final int mixedPort = await _freeLoopbackPort();
+      final int apiPort = await _freeLoopbackPort();
       final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
           SingboxConfig.buildMeasureMap(resolved,
               options: opts,
-              mixedPort: 0,
+              mixedPort: mixedPort,
+              clashPort: apiPort,
               includeXhttp: xrayJson != null,
               xhttpBasePort: XrayConfig.defaultSocksPort);
-      // Live updates arrive as `groups` events; map them with the measuring
-      // run's tags for as long as it runs.
-      _coreTagKeys = built.tagKeys;
-      coreHealth.value = CoreNodeHealth.empty;
+      final CoreNodeHealth before = coreHealth.value;
+      if (!merge) coreHealth.value = CoreNodeHealth.empty;
       NovaLog.instance
           .write('Measuring ${built.tagKeys.length} servers through the core');
-      String configJson = jsonEncode(built.config);
-      if (Platform.isAndroid) {
-        final String base = await _extractRuleSets();
-        configJson = configJson.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      final String configJson = jsonEncode(built.config);
+      // The measuring config carries no rule-sets (see buildMeasureMap), so
+      // neither host has to extract or ship them for a run any more.
+      await _control.invokeMethod<Object?>('measure', <String, dynamic>{
+        'configJson': configJson,
+        if (xrayJson != null) 'xrayConfigJson': xrayJson,
+      }).timeout(const Duration(seconds: 40));
+      final Uri api = Uri.parse('http://127.0.0.1:$apiPort/');
+      if (!await MeasureRunner.waitForApi(api,
+          cancelled: () => !measuring.value)) {
+        return 'The measuring core did not start.';
       }
-      final Map<String, Uint8List>? ruleSets =
-          Platform.isIOS ? await _leanRuleSets() : null;
       final int timeoutSec = opts.urlTestTimeoutSec.clamp(1, 60);
-      final Object? raw = await _control.invokeMethod<Object?>('measure',
-          <String, dynamic>{
-            'configJson': configJson,
-            'tags': built.tagKeys.keys.toList(),
-            'timeoutSec': timeoutSec,
-            if (xrayJson != null) 'xrayConfigJson': xrayJson,
-            if (ruleSets != null) 'ruleSets': ruleSets,
-          }).timeout(Duration(seconds: 30 + timeoutSec * 20));
-      final Map<String, int> delays = <String, int>{};
-      if (raw is Map) {
-        raw.forEach((Object? tag, Object? ms) {
-          final String? key = tag is String ? built.tagKeys[tag] : null;
-          if (key != null && ms is num && ms > 0) delays[key] = ms.toInt();
-        });
-      }
+      final Map<String, int> delays = await MeasureRunner.run(
+        api: api,
+        tagKeys: built.tagKeys,
+        url: opts.urlTestUrl,
+        timeoutSec: timeoutSec,
+        cancelled: () => !measuring.value,
+        onProgress: (Map<String, int> d, Set<String> tested) {
+          coreHealth.value = _mergeHealth(before, d, tested, merge: merge);
+        },
+      );
       // Final verdicts: every node in the pool was tried.
-      coreHealth.value = CoreNodeHealth(
-          delayMsByKey: delays, testedKeys: built.tagKeys.values.toSet());
+      coreHealth.value = _mergeHealth(
+          before, delays, built.tagKeys.values.toSet(), merge: merge);
       NovaLog.instance.write(
           'Measured ${built.tagKeys.length} servers through the core: '
           '${delays.length} answered');
@@ -482,7 +504,45 @@ class SingboxProxyController extends ProxyController {
     } finally {
       _coreTagKeys = const <String, String>{};
       measuring.value = false;
+      try {
+        await _control.invokeMethod<Object?>('measureCancel');
+      } catch (_) {}
     }
+  }
+
+
+  /// Folds one run's results into whatever the board already shows. A run that
+  /// covers the whole list ([merge] false) replaces it; re-testing a single row
+  /// keeps every other row's verdict.
+  CoreNodeHealth _mergeHealth(
+    CoreNodeHealth before,
+    Map<String, int> delays,
+    Set<String> tested, {
+    required bool merge,
+  }) {
+    if (!merge) {
+      return CoreNodeHealth(delayMsByKey: delays, testedKeys: tested);
+    }
+    final Map<String, int> d = Map<String, int>.from(before.delayMsByKey);
+    for (final String k in tested) {
+      d.remove(k);
+    }
+    d.addAll(delays);
+    return CoreNodeHealth(
+      delayMsByKey: d,
+      testedKeys: <String>{...before.testedKeys, ...tested},
+      selectedKey: before.selectedKey,
+    );
+  }
+
+  /// A free TCP port on loopback for the measuring core's inbound and its Clash
+  /// API, so a run never collides with the tunnel's ports or another app's.
+  Future<int> _freeLoopbackPort() async {
+    final ServerSocket s =
+        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final int port = s.port;
+    await s.close();
+    return port;
   }
 
   /// Re-reads the real tunnel state from the platform. Called on app resume so
@@ -589,6 +649,14 @@ class SingboxProxyController extends ProxyController {
         // Bundled rule-set files the lean iOS config references as local
         // rule-sets. The host writes them next to the config in the App Group.
         if (ruleSets != null) 'ruleSets': ruleSets,
+        // Proxy mode: no VPN slot is taken, so the host must not ask for VPN
+        // consent and the core listens on this port instead of a TUN.
+        if (proxyPortProvider?.call() != null)
+          'proxyPort': proxyPortProvider!.call(),
+        // iOS only: whether the system may bring the tunnel back by itself.
+        // Off unless the user asked for it, so the VPN switch in the iPhone's
+        // own Settings actually turns Nova off and a second VPN can take over.
+        'autoReconnect': autoReconnectProvider?.call() ?? false,
       });
       _armWatchdog();
     } catch (e) {
@@ -810,6 +878,9 @@ class SingboxProxyController extends ProxyController {
       // constrained full-device TUN. Desktop keeps the system stack (its host
       // clamps fine). tlsFragment stays ON (Iran anti-DPI).
       gvisorStack: Platform.isAndroid,
+      // Proxy mode: a loopback SOCKS5/HTTP port instead of a TUN, so the phone
+      // itself is untouched and only apps pointed at the port go through Nova.
+      mixedInboundPort: proxyPortProvider?.call(),
     );
     // Per-ISP optimization: detect the phone's carrier and fold in the DPI-best
     // uTLS fingerprint + fragmentation for it. Best-effort and time-boxed - any

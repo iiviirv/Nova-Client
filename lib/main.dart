@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/desktop/tray_controller.dart';
 import 'src/core/geo/node_geo_store.dart';
 import 'src/core/proxy/conn_info_controller.dart';
 import 'src/core/proxy/desktop_proxy_controller.dart';
@@ -74,8 +75,34 @@ Future<void> main() async {
 
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.
   if (proxy is DesktopProxyController) {
-    proxy.tunModeProvider = () => settings.tunMode;
-    proxy.autoSystemProxyProvider = () => settings.autoSystemProxy;
+    final DesktopProxyController desktop = proxy;
+    desktop.tunModeProvider = () => settings.tunMode;
+    desktop.autoSystemProxyProvider = () => settings.autoSystemProxy;
+    // Proxy mode's port follows Settings, so a user whose 2080 is taken by
+    // another proxy app can move Nova instead of uninstalling one of them.
+    desktop.socksPort = settings.proxyPort;
+    settings.addListener(() => desktop.socksPort = settings.proxyPort);
+  }
+  if (proxy is SingboxProxyController) {
+    proxy.autoReconnectProvider = () => settings.iosAutoReconnect;
+    // Proxy mode on a phone: no TUN, a loopback SOCKS5/HTTP port instead, so
+    // the device keeps its own connection and only an app pointed at the port
+    // goes through Nova.
+    proxy.proxyPortProvider =
+        () => settings.mobileProxyMode ? settings.proxyPort : null;
+  }
+
+  // Windows and macOS: a menu-bar / notification-area icon, so closing the
+  // window hides Nova instead of ending it and the tunnel keeps running with
+  // nothing on screen. Started after the controllers exist because its menu
+  // reflects the connection state.
+  if (TrayController.supported) {
+    final TrayController tray = TrayController(
+      proxy,
+      strings: () => trayStringsFor(theme.isFarsi),
+    );
+    theme.addListener(() => tray.refreshLabels());
+    unawaited(tray.start());
   }
 
   runApp(NovaApp(

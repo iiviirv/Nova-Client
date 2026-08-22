@@ -260,6 +260,7 @@ class _ServersBodyState extends State<ServersBody> {
       ),
     );
     if (ok != true) return;
+    if (p.isBuiltIn) return;
     profiles.remove(p.id);
   }
 
@@ -555,17 +556,22 @@ class _ServerRow extends StatelessWidget {
                         title: Text(s.serversEdit),
                       ),
                     ),
-                    PopupMenuItem<String>(
-                      value: 'delete',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.delete_outline_rounded,
-                            color: nova.danger),
-                        title: Text(s.serversDelete,
-                            style: TextStyle(color: nova.danger)),
+                    // Nova's own free servers cannot be deleted. They are the
+                    // one entry a person who has nothing else can always fall
+                    // back to, including the person who deleted everything by
+                    // accident, so removing them is not an option Nova offers.
+                    if (!profile.isBuiltIn)
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.delete_outline_rounded,
+                              color: nova.danger),
+                          title: Text(s.serversDelete,
+                              style: TextStyle(color: nova.danger)),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ],
@@ -829,8 +835,16 @@ void _scheduleProfileMetadata(
 Future<void> _resolveProfileMetadata(
     ProfilesController profiles, ProxyProfile snapshot) async {
   try {
-    final List<ProxyNode> nodes = await resolveProfileNodes(snapshot);
-    if (nodes.isEmpty) return;
+    final List<ProxyNode> resolved = await resolveProfileNodes(snapshot);
+    if (resolved.isEmpty) return;
+    // Deduped, so the card counts servers the user can choose between rather
+    // than lines in the subscription. Nova's own free list carries the same
+    // server three times over.
+    final Set<String> seen = <String>{};
+    final List<ProxyNode> nodes = <ProxyNode>[
+      for (final ProxyNode n in resolved)
+        if (seen.add(proxyNodeKey(n))) n,
+    ];
 
     final measured = await Future.wait(
       nodes.take(12).map((ProxyNode node) async => (
@@ -1167,20 +1181,10 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               ),
             ),
             const SizedBox(height: 6),
-            _AddOption(
-              icon: Icons.dns_rounded,
-              color: nova.cyan,
-              title: s.serversConnectVps,
-              subtitle: s.serversConnectVpsSub,
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ConnectVpsScreen(),
-                  ),
-                );
-              },
-            ),
+            // "Connect your VPS" is not here. The + sheet is the path people
+            // take many times a week to add a link or a file; running your own
+            // server is a once-ever decision and it lives on the empty-servers
+            // screen, where someone with nothing yet actually meets it.
             if (canScan)
               _AddOption(
                 icon: Icons.qr_code_scanner_rounded,

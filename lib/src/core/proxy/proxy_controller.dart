@@ -6,6 +6,11 @@ import '../models/proxy_profile.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 
+/// The local SOCKS/HTTP port proxy mode listens on unless the user moves it.
+/// 2080 is the convention every client in this space uses, which is exactly why
+/// it collides: someone running another proxy app already has it.
+const int kDefaultLocalProxyPort = 2080;
+
 /// High-level connection lifecycle states surfaced to the UI.
 enum ProxyConnectionState { disconnected, connecting, connected, disconnecting, error }
 
@@ -144,9 +149,9 @@ abstract class ProxyController extends ChangeNotifier {
   final ValueNotifier<CoreNodeHealth> coreHealth =
       ValueNotifier<CoreNodeHealth>(CoreNodeHealth.empty);
 
-  /// Desktop proxy mode (full-device tunnel off): the local SOCKS5/HTTP port
-  /// apps should point at, or null where there is no such thing (mobile, or
-  /// TUN mode). The dashboard shows it so a user knows how to reach the proxy.
+  /// Proxy mode (full-device tunnel off): the local SOCKS5/HTTP port apps
+  /// should point at, or null when there is no such thing (TUN mode). The
+  /// dashboard shows it so a user knows how to reach the proxy.
   int? get localProxyPort => null;
 
   /// True when the OS system proxy currently points at [localProxyPort].
@@ -171,7 +176,11 @@ abstract class ProxyController extends ChangeNotifier {
   /// number and a dead one reads "no response". The same builder as the
   /// auto-select config is used, so a node measures exactly as it would run.
   /// Returns the message to show when nothing could be measured, else null.
-  Future<String?> measureNodes(List<ProxyNode> nodes) async =>
+  ///
+  /// With [merge] the existing readings are kept and only the nodes in this run
+  /// are updated, which is what re-testing a single row does; without it the
+  /// whole board is cleared first, which is what the lightning button does.
+  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async =>
       'Not supported on this device yet';
 
   /// True when the tunnel reports connected but the controller has exhausted

@@ -101,6 +101,18 @@ class _NovaAppShellState extends State<NovaAppShell> {
     super.initState();
     final String? action = widget.startAction;
     if (action == null) return;
+    if (action == 'free') {
+      // They chose the free servers: they are already in the list (seeded on a
+      // fresh install), so make sure they are the selected one and leave the
+      // user on the dashboard, in front of the Connect button. Anything that
+      // navigates away here would undo the point of the choice.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final scope = NovaScope.of(context);
+        scope.proxy.selectProfile(scope.profiles.addFreeProfile());
+      });
+      return;
+    }
     _index = 1; // Servers/Configs
     if (action == 'deploy' || action == 'panel') {
       WidgetsBinding.instance.addPostFrameCallback((_) {

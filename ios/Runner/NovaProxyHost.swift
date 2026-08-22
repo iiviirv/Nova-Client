@@ -60,6 +60,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       profileLabel = (args["label"] as? String)?.isEmpty == false
         ? (args["label"] as? String) : nil
       start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
+            autoReconnect: (args["autoReconnect"] as? Bool) ?? false,
             result: result)
     case "stop":
       stopTunnel(result: result)
@@ -80,19 +81,18 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
     case "networkInfo":
       result(Self.networkInfo())
     case "measure":
-      // "Test all servers through the core": a second, tunnel-less core in
-      // THIS process (not the extension). Refused while the tunnel is up or
-      // coming up: libbox keeps one command socket per App Group base path, and
-      // every dial would go through the tunnel anyway.
+      // "Test all servers through the core": start a second, tunnel-less core
+      // in THIS process (not the extension) and answer once it is up. Dart then
+      // drives the run over the core's Clash API and calls measureCancel to
+      // stop it. Refused while the tunnel is up or coming up: libbox keeps one
+      // command socket per App Group base path, and every dial would go through
+      // the tunnel anyway.
       guard let args = call.arguments as? [String: Any],
             let config = args["configJson"] as? String else {
         result(FlutterError(code: "args", message: "configJson required", details: nil))
         return
       }
-      let tags = (args["tags"] as? [String]) ?? []
-      let ruleSets = (args["ruleSets"] as? [String: FlutterStandardTypedData]) ?? [:]
       let xrayConfig = args["xrayConfigJson"] as? String
-      let timeoutSec = (args["timeoutSec"] as? Int) ?? 5
       loadManagerIfNeeded { [weak self] in
         guard let self else { result(FlutterError(code: "gone", message: "host gone", details: nil)); return }
         let status = self.manager?.connection.status ?? .invalid
@@ -101,10 +101,8 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
           return
         }
         self.ensureNovacoreSetup()
-        self.measure.start(config: config, tags: tags, ruleSets: ruleSets, xrayConfig: xrayConfig,
-                           timeoutSec: timeoutSec,
-                           onGroups: { [weak self] g in self?.emit(["type": "groups", "groups": g]) },
-                           done: { delays in result(delays) },
+        self.measure.start(config: config, xrayConfig: xrayConfig,
+                           ready: { result(nil) },
                            fail: { why in result(FlutterError(code: "measure_failed", message: why, details: nil)) })
       }
     case "measureCancel":
@@ -148,7 +146,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private static let ruleSetBaseToken = "__NOVA_BASE__"
 
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
-                     xrayConfig: String?,
+                     xrayConfig: String?, autoReconnect: Bool,
                      result: @escaping FlutterResult) {
     // A measuring core still running would share the command socket path with
     // the extension; stop it first (its caller gets what it has so far).
@@ -192,16 +190,25 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       mgr.protocolConfiguration = proto
       mgr.localizedDescription = "Nova"
       mgr.isEnabled = true
-      // Auto-reconnect. If iOS terminates the extension under memory pressure
-      // (e.g. a speed test's throughput burst pushes the ~50MB Network
-      // Extension over its limit), an on-demand "connect" rule brings the tunnel
-      // straight back instead of leaving the user stranded offline. This is only
-      // enabled while a session is active; `stopTunnel` disables it so a
-      // user-initiated Disconnect genuinely stays off and does not auto-reconnect.
-      let onDemand = NEOnDemandRuleConnect()
-      onDemand.interfaceTypeMatch = .any
-      mgr.onDemandRules = [onDemand]
-      mgr.isOnDemandEnabled = true
+      // Auto-reconnect, and only when the user has asked for it.
+      //
+      // An on-demand "connect" rule brings the tunnel back if iOS terminates the
+      // extension under memory pressure (a throughput burst can push the ~50MB
+      // Network Extension over its limit). The cost is that the rule also
+      // overrides the person using the phone: with it on, turning Nova off from
+      // the iPhone's own Settings > VPN brought it straight back, so the only
+      // way to stop it was inside the app, and switching to another VPN fought
+      // with it. The OS switch has to win by default; Settings > Routing has
+      // the opt-in for anyone who would rather have the safety net.
+      if autoReconnect {
+        let onDemand = NEOnDemandRuleConnect()
+        onDemand.interfaceTypeMatch = .any
+        mgr.onDemandRules = [onDemand]
+        mgr.isOnDemandEnabled = true
+      } else {
+        mgr.onDemandRules = []
+        mgr.isOnDemandEnabled = false
+      }
       mgr.saveToPreferences { error in
         if let error { result(FlutterError(code: "save", message: error.localizedDescription, details: nil)); return }
         // Reload so the saved configuration is applied before starting.
@@ -619,54 +626,51 @@ private final class GroupHandler: NSObject, NovacoreCommandClientHandlerProtocol
 
 // MARK: - Measuring core ("test all servers through the core")
 
-/// A second libbox service with no TUN, run inside the app process, for the
-/// lightning button: every usable node behind the `proxy` urltest group, asked
-/// to test the group, its per-node delays streamed back as the same `groups`
-/// event the tunnel uses, and the final tag -> delay map returned when every
-/// node answered, after a quiet period, or at the budget. The iOS twin of
-/// Android's NovaMeasure and the desktop child process. Runs in-app, so the
-/// extension's memory cap does not apply.
+/// The MEASURING core on iOS: a second core in THIS process (not the Network
+/// Extension), so the extension's memory cap does not apply.
+///
+/// This class only owns the core's LIFETIME. The measuring itself is driven
+/// from Dart over the core's Clash API (see MeasureRunner), one node at a time,
+/// so every node gets its own timeout window and gets dialled twice: the first
+/// dial pays whatever setup the protocol needs (a mieru session, a NaiveProxy
+/// TLS + HTTP/2 connection) and only the second is reported. Letting sing-box's
+/// urltest group sweep the pool instead is what used to report 400-800ms for
+/// servers that answer in ~110ms.
 ///
 /// The PlatformInterface is the extension's minus the TUN: openTun is never
 /// called without a tun inbound, sockets bind to the real default interface via
 /// the same NWPathMonitor scheme the extension uses.
 final class NovaMeasure: NSObject {
   static let appGroup = NovaProxyHost.appGroup
-  private static let ruleSetBaseToken = "__NOVA_BASE__"
-  private static let groupTag = "proxy"
-  private static let budget: TimeInterval = 60
 
   private let queue = DispatchQueue(label: "online.novaproxy.novaClient.measure")
   private var server: NovacoreCommandServer?
-  private var client: NovacoreCommandClient?
   private var xrayStarted = false
   private var pathMonitor: NWPathMonitor?
   private var runId = 0
-  private var latest: [String: Int] = [:]
-  private let latestLock = NSLock()
 
-  func start(config: String, tags: [String], ruleSets: [String: FlutterStandardTypedData],
-             xrayConfig: String?, timeoutSec: Int = 5,
-             onGroups: @escaping ([[String: Any]]) -> Void,
-             done: @escaping ([String: Int]) -> Void,
+  /// Starts the measuring core and calls [ready] once its service is up, or
+  /// [fail] with a reason. The caller then drives the run over the core's Clash
+  /// API and calls `cancel()` when it is done.
+  func start(config: String, xrayConfig: String?,
+             ready: @escaping () -> Void,
              fail: @escaping (String) -> Void) {
     runId += 1
     let id = runId
     queue.async { [self] in
-      var finished = false
-      func finish(_ delays: [String: Int]?, _ error: String?) {
-        if finished { return }
-        finished = true
-        stopLocked()
+      var answered = false
+      func answer(_ error: String?) {
+        if answered { return }
+        answered = true
+        if error != nil { stopLocked() }
         DispatchQueue.main.async {
-          if let error { fail(error) } else { done(delays ?? [:]) }
+          if let error { fail(error) } else { ready() }
         }
       }
       stopLocked()
-      latestLock.lock(); latest = [:]; latestLock.unlock()
       guard let container = FileManager.default
         .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else {
-        return finish(nil, "App Group not configured")
+        return answer("App Group not configured")
       }
       // libbox's command server normally listens on a unix socket inside the
       // base path; the App Group container path can exceed the 104-byte
@@ -676,107 +680,39 @@ final class NovaMeasure: NSObject {
       // Setup is plain global assignment and the tunnel is down while this
       // runs, so nothing else is using the socket. Restored in stopLocked.
       Self.applySetup(container: container, port: Self.commandPort)
-      // Same rule-set files the tunnel uses, written into the shared container
-      // and the config's placeholder paths pointed at them.
-      for (name, data) in ruleSets {
-        try? data.data.write(to: container.appendingPathComponent(name), options: .atomic)
-      }
-      let resolved = config.replacingOccurrences(of: Self.ruleSetBaseToken, with: container.path)
 
       // xhttp nodes in the pool run on the Xray core; the measuring core
       // reaches them as local socks exits. Start Xray first.
       if let xrayConfig, !xrayConfig.isEmpty {
         let xerr = NovaxrayStart(xrayConfig)
-        if !xerr.isEmpty { return finish(nil, "Xray failed to start: \(xerr)") }
+        if !xerr.isEmpty { return answer("Xray failed to start: \(xerr)") }
         xrayStarted = true
       }
 
       var err: NSError?
       guard let s = NovacoreNewCommandServer(MeasureServerHandler(), self, &err), err == nil else {
-        return finish(nil, err?.localizedDescription ?? "could not create the measuring core")
+        return answer(err?.localizedDescription ?? "could not create the measuring core")
       }
       do {
         try s.start()
         server = s
-        try s.startOrReloadService(resolved, options: NovacoreOverrideOptions())
+        try s.startOrReloadService(config, options: NovacoreOverrideOptions())
       } catch {
-        return finish(nil, "Could not start the measuring core: \(error.localizedDescription)")
+        return answer("Could not start the measuring core: \(error.localizedDescription)")
       }
-      if id != runId { return finish(nil, "cancelled") }
-
-      // Group stream: per-node urltest delays as they land.
-      let options = NovacoreCommandClientOptions()
-      options.addCommand(NovacoreCommandGroup)
-      options.statusInterval = Int64(NSEC_PER_SEC) // 1s
-      let wanted = Set(tags)
-      let handler = MeasureGroupHandler { [weak self] iterator in
-        guard let self else { return }
-        // Record answered delays for the group we own, then forward the raw
-        // iterator payload as the live `groups` event. The iterator is single
-        // pass, so read it once into a buffer here.
-        var buffered: [[String: Any]] = []
-        while iterator.hasNext() {
-          guard let group = iterator.next() else { continue }
-          var items: [[String: Any]] = []
-          if let it = group.getItems() {
-            while it.hasNext() {
-              guard let item = it.next() else { continue }
-              let delay = Int(item.urlTestDelay)
-              items.append(["tag": item.tag, "delay": delay])
-              if group.tag == Self.groupTag, delay > 0, wanted.contains(item.tag) {
-                self.latestLock.lock(); self.latest[item.tag] = delay; self.latestLock.unlock()
-              }
-            }
-          }
-          buffered.append(["tag": group.tag, "selected": group.selected, "items": items])
-        }
-        if !buffered.isEmpty { onGroups(buffered) }
-      }
-      guard let c = NovacoreNewCommandClient(handler, options) else {
-        return finish(nil, "could not talk to the measuring core")
-      }
-      client = c
-      var connected = false
-      for _ in 0..<20 {
-        if (try? c.connect()) != nil { connected = true; break }
-        Thread.sleep(forTimeInterval: 0.25)
-      }
-      if !connected { return finish(nil, "could not talk to the measuring core") }
-      // Kick the test; the group also runs its own first pass at startup, and
-      // either lands in the stream above.
-      try? c.urlTest(Self.groupTag)
-
-      // The run ends timeoutSec after the last answer (anything still silent
-      // is "no response"), bounded by the batches of ten the pool needs,
-      // never past the hard budget.
-      let quiet = TimeInterval(min(max(timeoutSec, 1), 60))
-      let batches = Double(min(max((tags.count + 9) / 10, 1), 20))
-      let budget = min(Self.budget, quiet * batches + 3)
-      let startedAt = Date()
-      var lastChangeAt = startedAt
-      var lastCount = -1
-      while true {
-        Thread.sleep(forTimeInterval: 0.5)
-        if id != runId { break }
-        let now = Date()
-        latestLock.lock(); let count = latest.count; latestLock.unlock()
-        if count != lastCount { lastCount = count; lastChangeAt = now }
-        if count >= tags.count { break }
-        if now.timeIntervalSince(startedAt) > budget { break }
-        if count > 0, now.timeIntervalSince(lastChangeAt) > quiet { break }
-      }
-      latestLock.lock(); let result = latest; latestLock.unlock()
-      finish(result, nil)
+      if id != runId { return answer("cancelled") }
+      answer(nil)
     }
   }
 
-  /// Stops a run in progress; its callback then fires with what it has.
-  func cancel() { runId += 1 }
+  /// Stops the measuring core. Safe to call when nothing is running.
+  func cancel() {
+    runId += 1
+    queue.async { [self] in stopLocked() }
+  }
 
   /// Runs on `queue`.
   private func stopLocked() {
-    if let c = client { try? c.disconnect() }
-    client = nil
     if let s = server {
       try? s.closeService()
       s.close()
@@ -808,24 +744,6 @@ final class NovaMeasure: NSObject {
     var err: NSError?
     NovacoreSetup(setup, &err)
   }
-}
-
-private final class MeasureGroupHandler: NSObject, NovacoreCommandClientHandlerProtocol {
-  private let onGroups: (NovacoreOutboundGroupIteratorProtocol) -> Void
-  init(_ onGroups: @escaping (NovacoreOutboundGroupIteratorProtocol) -> Void) { self.onGroups = onGroups }
-  func writeGroups(_ message: NovacoreOutboundGroupIteratorProtocol?) {
-    guard let message else { return }
-    onGroups(message)
-  }
-  func writeStatus(_ message: NovacoreStatusMessage?) {}
-  func writeLogs(_ messageList: NovacoreLogIteratorProtocol?) {}
-  func connected() {}
-  func disconnected(_ message: String?) {}
-  func clearLogs() {}
-  func initializeClashMode(_ modeList: NovacoreStringIteratorProtocol?, currentMode: String?) {}
-  func updateClashMode(_ newMode: String?) {}
-  func write(_ events: NovacoreConnectionEvents?) {}
-  func setDefaultLogLevel(_ level: Int32) {}
 }
 
 private final class MeasureServerHandler: NSObject, NovacoreCommandServerHandlerProtocol {

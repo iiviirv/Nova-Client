@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,7 @@ import '../../features/cloudflare/doh_resolver.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
+import 'measure_runner.dart';
 import 'proxy_controller.dart';
 import 'singbox_proxy_controller.dart'
     show isBlockedConnectionNoise, SingboxProxyController;
@@ -30,12 +32,24 @@ import 'xray/xray_config.dart';
 /// desktop equivalent of those hosts.
 class DesktopProxyController extends ProxyController {
   DesktopProxyController({
-    this.socksPort = 2080,
+    int socksPort = kDefaultLocalProxyPort,
     this.clashPort = 9191,
     this.manageSystemProxy = true,
-  });
+  }) : _socksPort = socksPort;
 
-  final int socksPort;
+  /// The local SOCKS/HTTP port proxy mode listens on. Settable because 2080 is
+  /// a popular default and collides with other proxy apps; a user who has one
+  /// of those needs to be able to move Nova rather than uninstall it. Changing
+  /// it takes effect on the next connect.
+  int _socksPort;
+  int get socksPort => _socksPort;
+  set socksPort(int port) {
+    final int p = port.clamp(1, 65535);
+    if (p == _socksPort) return;
+    _socksPort = p;
+    notifyListeners();
+  }
+
   final int clashPort;
 
   /// When true, point the OS proxy at the local core on connect (needs a one-off
@@ -70,6 +84,16 @@ class DesktopProxyController extends ProxyController {
   Process? _process;
   Process? _elevated;
   File? _runFlag;
+
+  AppLifecycleListener? _lifecycle;
+
+  /// Whether a window is on screen to read the live numbers. Hidden to the menu
+  /// bar counts as not visible.
+  bool _visible = true;
+
+  /// The app's end of the elevated shell's control FIFO (macOS/Linux). Held
+  /// open while the tunnel runs; closing it tells the shell to kill the core.
+  RandomAccessFile? _tunCtl;
 
   /// The second core, Xray, for xhttp/SplitHTTP nodes sing-box cannot run. When
   /// the exit is xhttp, sing-box bridges its inbound to Xray's local SOCKS (same
@@ -1019,16 +1043,39 @@ class DesktopProxyController extends ProxyController {
     return _coreTail.sublist(start).join(' | ');
   }
 
+  /// Live traffic and per-node health, polled off the core's Clash API.
+  ///
+  /// Both of these only feed things on screen: the download/upload readout and
+  /// the server list's live pings. With the window closed there is nobody to
+  /// read them, so they stop, and a once-a-second HTTP request stops keeping the
+  /// machine out of its idle states for a number nobody is looking at. That
+  /// matters more since closing the window began leaving Nova running in the
+  /// menu bar rather than quitting: for most of a session there is no window.
   void _startTrafficPolling() {
     _lastUp = 0;
     _lastDown = 0;
+    _lifecycle ??= AppLifecycleListener(onStateChange: _onLifecycle);
+    _armPolling();
+  }
+
+  void _armPolling() {
     _trafficTimer?.cancel();
-    _trafficTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pollTraffic());
     _healthTimer?.cancel();
+    if (!_visible) return;
+    _trafficTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _pollTraffic());
     _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollHealth());
     // Prime it straight away so the list gets numbers as soon as the pool has
     // been measured once, instead of waiting a full interval.
     _pollHealth();
+  }
+
+  void _onLifecycle(AppLifecycleState state) {
+    final bool visible = state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    if (visible == _visible) return;
+    _visible = visible;
+    if (_state.isActive) _armPolling();
   }
 
   /// Read the core's per-node urltest results off the Clash API and publish
@@ -1068,13 +1115,8 @@ class DesktopProxyController extends ProxyController {
 
   Process? _measureProcess;
 
-  /// How long one measuring run may take end to end. sing-box tests the pool
-  /// ten nodes at a time with a 5s budget each, so a 60-node subscription fits
-  /// comfortably; a longer list still publishes what it got in time.
-  static const Duration _measureBudget = Duration(seconds: 60);
-
   @override
-  Future<String?> measureNodes(List<ProxyNode> nodes) async {
+  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async {
     if (measuring.value) return null;
     if (nodes.isEmpty) return null;
     if (tunMode && (_state.isActive || _state.isBusy)) {
@@ -1119,11 +1161,11 @@ class DesktopProxyController extends ProxyController {
               clashPort: apiPort,
               includeXhttp: xhttp,
               xhttpBasePort: _xraySocksPort);
-      final String base = await _extractRuleSets();
       final File cfgFile = File('${dir.path}/nova-measure.json');
-      await cfgFile.writeAsString(const JsonEncoder.withIndent('  ')
-          .convert(built.config)
-          .replaceAll(SingboxConfig.ruleSetBaseToken, base));
+      await cfgFile.writeAsString(
+          const JsonEncoder.withIndent('  ').convert(built.config));
+      final CoreNodeHealth before = coreHealth.value;
+      if (!merge) coreHealth.value = CoreNodeHealth.empty;
       NovaLog.instance.write(
           'Measuring ${built.tagKeys.length} servers through the core');
 
@@ -1141,89 +1183,28 @@ class DesktopProxyController extends ProxyController {
       bool exited = false;
       unawaited(proc.exitCode.then((_) => exited = true));
 
-      // Wait for the measuring core's API.
-      final Uri version = Uri.parse('http://127.0.0.1:$apiPort/version');
-      bool up = false;
-      for (int i = 0; i < 60 && !exited; i++) {
-        try {
-          final http.Response r =
-              await http.get(version).timeout(const Duration(milliseconds: 500));
-          if (r.statusCode == 200) {
-            up = true;
-            break;
-          }
-        } catch (_) {}
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-      }
-      if (!up) {
+      final Uri api = Uri.parse('http://127.0.0.1:$apiPort/');
+      if (!await MeasureRunner.waitForApi(api,
+          cancelled: () => exited || !measuring.value)) {
         final String why = tail.isEmpty ? 'it did not start' : tail.join(' | ');
         return 'Could not start the measuring core: $why';
       }
 
-      // Kick the group's test. The urltest group also runs its own first pass
-      // at startup; either way the results land in each outbound's history,
-      // which is what is polled below, so a "test already running" reply here
-      // is fine. Not awaited: it returns only when the whole pool is done.
-      // Per-node timeout and the test URL come from Settings > Routing >
-      // URL test. The group's own startup pass uses the same URL (it is in
-      // the config); this kick carries the timeout.
       final int timeoutSec = opts.urlTestTimeoutSec.clamp(1, 60);
-      final String testUrl = Uri.encodeQueryComponent(
-          opts.urlTestUrl.trim().isEmpty ? kDefaultUrlTestUrl : opts.urlTestUrl.trim());
-      final Uri kick = Uri.parse('http://127.0.0.1:$apiPort/group/proxy/delay'
-          '?url=$testUrl&timeout=${timeoutSec * 1000}');
-      unawaited(http.get(kick).timeout(_measureBudget).then((_) {},
-          onError: (Object _) {}));
-
-      // Poll the per-outbound history and publish as rows fill in, so the list
-      // updates live instead of all at once at the end. Stop when every node
-      // answered, or when nothing new has arrived for a while after the first
-      // results, or at the budget.
-      final Uri proxies = Uri.parse('http://127.0.0.1:$apiPort/proxies');
-      final Stopwatch clock = Stopwatch()..start();
-      int lastCount = 0;
-      int lastChangeMs = 0;
-      Map<String, int> delays = <String, int>{};
-      // The run ends [timeoutSec] after the last answer (a node that has not
-      // answered by then is "no response"), bounded by how many batches of
-      // ten the pool needs, never past the hard budget.
-      final int batches = (built.tagKeys.length / 10).ceil().clamp(1, 20);
-      final Duration budget = Duration(seconds: (timeoutSec * batches + 3))
-              .compareTo(_measureBudget) < 0
-          ? Duration(seconds: timeoutSec * batches + 3)
-          : _measureBudget;
-      while (clock.elapsed < budget && !exited) {
-        await Future<void>.delayed(const Duration(milliseconds: 700));
-        try {
-          final http.Response r =
-              await http.get(proxies).timeout(const Duration(seconds: 3));
-          if (r.statusCode != 200) continue;
-          final CoreNodeHealth h = healthFromClashProxies(built.tagKeys,
-              (jsonDecode(r.body) as Map).cast<String, dynamic>());
-          delays = h.delayMsByKey;
-          // Keys still pending are not "tested" yet: only the ones that
-          // answered carry a verdict while the run is in progress.
-          coreHealth.value = CoreNodeHealth(
-              delayMsByKey: delays, testedKeys: delays.keys.toSet());
-        } catch (_) {
-          continue;
-        }
-        if (delays.length != lastCount) {
-          lastCount = delays.length;
-          lastChangeMs = clock.elapsedMilliseconds;
-        }
-        if (delays.length >= built.tagKeys.length) break;
-        // Quiet for the timeout after the first answers: the rest are the
-        // ones that do not answer.
-        if (lastCount > 0 &&
-            clock.elapsedMilliseconds - lastChangeMs > timeoutSec * 1000) {
-          break;
-        }
-      }
+      final Map<String, int> delays = await MeasureRunner.run(
+        api: api,
+        tagKeys: built.tagKeys,
+        url: opts.urlTestUrl,
+        timeoutSec: timeoutSec,
+        cancelled: () => exited || !measuring.value,
+        onProgress: (Map<String, int> d, Set<String> tested) {
+          coreHealth.value = _mergeHealth(before, d, tested, merge: merge);
+        },
+      );
       // Final verdicts: everything in the pool was tried; a node with no
       // delay is "no response", not "not testable".
-      coreHealth.value = CoreNodeHealth(
-          delayMsByKey: delays, testedKeys: built.tagKeys.values.toSet());
+      coreHealth.value = _mergeHealth(
+          before, delays, built.tagKeys.values.toSet(), merge: merge);
       NovaLog.instance.write(
           'Measured ${built.tagKeys.length} servers through the core: '
           '${delays.length} answered');
@@ -1238,6 +1219,30 @@ class DesktopProxyController extends ProxyController {
       _stopXray();
       measuring.value = false;
     }
+  }
+
+  /// Folds one run's results into whatever the board already shows. A run that
+  /// covers the whole list ([merge] false) replaces it; re-testing a single row
+  /// keeps every other row's verdict.
+  CoreNodeHealth _mergeHealth(
+    CoreNodeHealth before,
+    Map<String, int> delays,
+    Set<String> tested, {
+    required bool merge,
+  }) {
+    if (!merge) {
+      return CoreNodeHealth(delayMsByKey: delays, testedKeys: tested);
+    }
+    final Map<String, int> d = Map<String, int>.from(before.delayMsByKey);
+    for (final String k in tested) {
+      d.remove(k);
+    }
+    d.addAll(delays);
+    return CoreNodeHealth(
+      delayMsByKey: d,
+      testedKeys: <String>{...before.testedKeys, ...tested},
+      selectedKey: before.selectedKey,
+    );
   }
 
   /// A free TCP port on loopback for the measuring core's inbound and API, so
@@ -1307,10 +1312,38 @@ class DesktopProxyController extends ProxyController {
   /// Launch the core elevated so its `tun` inbound can create the system TUN
   /// device and route the whole machine.
   ///
-  /// Both platforms use the same single-prompt trick: the elevated shell starts
-  /// the core, then spins watching a plain "run flag" file the app owns. To stop
-  /// (in [_cleanup]) the app just deletes that flag — the still-elevated loop
-  /// then kills the core and exits, so tearing down needs no second password.
+  /// Every platform uses the same single-prompt trick: the elevated shell starts
+  /// the core and then waits for the app to say "stop", so tearing down needs no
+  /// second password.
+  ///
+  /// On macOS and Linux the launch is DETACHED, and that is the important part.
+  ///
+  /// A user on a 2015 MacBook Pro reported `osascript` sitting at 10-12% CPU
+  /// for as long as the tunnel was up, the CPU pinned at 3GHz instead of
+  /// dropping to 1.5GHz, and the machine running 20C hotter, all of it gone the
+  /// instant they disconnected. The obvious suspect was the old
+  /// `while [ -e flag ]; do sleep 1; done` watcher, since `sleep` is not a
+  /// builtin and that forks a process every second forever. Measuring said
+  /// otherwise: over 20 seconds the sleep loop and a blocked `cat` cost
+  /// osascript exactly the same, 0.97s against 0.99s of CPU. The loop was not
+  /// the cost. **osascript itself burns about 5% of a core just staying alive**
+  /// while `do shell script` waits on its command, whatever that command does.
+  ///
+  /// So the command is backgrounded with every descriptor closed, which leaves
+  /// `do shell script` nothing to wait on: osascript spawns the work and exits,
+  /// and no osascript process remains. Measured the same way, what is left uses
+  /// 0.01s of CPU over 20 seconds, which is to say none.
+  ///
+  /// The waiter then blocks reading a FIFO instead of polling a flag file. That
+  /// is worth doing on its own (no fork per second) but it also makes the
+  /// teardown safe: the kernel closes the app's end of the FIFO when the app
+  /// dies, so a crash kills the root core too. The old flag file could not do
+  /// that, because a crashed app never deleted it.
+  ///
+  /// Windows keeps the flag-file loop. PowerShell's `Start-Sleep` is a real
+  /// sleep with no process spawn, there is no osascript equivalent holding the
+  /// session open, and named pipes there are a bigger change than the evidence
+  /// justifies.
   Future<void> _startElevatedTun(String binary, File cfgFile) async {
     final Directory dir = await getApplicationSupportDirectory();
     final File flag = File('${dir.path}/nova-tun.run');
@@ -1369,13 +1402,21 @@ class DesktopProxyController extends ProxyController {
     }
 
     // macOS / Linux: run via an admin AppleScript (macOS) so the core gets root.
+    final File ctl = File('${dir.path}/nova-tun.ctl');
+    await _makeFifo(ctl);
     final String envPrefix = _coreEnv.entries
         .map((MapEntry<String, String> e) => '${e.key}=${_shq(e.value)}')
         .join(' ');
-    final String cmd =
+    // The work itself: start the core, then block reading the control FIFO
+    // until the app closes its end, then stop the core.
+    final String inner =
         '$envPrefix ${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
-        'SB=\$!; while [ -e ${_shq(flag.path)} ]; do sleep 1; done; '
+        'SB=\$!; cat ${_shq(ctl.path)} > /dev/null 2>&1; '
         'kill \$SB 2>/dev/null';
+    // Detached, with every file descriptor closed, so `do shell script` has
+    // nothing left to wait on and osascript exits immediately. See the note on
+    // this method: an osascript left supervising the session IS the 5%.
+    final String cmd = 'nohup sh -c ${_shSingleQ(inner)} > /dev/null 2>&1 &';
     if (Platform.isMacOS) {
       final String appleScript =
           'do shell script "${_asEsc(cmd)}" with administrator privileges';
@@ -1384,11 +1425,37 @@ class DesktopProxyController extends ProxyController {
       // Linux: best-effort via pkexec (graphical sudo).
       _elevated = await Process.start('pkexec', <String>['sh', '-c', cmd]);
     }
+    // Held open for the whole session; closing it in [_cleanup] is the stop
+    // signal, and losing it to a crash is the same signal.
+    try {
+      _tunCtl = await File(ctl.path).open(mode: FileMode.write);
+    } catch (e) {
+      // Without the handle the tunnel still runs, and _cleanup falls back to
+      // opening the FIFO itself to release the waiting shell.
+      NovaLog.instance.write('Could not hold the tunnel control channel: $e',
+          level: NovaLogLevel.warn);
+    }
+  }
+
+  /// Creates the control FIFO, replacing any left by an earlier run.
+  Future<void> _makeFifo(File f) async {
+    try {
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+    await Process.run('mkfifo', <String>[f.path]);
   }
 
   /// Shell double-quoting for a path (handles spaces; app-support paths carry no
   /// quotes/backslashes on these platforms).
   String _shq(String p) => '"${p.replaceAll('"', r'\"')}"';
+
+  /// Single-quoting, for embedding a whole command as one `sh -c` argument.
+  /// Single quotes protect everything else, so the only case to handle is a
+  /// literal single quote, which has to leave and re-enter the quoting.
+  String _shSingleQ(String s) {
+    final String escaped = s.replaceAll("'", r"'\''");
+    return "'$escaped'";
+  }
 
   /// Escape a shell command for embedding inside an AppleScript string literal.
   String _asEsc(String s) =>
@@ -1524,14 +1591,34 @@ class DesktopProxyController extends ProxyController {
     if (_systemProxyOn) {
       await _setSystemProxy(false);
     }
-    // Dropping the run flag lets the elevated watcher kill the core and exit, so
-    // no second admin prompt is needed to disconnect.
-    if (_runFlag != null) {
+    // Releasing the elevated shell lets it kill the core and exit, so no second
+    // admin prompt is needed to disconnect.
+    //
+    // macOS/Linux: closing our end of the FIFO gives its `cat` EOF instantly.
+    // Windows still watches the flag file, so that is dropped too.
+    if (_tunCtl != null || _runFlag != null) {
+      final RandomAccessFile? ctl = _tunCtl;
+      _tunCtl = null;
       try {
-        if (_runFlag!.existsSync()) _runFlag!.deleteSync();
+        await ctl?.close();
+      } catch (_) {}
+      if (ctl == null && !Platform.isWindows) {
+        // We never got a handle. Open the FIFO now purely to unblock the shell
+        // that is still reading it, so the root core is not orphaned.
+        try {
+          final Directory dir = await getApplicationSupportDirectory();
+          final File f = File('${dir.path}/nova-tun.ctl');
+          if (f.existsSync()) {
+            final RandomAccessFile r = await f.open(mode: FileMode.write);
+            await r.close();
+          }
+        } catch (_) {}
+      }
+      try {
+        if (_runFlag?.existsSync() ?? false) _runFlag!.deleteSync();
       } catch (_) {}
       _runFlag = null;
-      // Give the watcher a moment to tear the core down before we return.
+      // Give the shell a moment to tear the core down before we return.
       await Future<void>.delayed(const Duration(milliseconds: 600));
     }
     _elevated?.kill();
@@ -1599,6 +1686,8 @@ class DesktopProxyController extends ProxyController {
     // A measuring core still running when the app closes must not outlive it.
     _measureProcess?.kill();
     _measureProcess = null;
+    _lifecycle?.dispose();
+    _lifecycle = null;
     _cleanup();
     super.dispose();
   }

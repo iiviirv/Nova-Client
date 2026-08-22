@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/geo/node_geo_store.dart';
@@ -11,6 +12,7 @@ import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
+import '../../core/proxy/singbox/singbox_config.dart';
 import '../../core/proxy/subscription.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_colors.dart';
@@ -26,18 +28,34 @@ import 'bypass_editor_screen.dart';
 /// the profile and reconnects through the chosen node. This is the "switch to
 /// a better IP" control.
 class NodeListScreen extends StatefulWidget {
-  const NodeListScreen({super.key, required this.profileId});
+  const NodeListScreen({
+    super.key,
+    required this.profileId,
+    this.embedded = false,
+  });
 
   final String profileId;
+
+  /// Rendered inside the dashboard's Configs tab rather than pushed as its own
+  /// route: no Scaffold, no app bar, and the rows scroll with the page instead
+  /// of in their own viewport. The two actions the app bar carries (refresh and
+  /// the lightning test) move into the list's own header.
+  final bool embedded;
 
   @override
   State<NodeListScreen> createState() => _NodeListScreenState();
 }
 
 class _NodeListScreenState extends State<NodeListScreen> {
-  /// Cap how many nodes we display + ping, so a 1000-node subscription stays
-  /// responsive. They're deduped by server:port first.
-  static const int _maxShown = 80;
+  /// Cap how many servers this screen shows, so a 1000-entry subscription stays
+  /// responsive. Deduped by server:port first.
+  ///
+  /// Matched to the measuring core's own pool cap: anything Nova can put a real
+  /// number against should be on screen to receive it. It used to be 80, which
+  /// would have quietly truncated a longer list before the lightning test ever
+  /// saw it. Automatic probing on open is capped much lower ([_autoPingCap]);
+  /// this is only about what is listed.
+  static const int _maxShown = SingboxConfig.kMeasurePoolCap;
 
   List<ProxyNode> _nodes = <ProxyNode>[];
 
@@ -92,6 +110,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _load();
     });
+    _loadMeasureHint();
   }
 
   @override
@@ -129,6 +148,23 @@ class _NodeListScreenState extends State<NodeListScreen> {
     return null;
   }
 
+  /// The one-time "what the bolt does" note. Persisted, so it appears the first
+  /// time a subscription is opened and never again once it is dismissed.
+  static const String _kMeasureHintSeen = 'nova.node.measureHintSeen';
+  bool _measureHintSeen = true;
+
+  Future<void> _loadMeasureHint() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _measureHintSeen = prefs.getBool(_kMeasureHintSeen) ?? false);
+  }
+
+  Future<void> _dismissMeasureHint() async {
+    setState(() => _measureHintSeen = true);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kMeasureHintSeen, true);
+  }
+
   Future<void> _load() async {
     final profile = _profile;
     if (profile == null) {
@@ -154,12 +190,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// refresh button. [hadCache] means the list is already populated, so a
   /// failure is a soft "stale" note rather than a fatal error.
   Future<void> _refresh(ProxyProfile profile,
-      {required bool hadCache, bool forcePing = false}) async {
+      {required bool hadCache,
+      bool forcePing = false,
+      bool skipPing = false}) async {
     if (mounted) setState(() => _refreshing = true);
     try {
       final List<ProxyNode> all = await resolveProfileNodes(profile);
       if (!mounted) return;
-      _applyNodes(all, profile, stale: lastResolveWasStale, forcePing: forcePing);
+      _applyNodes(all, profile,
+          stale: lastResolveWasStale, forcePing: forcePing, skipPing: skipPing);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -180,7 +219,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// entries and the real count, and (re)ping only when the set actually changed
   /// so a background refresh that returns the same servers doesn't re-probe.
   void _applyNodes(List<ProxyNode> all, ProxyProfile profile,
-      {required bool stale, bool forcePing = false}) {
+      {required bool stale, bool forcePing = false, bool skipPing = false}) {
     final profiles = NovaScope.of(context).profiles;
     _stale = stale;
     // Captured right after the parse, before anything else overwrites the side
@@ -201,25 +240,47 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (deduped.length >= _maxShown) break;
     }
     final bool changed = !_sameKeys(deduped, _nodes);
-    // Keep the real node count on the profile so the cards stop saying "1".
-    profiles.update(profile.copyWith(nodeCount: all.length));
+    // The count on the card is what the user can actually choose between: the
+    // deduped list, not the raw number of lines in the subscription. Nova's own
+    // free list carries the same server three times over, so the raw count
+    // promised eighteen servers where there were twelve.
+    profiles.update(profile.copyWith(nodeCount: deduped.length));
     setState(() {
       _nodes = deduped;
       _loading = false;
       _refreshing = false;
     });
+    _maybeAutoMeasure();
+    if (skipPing) return;
+    // Opening a subscription pings it so the rows are not blank, but on a long
+    // list that is dozens of sockets the user did not ask for and a wait before
+    // anything is usable. Past [_autoPingCap] servers the list comes up bare and
+    // ready for the lightning test instead.
+    if (deduped.length > _autoPingCap) return;
     if (changed || forcePing) _pingAll();
   }
 
-  /// The refresh button: re-fetch the subscription now, re-probe, and if this
-  /// profile is the live tunnel, reconnect so the freshest list's best node is
-  /// the one carrying traffic. Keeps the servers on screen the whole time.
+  /// How many servers a subscription may have before opening it stops probing
+  /// them all by itself.
+  static const int _autoPingCap = 50;
+
+  /// The refresh button: re-fetch the subscription now and put the fresh list
+  /// up, with every ping cleared and none taken. Refresh means "get me the
+  /// current servers", not "spend the next half minute probing them"; the list
+  /// comes back bare and ready for the lightning test. If this profile is the
+  /// live tunnel it reconnects, so the freshest list's best node is the one
+  /// carrying traffic. Keeps the servers on screen the whole time.
   Future<void> _manualRefresh() async {
     final ProxyProfile? profile = _profile;
     if (profile == null || _refreshing) return;
     clearSubscriptionCache();
     _probe.clear();
-    await _refresh(profile, hadCache: _nodes.isNotEmpty, forcePing: true);
+    NovaScope.of(context).proxy.coreHealth.value = CoreNodeHealth.empty;
+    // Refresh is an explicit "check again now", so the sweep is due again and
+    // every server is back on screen until it has been re-tested.
+    _autoMeasured = false;
+    _lastAutoMeasure.remove(profile.id);
+    await _refresh(profile, hadCache: _nodes.isNotEmpty, skipPing: true);
     if (!mounted) return;
     final scope = NovaScope.of(context);
     if (scope.proxy.state.isActive &&
@@ -232,15 +293,91 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// The lightning button: measure every listed server through a measuring
   /// core (see ProxyController.measureNodes). Results land on coreHealth, which
   /// the rows already render as the live bolt badge / "no response".
-  Future<void> _measureAll() async {
+  Future<void> _measureAll({bool quiet = false}) async {
     if (_nodes.isEmpty) return;
     final scope = NovaScope.of(context);
     final NovaStrings s = NovaStrings.of(context);
     final String? problem = await scope.proxy.measureNodes(List<ProxyNode>.of(_nodes));
     if (!mounted) return;
+    if (quiet) return;
     final String msg = problem ??
         s.nodeMeasureDone.replaceFirst('{n}', '${_nodes.length}');
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Hides the servers the last sweep proved dead, on Nova's own free list.
+  ///
+  /// A view decision, taken from the CURRENT measurement and nothing else. The
+  /// list itself always holds every server the subscription carries, so the next
+  /// sweep re-tests all of them and anything that comes back is simply visible
+  /// again. Persisting a blacklist instead looked equivalent and was not: each
+  /// sweep then only saw the survivors, so an unlucky run shrank the list, the
+  /// next run shrank what was left, and nothing short of a manual refresh ever
+  /// undid it. Measured against a deliberately blocked pair it went 18 to 7 to
+  /// 3 in two visits.
+  ///
+  /// Never applied to a subscription the user added: their provider's list is
+  /// theirs, and a server that is down today is one they may want to see.
+  ///
+  /// If every server failed it hides nothing. That is this connection, not
+  /// those servers, and an empty list is a worse answer than a stale one.
+  List<ProxyNode> _hideDead(List<ProxyNode> nodes, CoreNodeHealth health) {
+    final ProxyProfile? profile = _profile;
+    if (profile == null || !profile.isBuiltIn) return nodes;
+    final List<ProxyNode> live = nodes
+        .where((ProxyNode n) =>
+            !(health.wasTested(n) && health.delayFor(n) == null))
+        .toList();
+    return live.isEmpty ? nodes : live;
+  }
+
+  /// When Nova's free list was last swept automatically, per profile.
+  ///
+  /// Static and not per-State on purpose: this screen is rebuilt every time the
+  /// dashboard's Configs tab is opened, and a fresh instance flag would start a
+  /// measuring core on every tab switch.
+  static final Map<String, DateTime> _lastAutoMeasure = <String, DateTime>{};
+
+  /// How long an automatic sweep is good for. Long enough that moving around
+  /// the app costs nothing, short enough that a server that died while the app
+  /// was open drops out on the next visit.
+  static const Duration _autoMeasureEvery = Duration(minutes: 15);
+
+  bool _autoMeasured = false;
+
+  /// Nova's own free list is other people's servers, so some of them are always
+  /// gone. Sweep it when the list opens (only while disconnected, since a
+  /// measuring core needs the tunnel down) so the dead ones drop out without the
+  /// user having to know the lightning button exists.
+  ///
+  /// Only ever the built-in list. Doing this to a subscription the user added
+  /// would spend their battery on a decision that is theirs to make.
+  void _maybeAutoMeasure() {
+    if (_autoMeasured || _loading || _nodes.isEmpty) return;
+    final ProxyProfile? profile = _profile;
+    if (profile == null || !profile.isBuiltIn) return;
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    if (!proxy.canMeasureNodes || proxy.measuring.value) return;
+    if (proxy.state != ProxyConnectionState.disconnected) return;
+    final DateTime? last = _lastAutoMeasure[profile.id];
+    if (last != null && DateTime.now().difference(last) < _autoMeasureEvery) {
+      return;
+    }
+    _autoMeasured = true;
+    _lastAutoMeasure[profile.id] = DateTime.now();
+    unawaited(_measureAll(quiet: true));
+  }
+
+  /// Tapping one row's verdict: re-test just that server, keeping every other
+  /// row's reading. Same measuring core as the lightning button, a pool of one.
+  Future<void> _measureOne(ProxyNode node) async {
+    final scope = NovaScope.of(context);
+    if (scope.proxy.measuring.value) return;
+    final String? problem =
+        await scope.proxy.measureNodes(<ProxyNode>[node], merge: true);
+    if (!mounted || problem == null) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(problem)));
   }
 
   bool _sameKeys(List<ProxyNode> a, List<ProxyNode> b) {
@@ -454,63 +591,77 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final profile = _profile;
     final visible = _nodes.where(_matches).toList();
     final pinned = profile?.pinnedNode;
+    final Widget body = _loading
+        ? const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()))
+        : _error != null
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: Text(_error!)))
+            // The core's live per-node latency lands while the tunnel is up;
+            // rebuild the rows when it changes so the SNI-blocked servers can
+            // show a real ping (and which one is carrying traffic) at last.
+            : ValueListenableBuilder<CoreNodeHealth>(
+                valueListenable: NovaScope.of(context).proxy.coreHealth,
+                builder: (BuildContext context, CoreNodeHealth health, _) =>
+                    _list(s, visible, pinned, health),
+              );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(
         title: Text(profile?.name ?? 'Nodes'),
         actions: <Widget>[
-          // "Test all through the core": a second, tunnel-less core dials
-          // every server exactly as a tunnel would and reports the round-trip,
-          // so the nodes the outside probe can only call "not testable"
-          // (Reality, obfuscated Hysteria2, SS2022, clean-IP VLESS behind an
-          // SNI block) get a real number. Only where the host can run one.
-          if (!_loading && NovaScope.of(context).proxy.canMeasureNodes)
-            ValueListenableBuilder<bool>(
-              valueListenable: NovaScope.of(context).proxy.measuring,
-              builder: (BuildContext context, bool busy, _) => IconButton(
-                tooltip: s.nodeMeasureAll,
-                icon: busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.bolt_rounded),
-                onPressed: busy ? null : _measureAll,
-              ),
-            ),
-          if (!_loading)
-            IconButton(
-              tooltip: s.nodeRefresh,
-              icon: _refreshing
+          if (!_loading) ..._actions(s),
+        ],
+      ),
+      body: body,
+    );
+  }
+
+  /// Refresh and the lightning test. In the app bar when this is its own
+  /// screen, in the list's header when it is embedded in the dashboard.
+  List<Widget> _actions(NovaStrings s) => <Widget>[
+        // "Test all through the core": a second, tunnel-less core dials every
+        // server exactly as a tunnel would and reports the round-trip, so the
+        // nodes the outside probe can only call "not testable" (Reality,
+        // obfuscated Hysteria2, SS2022, clean-IP VLESS behind an SNI block) get
+        // a real number. Only where the host can run one.
+        if (NovaScope.of(context).proxy.canMeasureNodes)
+          ValueListenableBuilder<bool>(
+            valueListenable: NovaScope.of(context).proxy.measuring,
+            builder: (BuildContext context, bool busy, _) => IconButton(
+              tooltip: s.nodeMeasureAll,
+              icon: busy
                   ? const SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.refresh),
-              onPressed: _refreshing ? null : _manualRefresh,
+                  : const Icon(Icons.bolt_rounded),
+              onPressed: busy ? null : _measureAll,
             ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              // The core's live per-node latency lands while the tunnel is up;
-              // rebuild the rows when it changes so the SNI-blocked servers can
-              // show a real ping (and which one is carrying traffic) at last.
-              : ValueListenableBuilder<CoreNodeHealth>(
-                  valueListenable: NovaScope.of(context).proxy.coreHealth,
-                  builder: (BuildContext context, CoreNodeHealth health, _) =>
-                      _list(s, visible, pinned, health),
-                ),
-    );
-  }
+          ),
+        IconButton(
+          tooltip: s.nodeRefresh,
+          icon: _refreshing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+          onPressed: _refreshing ? null : _manualRefresh,
+        ),
+      ];
 
   /// The header blocks are a handful of cheap widgets; the node rows are built
   /// on demand so an 80-node subscription only lays out what is on screen.
   Widget _list(NovaStrings s, List<ProxyNode> visibleUnsorted, String? pinned,
       CoreNodeHealth health) {
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    final bool canMeasure = proxy.canMeasureNodes;
+    final bool measuring = proxy.measuring.value;
     // Ranking, best first. When connected, the core's live pings win: a node the
     // core actually measured through the tunnel leads (lowest ping first), so the
     // working servers surface at the top instead of being buried under the nodes
@@ -526,9 +677,20 @@ class _NodeListScreenState extends State<NodeListScreen> {
       return 2000000 + (_probe[_key(n)]?.sortKey ?? 500000);
     }
 
-    final List<ProxyNode> visible = <ProxyNode>[...visibleUnsorted]
-      ..sort((ProxyNode a, ProxyNode b) => rank(a).compareTo(rank(b)));
+    final List<ProxyNode> visible = <ProxyNode>[
+      ..._hideDead(visibleUnsorted, health)
+    ]..sort((ProxyNode a, ProxyNode b) => rank(a).compareTo(rank(b)));
     final List<Widget> header = <Widget>[
+      if (widget.embedded && !_loading)
+        Padding(
+          padding: const EdgeInsets.only(right: NovaSpace.xs),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: _actions(s),
+          ),
+        ),
+      if (!_measureHintSeen && canMeasure && visibleUnsorted.isNotEmpty)
+        _MeasureHint(onDismiss: _dismissMeasureHint),
       if (_stale) const _StaleNote(),
       if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
       const _SocialRow(),
@@ -562,7 +724,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
         ),
     ];
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: NovaSpace.xl),
+      // Embedded, the page around it owns the scrolling; on its own screen this
+      // list is the scroll view.
+      shrinkWrap: widget.embedded,
+      physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
+      padding: EdgeInsets.only(
+          bottom: widget.embedded
+              ? 0
+              : NovaSpace.xl + MediaQuery.viewPaddingOf(context).bottom),
       itemCount: header.length + visible.length,
       itemBuilder: (BuildContext context, int i) {
         if (i < header.length) return header[i];
@@ -582,6 +751,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
           active: health.isSelected(n),
           showDivider: r < visible.length - 1,
           onTap: () => _pin(_key(n), name: n.tag),
+          onRetest: canMeasure && !measuring ? () => _measureOne(n) : null,
         );
       },
     );
@@ -869,6 +1039,61 @@ class _BypassRow extends StatelessWidget {
   }
 }
 
+/// The one-time note introducing the lightning test, shown the first time a
+/// subscription's server list is opened. It points at the control it describes
+/// and carries its own dismiss, so nothing about it is a mystery and nothing
+/// about it is permanent.
+class _MeasureHint extends StatelessWidget {
+  const _MeasureHint({required this.onDismiss});
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final NovaStrings s = NovaStrings.of(context);
+    final TextTheme text = Theme.of(context).textTheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.md, NovaSpace.lg, NovaSpace.xs),
+      padding: const EdgeInsets.all(NovaSpace.md),
+      decoration: BoxDecoration(
+        color: nova.indigo.withValues(alpha: 0.08),
+        borderRadius: NovaRadii.cardR,
+        border: Border.all(color: nova.indigo.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.bolt_rounded, size: 20, color: nova.indigo),
+          const SizedBox(width: NovaSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(s.nodeMeasureHint,
+                    style: text.bodySmall?.copyWith(height: 1.35)),
+                const SizedBox(height: NovaSpace.xs),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton(
+                    onPressed: onDismiss,
+                    style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: NovaSpace.md),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    child: Text(s.nodeMeasureHintGot),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AutoRow extends StatelessWidget {
   const _AutoRow({required this.selected, required this.onTap});
   final bool selected;
@@ -988,6 +1213,7 @@ class _NodeRow extends StatelessWidget {
     required this.geo,
     required this.selected,
     required this.onTap,
+    this.onRetest,
     this.coreDelayMs,
     this.coreTested = false,
     this.active = false,
@@ -995,6 +1221,10 @@ class _NodeRow extends StatelessWidget {
   });
 
   final ProxyNode node;
+
+  /// Tapping the verdict re-tests just this server through the measuring core,
+  /// leaving every other row's reading alone. Null while a run is in flight.
+  final VoidCallback? onRetest;
 
   /// Null while the node is still being measured.
   final NodeProbeResult? probe;
@@ -1174,10 +1404,25 @@ class _NodeRow extends StatelessWidget {
                   constraints: const BoxConstraints(minWidth: 54),
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: _Verdict(
-                        probe: probe,
-                        coreDelayMs: coreDelayMs,
-                        coreTested: coreTested),
+                    // Tapping the number re-tests this one server. The hit area
+                    // is padded out to a comfortable target without moving the
+                    // column the figures line up in.
+                    child: Semantics(
+                      button: onRetest != null,
+                      label: NovaStrings.of(context).nodeRetestOne,
+                      child: InkWell(
+                        onTap: onRetest,
+                        borderRadius: BorderRadius.circular(NovaRadii.sm),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: NovaSpace.xs, vertical: NovaSpace.xs),
+                          child: _Verdict(
+                              probe: probe,
+                              coreDelayMs: coreDelayMs,
+                              coreTested: coreTested),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 // A fixed trailing zone for the pinned / live marks, so their

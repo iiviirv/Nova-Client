@@ -14,7 +14,8 @@ import '../../widgets/nova_scope.dart';
 import '../logs/log_screen.dart';
 import '../panel/open_panel.dart';
 import '../routing/routing_screen.dart';
-import 'settings_controller.dart';
+import 'server_owner_screen.dart';
+import 'test_options_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/nova_semantics.dart';
 
@@ -38,11 +39,6 @@ class SettingsScreen extends StatelessWidget {
     final s = NovaStrings.of(context);
     final nova = context.nova;
     final text = Theme.of(context).textTheme;
-    // The user's own panel address from Settings. It used to be guessed as the
-    // subscription host's root, which opened a 404: a Nova Server panel lives
-    // behind a secret admin path that a subscription URL does not reveal.
-    final SettingsController settings = NovaScope.of(context).settings;
-
     return ListenableBuilder(
       listenable: theme,
       builder: (context, _) {
@@ -51,8 +47,11 @@ class SettingsScreen extends StatelessWidget {
             constraints:
                 const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                  NovaSpace.lg, NovaSpace.lg, NovaSpace.lg, NovaSpace.xxl),
+              padding: EdgeInsets.fromLTRB(
+                  NovaSpace.lg,
+                  NovaSpace.lg,
+                  NovaSpace.lg,
+                  NovaSpace.xxl + MediaQuery.viewPaddingOf(context).bottom),
               children: <Widget>[
                 NovaScreenHeader(title: s.navSettings),
                 const SizedBox(height: NovaSpace.xl),
@@ -63,14 +62,30 @@ class SettingsScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
-                        _PanelSettings(settings: settings),
-                        _div(nova.border),
                         _NavRow(
                           icon: Icons.alt_route_rounded,
                           color: nova.violet,
                           title: s.setRouting,
                           subtitle: s.setRoutingSub,
                           onTap: () => _push(context, const RoutingScreen()),
+                        ),
+                        _div(nova.border),
+                        _NavRow(
+                          icon: Icons.speed_rounded,
+                          color: nova.indigo,
+                          title: s.setTestOptions,
+                          subtitle: s.setTestOptionsSub,
+                          onTap: () =>
+                              _push(context, const TestOptionsScreen()),
+                        ),
+                        _div(nova.border),
+                        _NavRow(
+                          icon: Icons.dashboard_rounded,
+                          color: nova.cyan,
+                          title: s.setServerOwner,
+                          subtitle: s.setServerOwnerSub,
+                          onTap: () =>
+                              _push(context, const ServerOwnerScreen()),
                         ),
                         _div(nova.border),
                         // Radar, Cloudflare and Google relay were removed
@@ -431,84 +446,6 @@ class _LinkTile extends StatelessWidget {
 /// page where a webview exists and hands off to the system browser on
 /// Windows/Linux (where `webview_flutter` has no backend and rendered a blank,
 /// exit-less grey surface).
-class _PanelSettings extends StatefulWidget {
-  const _PanelSettings({required this.settings});
-  final SettingsController settings;
-
-  @override
-  State<_PanelSettings> createState() => _PanelSettingsState();
-}
-
-class _PanelSettingsState extends State<_PanelSettings> {
-  late final TextEditingController _url =
-      TextEditingController(text: widget.settings.panelUrl);
-
-  @override
-  void dispose() {
-    _url.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final NovaStrings s = NovaStrings.of(context);
-    final nova = context.nova;
-    final TextTheme text = Theme.of(context).textTheme;
-    return ListenableBuilder(
-      listenable: widget.settings,
-      builder: (BuildContext context, _) {
-        final Uri? uri = widget.settings.panelUri;
-        return Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  // The address is always LTR, whatever the UI language.
-                  Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: TextField(
-                      controller: _url,
-                      keyboardType: TextInputType.url,
-                      autocorrect: false,
-                      onChanged: widget.settings.setPanelUrl,
-                      decoration: InputDecoration(
-                        labelText: s.panelUrlLabel,
-                        hintText: s.panelUrlHint,
-                        prefixIcon: const Icon(Icons.dashboard_rounded),
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(s.panelUrlHelp,
-                      style: text.bodySmall?.copyWith(color: nova.muted)),
-                ],
-              ),
-            ),
-            SwitchListTile(
-              value: widget.settings.panelShortcut,
-              onChanged: uri == null ? null : widget.settings.setPanelShortcut,
-              secondary: Icon(Icons.space_dashboard_rounded, color: nova.cyan),
-              title: Text(s.panelShortcut, style: text.bodyMedium),
-              subtitle: Text(s.panelShortcutSub,
-                  style: text.bodySmall?.copyWith(color: nova.muted)),
-            ),
-            _NavRow(
-              icon: Icons.open_in_new_rounded,
-              color: nova.cyan,
-              title: s.panelOpen,
-              subtitle: uri == null ? s.panelNotSet : s.panelOpenSub,
-              onTap: uri == null ? () {} : () => openPanel(context, uri),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 /// "Check for updates": runs a real check and answers, instead of opening the
 /// releases page and leaving the user to compare version numbers. Shows the
 /// known-update state as a badge, so a user two releases behind sees it here

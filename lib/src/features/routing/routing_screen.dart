@@ -43,7 +43,7 @@ class RoutingScreen extends StatelessWidget {
               constraints:
                   const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
               child: ListView(
-                padding: const EdgeInsets.all(NovaSpace.xl),
+                padding: NovaSpace.page(context),
                 children: <Widget>[
                   Text(s.navRouting,
                       style: Theme.of(context).textTheme.headlineMedium),
@@ -111,12 +111,33 @@ class RoutingScreen extends StatelessWidget {
                   const SizedBox(height: NovaSpace.lg),
                   NovaCard(
                     padding: EdgeInsets.zero,
-                    child: _RuleSwitch(
-                      icon: Icons.speed_rounded,
-                      title: s.routeAutoIsp,
-                      subtitle: s.routeAutoIspSub,
-                      value: settings.autoOptimizeCarrier,
-                      onChanged: settings.setAutoOptimizeCarrier,
+                    child: Column(
+                      children: <Widget>[
+                        _RuleSwitch(
+                          icon: Icons.speed_rounded,
+                          title: s.routeAutoIsp,
+                          subtitle: s.routeAutoIspSub,
+                          value: settings.autoOptimizeCarrier,
+                          onChanged: settings.setAutoOptimizeCarrier,
+                        ),
+                        _RuleSwitch(
+                          icon: Icons.settings_ethernet_rounded,
+                          title: s.routeMobileProxy,
+                          subtitle: s.routeMobileProxySub,
+                          value: settings.mobileProxyMode,
+                          onChanged: settings.setMobileProxyMode,
+                        ),
+                        if (settings.mobileProxyMode)
+                          _ProxyPortRow(settings: settings),
+                        if (Platform.isIOS)
+                          _RuleSwitch(
+                            icon: Icons.autorenew_rounded,
+                            title: s.routeIosAutoReconnect,
+                            subtitle: s.routeIosAutoReconnectSub,
+                            value: settings.iosAutoReconnect,
+                            onChanged: settings.setIosAutoReconnect,
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -133,7 +154,7 @@ class RoutingScreen extends StatelessWidget {
                           value: settings.tunMode,
                           onChanged: settings.setTunMode,
                         ),
-                        if (!settings.tunMode)
+                        if (!settings.tunMode) ...<Widget>[
                           _RuleSwitch(
                             icon: Icons.settings_ethernet_rounded,
                             title: s.routeSysProxy,
@@ -141,14 +162,18 @@ class RoutingScreen extends StatelessWidget {
                             value: settings.autoSystemProxy,
                             onChanged: settings.setAutoSystemProxy,
                           ),
+                          _ProxyPortRow(settings: settings),
+                        ],
                       ],
                     ),
                   ),
                 ],
                 const SizedBox(height: NovaSpace.lg),
                 const _ConnectionTuningCard(),
-                const SizedBox(height: NovaSpace.lg),
-                _UrlTestCard(settings: settings),
+                // The URL test settings used to sit here. They now have their
+                // own Settings > Test options screen: they drive the lightning
+                // test as much as the auto-select group, and burying them under
+                // Routing hid them from the people who look for them.
                 const SizedBox(height: NovaSpace.lg),
                 NovaCard(
                   child: Column(
@@ -584,102 +609,58 @@ class _ConnectionTuningCardState extends State<_ConnectionTuningCard> {
   }
 }
 
-/// Settings > Routing > URL test: what every latency measurement fetches, how
-/// long a node may take before it is "no response", how often the live
-/// auto-select group re-tests, and how much faster a node must be before the
-/// group switches. Shared by the tunnel's urltest group and the lightning
-/// measuring core. Text fields commit on change; bad numbers are ignored.
-class _UrlTestCard extends StatefulWidget {
-  const _UrlTestCard({required this.settings});
+
+/// The local proxy port in proxy mode. 2080 is what every client in this space
+/// defaults to, so anyone already running one of them has it taken; this lets
+/// Nova move instead of forcing a choice between two apps. Takes effect on the
+/// next connect, which the help text says out loud.
+class _ProxyPortRow extends StatefulWidget {
+  const _ProxyPortRow({required this.settings});
   final SettingsController settings;
 
   @override
-  State<_UrlTestCard> createState() => _UrlTestCardState();
+  State<_ProxyPortRow> createState() => _ProxyPortRowState();
 }
 
-class _UrlTestCardState extends State<_UrlTestCard> {
-  late final TextEditingController _url =
-      TextEditingController(text: widget.settings.urlTestUrl);
-  late final TextEditingController _timeout =
-      TextEditingController(text: '${widget.settings.urlTestTimeoutSec}');
-  late final TextEditingController _interval =
-      TextEditingController(text: '${widget.settings.urlTestIntervalSec}');
-  late final TextEditingController _tolerance =
-      TextEditingController(text: '${widget.settings.urlTestToleranceMs}');
+class _ProxyPortRowState extends State<_ProxyPortRow> {
+  late final TextEditingController _port =
+      TextEditingController(text: '${widget.settings.proxyPort}');
 
   @override
   void dispose() {
-    _url.dispose();
-    _timeout.dispose();
-    _interval.dispose();
-    _tolerance.dispose();
+    _port.dispose();
     super.dispose();
-  }
-
-  Widget _num(BuildContext context, TextEditingController c, String label,
-      String unit, String help, void Function(int) onChanged) {
-    final nova = context.nova;
-    return Padding(
-      padding: const EdgeInsets.only(top: NovaSpace.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          TextField(
-            controller: c,
-            keyboardType: TextInputType.number,
-            textDirection: TextDirection.ltr,
-            decoration: InputDecoration(labelText: label, suffixText: unit),
-            onChanged: (String v) {
-              final int? n = int.tryParse(v.trim());
-              if (n != null) onChanged(n);
-            },
-          ),
-          const SizedBox(height: 4),
-          Text(help,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: nova.muted)),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final s = NovaStrings.of(context);
+    final NovaStrings s = NovaStrings.of(context);
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
-    return NovaCard(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          NovaSpace.lg, NovaSpace.sm, NovaSpace.lg, NovaSpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(s.urlTestTitle,
-              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(s.urlTestSub,
-              style: text.bodySmall?.copyWith(color: nova.muted)),
-          const SizedBox(height: NovaSpace.md),
           TextField(
-            controller: _url,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
+            controller: _port,
+            keyboardType: TextInputType.number,
             textDirection: TextDirection.ltr,
             decoration: InputDecoration(
-              labelText: s.urlTestUrl,
-              hintText: kDefaultUrlTestUrl,
+              labelText: s.routeProxyPort,
+              prefixIcon: const Icon(Icons.numbers_rounded),
             ),
-            onChanged: widget.settings.setUrlTestUrl,
+            onChanged: (String v) {
+              final int? n = int.tryParse(v.trim());
+              if (n != null && n > 0 && n < 65536) {
+                widget.settings.setProxyPort(n);
+              }
+            },
           ),
           const SizedBox(height: 4),
-          Text(s.urlTestUrlHelp,
+          Text(s.routeProxyPortHelp,
               style: text.bodySmall?.copyWith(color: nova.muted)),
-          _num(context, _timeout, s.urlTestTimeout, 's', s.urlTestTimeoutHelp,
-              widget.settings.setUrlTestTimeoutSec),
-          _num(context, _interval, s.urlTestInterval, 's',
-              s.urlTestIntervalHelp, widget.settings.setUrlTestIntervalSec),
-          _num(context, _tolerance, s.urlTestTolerance, 'ms',
-              s.urlTestToleranceHelp, widget.settings.setUrlTestToleranceMs),
         ],
       ),
     );

@@ -9,5 +9,8 @@
     <string name="vpn_channel_desc">Shows whether Nova is connected and lets you disconnect.</string>
     <string name="vpn_state_connecting">Connecting…</string>
     <string name="vpn_state_connected">Connected</string>
+    <!-- Proxy mode: no device-wide tunnel, so the notification says where the
+         proxy actually is instead of claiming the phone is connected. -->
+    <string name="vpn_state_proxy">Proxy on 127.0.0.1:%1$d</string>
     <string name="vpn_action_disconnect">Disconnect</string>
 </resources>

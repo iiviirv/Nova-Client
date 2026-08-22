@@ -50,6 +50,19 @@ class NovaSpace {
 
   /// `--maxw: 1140px` — max readable content width on wide windows.
   static const double maxContentWidth = 1140;
+
+  /// Page padding for a scrolling screen, with the bottom grown by whatever the
+  /// system reserves down there.
+  ///
+  /// Android draws edge to edge, so on a phone with the three-button navigation
+  /// bar the last thing in a long list sits UNDER the Back/Home/Recents keys and
+  /// cannot be read (reported against Settings > Routing, whose closing "changes
+  /// apply the next time you connect" note was the casualty). Gesture navigation
+  /// reserves less, a desktop window reserves nothing, and this asks rather than
+  /// guessing.
+  static EdgeInsets page(BuildContext context, {double all = xl}) =>
+      EdgeInsets.fromLTRB(
+          all, all, all, all + MediaQuery.viewPaddingOf(context).bottom);
 }
 
 /// Elevation tokens.

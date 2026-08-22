@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/proxy/proxy_controller.dart';
 import '../../core/proxy/singbox/singbox_config.dart';
 
 /// A named DNS resolver choice, mirroring the native Android DNS picker.
@@ -66,6 +67,9 @@ class SettingsController extends ChangeNotifier {
   static const String _kVerboseLog = 'nova.log.verboseCore';
   static const String _kPanelUrl = 'nova.panel.url';
   static const String _kPanelShortcut = 'nova.panel.shortcut';
+  static const String _kProxyPort = 'nova.proxy.port';
+  static const String _kMobileProxyMode = 'nova.proxy.mobileMode';
+  static const String _kIosAutoReconnect = 'nova.ios.autoReconnect';
 
   SharedPreferences? _prefs;
 
@@ -153,6 +157,31 @@ class SettingsController extends ChangeNotifier {
   bool _panelShortcut = false;
   bool get panelShortcut => _panelShortcut;
 
+  /// The local SOCKS/HTTP port proxy mode listens on. Movable because 2080 is
+  /// the default every client in this space uses, so anyone already running one
+  /// of those has the port taken.
+  int _proxyPort = kDefaultLocalProxyPort;
+  int get proxyPort => _proxyPort;
+
+  /// Android and iOS: run as a local SOCKS5/HTTP proxy instead of a full-device
+  /// tunnel. The phone's own traffic is untouched and only an app pointed at
+  /// [proxyPort] goes through Nova, which is also the only way to have Nova and
+  /// another VPN up at the same time. Off by default: a VPN that only some apps
+  /// use is the exception, not the expectation.
+  bool _mobileProxyMode = false;
+  bool get mobileProxyMode => _mobileProxyMode;
+
+  /// iOS only: let the system bring the tunnel back by itself (an on-demand
+  /// rule), so a Network Extension that iOS kills under memory pressure does not
+  /// leave the user quietly offline.
+  ///
+  /// Off by default, because the same rule is what stops the VPN switch in the
+  /// iPhone's own Settings from working: turning Nova off there brought it
+  /// straight back, and turning on a different VPN fought with it. The OS
+  /// switch has to win unless the user has explicitly asked otherwise.
+  bool _iosAutoReconnect = false;
+  bool get iosAutoReconnect => _iosAutoReconnect;
+
   /// A usable https/http origin+path from [panelUrl], or null if it is empty
   /// or not a URL we can open.
   Uri? get panelUri {
@@ -202,6 +231,9 @@ class SettingsController extends ChangeNotifier {
     _tunMode = p.getBool(_kTunMode) ??
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
     _autoSystemProxy = p.getBool(_kAutoSysProxy) ?? true;
+    _proxyPort = p.getInt(_kProxyPort) ?? kDefaultLocalProxyPort;
+    _mobileProxyMode = p.getBool(_kMobileProxyMode) ?? false;
+    _iosAutoReconnect = p.getBool(_kIosAutoReconnect) ?? false;
     _urlTestUrl = p.getString(_kUrlTestUrl) ?? kDefaultUrlTestUrl;
     _urlTestTimeoutSec = p.getInt(_kUrlTestTimeout) ?? kDefaultUrlTestTimeoutSec;
     _urlTestIntervalSec = p.getInt(_kUrlTestInterval) ?? kDefaultUrlTestIntervalSec;
@@ -266,6 +298,28 @@ class SettingsController extends ChangeNotifier {
     _panelUrl = t;
     notifyListeners();
     await _prefs?.setString(_kPanelUrl, t);
+  }
+
+  Future<void> setProxyPort(int v) async {
+    final int c = v.clamp(1, 65535);
+    if (c == _proxyPort) return;
+    _proxyPort = c;
+    notifyListeners();
+    await _prefs?.setInt(_kProxyPort, c);
+  }
+
+  Future<void> setMobileProxyMode(bool v) async {
+    if (v == _mobileProxyMode) return;
+    _mobileProxyMode = v;
+    notifyListeners();
+    await _prefs?.setBool(_kMobileProxyMode, v);
+  }
+
+  Future<void> setIosAutoReconnect(bool v) async {
+    if (v == _iosAutoReconnect) return;
+    _iosAutoReconnect = v;
+    notifyListeners();
+    await _prefs?.setBool(_kIosAutoReconnect, v);
   }
 
   Future<void> setPanelShortcut(bool v) async {

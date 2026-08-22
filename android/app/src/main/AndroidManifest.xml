@@ -10,6 +10,11 @@
     <!-- targetSdk 35: the VpnService runs as a "systemExempted" foreground
          service, which Android 14+ gates behind this permission. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED"/>
+    <!-- Proxy mode runs the same core with no VPN interface, so the
+         systemExempted type above is refused: Android grants that one off the
+         `activate_vpn` app op, which only exists once a VPN is actually
+         established. A local proxy is a specialUse service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
@@ -52,10 +57,15 @@
             android:name=".NovaVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
-            android:foregroundServiceType="systemExempted">
+            android:foregroundServiceType="systemExempted|specialUse">
             <intent-filter>
                 <action android:name="android.net.VpnService"/>
             </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the local SOCKS5/HTTP proxy in proxy mode,
+                    where the user has chosen not to tunnel the whole device and
+                    only the apps they point at the port go through Nova."/>
         </service>
 
         <!-- Home-screen status widget. Reflects the tunnel state and opens the

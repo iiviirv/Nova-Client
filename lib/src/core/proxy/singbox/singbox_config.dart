@@ -40,7 +40,18 @@ class SingboxRouteOptions {
     this.bypassCipherSuites,
     this.bypassFragmentMask,
     this.tunInterfaceName,
+    this.mixedInboundPort,
   });
+
+  /// Proxy mode: listen on this loopback port with a `mixed` (SOCKS5 + HTTP)
+  /// inbound and build NO TUN, so the device's traffic is untouched and only an
+  /// app pointed at the port goes through Nova.
+  ///
+  /// On a phone there is no system-proxy setting to flip, so this is for the
+  /// apps that have their own proxy field (a browser, a messenger, a dev tool).
+  /// It also means no VPN slot is taken: another VPN can be running at the same
+  /// time, which a full-device tunnel makes impossible.
+  final int? mixedInboundPort;
 
   /// The name to give the TUN interface, or null to let the core choose.
   ///
@@ -194,6 +205,7 @@ class SingboxRouteOptions {
     List<String>? bypassCipherSuites,
     String? bypassFragmentMask,
     String? tunInterfaceName,
+    int? mixedInboundPort,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -221,6 +233,7 @@ class SingboxRouteOptions {
         bypassCipherSuites: bypassCipherSuites ?? this.bypassCipherSuites,
         bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
         tunInterfaceName: tunInterfaceName ?? this.tunInterfaceName,
+        mixedInboundPort: mixedInboundPort ?? this.mixedInboundPort,
       );
 }
 
@@ -285,7 +298,7 @@ class SingboxConfig {
         ..._ruleSetHosts,
         ..._directHosts,
       }),
-      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
+      'inbounds': <Map<String, dynamic>>[_inbound(options)],
       'outbounds': <Map<String, dynamic>>[
         // The Xray core's local SOCKS inbound. Tagged `proxy` so the shared route
         // targets it exactly like any real exit.
@@ -374,7 +387,7 @@ class SingboxConfig {
             ..._ruleSetHosts,
             ..._directHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
+      'inbounds': <Map<String, dynamic>>[_inbound(options)],
       'outbounds': <Map<String, dynamic>>[
         // AmneziaWG is an endpoint (below), so the proxy slot is only filled by a
         // real outbound protocol; awg keeps just direct/block here.
@@ -520,17 +533,34 @@ class SingboxConfig {
   /// thousands of idle outbounds.
   static const int kMeasurePoolCap = 200;
 
-  /// A config for the MEASURING core: no TUN, no system proxy, just every
-  /// usable node as an outbound behind the `proxy` urltest group, a local
-  /// `mixed` inbound (so the core has an inbound at all) and, when [clashPort]
-  /// is given, the Clash API the desktop controller triggers the test through.
+  /// A config for the MEASURING core: no TUN, no system proxy, no routing and
+  /// no DNS module, just every usable node as a plain outbound, a local `mixed`
+  /// inbound (so the core has an inbound at all) and the Clash API on
+  /// [clashPort], which is how [MeasureRunner] tests one node at a time.
   ///
   /// This is what turns "not testable" into a number for nodes the outside
   /// probe cannot judge (Reality, obfuscated Hysteria2, SS2022, xhttp-less
   /// VLESS on a clean IP): the core dials each one exactly as a tunnel would
-  /// and reports the round-trip, no tunnel required. Same idea as Karing's
-  /// "test all through the core", and the same builder as the auto-select
-  /// config so a node measures exactly as it would run.
+  /// and reports the round-trip, no tunnel required. Same builder as the
+  /// auto-select config, so a node measures exactly as it would run.
+  ///
+  /// Three things are deliberately stripped from the tunnel's config, because
+  /// a measuring core has no traffic to route and every one of them costs
+  /// startup time the user waits through before the first number appears:
+  ///
+  ///  * the `urltest` group. sing-box sweeps the whole pool concurrently the
+  ///    moment such a group starts, and that cold sweep is exactly the number
+  ///    that made mieru and NaiveProxy read 400-800ms: both pay a full session
+  ///    or TLS+HTTP/2 setup on their first dial, under contention with every
+  ///    other node's first dial. [MeasureRunner] warms each node and reports
+  ///    the second, honest figure instead.
+  ///  * the DNS module. Its remote resolver is reached *through* the proxy and
+  ///    its local one is DoH; neither is needed to dial a node, and both add a
+  ///    round trip. Without a `dns` block sing-box uses the system resolver,
+  ///    which is what a dial wants anyway.
+  ///  * the rule-sets (geosite-ir, geosite-ads). Megabytes to load and, on
+  ///    iOS, megabytes to carry over the method channel, to route traffic this
+  ///    core will never carry.
   ///
   /// Returns the config and the `node-i` tag -> stable node key map the
   /// controller needs to land results on the right rows. Throws
@@ -540,7 +570,7 @@ class SingboxConfig {
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     required int mixedPort,
-    int? clashPort,
+    required int clashPort,
     // With [includeXhttp] the xhttp nodes sit in the pool as local socks
     // outbounds to an Xray instance the host runs alongside (one inbound per
     // node from [xhttpBasePort] up, see XrayConfig.buildMulti), so they get
@@ -554,9 +584,6 @@ class SingboxConfig {
       throw const FormatException(
           'None of these servers use a transport Nova can measure.');
     }
-    // Always a urltest group, even for one node: both hosts read the results
-    // off the group (desktop from its history via the Clash API, Android from
-    // the command client's group stream).
     final Map<String, dynamic> cfg = buildMultiMap(picked,
         options: options,
         poolCap: kMeasurePoolCap,
@@ -579,15 +606,24 @@ class SingboxConfig {
         'listen_port': mixedPort,
       },
     ];
-    if (clashPort != null) {
-      final Map<String, dynamic> experimental =
-          (cfg['experimental'] as Map?)?.cast<String, dynamic>() ??
-              <String, dynamic>{};
-      experimental['clash_api'] = <String, dynamic>{
-        'external_controller': '127.0.0.1:$clashPort',
-      };
-      cfg['experimental'] = experimental;
-    }
+    // Drop the auto-select group: see the note above. The node outbounds keep
+    // their `node-i` tags, which is all the Clash API needs to test one.
+    final List<Map<String, dynamic>> outs =
+        (cfg['outbounds'] as List).cast<Map<String, dynamic>>();
+    outs.removeWhere((Map<String, dynamic> o) => o['tag'] == 'proxy');
+    cfg.remove('dns');
+    cfg['route'] = <String, dynamic>{
+      'rules': <Map<String, dynamic>>[],
+      'final': 'direct',
+      'auto_detect_interface': true,
+    };
+    final Map<String, dynamic> experimental =
+        (cfg['experimental'] as Map?)?.cast<String, dynamic>() ??
+            <String, dynamic>{};
+    experimental['clash_api'] = <String, dynamic>{
+      'external_controller': '127.0.0.1:$clashPort',
+    };
+    cfg['experimental'] = experimental;
     return (config: cfg, tagKeys: tagKeys);
   }
 
@@ -674,7 +710,7 @@ class SingboxConfig {
             ..._ruleSetHosts,
             ..._directHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_tunInbound(options)],
+      'inbounds': <Map<String, dynamic>>[_inbound(options)],
       'outbounds': <Map<String, dynamic>>[
         // Auto-pick the fastest node and keep tracking it. Every node exits the
         // same Cloudflare worker, so their measured latencies all sit within a
@@ -733,6 +769,22 @@ class SingboxConfig {
     }
     return out;
   }
+
+  /// The one inbound the core listens on: a TUN that takes the whole device,
+  /// or, in proxy mode, a loopback SOCKS5 + HTTP port that takes only what is
+  /// pointed at it.
+  static Map<String, dynamic> _inbound(SingboxRouteOptions o) =>
+      o.mixedInboundPort != null ? _mixedInbound(o) : _tunInbound(o);
+
+  static Map<String, dynamic> _mixedInbound(SingboxRouteOptions o) =>
+      <String, dynamic>{
+        'type': 'mixed',
+        'tag': 'proxy-in',
+        // Loopback only. A phone on a shared network must not become an open
+        // relay for everyone else on that network.
+        'listen': '127.0.0.1',
+        'listen_port': o.mixedInboundPort,
+      };
 
   static Map<String, dynamic> _tunInbound(SingboxRouteOptions o) =>
       <String, dynamic>{

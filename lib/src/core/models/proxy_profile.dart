@@ -58,6 +58,7 @@ class ProxyProfile {
     this.pinnedName,
     this.fastNodes = const <String>[],
     this.hardenTls = false,
+    this.encryptedOnly = false,
     this.bypassFingerprint,
     this.bypassCipherSuites,
     this.bypassFragmentMask,
@@ -91,6 +92,18 @@ class ProxyProfile {
   /// Matching on this stable name as a fallback keeps the chosen server pinned
   /// across those rotations.
   final String? pinnedName;
+
+  /// Nova's own free list, which the user did not add and cannot remove. It is
+  /// the fallback that makes "install it and press Connect" true, including for
+  /// someone who has just deleted everything else.
+  bool get isBuiltIn => id == kFreeProfileId;
+
+  /// Drop any server from this subscription whose traffic is not encrypted (see
+  /// [ProxyNode.isEncrypted]). Set on the free list Nova ships, where the whole
+  /// promise is that someone can install the app, press Connect and be safe
+  /// without reading a single config. A subscription the user added themselves
+  /// is left exactly as their provider sent it.
+  final bool encryptedOnly;
 
   /// `server:port` keys of the fastest measured nodes (from the node picker's
   /// latency test), best first. Auto-select builds its urltest pool from these
@@ -126,6 +139,7 @@ class ProxyProfile {
     Object? pinnedName = _unset,
     List<String>? fastNodes,
     bool? hardenTls,
+    bool? encryptedOnly,
     Object? bypassFingerprint = _unset,
     Object? bypassCipherSuites = _unset,
     Object? bypassFragmentMask = _unset,
@@ -146,6 +160,7 @@ class ProxyProfile {
           pinnedName == _unset ? this.pinnedName : pinnedName as String?,
       fastNodes: fastNodes ?? this.fastNodes,
       hardenTls: hardenTls ?? this.hardenTls,
+      encryptedOnly: encryptedOnly ?? this.encryptedOnly,
       bypassFingerprint: bypassFingerprint == _unset
           ? this.bypassFingerprint
           : bypassFingerprint as String?,
@@ -171,6 +186,7 @@ class ProxyProfile {
         'pinnedName': pinnedName,
         'fastNodes': fastNodes,
         'hardenTls': hardenTls,
+        'encryptedOnly': encryptedOnly,
         'bypassFingerprint': bypassFingerprint,
         'bypassCipherSuites': bypassCipherSuites,
         'bypassFragmentMask': bypassFragmentMask,
@@ -197,6 +213,7 @@ class ProxyProfile {
                 .toList() ??
             const <String>[],
         hardenTls: json['hardenTls'] as bool? ?? false,
+        encryptedOnly: json['encryptedOnly'] as bool? ?? false,
         bypassFingerprint: json['bypassFingerprint'] as String?,
         bypassCipherSuites: (json['bypassCipherSuites'] as List<dynamic>?)
             ?.map((e) => e as String)
@@ -214,3 +231,29 @@ class ProxyProfile {
         .toList();
   }
 }
+
+/// The list of free servers Nova ships, so someone can install the app, press
+/// Connect and be online without owning a subscription or pasting a link.
+///
+/// It is an ordinary subscription profile with two things set for it:
+/// [ProxyProfile.encryptedOnly], so a plaintext entry that finds its way into
+/// the upstream list is never offered; and [ProxyProfile.hardenTls], the
+/// SNI-block bypass, because the people who most need a free list are on the
+/// networks that block the ordinary handshake.
+const String kFreeSubUrl =
+    'https://raw.githubusercontent.com/IRNova/Tools/refs/heads/main/sub.txt';
+
+/// Fixed id, so the free list is recognisable across launches: it is only ever
+/// seeded once, and removing it is a decision the user gets to keep.
+const String kFreeProfileId = 'nova-free';
+
+ProxyProfile buildFreeProfile({String name = 'Nova free servers'}) => ProxyProfile(
+      id: kFreeProfileId,
+      name: name,
+      kind: ProxyKind.subscription,
+      uri: kFreeSubUrl,
+      subscriptionUrl: kFreeSubUrl,
+      nodeCount: 0,
+      hardenTls: true,
+      encryptedOnly: true,
+    );

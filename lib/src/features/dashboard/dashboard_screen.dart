@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,8 +24,10 @@ import '../../widgets/nova_segmented_tabs.dart';
 import '../cloudflare/cloudflare_controller.dart';
 import '../cloudflare/cloudflare_screen.dart';
 import '../cloudflare/deploy_screen.dart';
+import '../profiles/profiles_controller.dart';
 import '../radar/radar_screen.dart';
 import '../panel/open_panel.dart';
+import '../servers/node_list_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
 
@@ -122,7 +125,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     NovaSegment(
                       label: s.t('home.configs'),
                       icon: Icons.grid_view_rounded,
-                      badge: scope.profiles.profiles.length,
+                      // The servers inside the selected subscription, which is
+                      // what the tab now shows. It used to count profiles,
+                      // which is what the Servers tab at the bottom is for.
+                      badge: (scope.profiles.active?.isSubscription ?? false)
+                          ? scope.profiles.active!.nodeCount
+                          : scope.profiles.profiles.length,
                     ),
                     if (panel != null)
                       NovaSegment(
@@ -138,13 +146,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const _CloudflareLine(),
               const SizedBox(height: NovaSpace.sm),
             ],
-            if (_tab == 0)
-              const _SummaryView()
-            else
-              const ServersBody(compact: true),
+            if (_tab == 0) const _SummaryView() else const _ConfigsView(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The Configs segment: the servers inside the subscription that is currently
+/// selected, with Auto at the top and every server under it to pin by hand.
+///
+/// It used to show the same profile list as the Servers tab at the bottom, so
+/// the two were near-duplicates and neither got you to a server in one step.
+/// Choosing WHICH subscription is a rare decision and stays in Servers;
+/// choosing which server inside it is the frequent one and belongs here.
+class _ConfigsView extends StatelessWidget {
+  const _ConfigsView();
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final ProfilesController profiles = NovaScope.of(context).profiles;
+    return ListenableBuilder(
+      listenable: profiles,
+      builder: (BuildContext context, _) {
+        final ProxyProfile? active = profiles.active;
+        // Nothing chosen yet: the profile list is the only useful thing to
+        // show, and it carries the "add a subscription" affordances.
+        if (active == null) return const ServersBody(compact: true);
+        if (!active.isSubscription) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text(s.configsSingleNode,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: context.nova.muted)),
+            ),
+          );
+        }
+        return NodeListScreen(
+          // Rebuild from scratch when the active subscription changes, so the
+          // list is never the previous subscription's servers.
+          key: ValueKey<String>(active.id),
+          profileId: active.id,
+          embedded: true,
+        );
+      },
     );
   }
 }
@@ -317,8 +368,9 @@ class _SummaryView extends StatelessWidget {
       children: <Widget>[
         const _ProfileSync(),
         const SizedBox(height: NovaSpace.sm),
+        // The gap under the hero belongs to the hero: it closes up along with
+        // everything else when the hero folds into its connected shape.
         const _ConnectHero(),
-        const SizedBox(height: NovaSpace.xl),
         const _ConnectionPanel(),
         const _ProxyModeCard(),
         const _ConfigCard(),
@@ -331,12 +383,16 @@ class _SummaryView extends StatelessWidget {
   }
 }
 
-/// Desktop, proxy mode (full-device tunnel off): where the proxy is. Field
+/// Proxy mode (full-device tunnel off): where the proxy actually is. Field
 /// report from Windows and Mac: with the tunnel off it was not clear how apps
-/// reach the proxy at all. This says it plainly: the local SOCKS5/HTTP address
-/// (with copy), whether the OS system proxy currently points at it, and a
-/// button to set or clear that (macOS asks for admin approval). Hidden on
-/// mobile and in TUN mode, where there is nothing to point at.
+/// reach the proxy at all. This says it plainly: the local SOCKS5/HTTP address,
+/// with copy.
+///
+/// On desktop it also shows whether the OS system proxy points at it and offers
+/// to set or clear that (macOS asks for admin approval). A phone has no such
+/// setting, so there the card stops at the address, which is what you paste
+/// into the one app you want to send through Nova. Hidden in TUN mode, where
+/// there is nothing to point at.
 class _ProxyModeCard extends StatelessWidget {
   const _ProxyModeCard();
 
@@ -354,6 +410,9 @@ class _ProxyModeCard extends StatelessWidget {
         final TextTheme text = Theme.of(context).textTheme;
         final String addr = '127.0.0.1:$port';
         final bool sys = proxy.systemProxyOn;
+        // A phone has no system-proxy setting to point at this, so the button
+        // and its status line are desktop only.
+        final bool hasSystemProxy = !Platform.isAndroid && !Platform.isIOS;
         return Padding(
           padding: const EdgeInsets.only(bottom: NovaSpace.md),
           child: NovaCard(
@@ -418,6 +477,7 @@ class _ProxyModeCard extends StatelessWidget {
                 const SizedBox(height: NovaSpace.sm),
                 Text(s.proxyModeHint,
                     style: text.bodySmall?.copyWith(color: nova.muted)),
+                if (hasSystemProxy) ...<Widget>[
                 const SizedBox(height: NovaSpace.sm),
                 Row(
                   children: <Widget>[
@@ -449,6 +509,7 @@ class _ProxyModeCard extends StatelessWidget {
                     },
                   ),
                 ),
+                ],
               ],
             ),
           ),
@@ -482,6 +543,11 @@ class _ProfileSync extends StatelessWidget {
     );
   }
 }
+
+/// How long the hero takes to fold into (or out of) its connected shape. The
+/// orb runs its own half of the move on the same clock, so the ring, the mark
+/// and the text under it settle together.
+const Duration _kFold = Duration(milliseconds: 240);
 
 /// The centered connect hero: a single status pill, the orb, and a state
 /// headline + subtitle. The connect action is the one thing this screen is
@@ -542,13 +608,14 @@ class _ConnectHeroBody extends StatelessWidget {
     };
 
     // Headline + subtitle. Each state gets one line of explanation under the
-    // headline; the same words never appear twice on the hero.
-    Widget headline;
+    // headline; the same words never appear twice on the hero. Connected is the
+    // exception: its clock and verdict move inside the ring (see below), so
+    // nothing is left to print under the orb.
+    Widget? headline;
     String? subtitle;
     Color subtitleColor = nova.muted;
     switch (state) {
       case ProxyConnectionState.connected:
-        headline = _UptimeText(since: proxy.connectedSince);
         // Three honest levels: probe got through (Secure), still checking
         // (Verifying), or the controller gave up after its probes and one
         // rebuild (No traffic). The last one must not read as "in progress".
@@ -574,33 +641,80 @@ class _ConnectHeroBody extends StatelessWidget {
         subtitle = s.dashNotProtectedBody;
     }
 
+    // A live connection is when this screen gets busy: the connection panel and
+    // the subscription card arrive under the hero and the three of them have to
+    // share one phone screen. So the hero folds. The clock and the verdict move
+    // inside the ring, the mark shrinks to seat them, and the orb itself pulls
+    // in, which is what buys the cards their room without a scroll.
+    final Widget? readout = connected
+        ? _OrbReadout(
+            since: proxy.connectedSince,
+            verdict: subtitle,
+            verdictColor: subtitleColor,
+          )
+        : null;
+
+    // A dial with a clock in its face must not quietly shrink its own numbers:
+    // when the user has asked for larger text the ring grows with it (capped)
+    // rather than scaling the readout back down to fit. On a short screen the
+    // dial is the first thing to give room back, so the cards under it still
+    // clear the fold on a small phone.
+    final double textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+    // Reduced motion keeps the fade (it explains the state) and drops the
+    // movement, so the layout arrives already folded.
+    final Duration fold =
+        MediaQuery.disableAnimationsOf(context) ? Duration.zero : _kFold;
+    final double connectedSize =
+        MediaQuery.sizeOf(context).height < 700 ? 132 : 152;
+    final double orbSize = connected
+        ? connectedSize * textScale.clamp(1.0, 1.4).toDouble()
+        : 172;
+
     return Column(
       children: <Widget>[
         NovaStatusBadge(label: badge.$2, color: badge.$1),
-        const SizedBox(height: NovaSpace.xl),
+        AnimatedContainer(
+          duration: fold,
+          curve: Curves.easeOutCubic,
+          height: connected ? NovaSpace.md : NovaSpace.xl,
+        ),
         NovaConnectOrb(
           state: state,
-          size: 172,
+          size: orbSize,
           statusText: badge.$2,
+          inlineDetail: readout,
           onTap: hasProfile || connected ? proxy.toggle : null,
         ),
-        const SizedBox(height: NovaSpace.xl),
-        headline,
-        if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
-          const SizedBox(height: NovaSpace.sm),
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: NovaSpace.xl),
-            child: Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: text.bodySmall?.copyWith(
-                color: subtitleColor,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
+        // The block under the orb collapses rather than vanishing, so the fold
+        // reads as the headline moving into the ring, not a cut.
+        AnimatedSize(
+          duration: fold,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: headline == null
+              ? const SizedBox(width: double.infinity)
+              : Column(
+                  children: <Widget>[
+                    const SizedBox(height: NovaSpace.xl),
+                    headline,
+                    if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: NovaSpace.sm),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: NovaSpace.xl),
+                        child: Text(
+                          subtitle,
+                          textAlign: TextAlign.center,
+                          style: text.bodySmall?.copyWith(
+                            color: subtitleColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        ),
         // When the tunnel is up but no traffic is getting through the exit, the
         // usual setup is being blocked. Offer the setup finder right here, this
         // is where users hit the wall.
@@ -608,6 +722,13 @@ class _ConnectHeroBody extends StatelessWidget {
           const SizedBox(height: NovaSpace.lg),
           const _FindSetupPrompt(),
         ],
+        // Breathing room down to whatever the summary stacks under the hero,
+        // on the same clock as the fold so it never steps out of time.
+        AnimatedContainer(
+          duration: fold,
+          curve: Curves.easeOutCubic,
+          height: connected ? NovaSpace.lg : NovaSpace.xl,
+        ),
       ],
     );
   }
@@ -630,11 +751,55 @@ class _Headline extends StatelessWidget {
   }
 }
 
-/// The big uptime clock. Owns its one-second ticker so the tick rebuilds this
-/// one Text and nothing around it.
-class _UptimeText extends StatefulWidget {
-  const _UptimeText({required this.since});
+/// What the ring carries once the connection is up: the clock, and under it the
+/// one word for whether traffic is really getting through. Deliberately quiet
+/// numbers, the ring around them is the loud part.
+class _OrbReadout extends StatelessWidget {
+  const _OrbReadout({
+    required this.since,
+    required this.verdict,
+    required this.verdictColor,
+  });
+
   final DateTime? since;
+  final String? verdict;
+  final Color verdictColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _UptimeText(since: since, fontSize: 24, color: kNovaOrbInk),
+        if (verdict != null && verdict!.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 2),
+          Text(
+            verdict!,
+            maxLines: 1,
+            style: text.labelSmall?.copyWith(
+              color: verdictColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The uptime clock. Owns its one-second ticker so the tick rebuilds this one
+/// Text and nothing around it.
+class _UptimeText extends StatefulWidget {
+  const _UptimeText({required this.since, this.fontSize = 44, this.color});
+  final DateTime? since;
+
+  /// Set small when the clock sits inside the ring rather than under it.
+  final double fontSize;
+
+  /// Left null to take the theme's foreground; set when the clock is printed on
+  /// the orb's disc, which is dark in both themes.
+  final Color? color;
 
   @override
   State<_UptimeText> createState() => _UptimeTextState();
@@ -686,8 +851,9 @@ class _UptimeTextState extends State<_UptimeText> with WidgetsBindingObserver {
       Fmt.uptime(widget.since),
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.displaySmall?.copyWith(
+        color: widget.color,
         fontWeight: FontWeight.w800,
-        fontSize: 44,
+        fontSize: widget.fontSize,
         height: 1.0,
         letterSpacing: -1,
         fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
@@ -810,8 +976,11 @@ class _ConnectionPanelBody extends StatelessWidget {
       child: Column(
         children: <Widget>[
           Padding(
+            // The two halves of the panel carry the same vertical rhythm; the
+            // stat row used to sit in noticeably more air than the throughput
+            // row under it.
             padding: const EdgeInsets.symmetric(
-                vertical: NovaSpace.lg, horizontal: NovaSpace.sm),
+                vertical: NovaSpace.md, horizontal: NovaSpace.sm),
             child: IntrinsicHeight(
               child: Row(
                 children: <Widget>[
@@ -1108,7 +1277,7 @@ class _ConfigCardBody extends StatelessWidget {
           // traffic right now, kept accurate through every auto or manual switch.
           _ActiveExitLine(active: active),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: NovaSpace.md),
+            padding: const EdgeInsets.symmetric(vertical: NovaSpace.sm),
             child: Divider(height: 1, color: nova.border),
           ),
           // Uptime is intentionally omitted here: the hero already shows it

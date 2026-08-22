@@ -52,7 +52,11 @@ Future<ProfilesController> _pumpServers(
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  SharedPreferences.setMockInitialValues(<String, Object>{});
+  // Not a fresh install: these are about a list the user already has, so the
+  // free-servers seed must not add a fourth profile underneath them.
+  SharedPreferences.setMockInitialValues(<String, Object>{
+    ProfilesController.kFreeSeededKey: true,
+  });
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final ThemeController theme = ThemeController()..attachPrefs(prefs);
   final ProfilesController profileCtl = ProfilesController()
@@ -220,6 +224,9 @@ void main() {
         'nova.profiles': ProxyProfile.encodeList(<ProxyProfile>[
           _sub('s1', 'Persisted sub'),
         ]),
+        // These are about the deep-link race, not about the built-in free list
+        // appearing alongside it.
+        ProfilesController.kFreeSeededKey: true,
       });
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final ProfilesController c = ProfilesController();
@@ -245,6 +252,7 @@ void main() {
           _sub('s1', 'Keep'),
           _awg('w1', 'Gone'),
         ]),
+        ProfilesController.kFreeSeededKey: true,
       });
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final ProfilesController c = ProfilesController();

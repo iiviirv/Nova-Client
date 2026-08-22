@@ -1,7 +1,34 @@
 # iOS: migrating the Apple membership to the organization (and shipping through it)
 
-**Case:** Apple Developer Support 20000140213225, advisor Anthony
+**Case:** Apple Developer Support 20000140213225, advisor Shabir
 (devprograms@apple.com). Reply sent 2026-08-19 asking them to start.
+
+**State as of 2026-08-21: Apple has started it, and the ball is with us.**
+
+Two mails arrived that afternoon.
+
+Shabir, Developer Support, 13:20:
+
+> I understand that you would like to start the migration process and I am more
+> than happy to initiate your request. You should have received a
+> system-generated email with a link to enroll your company in our program. Keep
+> in mind that **you won't have access to the Certificates, Identifiers &
+> Profiles portal until the migration is complete.** After you submit your
+> company enrollment information, we'll contact you with the next steps.
+
+The system mail, 13:15:
+
+> We received your request to assign your Program License Agreement to an
+> organization. To continue, update your enrollment with your organization
+> information. Please note that **your membership benefits will be temporarily
+> disabled until the assignment process is complete.**
+
+So the remaining step is ours: follow the enrollment link and submit Innovate
+Northtech Inc. (D-U-N-S 245850078). Shabir asked us to reply on the case to
+cancel, or if the enrollment throws an alert.
+
+**Do the iOS testing BEFORE submitting that form.** Submitting is what starts
+the blackout below, and automatic signing needs the portal that goes away.
 
 **What is migrating:** the individual membership, Team ID `A53J987N2C`
 ("VAHID HASHEMI"), to an organization membership for **Innovate Northtech Inc.**

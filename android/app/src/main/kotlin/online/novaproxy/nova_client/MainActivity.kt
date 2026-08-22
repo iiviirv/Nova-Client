@@ -52,6 +52,18 @@ class MainActivity : FlutterActivity() {
                     val xrayConfig = call.argument<String>("xrayConfigJson")
                     // Cosmetic profile name for the ongoing notification.
                     val label = call.argument<String>("label")
+                    // Proxy mode: the config has a loopback `mixed` inbound and
+                    // no `tun`, so the core never opens a VPN interface. That
+                    // means no VPN consent to ask for, and no VPN slot taken, so
+                    // another VPN can be up at the same time. The same service
+                    // hosts it (it owns the core's lifetime and the ongoing
+                    // notification); openTun is simply never called.
+                    val proxyPort = call.argument<Int>("proxyPort")
+                    if (proxyPort != null) {
+                        startVpn(config, xrayConfig, label, proxyPort)
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
                     val consent = VpnService.prepare(this)
                     if (consent != null) {
                         pendingResult = result
@@ -70,15 +82,14 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
 
-                // "Test all servers through the core": run the measuring core
-                // (no TUN) over the given config and answer with tag -> delay ms
-                // for every node that responded. Live updates also stream out
-                // as `groups` events while it runs. Refused while the tunnel is
-                // up: libbox allows one command server per process, and every
-                // dial would go through the tunnel anyway.
+                // "Test all servers through the core": start the measuring
+                // core (no TUN) over the given config and answer once it is up.
+                // Dart then drives the run over the core's Clash API and calls
+                // measureCancel to stop it. Refused while the tunnel is up:
+                // libbox allows one command server per process, and every dial
+                // would go through the tunnel anyway.
                 "measure" -> {
                     val config = call.argument<String>("configJson")
-                    val tags = call.argument<List<String>>("tags") ?: emptyList()
                     if (config.isNullOrEmpty()) {
                         result.error("no_config", "configJson missing", null)
                         return@setMethodCallHandler
@@ -90,11 +101,9 @@ class MainActivity : FlutterActivity() {
                     NovaMeasure.start(
                         this,
                         config,
-                        tags,
-                        done = { delays -> result.success(delays) },
+                        ready = { result.success(null) },
                         fail = { why -> result.error("measure_failed", why, null) },
                         xrayConfig = call.argument<String>("xrayConfigJson"),
-                        timeoutSec = call.argument<Int>("timeoutSec") ?: 5,
                     )
                 }
 
@@ -180,7 +189,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVpn(config: String, xrayConfig: String? = null, label: String? = null) {
+    private fun startVpn(
+        config: String,
+        xrayConfig: String? = null,
+        label: String? = null,
+        proxyPort: Int? = null,
+    ) {
         // A measuring core still running would fight the tunnel for the one
         // command server; stop it first (its Dart caller gets what it had).
         NovaMeasure.cancel()
@@ -192,6 +206,9 @@ class MainActivity : FlutterActivity() {
         }
         if (!label.isNullOrEmpty()) {
             intent.putExtra(NovaVpnService.EXTRA_LABEL, label)
+        }
+        if (proxyPort != null) {
+            intent.putExtra(NovaVpnService.EXTRA_PROXY_PORT, proxyPort)
         }
         startService(intent)
     }

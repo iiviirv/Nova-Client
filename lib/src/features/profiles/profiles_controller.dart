@@ -77,6 +77,7 @@ class ProfilesController extends ChangeNotifier {
       } catch (_) {}
     }
     _pruneBrokenDemos();
+    _seedFreeProfile();
     final String? savedActive = prefs.getString(_kActiveKey);
     _activeId =
         (savedActive != null && _profiles.any((p) => p.id == savedActive))
@@ -102,6 +103,45 @@ class ProfilesController extends ChangeNotifier {
     }
   }
 
+  /// Nova's own free servers are always in the list: a fresh install opens on a
+  /// Connect button that works, and nobody can end up with nothing.
+  ///
+  /// Added once per install, to upgrades as well as new installs, since it is a
+  /// built-in and not something the user added. What it does NOT do is take
+  /// over: an existing user keeps whichever profile they had selected, and the
+  /// free list simply appears at the top of theirs.
+  @visibleForTesting
+  static const String kFreeSeededKey = 'nova.profiles.freeSeeded';
+
+  void _seedFreeProfile() {
+    final SharedPreferences? prefs = _prefs;
+    if (prefs == null) return;
+    if (_profiles.any((ProxyProfile p) => p.id == kFreeProfileId)) return;
+    if (prefs.getBool(kFreeSeededKey) ?? false) return;
+    prefs.setBool(kFreeSeededKey, true);
+    _profiles.insert(0, buildFreeProfile());
+    prefs.setString(_kProfilesKey, ProxyProfile.encodeList(_profiles));
+  }
+
+  /// Selects Nova's free servers, adding them first in the one case where they
+  /// are somehow missing (a first launch where preferences were not readable
+  /// when the list loaded). Returns the profile either way.
+  ProxyProfile addFreeProfile() {
+    for (final ProxyProfile p in _profiles) {
+      if (p.id == kFreeProfileId) {
+        setActive(p.id);
+        return p;
+      }
+    }
+    final ProxyProfile free = buildFreeProfile();
+    add(free);
+    setActive(free.id);
+    return free;
+  }
+
+  bool get hasFreeProfile =>
+      _profiles.any((ProxyProfile p) => p.id == kFreeProfileId);
+
   void setActive(String id) {
     _activeId = id;
     if (_prefs == null) _activeBeforePrefs = id;
@@ -121,6 +161,11 @@ class ProfilesController extends ChangeNotifier {
   }
 
   void remove(String id) {
+    // Nova's own free servers are not the user's to delete. They are what makes
+    // "install it and press Connect" true, including for the person who has
+    // just deleted everything else, so the store refuses here rather than
+    // trusting every screen to hide the button.
+    if (id == kFreeProfileId) return;
     _profiles.removeWhere((p) => p.id == id);
     if (_prefs == null) {
       _removedBeforePrefs.add(id);

@@ -105,12 +105,50 @@ class ConnInfoController extends ChangeNotifier {
   bool _wasActive = false;
   late HttpClient _client;
 
+  /// Bumped on every connect and disconnect. A geo lookup carries the id it was
+  /// started under, so an answer that arrives after the tunnel dropped is
+  /// discarded instead of being written onto a node as its exit country. That
+  /// is what used to stamp a server with the user's OWN country: the request
+  /// went out through the tunnel, the tunnel went away, and the retry landed on
+  /// the real network.
+  int _session = 0;
+
   /// The core just proved a node actually carries traffic (a real urltest delay
   /// on the selected exit). That means the tunnel is routing NOW, so probe
   /// immediately rather than waiting for the next warmup tick, which is what
   /// makes the hero flip to "Secure" seconds sooner instead of sitting on the
   /// amber "Verifying".
+  /// The running core's own latency for the exit that is carrying traffic.
+  ///
+  /// This is the honest "ping" to show while connected: sing-box measures it
+  /// with a plain-http request that is already inside the tunnel, so it is one
+  /// round trip. The controller's own reachability probe has to use https (a
+  /// captive portal can fake a plain-http 204, and that verdict must not be
+  /// faked), which costs a second TLS handshake through the proxy and roughly
+  /// doubles the figure. Showing that doubled number made a perfectly good
+  /// connection look slow.
+  int? _coreDelay() {
+    final CoreNodeHealth h = _proxy.coreHealth.value;
+    final String? sel = h.selectedKey ?? _proxy.activeProfile?.pinnedNode;
+    if (sel == null) return null;
+    return h.delayMsByKey[sel];
+  }
+
   void _onCoreHealth() {
+    // A fresher core figure is a fresher ping, even once the verdict is in.
+    if (_wasActive && _info.reachable) {
+      final int? live = _coreDelay();
+      if (live != null && live != _info.pingMs) {
+        _info = ConnInfo(
+          reachable: _info.reachable,
+          ip: _info.ip,
+          countryCode: _info.countryCode,
+          countryName: _info.countryName,
+          pingMs: live,
+        );
+        notifyListeners();
+      }
+    }
     if (!_wasActive || _info.reachable) return;
     final CoreNodeHealth h = _proxy.coreHealth.value;
     final String? sel = h.selectedKey;
@@ -136,18 +174,19 @@ class ConnInfoController extends ChangeNotifier {
   /// Fetches the exit IP/country after [reachable] is already true, so the geo
   /// fills in without holding up the "Secure" verdict. Best-effort.
   Future<void> _fillGeoInBackground() async {
+    final int session = _session;
     try {
       final ConnInfo? geo = await _fetchGeo();
-      if (!_wasActive || geo == null) return;
+      if (!_wasActive || session != _session || geo == null) return;
       _info = ConnInfo(
         reachable: _info.reachable,
         ip: geo.ip ?? _info.ip,
         countryCode: geo.countryCode ?? _info.countryCode,
         countryName: geo.countryName ?? _info.countryName,
-        pingMs: _info.pingMs ?? geo.pingMs,
+        pingMs: _coreDelay() ?? _info.pingMs ?? geo.pingMs,
       );
       notifyListeners();
-      _rememberExitCountry(geo);
+      _rememberExitCountry(geo, session);
     } catch (_) {
       // Geo is optional; "Secure" already stands on the core's proof.
     }
@@ -164,6 +203,7 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   void _start() {
+    _session++;
     _info = ConnInfo.empty;
     _loading = true;
     notifyListeners();
@@ -191,6 +231,7 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   void _stop() {
+    _session++;
     _timer?.cancel();
     _timer = null;
     _loading = false;
@@ -202,7 +243,9 @@ class ConnInfoController extends ChangeNotifier {
   /// pinned one, or the auto-selector's current pick. Remember it against the
   /// node so its flag is right from now on (and is never re-guessed from the
   /// address, which for a CDN-fronted node is not even where traffic exits).
-  void _rememberExitCountry(ConnInfo geo) {
+  void _rememberExitCountry(ConnInfo geo, int session) {
+    // Only ever while the tunnel this reading came from is still the live one.
+    if (session != _session || !_proxy.state.isActive) return;
     final String? cc = geo.countryCode;
     if (cc == null || cc.isEmpty) return;
     final String? key = _proxy.coreHealth.value.selectedKey ??
@@ -212,14 +255,18 @@ class ConnInfoController extends ChangeNotifier {
   }
 
   Future<void> _refresh() async {
+    final int session = _session;
     final (bool reachable, int? probePing) = await _probe();
     final ConnInfo? geo = reachable ? await _fetchGeo() : null;
+    // The tunnel came down while this round was in flight: everything it
+    // measured is about the real network now, not the exit, so drop it.
+    if (session != _session) return;
     _loading = false;
     // Prefer the dedicated probe's round-trip; otherwise fall back to the geo
     // request's round-trip so the ping never reads blank while a country is
     // clearly resolving. A provider that rate-limits the probe endpoint but
     // serves geo would otherwise leave PING empty for the whole session.
-    final int? ping = probePing ?? geo?.pingMs ?? _info.pingMs;
+    final int? ping = _coreDelay() ?? probePing ?? geo?.pingMs ?? _info.pingMs;
     _info = ConnInfo(
       reachable: reachable,
       ip: geo?.ip ?? _info.ip,
@@ -228,7 +275,7 @@ class ConnInfoController extends ChangeNotifier {
       pingMs: ping,
     );
     notifyListeners();
-    if (geo != null) _rememberExitCountry(geo);
+    if (geo != null) _rememberExitCountry(geo, session);
   }
 
   /// A tiny `generate_204` request through the tunnel: its completion is the

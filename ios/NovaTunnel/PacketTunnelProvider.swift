@@ -82,6 +82,23 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // the tunnel never comes up.
     try server.startOrReloadService(config, options: NovacoreOverrideOptions())
     commandServer = server
+
+    // Proxy mode: the config has a loopback `mixed` inbound and no `tun`, so
+    // openTun is never called and nothing ever applies tunnel settings. iOS
+    // still expects a Packet Tunnel Provider to have some, so apply a set that
+    // captures nothing: the phone keeps routing its own traffic and only an app
+    // pointed at 127.0.0.1 goes through Nova. (A Network Extension is still the
+    // host, because it is the only way a listener survives the app going to the
+    // background; the difference is what it does with packets, not that it
+    // exists.)
+    if !config.contains("\"type\": \"tun\"") && !config.contains("\"type\":\"tun\"") {
+      let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+      let v4 = NEIPv4Settings(addresses: ["172.19.0.1"], subnetMasks: ["255.255.255.252"])
+      v4.includedRoutes = []
+      v4.excludedRoutes = [NEIPv4Route.default()]
+      settings.ipv4Settings = v4
+      try await setTunnelNetworkSettings(settings)
+    }
   }
 
   override func stopTunnel(with reason: NEProviderStopReason) async {

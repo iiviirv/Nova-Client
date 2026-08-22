@@ -169,7 +169,7 @@ class _IdlePanel extends StatelessWidget {
     final int minutes = (ConnectionFixer.estimated.inSeconds / 60).ceil();
 
     return ListView(
-      padding: const EdgeInsets.all(NovaSpace.xl),
+      padding: NovaSpace.page(context),
       children: <Widget>[
         // Calm explainer: what this does and why it takes a moment.
         NovaCard(
@@ -311,7 +311,7 @@ class _RunningPanel extends StatelessWidget {
         : (probing ? s.fixPhaseChecking : s.fixPhaseConnecting);
 
     return ListView(
-      padding: const EdgeInsets.all(NovaSpace.xl),
+      padding: NovaSpace.page(context),
       children: <Widget>[
         NovaEyebrow(s.fixIntroEyebrow),
         const SizedBox(height: NovaSpace.md),
@@ -546,7 +546,7 @@ class _ResultPanel extends StatelessWidget {
     if (outcome.success) {
       final String fp = _fpLabel(outcome.best ?? '', s);
       return ListView(
-        padding: const EdgeInsets.all(NovaSpace.xl),
+        padding: NovaSpace.page(context),
         children: <Widget>[
           Container(
             padding: const EdgeInsets.all(NovaSpace.xl),
@@ -601,7 +601,7 @@ class _ResultPanel extends StatelessWidget {
     // Honest failure: informative, not alarming. Still shows the tested list so
     // the user can see every setup was tried.
     return ListView(
-      padding: const EdgeInsets.all(NovaSpace.xl),
+      padding: NovaSpace.page(context),
       children: <Widget>[
         Container(
           padding: const EdgeInsets.all(NovaSpace.xl),

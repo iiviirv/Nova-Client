@@ -70,6 +70,14 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         // The profile/node name shown in the ongoing notification, if the Dart
         // side passed one. Purely cosmetic; the tunnel runs without it.
         const val EXTRA_LABEL = "label"
+
+        /// Proxy mode: the loopback port the config's `mixed` inbound listens
+        /// on. Present only in proxy mode, and only so the notification can
+        /// tell the user where the proxy is; the port itself comes from the
+        /// config. In this mode the config has no `tun` inbound, so [openTun]
+        /// is never called and no VPN interface is established: the phone's own
+        /// traffic is untouched and another VPN can be running alongside.
+        const val EXTRA_PROXY_PORT = "proxyPort"
         // The auto-select urltest outbound's tag (see SingboxConfig.buildMultiMap).
         const val PROXY_GROUP_TAG = "proxy"
 
@@ -83,6 +91,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     // The active profile's name, for the notification text. Null shows a plain
     // "Connected" without a subtitle.
     private var profileLabel: String? = null
+
+    /// Non-null in proxy mode: the loopback port the core serves SOCKS5 + HTTP
+    /// on. Used only by the ongoing notification, so the user can read the
+    /// address off their notification shade.
+    private var proxyPort: Int? = null
 
     private var largeIconCache: android.graphics.Bitmap? = null
 
@@ -160,6 +173,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val xrayConfig = intent?.getStringExtra(EXTRA_XRAY_CONFIG)
         val gen = generation.incrementAndGet()
         profileLabel = intent?.getStringExtra(EXTRA_LABEL)?.takeIf { it.isNotBlank() }
+        proxyPort = intent?.getIntExtra(EXTRA_PROXY_PORT, 0)?.takeIf { it > 0 }
         // Let the bridge repaint the home-screen widget on state changes.
         NovaProxyBridge.appContext = applicationContext
         NovaProxyBridge.label = profileLabel
@@ -235,7 +249,11 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 return
             }
             NovaProxyBridge.emitState("connected")
-            startForegroundNotification(getString(R.string.vpn_state_connected), ongoing = true)
+            startForegroundNotification(
+                proxyPort?.let { getString(R.string.vpn_state_proxy, it) }
+                    ?: getString(R.string.vpn_state_connected),
+                ongoing = true,
+            )
             startStatusClient()
             startLogClient()
             startGroupClient()
@@ -587,10 +605,20 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
         val notification: AppNotification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // The type has to match what the service is actually doing.
+            // systemExempted is granted to a VPN off the `activate_vpn` app op,
+            // which only exists once a VPN interface has been established; in
+            // proxy mode there never is one, and asking for it there is a
+            // SecurityException that kills the service on start. A local proxy
+            // is specialUse (declared in the manifest with its subtype).
             startForeground(
                 NOTIF_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+                if (proxyPort != null) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                },
             )
         } else {
             startForeground(NOTIF_ID, notification)

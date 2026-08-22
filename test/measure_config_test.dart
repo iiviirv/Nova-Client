@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
 import 'package:nova_client/src/core/proxy/singbox/share_link.dart';
@@ -5,8 +7,9 @@ import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
 
 /// The measuring core's config ("test all servers through the core"): every
 /// usable node, not the auto-select budget of 24; a local mixed inbound instead
-/// of a TUN; the Clash API the desktop controller drives; and a tag -> node key
-/// map so results land on the right rows.
+/// of a TUN; the Clash API every host drives the run over; a tag -> node key map
+/// so results land on the right rows; and none of the tunnel's routing, DNS or
+/// rule-sets, which only cost the user startup time before the first number.
 void main() {
   List<ProxyNode> nodes(int n) => <ProxyNode>[
         for (int i = 0; i < n; i++)
@@ -20,10 +23,11 @@ void main() {
         mixedPort: 27080, clashPort: 27091);
     expect(built.tagKeys, hasLength(40));
     final List<dynamic> outs = built.config['outbounds'] as List<dynamic>;
-    final Map<String, dynamic> group = (outs.firstWhere(
-        (dynamic o) => (o as Map)['tag'] == 'proxy') as Map).cast<String, dynamic>();
-    expect(group['type'], 'urltest');
-    expect((group['outbounds'] as List<dynamic>).length, 40);
+    expect(
+        outs
+            .where((dynamic o) => (o as Map)['tag'].toString().startsWith('node-'))
+            .length,
+        40);
     // Compare: the tunnel config keeps the 24 budget.
     expect(
         (SingboxConfig.buildMultiMap(nodes(40))['outbounds'] as List<dynamic>)
@@ -52,14 +56,34 @@ void main() {
     expect(built.tagKeys['node-2'], proxyNodeKey(n[2]));
   });
 
-  test('a single node still gets a urltest group (the group stream is what '
-      'Android reads)', () {
+  test('a single node is still a pool of one', () {
     final List<ProxyNode> n = nodes(1);
     final built = SingboxConfig.buildMeasureMap(n, mixedPort: 1, clashPort: 2);
     expect(built.tagKeys, <String, String>{'node-0': proxyNodeKey(n[0])});
-    final List<dynamic> outs = built.config['outbounds'] as List<dynamic>;
-    expect(outs.any((dynamic o) => (o as Map)['type'] == 'urltest'), isTrue);
     expect((built.config['inbounds'] as List<dynamic>).single['type'], 'mixed');
+  });
+
+  test('no urltest group, no DNS module, no routing rules', () {
+    // All three exist for the tunnel and cost a measuring core startup time it
+    // has no use for. The group is the worst of them: sing-box sweeps the whole
+    // pool the moment it starts, concurrently and cold, which is what reported
+    // 400-800ms for mieru and NaiveProxy servers that answer in ~110ms warm.
+    final built = SingboxConfig.buildMeasureMap(nodes(5),
+        mixedPort: 1, clashPort: 2);
+    final List<dynamic> outs = built.config['outbounds'] as List<dynamic>;
+    expect(outs.any((dynamic o) => (o as Map)['type'] == 'urltest'), isFalse);
+    expect(outs.any((dynamic o) => (o as Map)['tag'] == 'proxy'), isFalse);
+    expect(built.config['dns'], isNull);
+    final Map<String, dynamic> route =
+        (built.config['route'] as Map).cast<String, dynamic>();
+    expect(route['rules'], isEmpty);
+    expect(route['rule_set'], isNull);
+    expect(jsonEncode(built.config), isNot(contains(SingboxConfig.ruleSetBaseToken)));
+    // The tunnel's config still has all of it.
+    final Map<String, dynamic> tunnel = SingboxConfig.buildMultiMap(nodes(5));
+    expect((tunnel['outbounds'] as List<dynamic>)
+        .any((dynamic o) => (o as Map)['type'] == 'urltest'), isTrue);
+    expect(tunnel['dns'], isNotNull);
   });
 
   test('xhttp nodes join the pool as local socks exits when Xray is available',
@@ -85,10 +109,5 @@ void main() {
     expect(without.tagKeys, hasLength(2));
   });
 
-  test('without a clash port no API is configured (mobile measuring core)', () {
-    final built = SingboxConfig.buildMeasureMap(nodes(2), mixedPort: 1);
-    final Map<String, dynamic>? exp =
-        (built.config['experimental'] as Map?)?.cast<String, dynamic>();
-    expect(exp?['clash_api'], isNull);
-  });
+
 }

@@ -186,6 +186,16 @@ class NovaStrings {
   String get setAppearance => t('set.appearance');
   String get setCommunity => t('set.community');
   String get setRouting => t('set.routing');
+  String get routeMobileProxy => t('route.mobileProxy');
+  String get routeMobileProxySub => t('route.mobileProxySub');
+  String get routeProxyPort => t('route.proxyPort');
+  String get routeProxyPortHelp => t('route.proxyPortHelp');
+  String get routeIosAutoReconnect => t('route.iosAutoReconnect');
+  String get routeIosAutoReconnectSub => t('route.iosAutoReconnectSub');
+  String get setTestOptions => t('set.testOptions');
+  String get setTestOptionsSub => t('set.testOptionsSub');
+  String get setServerOwner => t('set.serverOwner');
+  String get setServerOwnerSub => t('set.serverOwnerSub');
   String get setRoutingSub => t('set.routingSub');
   String get setRadarSub => t('set.radarSub');
   String get setCloudflare => t('set.cloudflare');
@@ -719,6 +729,10 @@ class NovaStrings {
   String get nodeRefresh => t('node.refresh');
   String get nodeMeasureAll => t('node.measureAll');
   String get nodeMeasureDone => t('node.measureDone');
+  String get nodeRetestOne => t('node.retestOne');
+  String get configsSingleNode => t('home.configsSingleNode');
+  String get nodeMeasureHint => t('node.measureHint');
+  String get nodeMeasureHintGot => t('node.measureHintGot');
   String get nodeSearch => t('node.search');
   String get nodeClearSearch => t('node.clearSearch');
   String get nodeNoMatch => t('node.noMatch');
@@ -798,7 +812,9 @@ class NovaStrings {
         'The tunnel is up but no traffic is getting through. Your network may '
             'be blocking this config; scan a clean IP in Radar or try another '
             'config or network.',
-    'dash.noTraffic': 'No traffic is getting through',
+    // Printed inside the connect ring, so these two stay short; the full
+    // explanation is in the setup-finder prompt right under the hero.
+    'dash.noTraffic': 'No traffic',
     'radar.jitter': 'jitter',
     'radar.loss': 'loss',
     'nav.dashboard': 'Home',
@@ -867,7 +883,7 @@ class NovaStrings {
     'stats.requestsToday': 'requests today',
     'stats.workerNoData': 'Connect Cloudflare to see usage',
     'dash.secure': 'Secure',
-    'dash.verifying': 'Verifying connection…',
+    'dash.verifying': 'Verifying…',
     'dash.error': 'Error',
     'home.time': 'Time',
     'home.data': 'Data',
@@ -885,6 +901,23 @@ class NovaStrings {
     'set.general': 'General',
     'set.appearance': 'Appearance',
     'set.community': 'Community',
+    'route.mobileProxy': 'Proxy mode',
+    'route.mobileProxySub':
+        'Do not tunnel the whole phone. Nova serves a local SOCKS5/HTTP proxy '
+        'and only apps you point at it go through. Another VPN can run at the '
+        'same time.',
+    'route.proxyPort': 'Local proxy port',
+    'route.proxyPortHelp':
+        'The port apps point at in proxy mode. Change it if another program '
+        'already uses 2080. Applies on the next connect.',
+    'route.iosAutoReconnect': 'Let iOS reconnect on its own',
+    'route.iosAutoReconnectSub':
+        'Brings the tunnel back if iOS shuts it down. Leave off and the VPN '
+        'switch in iPhone Settings turns Nova off for good.',
+    'set.testOptions': 'Test options',
+    'set.testOptionsSub': 'What the ping test measures, and for how long',
+    'set.serverOwner': 'Server owner',
+    'set.serverOwnerSub': 'Your panel address and its shortcut',
     'set.routing': 'Routing & DNS',
     'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
     'set.radarSub': 'Scan for clean Cloudflare IPs',
@@ -1465,6 +1498,14 @@ class NovaStrings {
     'node.refresh': 'Refresh',
     'node.measureAll': 'Test all servers through the core',
     'node.measureDone': 'Measured {n} servers through the core',
+    'node.retestOne': 'Test this server again',
+    'home.configsSingleNode':
+        'This profile is a single server, so there is nothing to choose '
+        'between. Add a subscription in Servers to get a list here.',
+    'node.measureHint':
+        'Tap the bolt to test every server through the core, and tap any '
+        'server\'s number to test just that one.',
+    'node.measureHintGot': 'Got it',
     'node.search': 'Search nodes',
     'node.clearSearch': 'Clear search',
     'node.noMatch': 'No nodes match your search',
@@ -1540,7 +1581,7 @@ class NovaStrings {
         'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
             'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '
             'دیگری را امتحان کنید.',
-    'dash.noTraffic': 'ترافیکی عبور نمی‌کند',
+    'dash.noTraffic': 'بدون ترافیک',
     'radar.jitter': 'جیتر',
     'radar.loss': 'افت',
     'nav.dashboard': 'خانه',
@@ -1609,7 +1650,7 @@ class NovaStrings {
     'stats.requestsToday': 'درخواست امروز',
     'stats.workerNoData': 'برای دیدن مصرف، کلودفلر را وصل کنید',
     'dash.secure': 'ایمن',
-    'dash.verifying': 'در حال بررسی اتصال…',
+    'dash.verifying': 'در حال بررسی…',
     'dash.error': 'خطا',
     'home.time': 'زمان',
     'home.data': 'داده',
@@ -1627,6 +1668,23 @@ class NovaStrings {
     'set.general': 'عمومی',
     'set.appearance': 'ظاهر',
     'set.community': 'انجمن',
+    'route.mobileProxy': 'حالت پروکسی',
+    'route.mobileProxySub':
+        'کل گوشی از تونل رد نمی‌شود. نوا یک پروکسی محلی \u2066SOCKS5/HTTP\u2069 '
+        'می‌سازد و فقط برنامه‌هایی که به آن وصلشان کنید از نوا رد می‌شوند. یک '
+        '\u2066VPN\u2069 دیگر هم می‌تواند هم‌زمان روشن باشد.',
+    'route.proxyPort': 'پورت پروکسی محلی',
+    'route.proxyPortHelp':
+        'پورتی که برنامه‌ها در حالت پروکسی به آن وصل می‌شوند. اگر برنامه‌ی '
+        'دیگری \u2066۲۰۸۰\u2069 را گرفته باشد عوضش کنید. از اتصال بعدی اعمال می‌شود.',
+    'route.iosAutoReconnect': 'اجازه بده \u2066iOS\u2069 خودش وصل کند',
+    'route.iosAutoReconnectSub':
+        'اگر \u2066iOS\u2069 تونل را ببندد دوباره برش می‌گرداند. خاموش بگذارید تا '
+        'کلید \u2066VPN\u2069 در تنظیمات آیفون واقعا نوا را خاموش کند.',
+    'set.testOptions': 'تنظیمات تست',
+    'set.testOptionsSub': 'تست پینگ چه چیزی را و چقدر اندازه می‌گیرد',
+    'set.serverOwner': 'صاحب سرور',
+    'set.serverOwnerSub': 'آدرس پنل شما و میان‌بر آن',
     'set.routing': 'مسیریابی و DNS',
     'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
     'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
@@ -2204,6 +2262,14 @@ class NovaStrings {
     'node.refresh': 'بازخوانی',
     'node.measureAll': 'تست همه سرورها از طریق هسته',
     'node.measureDone': '\u2066{n}\u2069 سرور از طریق هسته اندازه‌گیری شد',
+    'node.retestOne': 'تست دوباره‌ی همین سرور',
+    'home.configsSingleNode':
+        'این پروفایل یک سرور تکی است، پس چیزی برای انتخاب وجود ندارد. برای '
+        'داشتن فهرست اینجا، از بخش سرورها یک اشتراک اضافه کنید.',
+    'node.measureHint':
+        'روی آذرخش بزنید تا همه‌ی سرورها از طریق هسته تست شوند، و روی عدد هر '
+        'سرور بزنید تا فقط همان یکی تست شود.',
+    'node.measureHintGot': 'متوجه شدم',
     'node.search': 'جستجوی سرور',
     'node.clearSearch': 'پاک کردن جستجو',
     'node.noMatch': 'سروری با جستجوی شما پیدا نشد',

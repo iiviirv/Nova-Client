@@ -451,7 +451,34 @@ Future<void> _saveBody(String url, String body) async {
 /// This is what lets the server list appear instantly instead of sitting on a
 /// spinner for the ~40s a filtered subscription URL takes to time out. The list
 /// shows these first, then refreshes live in the background.
-Future<List<ProxyNode>> cachedProfileNodes(ProxyProfile profile) async {
+/// Applies the profile's own rules to a resolved list.
+///
+/// Today that is only [ProxyProfile.encryptedOnly], which the free list Nova
+/// ships sets: someone who installs the app and presses Connect must not be put
+/// on a plaintext tunnel, whatever the upstream list happens to contain that
+/// day. A subscription the user added themselves is never filtered.
+///
+/// Servers that are merely DOWN are not filtered here on purpose. Hiding them
+/// is a view decision made from the last measurement (see the node list), not a
+/// property of the subscription: filtering them out at this level means the
+/// next sweep only ever sees the survivors, and a run of bad luck ratchets a
+/// list down and never lets it recover.
+List<ProxyNode> applyProfileFilters(ProxyProfile profile, List<ProxyNode> nodes) {
+  if (!profile.encryptedOnly) return nodes;
+  return nodes.where((ProxyNode n) => n.isEncrypted).toList();
+}
+
+Future<List<ProxyNode>> cachedProfileNodes(ProxyProfile profile) async =>
+    applyProfileFilters(profile, await _cachedProfileNodes(profile));
+
+Future<List<ProxyNode>> resolveProfileNodes(
+  ProxyProfile profile, {
+  SubscriptionFetcher? fetch,
+}) async =>
+    applyProfileFilters(
+        profile, await _resolveProfileNodes(profile, fetch: fetch));
+
+Future<List<ProxyNode>> _cachedProfileNodes(ProxyProfile profile) async {
   final String raw = _profilePayload(profile);
   if (raw.isEmpty || !_isHttpUrl(raw)) return const <ProxyNode>[];
   if (_nodeCache[raw] != null) return _nodeCache[raw]!;
@@ -460,7 +487,7 @@ Future<List<ProxyNode>> cachedProfileNodes(ProxyProfile profile) async {
   return _expandSubscriptionBody(saved);
 }
 
-Future<List<ProxyNode>> resolveProfileNodes(
+Future<List<ProxyNode>> _resolveProfileNodes(
   ProxyProfile profile, {
   SubscriptionFetcher? fetch,
 }) async {
