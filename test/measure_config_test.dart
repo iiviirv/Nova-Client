@@ -63,9 +63,9 @@ void main() {
     expect((built.config['inbounds'] as List<dynamic>).single['type'], 'mixed');
   });
 
-  test('no urltest group, no DNS module, no routing rules', () {
-    // All three exist for the tunnel and cost a measuring core startup time it
-    // has no use for. The group is the worst of them: sing-box sweeps the whole
+  test('no urltest group and no routing rules', () {
+    // Both exist for the tunnel and cost a measuring core startup time it has
+    // no use for. The group is the worst of them: sing-box sweeps the whole
     // pool the moment it starts, concurrently and cold, which is what reported
     // 400-800ms for mieru and NaiveProxy servers that answer in ~110ms warm.
     final built = SingboxConfig.buildMeasureMap(nodes(5),
@@ -73,17 +73,37 @@ void main() {
     final List<dynamic> outs = built.config['outbounds'] as List<dynamic>;
     expect(outs.any((dynamic o) => (o as Map)['type'] == 'urltest'), isFalse);
     expect(outs.any((dynamic o) => (o as Map)['tag'] == 'proxy'), isFalse);
-    expect(built.config['dns'], isNull);
     final Map<String, dynamic> route =
         (built.config['route'] as Map).cast<String, dynamic>();
     expect(route['rules'], isEmpty);
     expect(route['rule_set'], isNull);
     expect(jsonEncode(built.config), isNot(contains(SingboxConfig.ruleSetBaseToken)));
     // The tunnel's config still has all of it.
-    final Map<String, dynamic> tunnel = SingboxConfig.buildMultiMap(nodes(5));
-    expect((tunnel['outbounds'] as List<dynamic>)
+    expect((SingboxConfig.buildMultiMap(nodes(5))['outbounds'] as List<dynamic>)
         .any((dynamic o) => (o as Map)['type'] == 'urltest'), isTrue);
-    expect(tunnel['dns'], isNotNull);
+  });
+
+  test('it keeps a resolver, because on mobile there is no other one', () {
+    // This test used to assert the opposite, and that assumption shipped: the
+    // measuring core on Android and iOS has a null localDNSTransport, so with
+    // no `dns` block it cannot resolve a hostname at all. Every server on a
+    // domain reported "no response" in about 50ms while bare-IP servers kept
+    // working, which is how it survived testing against an all-IP free list.
+    final Map<String, dynamic> dns =
+        (SingboxConfig.buildMeasureMap(nodes(3), mixedPort: 1, clashPort: 2)
+                .config['dns'] as Map)
+            .cast<String, dynamic>();
+    final List<dynamic> servers = dns['servers'] as List<dynamic>;
+    expect(servers, hasLength(1), reason: 'a resolver, not the tunnel module');
+    final Map<String, dynamic> server =
+        (servers.single as Map).cast<String, dynamic>();
+    // Direct, so it never loops back through the proxy being measured, and
+    // IP-addressed, so it needs no bootstrap resolver of its own.
+    expect(server['detour'], 'direct');
+    expect(server['address'], contains('223.5.5.5'));
+    expect(dns['final'], 'local');
+    // Still none of the tunnel's rule-set machinery.
+    expect(dns['rules'], isNull);
   });
 
   test('xhttp nodes join the pool as local socks exits when Xray is available',

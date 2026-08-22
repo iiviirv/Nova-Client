@@ -92,6 +92,7 @@ class MeasureRunner {
     required String url,
     required int timeoutSec,
     http.Client? client,
+    void Function(String reason)? onFailure,
   }) async {
     final http.Client c = client ?? http.Client();
     final int ms = (timeoutSec.clamp(1, 60) * 1000).clamp(1000, kMaxTimeoutMs);
@@ -103,12 +104,17 @@ class MeasureRunner {
     try {
       final http.Response r =
           await c.get(u).timeout(Duration(milliseconds: ms + 3000));
-      if (r.statusCode != 200) return null;
+      if (r.statusCode != 200) {
+        onFailure?.call('$tag: HTTP ${r.statusCode} ${r.body.trim()}');
+        return null;
+      }
       final Object? body = jsonDecode(r.body);
       final Object? delay = body is Map ? body['delay'] : null;
       if (delay is num && delay > 0) return delay.toInt();
+      onFailure?.call('$tag: no delay in ${r.body.trim()}');
       return null;
-    } catch (_) {
+    } catch (e) {
+      onFailure?.call('$tag: $e');
       return null;
     } finally {
       if (client == null) c.close();
@@ -130,6 +136,11 @@ class MeasureRunner {
     void Function(Map<String, int> delays, Set<String> tested)? onProgress,
     bool Function()? cancelled,
     http.Client? client,
+    // The first few reasons servers gave for not answering. A run that returns
+    // nothing at all is almost never "every server is down"; it is usually one
+    // cause affecting all of them, and without this the log could only say
+    // "0 answered". That is how a missing resolver went unnoticed.
+    List<String>? failures,
   }) async {
     final http.Client c = client ?? http.Client();
     final Map<String, int> delays = <String, int>{};
@@ -149,7 +160,12 @@ class MeasureRunner {
         // session, a NaiveProxy TLS + HTTP/2 connection, a TLS session ticket).
         // Its number is thrown away; it is the setup cost, not the latency.
         int? warm = await probe(api, tag,
-            url: url, timeoutSec: timeoutSec, client: c);
+            url: url,
+            timeoutSec: timeoutSec,
+            client: c,
+            onFailure: (String why) {
+              if (failures != null && failures.length < 3) failures.add(why);
+            });
         if (warm == null && !(cancelled?.call() ?? false)) {
           // One retry before a server is written off. Measured against Nova's
           // own free list, where the servers are busy and often answer late:

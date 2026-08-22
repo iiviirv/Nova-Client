@@ -1191,8 +1191,10 @@ class DesktopProxyController extends ProxyController {
       }
 
       final int timeoutSec = opts.urlTestTimeoutSec.clamp(1, 60);
+      final List<String> failures = <String>[];
       final Map<String, int> delays = await MeasureRunner.run(
         api: api,
+        failures: failures,
         tagKeys: built.tagKeys,
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
@@ -1207,7 +1209,8 @@ class DesktopProxyController extends ProxyController {
           before, delays, built.tagKeys.values.toSet(), merge: merge);
       NovaLog.instance.write(
           'Measured ${built.tagKeys.length} servers through the core: '
-          '${delays.length} answered');
+          '${delays.length} answered'
+          '${delays.isEmpty && failures.isNotEmpty ? '. Why: ${failures.join('; ')}' : ''}');
       return null;
     } on FormatException catch (e) {
       return e.message;

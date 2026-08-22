@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.16.1-beta (2026-08-22)
+
+- Fixed (Android and iPhone): the lightning test reported "no response" for
+  every server whose address is a name rather than a number, which is most of
+  them. 1.16.0 dropped the resolver from the testing core to make it start
+  faster, and on a phone there is no other one, so it could not look the
+  addresses up. Connecting was never affected, only the test. Servers given as
+  a bare IP, like the free list, still worked, which is how it got past us.
+
 ## v1.16.0-beta (2026-08-22)
 
 The whole round of testing feedback, plus free servers built in, by the Nova

@@ -611,7 +611,29 @@ class SingboxConfig {
     final List<Map<String, dynamic>> outs =
         (cfg['outbounds'] as List).cast<Map<String, dynamic>>();
     outs.removeWhere((Map<String, dynamic> o) => o['tag'] == 'proxy');
-    cfg.remove('dns');
+    // A resolver, and only a resolver. The tunnel's DNS module is dropped (its
+    // rule-sets and its through-the-proxy `remote` server are no use here) but
+    // something has to turn a server's hostname into an address, and on mobile
+    // there is nothing else: NovaMeasure returns a null localDNSTransport on
+    // both Android and iOS, so a measuring core with no `dns` block cannot
+    // resolve at all. Removing this block made every domain-addressed server
+    // report "no response" in about 50ms while bare-IP servers still worked,
+    // which is exactly how it got past testing against a free list that is all
+    // bare IPs.
+    //
+    // IP-addressed DoH over `direct`, so it needs no bootstrap resolver and
+    // cannot loop back through the proxy it is measuring.
+    cfg['dns'] = <String, dynamic>{
+      'servers': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'tag': 'local',
+          'address': 'https://223.5.5.5/dns-query',
+          'detour': 'direct',
+        },
+      ],
+      'final': 'local',
+      'strategy': 'prefer_ipv4',
+    };
     cfg['route'] = <String, dynamic>{
       'rules': <Map<String, dynamic>>[],
       'final': 'direct',
