@@ -1,0 +1,5 @@
+- Free servers built in: install, press Connect, you are online
+- Proxy mode on Android: only the apps you point at it go through Nova
+- Ping numbers are the real ones now (mieru 422ms -> 207ms)
+- Tap a server's ping to test just that one
+- Dead free servers disappear from the list by themselves

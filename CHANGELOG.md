@@ -1,5 +1,66 @@
 # Changelog
 
+## v1.16.0-beta (2026-08-22)
+
+The whole round of testing feedback, plus free servers built in, by the Nova
+team.
+
+**New**
+
+- Free servers, built in. A fresh install now opens on a working Connect
+  button: Nova ships its own server list, already selected, with the SNI-block
+  bypass on. Servers that answer nothing are hidden automatically, and anything
+  that is not encrypted never makes the list. You can still add your own
+  subscription, and the free list stays available underneath it.
+- Proxy mode on Android and iPhone. Nova serves a local SOCKS5/HTTP proxy on
+  127.0.0.1 instead of tunnelling the whole phone, so only the apps you point
+  at it go through Nova, and another VPN can be running at the same time. The
+  address is on the dashboard, and the port is yours to change (Settings >
+  Routing).
+- Nova lives in the menu bar on Mac and the notification area on Windows.
+  Closing the window keeps the tunnel running, and the tray menu can connect,
+  disconnect and quit without opening it.
+- Tap any server's ping to test just that one.
+- Settings gained two of its own screens: Server owner (your panel address and
+  its shortcut) and Test options (what the ping test measures, moved out of
+  Routing where nobody found it).
+
+**Fixed**
+
+- The lightning test now reports the latency you actually have. Two things were
+  wrong: it timed the first dial, so mieru and NaiveProxy reported the one-off
+  cost of building their session forever, and the test quietly ran over https,
+  which added a TLS handshake to every measurement. Measured against a real
+  subscription, mieru went from 422ms to 207ms and a clean IP from 251ms to
+  134ms, both now matching what the same servers measure from inside the
+  tunnel. Each server also gets its full timeout starting when its own test
+  starts, so the end of a long list is no longer cut off, and a server that
+  misses once gets a second chance before it is called dead.
+- (Mac) Nova no longer keeps the machine out of idle. A helper process sat at
+  around 5% CPU for as long as the full-device tunnel was up, holding the CPU
+  at full clock and the laptop about 20C hotter. It is gone. The live traffic
+  readout also stops polling when no window is on screen.
+- (iPhone) Turning the VPN off in iPhone Settings now turns it off. It used to
+  come straight back, so the only way to stop Nova was inside the app and a
+  second VPN could not take over. Settings > Routing has an opt-in for anyone
+  who wants the old behaviour.
+- The country and flag next to a server are only ever learned while the tunnel
+  is up, so a reading taken after disconnecting can no longer label a server
+  with your own country.
+- The ping on the dashboard is the core's own figure now, measured through the
+  tunnel, instead of a probe from outside it that read far too high.
+- Refresh means refresh: it fetches the current servers and takes no pings, and
+  opening a subscription of more than 50 servers no longer probes them all.
+- The Configs tab shows the servers inside your current subscription rather
+  than repeating the Servers tab, and its count is the servers you can choose
+  between rather than the lines in the subscription.
+- (Android) Long Settings pages no longer end underneath the navigation
+  buttons.
+- The connected dashboard fits without scrolling: the timer and Secure fold
+  into the ring and the dial draws in.
+- "Connect your VPS" left the + menu; it lives on the empty-servers screen,
+  where someone with nothing yet actually meets it.
+
 ## v1.15.1-beta (2026-08-20)
 
 - Fixed (Android): the new app icon in 1.15.0 was mirrored. It is the right
