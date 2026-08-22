@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../cleanip/clean_ip_finder.dart';
+import '../cleanip/clean_ip_fronting.dart';
+import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
@@ -422,7 +425,8 @@ class SingboxProxyController extends ProxyController {
     }
     measuring.value = true;
     try {
-      final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
+      final List<ProxyNode> resolved =
+          await _frontWithCleanIp(await _resolveEndpointHosts(nodes));
       // The measuring config has no route and no DNS module, so nothing here
       // needs rule-sets any more (buildMeasureMap explains why). What still
       // matters is anything that changes how a node is DIALLED, so it is
@@ -760,7 +764,7 @@ class SingboxProxyController extends ProxyController {
     // whose Endpoint is a domain never connects. Resolve any endpoint node's
     // host to a numeric IP before the core sees it. Best-effort: if it does not
     // resolve, the original config is kept (no worse than today).
-    nodes = await _resolveEndpointHosts(nodes);
+    nodes = await _frontWithCleanIp(await _resolveEndpointHosts(nodes));
     // Remember each node's own name (the label the panel gave it) keyed by its
     // stable key, so the dashboard can show "Connected via <name>" instead of a
     // bare address, which for a clean-IP node is a meaningless Cloudflare IP.
@@ -1267,6 +1271,29 @@ class SingboxProxyController extends ProxyController {
   /// domain to use a resolved IP, since the AmneziaWG core cannot parse a
   /// hostname endpoint. Non-endpoint nodes and already-numeric endpoints pass
   /// through untouched.
+
+  /// Dial Cloudflare-fronted servers through a clean address this device found,
+  /// keeping their domain as the TLS name.
+  ///
+  /// Only for a profile with the SNI-block bypass on, which is the case this
+  /// exists for: a public subscription's domains get filtered within days while
+  /// the addresses behind them keep working, and the bypass itself only applies
+  /// to a node that is already addressed by IP. Nodes that do not actually
+  /// resolve onto Cloudflare are left exactly as their provider wrote them.
+  ///
+  /// Never blocks on a search. The first connect may go out unfronted; the scan
+  /// it starts is what makes the next one work.
+  Future<List<ProxyNode>> _frontWithCleanIp(List<ProxyNode> nodes) async {
+    if (!(_active?.hardenTls ?? false)) return nodes;
+    if (!nodes.any(CleanIpFronting.couldBeFronted)) return nodes;
+    final CleanIp? ip = CleanIpFinder.current();
+    if (ip == null) {
+      CleanIpFinder.ensure();
+      return nodes;
+    }
+    return CleanIpFronting.apply(nodes, ip);
+  }
+
   Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {
     final List<ProxyNode> out = <ProxyNode>[];
     for (final ProxyNode n in nodes) {

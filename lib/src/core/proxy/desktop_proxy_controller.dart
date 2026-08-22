@@ -9,6 +9,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../../features/cloudflare/doh_resolver.dart';
+import '../cleanip/clean_ip_finder.dart';
+import '../cleanip/clean_ip_fronting.dart';
+import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
@@ -517,7 +520,7 @@ class DesktopProxyController extends ProxyController {
       // the AWG core shipped; desktop never did, which is why the same config
       // connected on Android and failed on Windows (reported as a UAC problem,
       // see _startElevatedTun) and macOS. Same rewrite here.
-      nodes = await _resolveEndpointHosts(nodes);
+      nodes = await _frontWithCleanIp(await _resolveEndpointHosts(nodes));
       _pendingXrayConfig = null;
       if (nodes.length == 1 && nodes.first.network == 'xhttp') {
         final ProxyNode x = await _resolveXhttpServer(nodes.first);
@@ -862,6 +865,29 @@ class DesktopProxyController extends ProxyController {
   @visibleForTesting
   Future<String?> Function(String host)? hostResolverOverride;
 
+
+  /// Dial Cloudflare-fronted servers through a clean address this device found,
+  /// keeping their domain as the TLS name.
+  ///
+  /// Only for a profile with the SNI-block bypass on, which is the case this
+  /// exists for: a public subscription's domains get filtered within days while
+  /// the addresses behind them keep working, and the bypass itself only applies
+  /// to a node that is already addressed by IP. Nodes that do not actually
+  /// resolve onto Cloudflare are left exactly as their provider wrote them.
+  ///
+  /// Never blocks on a search. The first connect may go out unfronted; the scan
+  /// it starts is what makes the next one work.
+  Future<List<ProxyNode>> _frontWithCleanIp(List<ProxyNode> nodes) async {
+    if (!(_active?.hardenTls ?? false)) return nodes;
+    if (!nodes.any(CleanIpFronting.couldBeFronted)) return nodes;
+    final CleanIp? ip = CleanIpFinder.current();
+    if (ip == null) {
+      CleanIpFinder.ensure();
+      return nodes;
+    }
+    return CleanIpFronting.apply(nodes, ip);
+  }
+
   Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {
     final List<ProxyNode> out = <ProxyNode>[];
     for (final ProxyNode n in nodes) {
@@ -1137,7 +1163,8 @@ class DesktopProxyController extends ProxyController {
         hardenTls: _active?.hardenTls ?? false,
         hardenPacketFragment: !Platform.isWindows,
       );
-      final List<ProxyNode> resolved = await _resolveEndpointHosts(nodes);
+      final List<ProxyNode> resolved =
+          await _frontWithCleanIp(await _resolveEndpointHosts(nodes));
       final String binary = await _ensureBinary();
       final Directory dir = await getApplicationSupportDirectory();
       // xhttp nodes run on the Xray core (one local socks inbound each); the

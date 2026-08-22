@@ -1,18 +1,27 @@
 # Changelog
 
+## v1.17.0-beta (2026-08-22)
+
+- New: servers behind Cloudflare keep working after their address is filtered.
+  A public subscription hands out its servers by name, and those names get
+  filtered within days while the Cloudflare addresses behind them keep working.
+  Nova now finds an address that is reachable from your own network and dials
+  those servers through it, sending the name only as the TLS name. That is also
+  what switches the SNI-block bypass on for them: it only ever applied to a
+  server already given as an address, so a server given by name used to get no
+  bypass at all and died with its name.
+
+  Your device finds its own address rather than being given one, because which
+  addresses are clean depends on the network you are on. It is looked for in
+  the background, kept for half a day and then checked again. A server that is
+  not actually behind Cloudflare is left exactly as your provider wrote it, and
+  subscriptions without the bypass turned on are untouched.
+
 ## v1.16.1-beta (2026-08-22)
 
-- Fixed (Android and iPhone): the lightning test reported "no response" for
-  every server whose address is a name rather than a number, which is most of
-  them. 1.16.0 dropped the resolver from the testing core to make it start
-  faster, and on a phone there is no other one, so it could not look the
-  addresses up. Connecting was never affected, only the test. Servers given as
-  a bare IP, like the free list, still worked, which is how it got past us.
-
-## v1.16.0-beta (2026-08-22)
-
 The whole round of testing feedback, plus free servers built in, by the Nova
-team.
+team. (1.16.0 carried these too but was withdrawn within the hour over the
+resolver fix at the end of this list, so this is the release that has them.)
 
 **New**
 
@@ -72,6 +81,12 @@ team.
   into the ring and the dial draws in.
 - "Connect your VPS" left the + menu; it lives on the empty-servers screen,
   where someone with nothing yet actually meets it.
+- Fixed (Android and iPhone): the lightning test reported "no response" for
+  every server whose address is a name rather than a number, which is most of
+  them. The change above that made the testing core start faster had dropped
+  its resolver, and on a phone there is no other one, so it could not look the
+  addresses up. Connecting was never affected, only the test. Servers given as
+  a bare IP, like the free list, still worked, which is how it got past us.
 
 ## v1.15.1-beta (2026-08-20)
 

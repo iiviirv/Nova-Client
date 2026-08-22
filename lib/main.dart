@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/cleanip/clean_ip_store.dart';
 import 'src/core/desktop/tray_controller.dart';
 import 'src/core/geo/node_geo_store.dart';
 import 'src/core/proxy/conn_info_controller.dart';
@@ -117,6 +118,10 @@ Future<void> main() async {
     relay: relay,
     tunnel: tunnel,
   ));
+
+  // The clean Cloudflare address this device last found, so a fronted
+  // subscription works on the first connect rather than the second.
+  unawaited(CleanIpStore.instance.load());
 
   // Hydrate persisted preferences without blocking first paint.
   relay.load();

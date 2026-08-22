@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/cleanip/clean_ip_fronting.dart';
 import '../../core/geo/node_geo_store.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
@@ -274,6 +275,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final ProxyProfile? profile = _profile;
     if (profile == null || _refreshing) return;
     clearSubscriptionCache();
+    // A provider can move a server off Cloudflare between updates, so the
+    // is-this-fronted answers are re-asked with the fresh list.
+    CleanIpFronting.forgetLookups();
     _probe.clear();
     NovaScope.of(context).proxy.coreHealth.value = CoreNodeHealth.empty;
     // Refresh is an explicit "check again now", so the sweep is due again and

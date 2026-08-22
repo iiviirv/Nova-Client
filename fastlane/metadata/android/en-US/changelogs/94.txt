@@ -1,0 +1,2 @@
+- Cloudflare servers keep working after their address is filtered
+- Your device finds a clean address on its own network
