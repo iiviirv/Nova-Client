@@ -178,18 +178,35 @@ class ConnInfoController extends ChangeNotifier {
     try {
       final ConnInfo? geo = await _fetchGeo();
       if (!_wasActive || session != _session || geo == null) return;
-      _info = ConnInfo(
-        reachable: _info.reachable,
-        ip: geo.ip ?? _info.ip,
-        countryCode: geo.countryCode ?? _info.countryCode,
-        countryName: geo.countryName ?? _info.countryName,
-        pingMs: _coreDelay() ?? _info.pingMs ?? geo.pingMs,
-      );
+      _info = _mergeGeo(geo,
+          reachable: _info.reachable,
+          pingMs: _coreDelay() ?? _info.pingMs ?? geo.pingMs);
       notifyListeners();
       _rememberExitCountry(geo, session);
     } catch (_) {
       // Geo is optional; "Secure" already stands on the core's proof.
     }
+  }
+
+
+  /// Merges a fresh geo reading into what is on screen, keeping the country
+  /// stable for as long as the exit IP is.
+  ///
+  /// Ordering the providers is not enough on its own: any of them can time out
+  /// or rate-limit, and the next one down has a different opinion. The same IP
+  /// cannot be in two countries, so once one is resolved it stands until the
+  /// exit actually changes. Without this the flag flickered between polls while
+  /// the user sat still on one server.
+  ConnInfo _mergeGeo(ConnInfo geo, {required bool reachable, int? pingMs}) {
+    final bool sameExit = geo.ip != null && geo.ip == _info.ip;
+    final bool keep = sameExit && _info.countryCode != null;
+    return ConnInfo(
+      reachable: reachable,
+      ip: geo.ip ?? _info.ip,
+      countryCode: keep ? _info.countryCode : (geo.countryCode ?? _info.countryCode),
+      countryName: keep ? _info.countryName : (geo.countryName ?? _info.countryName),
+      pingMs: pingMs,
+    );
   }
 
   void _onProxyChanged() {
@@ -267,13 +284,15 @@ class ConnInfoController extends ChangeNotifier {
     // clearly resolving. A provider that rate-limits the probe endpoint but
     // serves geo would otherwise leave PING empty for the whole session.
     final int? ping = _coreDelay() ?? probePing ?? geo?.pingMs ?? _info.pingMs;
-    _info = ConnInfo(
-      reachable: reachable,
-      ip: geo?.ip ?? _info.ip,
-      countryCode: geo?.countryCode ?? _info.countryCode,
-      countryName: geo?.countryName ?? _info.countryName,
-      pingMs: ping,
-    );
+    _info = geo == null
+        ? ConnInfo(
+            reachable: reachable,
+            ip: _info.ip,
+            countryCode: _info.countryCode,
+            countryName: _info.countryName,
+            pingMs: ping,
+          )
+        : _mergeGeo(geo, reachable: reachable, pingMs: ping);
     notifyListeners();
     if (geo != null) _rememberExitCountry(geo, session);
   }
@@ -323,12 +342,19 @@ class ConnInfoController extends ChangeNotifier {
   /// round-trip back-fills a coarse ping. Field names differ per provider, so the
   /// parse is tolerant. (ip-api is skipped: cleartext, blocked on a modern SDK.)
   Future<ConnInfo?> _fetchGeo() async {
+    // Order matters, because these providers DISAGREE. Asked about the same
+    // exit (77.110.96.201, an AEZA host) they answered Finland, Lebanon and
+    // Sweden twice. ifconfig.co is last precisely because it is the one that
+    // said Lebanon; the two that agree lead. ipinfo.io's free endpoint is
+    // rate-limited, which is what made the list fall through to a different
+    // opinion between polls and flip the flag on a connection that had not
+    // changed at all.
     const List<String> urls = <String>[
-      'https://ipinfo.io/json',
-      'https://ifconfig.co/json',
-      'https://freeipapi.com/api/json',
       'https://ipwho.is/',
       'https://api.ip.sb/geoip',
+      'https://ipinfo.io/json',
+      'https://freeipapi.com/api/json',
+      'https://ifconfig.co/json',
     ];
     for (final String url in urls) {
       try {
