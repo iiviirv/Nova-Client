@@ -1,0 +1,3 @@
+- Switching server keeps your ping results
+- AmneziaWG servers now arrive from subscriptions
+- Clearer error when full-device mode fails on macOS

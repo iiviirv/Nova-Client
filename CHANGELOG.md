@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.20.0-beta (2026-08-23)
+
+- Fixed: switching server no longer throws away your ping results. A switch is a
+  disconnect followed by a connect, and both steps were wiping the list, so a
+  full lightning test turned into a handful of live numbers with the rest blank.
+  Your results now stay put, and the list still shows which server is carrying
+  traffic.
+
+- New: AmneziaWG servers arrive from a subscription, not only when you paste the
+  link by hand. They sit in the list with everything else and take part in the
+  ping test. If your provider puts AmneziaWG in your subscription, it will show
+  up now.
+
+- Fixed: when full-device mode fails on macOS, the message says what actually
+  went wrong. It used to show the last few lines of the log, which is the tail
+  of a crash trace, so the real reason was cut off.
+
 ## v1.19.0-beta (2026-08-23)
 
 - Fixed: your ping results are kept. They were held in memory only, so closing
