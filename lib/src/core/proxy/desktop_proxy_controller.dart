@@ -1044,10 +1044,15 @@ class DesktopProxyController extends ProxyController {
       // Best-effort; fall back to the generic guidance below.
     }
     if (reason.isEmpty) {
-      // No log means the elevated core never ran — almost always a dismissed
-      // Windows UAC (or macOS admin) prompt. (On Windows the core's stderr is
-      // redirected into this log, so a core that started and failed always
-      // leaves something here and never lands on this branch.)
+      // No tun log means the elevated core never ran. Say WHY, when the
+      // elevation helper told us; only fall back to the "approve the prompt"
+      // guess when it did not.
+      final String elev = _elevationError;
+      if (elev.isNotEmpty && !elev.contains('User canceled')) {
+        return 'Full-device mode could not get administrator access: $elev. '
+            'You can turn off full-device mode in Settings to use proxy mode, '
+            'which needs no admin access.';
+      }
       return 'The tunnel did not come up. Full-device mode needs the admin '
           '(UAC) prompt approved so it can create the network adapter. Approve '
           'it and try again, or turn off full-device mode in Settings to use '
@@ -1056,6 +1061,30 @@ class DesktopProxyController extends ProxyController {
     // The core ran but failed: surface its actual reason and the log path.
     return 'Full-device mode failed to start: $reason. Log: $logPath. You can '
         'turn off full-device mode in Settings to use proxy mode instead.';
+  }
+
+  /// What the elevation helper last said, if it failed.
+  ///
+  /// Nothing read osascript's output, so every failure to elevate looked
+  /// identical to the app: no tun log, therefore "the prompt was probably
+  /// dismissed". That guess is right often enough to be misleading, and a
+  /// tester chasing a full-device failure was told to approve a prompt he had
+  /// already approved. osascript is specific when asked: cancelling gives
+  /// "User canceled. (-128)", and anything else is a different problem
+  /// entirely.
+  String _elevationError = '';
+
+  void _watchElevation(Process p, String helper) {
+    _elevationError = '';
+    final StringBuffer err = StringBuffer();
+    p.stderr.transform(utf8.decoder).listen(err.write, onError: (Object _) {});
+    unawaited(p.exitCode.then((int code) {
+      if (code == 0) return;
+      final String text = err.toString().trim();
+      _elevationError = text.isEmpty ? '$helper exited $code' : text;
+      NovaLog.instance.write('Elevation failed ($helper, exit $code): '
+          '${text.isEmpty ? "no output" : text}');
+    }));
   }
 
   /// Open (truncate) the tee log and record which config the core is running.
@@ -1517,9 +1546,11 @@ class DesktopProxyController extends ProxyController {
       final String appleScript =
           'do shell script "${_asEsc(cmd)}" with administrator privileges';
       _elevated = await Process.start('osascript', <String>['-e', appleScript]);
+      _watchElevation(_elevated!, 'osascript');
     } else {
       // Linux: best-effort via pkexec (graphical sudo).
       _elevated = await Process.start('pkexec', <String>['sh', '-c', cmd]);
+      _watchElevation(_elevated!, 'pkexec');
     }
     // Held open for the whole session; closing it in [_cleanup] is the stop
     // signal, and losing it to a crash is the same signal.
