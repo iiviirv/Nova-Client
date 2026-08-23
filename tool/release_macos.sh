@@ -157,9 +157,64 @@ for f in "$STABLE_ZIP" "$LEGACY_ZIP"; do
   if ! cmp -s "$ZIP" "$f"; then echo "!! $f does not match $ZIP"; exit 1; fi
 done
 echo "verified: all four upload names are build $B"
-echo "upload these to the release:"
-echo "  $STABLE_DMG   (primary, universal)"
-echo "  $STABLE_ZIP"
-echo "  $LEGACY_DMG   (compat alias for links already shared)"
-echo "  $LEGACY_ZIP"
+
+# ---- publish ----
+#
+# The upload used to be a separate command run by hand, which raced CI: the
+# release only exists once the Android and Windows jobs have created it, and
+# uploading before that put the macOS files on one repo and not the other. The
+# website links to releases/latest/download/, so a release that exists without
+# them serves a 404 for every Mac user until someone notices.
+#
+# So the script waits for the release to exist and then uploads to both repos
+# itself. Set NOVA_NO_UPLOAD=1 to build only.
+TAG="${NOVA_TAG:-$(git -C "$PROJ" describe --tags --abbrev=0 2>/dev/null)}"
+if [[ -n "${NOVA_NO_UPLOAD:-}" ]]; then
+  echo "built only (NOVA_NO_UPLOAD set). Files: $STABLE_DMG $STABLE_ZIP"
+  echo "RELEASE_MACOS_DONE b$B"
+  exit 0
+fi
+if [[ -z "$TAG" ]]; then
+  echo "!! no tag found; push the release tag first, or set NOVA_TAG"
+  exit 1
+fi
+echo "############ publish to $TAG ############"
+
+REPOS=(IRNova/Nova-Client iiviirv/Nova-Client)
+# Wait for CI to create the release. 20 minutes is well past a normal run and
+# still bounded, so a failed CI stops this instead of hanging for ever.
+for r in "${REPOS[@]}"; do
+  echo "-- waiting for $TAG on $r"
+  ok=""
+  for _ in {1..60}; do
+    if gh release view "$TAG" --repo "$r" >/dev/null 2>&1; then ok=1; break; fi
+    sleep 20
+  done
+  if [[ -z "$ok" ]]; then
+    echo "!! $TAG never appeared on $r. CI may have failed; nothing uploaded there."
+    exit 1
+  fi
+done
+
+for r in "${REPOS[@]}"; do
+  echo "-- uploading to $r"
+  gh release upload "$TAG" "$STABLE_DMG" "$STABLE_ZIP" "$LEGACY_DMG" "$LEGACY_ZIP" \
+    --repo "$r" --clobber || { echo "!! upload to $r failed"; exit 1; }
+done
+
+# Prove it from the outside, the way a user reaches it, rather than trusting the
+# upload's exit code. This is the check that would have caught the release where
+# one repo had the macOS files and the other did not.
+echo "-- verifying the links the website uses"
+fail=0
+for f in Nova-macOS.dmg nova-client.apk Nova-Windows.zip; do
+  code=$(curl -sIL -o /dev/null -w '%{http_code}' \
+    "https://github.com/IRNova/Nova-Client/releases/latest/download/$f")
+  printf '   %-22s %s\n' "$f" "$code"
+  [[ "$code" == "200" ]] || fail=1
+done
+if [[ "$fail" != "0" ]]; then
+  echo "!! a download link is not serving; the release is incomplete"
+  exit 1
+fi
 echo "RELEASE_MACOS_DONE b$B"
