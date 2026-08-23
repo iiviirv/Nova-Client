@@ -24,8 +24,23 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!--
+	  Nova uses non-exempt encryption.
+
+	  This said false, which is the declaration for an app that either uses no
+	  encryption or only the standard encryption Apple's own APIs provide. Nova
+	  is neither: it ships sing-box and Xray and implements Reality, Shadowsocks
+	  ciphers and traffic obfuscation, none of which is Apple-provided standard
+	  cryptography. Declaring false was a false statement on an export
+	  compliance question, which is a worse mistake than the paperwork true
+	  costs.
+
+	  With true, App Store Connect asks the export compliance questions on each
+	  submission. See docs/ios-export-compliance.md for how to answer them and
+	  what still has to be filed outside App Store Connect.
+	-->
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

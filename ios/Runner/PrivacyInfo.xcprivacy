@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Nova's privacy manifest.
+
+	  Nova is a proxy client. It collects nothing, sends nothing anywhere it was
+	  not asked to, and has no analytics, advertising or tracking of any kind,
+	  so the collected-data and tracking-domain lists below are empty by fact
+	  rather than by omission. The whole point of the product is that traffic
+	  goes where the user's own subscription sends it.
+
+	  The one required-reason API declared is UserDefaults, which the app
+	  reaches through shared_preferences: subscriptions, settings and the saved
+	  ping results all live there. Reason CA92.1 is the correct one, since the
+	  data is written and read by this app alone and never leaves the device.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
