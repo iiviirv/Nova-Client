@@ -1023,12 +1023,12 @@ class SingboxConfig {
     // Per-ISP override wins over the node's pinned fingerprint, which wins over
     // the Chrome default. Reality keeps its own uTLS handshake, but the override
     // still applies to it (it only swaps which browser profile is forged).
-    final String fingerprint =
+    final String fingerprint = _singboxFingerprint(
         (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
             ? fingerprintOverride
             : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
                 ? n.fingerprint!
-                : 'chrome';
+                : 'chrome');
     // NaiveProxy's TLS belongs to cronet (Chromium's network stack), not to
     // sing-box: measured against the 1.13.13 core, the naive outbound rejects
     // `alpn`, `utls`, `fragment` AND `insecure` outright ("<x> is not supported
@@ -1479,4 +1479,34 @@ String? _singboxFlow(String? raw) {
   if (f == 'xtls-rprx-vision') return f;
   if (f.startsWith('xtls-rprx-vision')) return 'xtls-rprx-vision';
   return null;
+}
+
+/// uTLS fingerprints the sing-box core knows.
+///
+/// An unknown one is FATAL: the core refuses the whole config, so a single node
+/// carrying an Xray-only value stops every other node in it from being dialled.
+const Set<String> kSingboxFingerprints = <String>{
+  'chrome', 'firefox', 'edge', 'safari', 'ios', 'android',
+  'random', 'randomized', '360', 'qq',
+};
+
+/// A fingerprint the core will accept.
+///
+/// Xray's `fp=unsafe` means "no browser fingerprint, Go's own TLS with my
+/// cipher list". Nova's SNI-block bypass emits exactly that, and for a plain
+/// TLS node it is honoured by turning uTLS off entirely (see the hardened
+/// branch above). Reality cannot do that: its handshake IS a forged uTLS
+/// ClientHello, so it keeps uTLS on and the raw `unsafe` reached the core.
+///
+/// That combination is not rare. In the published free list, 88 of 200 nodes in
+/// a measuring pool were Reality servers whose links carry `fp=unsafe`, and any
+/// one of them made the core exit before it started, so the ping test spun for
+/// ever and no server ever got a number.
+///
+/// Chrome is the substitute because it is what the node would have been given
+/// with no fingerprint at all, and because for Reality the browser profile only
+/// chooses which ClientHello to forge, not whether to forge one.
+String _singboxFingerprint(String raw) {
+  final String f = raw.trim().toLowerCase();
+  return kSingboxFingerprints.contains(f) ? f : 'chrome';
 }
