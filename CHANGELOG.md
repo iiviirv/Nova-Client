@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.17.1-beta (2026-08-23)
+
+- Fixed: the ping test on the free servers spun for ever and never showed a
+  number. One server carrying a setting the core does not recognise stopped
+  every server in the list from being tested, not just itself, and 88 of the 200
+  in a test run carried it. The same thing could stop a connection from starting
+  at all.
+
+  Two settings were involved, both copied straight from the server link into the
+  core: an Xray-only encryption flow, and a browser fingerprint of "unsafe" that
+  the SNI-block bypass sets. Nova now translates what it can and drops what it
+  cannot, so a server Nova does not understand fails on its own instead of
+  taking the list down with it.
+
+  Worth updating for if you use the free servers: on 1.17.0 the ping test cannot
+  work at all.
+
 ## v1.17.0-beta (2026-08-22)
 
 - New: servers behind Cloudflare keep working after their address is filtered.

@@ -1,0 +1,2 @@
+- The ping test on the free servers works again
+- One odd server no longer stops every other server from being tested
