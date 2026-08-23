@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/cleanip/clean_ip_fronting.dart';
 import '../../core/geo/node_geo_store.dart';
+import '../../core/proxy/health_store.dart';
 import '../../core/proxy/list_freshness.dart';
 import 'free_list_search_sheet.dart';
 import '../../core/logging/nova_log.dart';
@@ -200,11 +201,27 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (cached.isNotEmpty && mounted) {
       _applyNodes(cached, profile, stale: false);
     }
+    // Put the last sweep's numbers back before anything else runs. A full sweep
+    // costs a minute or two, and it used to be lost to anything that tore the
+    // app down (on Android, the back button was enough), so the next open
+    // started from nothing and re-tested.
+    if (!mounted) return;
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    if (proxy.coreHealth.value.isEmpty) {
+      final CoreNodeHealth? saved = await HealthStore.load(profile.id);
+      if (saved != null && mounted) proxy.coreHealth.value = saved;
+    }
     // Only go to the network when the saved list is actually old. Re-fetching
     // and re-sweeping on every visit made a tab switch cost a few hundred
     // dials, and threw away readings the user had just watched appear. The
     // refresh button ignores this and always fetches.
-    if (cached.isNotEmpty && !ListFreshness.isStale(profile.id)) {
+    // The three cases that justify going to the network, and nothing else: a
+    // list with no servers yet, a list past its window, and the refresh button
+    // (which never reaches here). Switching server, connecting and coming back
+    // to the tab are not among them.
+    if (!mounted) return;
+    final bool autoOn = NovaScope.of(context).settings.autoRefreshLists;
+    if (cached.isNotEmpty && (!autoOn || !ListFreshness.isStale(profile.id))) {
       if (mounted) setState(() => _loading = false);
       return;
     }
@@ -310,6 +327,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // every server is back on screen until it has been re-tested.
     _autoMeasured = false;
     await ListFreshness.invalidate(profile.id);
+    await HealthStore.clear(profile.id);
     await _refresh(profile, hadCache: _nodes.isNotEmpty, skipPing: true);
     if (!mounted) return;
     final scope = NovaScope.of(context);
@@ -323,11 +341,26 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// The lightning button: measure every listed server through a measuring
   /// core (see ProxyController.measureNodes). Results land on coreHealth, which
   /// the rows already render as the live bolt badge / "no response".
-  Future<void> _measureAll({bool quiet = false}) async {
+  Future<void> _measureAll({bool quiet = false, int? stopAfter}) async {
     if (_nodes.isEmpty) return;
     final scope = NovaScope.of(context);
     final NovaStrings s = NovaStrings.of(context);
-    final String? problem = await scope.proxy.measureNodes(List<ProxyNode>.of(_nodes));
+    // Re-testing the free list means the servers on screen, not the pool they
+    // were found in. Pulling all two hundred back in turned a ten-second check
+    // of a working list into the whole search again, which is what refresh is
+    // for.
+    final CoreNodeHealth health = scope.proxy.coreHealth.value;
+    final List<ProxyNode> subject = (stopAfter == null && !health.isEmpty)
+        ? _hideDead(_nodes, health)
+        : _nodes;
+    final String? problem = await scope.proxy.measureNodes(
+        List<ProxyNode>.of(subject),
+        merge: subject.length != _nodes.length,
+        stopAfterWorking: stopAfter);
+    final ProxyProfile? p = _profile;
+    if (p != null) {
+      await HealthStore.save(p.id, scope.proxy.coreHealth.value);
+    }
     if (!mounted) return;
     if (quiet) return;
     final String msg = problem ??
@@ -354,11 +387,24 @@ class _NodeListScreenState extends State<NodeListScreen> {
   List<ProxyNode> _hideDead(List<ProxyNode> nodes, CoreNodeHealth health) {
     final ProxyProfile? profile = _profile;
     if (profile == null || !profile.isBuiltIn) return nodes;
-    final List<ProxyNode> live = nodes
-        .where((ProxyNode n) =>
-            !(health.wasTested(n) && health.delayFor(n) == null))
-        .toList();
-    return live.isEmpty ? nodes : live;
+    // On Nova's own list, show the servers that answered and nothing else.
+    //
+    // The pool behind this is a few hundred entries that exist to be searched,
+    // not read. Once the sweep has what it needs it stops, which used to leave
+    // the rest of the list spinning for ever with no way to settle them, and a
+    // list where half the rows are a question mark is not a list anyone can
+    // pick from. Showing only the servers with a number means every row on
+    // screen is one the user can actually use.
+    final List<ProxyNode> working =
+        nodes.where((ProxyNode n) => health.delayFor(n) != null).toList();
+    if (working.isNotEmpty) {
+      return working.length <= kFreeListTarget
+          ? working
+          : working.sublist(0, kFreeListTarget);
+    }
+    // Nothing has been measured yet (a fresh install, or a sweep that has not
+    // started): show the pool rather than an empty screen.
+    return nodes;
   }
 
   bool _autoMeasured = false;
@@ -380,6 +426,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // Same window as the list fetch, and the same record, so a visit either
     // does both or does neither. A sweep on its own would re-test servers the
     // saved readings already describe.
+    if (!NovaScope.of(context).settings.autoRefreshLists) return;
     if (!ListFreshness.isStale(profile.id)) return;
     _autoMeasured = true;
     unawaited(_runFirstSweep(profile, proxy));
@@ -424,7 +471,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     ));
 
     try {
-      await _measureAll(quiet: true);
+      await _measureAll(quiet: true, stopAfter: kFreeListTarget);
     } finally {
       await ListFreshness.markSynced(profile.id);
       close();
@@ -438,6 +485,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (scope.proxy.measuring.value) return;
     final String? problem =
         await scope.proxy.measureNodes(<ProxyNode>[node], merge: true);
+    final ProxyProfile? p = _profile;
+    if (p != null) {
+      await HealthStore.save(p.id, scope.proxy.coreHealth.value);
+    }
     if (!mounted || problem == null) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(problem)));

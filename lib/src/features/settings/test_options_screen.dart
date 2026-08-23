@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/proxy/singbox/singbox_config.dart';
+import '../../core/proxy/list_freshness.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
@@ -36,11 +37,57 @@ class TestOptionsScreen extends StatelessWidget {
             child: ListView(
               padding: NovaSpace.page(context),
               children: <Widget>[
+                _AutoRefreshCard(settings: settings),
+                const SizedBox(height: 16),
                 _UrlTestCard(settings: settings),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// When a server list refreshes and re-tests itself on its own.
+///
+/// Worth being explicit about, because the answer used to be "every time you
+/// open it", which cost a few hundred dials for nothing and threw away readings
+/// the user had just watched appear.
+class _AutoRefreshCard extends StatelessWidget {
+  const _AutoRefreshCard({required this.settings});
+
+  final SettingsController settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final ThemeData theme = Theme.of(context);
+    final int hours = ListFreshness.maxAge.inHours;
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SwitchListTile(
+            value: settings.autoRefreshLists,
+            onChanged: settings.setAutoRefreshLists,
+            title: Text(s.testAutoRefreshTitle),
+            subtitle: Text(
+              s.testAutoRefreshBody.replaceFirst('{h}', '\u2066$hours\u2069'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(
+              settings.autoRefreshLists
+                  ? s.testAutoRefreshOn.replaceFirst('{h}', '\u2066$hours\u2069')
+                  : s.testAutoRefreshOff,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

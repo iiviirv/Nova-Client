@@ -417,7 +417,8 @@ class SingboxProxyController extends ProxyController {
   }
 
   @override
-  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async {
+  Future<String?> measureNodes(List<ProxyNode> nodes,
+      {bool merge = false, int? stopAfterWorking}) async {
     if (!canMeasureNodes || measuring.value || nodes.isEmpty) return null;
     if (_state != ProxyConnectionState.disconnected &&
         _state != ProxyConnectionState.error) {
@@ -485,6 +486,7 @@ class SingboxProxyController extends ProxyController {
         tagKeys: built.tagKeys,
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
+        stopAfterWorking: stopAfterWorking,
         cancelled: () => !measuring.value,
         onProgress: (Map<String, int> d, Set<String> tested) {
           coreHealth.value = _mergeHealth(before, d, tested, merge: merge);

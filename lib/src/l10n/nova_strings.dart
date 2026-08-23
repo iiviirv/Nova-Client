@@ -735,6 +735,10 @@ class NovaStrings {
   String get freeSearchProgress => t('free.searchProgress');
   String get freeSearchStop => t('free.searchStop');
   String get freeSearchStopHint => t('free.searchStopHint');
+  String get testAutoRefreshTitle => t('test.autoRefreshTitle');
+  String get testAutoRefreshBody => t('test.autoRefreshBody');
+  String get testAutoRefreshOn => t('test.autoRefreshOn');
+  String get testAutoRefreshOff => t('test.autoRefreshOff');
   String get nodeMeasureDone => t('node.measureDone');
   String get nodeRetestOne => t('node.retestOne');
   String get configsSingleNode => t('home.configsSingleNode');
@@ -1513,6 +1517,13 @@ class NovaStrings {
     'free.searchProgress': 'Tried {n} of {total}',
     'free.searchStop': 'Stop and use what was found',
     'free.searchStopHint': 'You can start again any time with the refresh button.',
+    'test.autoRefreshTitle': 'Update server lists on their own',
+    'test.autoRefreshBody': 'Re-download a list and re-test it when it is more '
+        'than {h} hours old.',
+    'test.autoRefreshOn': 'A list is checked at most once every {h} hours, and '
+        'only when you open it. Your test results are kept in between. The '
+        'refresh button always checks straight away.',
+    'test.autoRefreshOff': 'Lists will only change when you press refresh.',
     'node.measureDone': 'Measured {n} servers through the core',
     'node.retestOne': 'Test this server again',
     'home.configsSingleNode':
@@ -2286,6 +2297,13 @@ class NovaStrings {
     'free.searchProgress': '\u2066{n}\u2069 از \u2066{total}\u2069 بررسی شد',
     'free.searchStop': 'توقف و استفاده از همین موارد',
     'free.searchStopHint': 'هر زمان بخواهید می‌توانید با دکمه بازآوری دوباره شروع کنید.',
+    'test.autoRefreshTitle': 'بروزرسانی خودکار لیست سرورها',
+    'test.autoRefreshBody': 'اگر بیش از {h} ساعت از آخرین بروزرسانی گذشته باشد، '
+        'لیست دوباره دانلود و تست می‌شود.',
+    'test.autoRefreshOn': 'هر لیست حداکثر هر {h} ساعت یک‌بار و فقط هنگام باز '
+        'کردن آن بررسی می‌شود. نتیجه تست‌ها در این فاصله حفظ می‌شود. دکمه '
+        'بازآوری همیشه بلافاصله بررسی می‌کند.',
+    'test.autoRefreshOff': 'لیست‌ها فقط با زدن دکمه بازآوری تغییر می‌کنند.',
     'node.measureDone': '\u2066{n}\u2069 سرور از طریق هسته اندازه‌گیری شد',
     'node.retestOne': 'تست دوباره‌ی همین سرور',
     'home.configsSingleNode':

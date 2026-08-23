@@ -58,6 +58,7 @@ class SettingsController extends ChangeNotifier {
   static const String _kAutoSysProxy = 'nova.desktop.autoSystemProxy';
   static const String _kUrlTestUrl = 'nova.urltest.url';
   static const String _kUrlTestTimeout = 'nova.urltest.timeout';
+  static const String _kAutoRefreshLists = 'nova.autoRefreshLists';
   static const String _kUrlTestInterval = 'nova.urltest.interval';
   static const String _kUrlTestTolerance = 'nova.urltest.tolerance';
   static const String _kHy2Down = 'nova.hy2.downMbps';
@@ -107,6 +108,15 @@ class SettingsController extends ChangeNotifier {
   int _urlTestTimeoutSec = kDefaultUrlTestTimeoutSec;
   int _urlTestIntervalSec = kDefaultUrlTestIntervalSec;
   int _urlTestToleranceMs = kDefaultUrlTestToleranceMs;
+  /// Whether a server list re-fetches and re-tests itself when it is opened
+  /// and the saved results are older than [ListFreshness.maxAge].
+  ///
+  /// On by default. Off means the list only ever changes when the refresh
+  /// button is pressed, which is what someone on a metered or very slow
+  /// connection wants: a sweep is a few hundred dials.
+  bool _autoRefreshLists = true;
+  bool get autoRefreshLists => _autoRefreshLists;
+
   String get urlTestUrl => _urlTestUrl;
   int get urlTestTimeoutSec => _urlTestTimeoutSec;
   int get urlTestIntervalSec => _urlTestIntervalSec;
@@ -235,6 +245,7 @@ class SettingsController extends ChangeNotifier {
     _mobileProxyMode = p.getBool(_kMobileProxyMode) ?? false;
     _iosAutoReconnect = p.getBool(_kIosAutoReconnect) ?? false;
     _urlTestUrl = p.getString(_kUrlTestUrl) ?? kDefaultUrlTestUrl;
+    _autoRefreshLists = p.getBool(_kAutoRefreshLists) ?? true;
     _urlTestTimeoutSec = p.getInt(_kUrlTestTimeout) ?? kDefaultUrlTestTimeoutSec;
     _urlTestIntervalSec = p.getInt(_kUrlTestInterval) ?? kDefaultUrlTestIntervalSec;
     _urlTestToleranceMs = p.getInt(_kUrlTestTolerance) ?? kDefaultUrlTestToleranceMs;
@@ -363,6 +374,13 @@ class SettingsController extends ChangeNotifier {
     _urlTestUrl = t;
     notifyListeners();
     await _prefs?.setString(_kUrlTestUrl, t);
+  }
+
+  Future<void> setAutoRefreshLists(bool v) async {
+    if (v == _autoRefreshLists) return;
+    _autoRefreshLists = v;
+    notifyListeners();
+    await _prefs?.setBool(_kAutoRefreshLists, v);
   }
 
   Future<void> setUrlTestTimeoutSec(int v) async {

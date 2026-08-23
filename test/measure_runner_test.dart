@@ -180,4 +180,40 @@ void main() {
             timeout: const Duration(milliseconds: 400)),
         isFalse);
   });
+
+  test('the run stops once it has enough working servers', () async {
+    // The free list's pool is deliberately larger than anyone needs, so testing
+    // all of it spends minutes producing a list nobody scrolls through.
+    for (int i = 0; i < 20; i++) {
+      api.answers['node-$i'] = <int?>[50, 50];
+    }
+    final Map<String, int> out = await MeasureRunner.run(
+      api: api.uri,
+      tagKeys: <String, String>{
+        for (int i = 0; i < 20; i++) 'node-$i': 'key-$i',
+      },
+      url: 'http://x.test/204',
+      timeoutSec: 5,
+      concurrency: 1,
+      stopAfterWorking: 5,
+    );
+    expect(out.length, greaterThanOrEqualTo(5));
+    expect(out.length, lessThan(20),
+        reason: 'it should stop, not sweep the whole pool');
+  });
+
+  test('without a target it still measures everything', () async {
+    for (int i = 0; i < 6; i++) {
+      api.answers['node-$i'] = <int?>[50, 50];
+    }
+    final Map<String, int> out = await MeasureRunner.run(
+      api: api.uri,
+      tagKeys: <String, String>{
+        for (int i = 0; i < 6; i++) 'node-$i': 'key-$i',
+      },
+      url: 'http://x.test/204',
+      timeoutSec: 5,
+    );
+    expect(out.length, 6);
+  });
 }

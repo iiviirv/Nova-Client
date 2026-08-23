@@ -1142,7 +1142,8 @@ class DesktopProxyController extends ProxyController {
   Process? _measureProcess;
 
   @override
-  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async {
+  Future<String?> measureNodes(List<ProxyNode> nodes,
+      {bool merge = false, int? stopAfterWorking}) async {
     if (measuring.value) return null;
     if (nodes.isEmpty) return null;
     if (tunMode && (_state.isActive || _state.isBusy)) {
@@ -1225,6 +1226,7 @@ class DesktopProxyController extends ProxyController {
         tagKeys: built.tagKeys,
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
+        stopAfterWorking: stopAfterWorking,
         cancelled: () => exited || !measuring.value,
         onProgress: (Map<String, int> d, Set<String> tested) {
           coreHealth.value = _mergeHealth(before, d, tested, merge: merge);

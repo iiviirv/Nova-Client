@@ -45,6 +45,14 @@ class TrafficStats {
 /// the core means "failed/untested" and is dropped). [selectedKey] is the node
 /// the auto-selector is currently routing through, so the list can mark which
 /// server is actually carrying traffic.
+/// How many working servers the free list stops at.
+///
+/// The published pool is a few hundred, and testing all of them takes a couple
+/// of minutes for a list nobody scrolls to the end of. Thirty servers that
+/// carry traffic is more than anyone picks from, and stopping there turns the
+/// wait from minutes into seconds.
+const int kFreeListTarget = 30;
+
 class CoreNodeHealth {
   const CoreNodeHealth({
     required this.delayMsByKey,
@@ -188,7 +196,12 @@ abstract class ProxyController extends ChangeNotifier {
   /// With [merge] the existing readings are kept and only the nodes in this run
   /// are updated, which is what re-testing a single row does; without it the
   /// whole board is cleared first, which is what the lightning button does.
-  Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async =>
+  /// With [stopAfterWorking] the run ends as soon as that many servers have
+  /// answered. The free list uses it: the pool is deliberately larger than
+  /// anyone needs, so testing all of it spends minutes to produce a list nobody
+  /// scrolls through.
+  Future<String?> measureNodes(List<ProxyNode> nodes,
+          {bool merge = false, int? stopAfterWorking}) async =>
       'Not supported on this device yet';
 
   /// Stops a run in flight, keeping every reading it already produced.

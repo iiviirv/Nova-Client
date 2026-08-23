@@ -141,6 +141,11 @@ class MeasureRunner {
     // cause affecting all of them, and without this the log could only say
     // "0 answered". That is how a missing resolver went unnoticed.
     List<String>? failures,
+    /// Stop once this many servers have answered. The free list uses it: its
+    /// pool is deliberately larger than anyone needs, so testing all of it
+    /// spends minutes producing a list nobody scrolls through. Servers already
+    /// dialled keep their verdicts; the rest are simply not started.
+    int? stopAfterWorking,
   }) async {
     final http.Client c = client ?? http.Client();
     final Map<String, int> delays = <String, int>{};
@@ -151,6 +156,7 @@ class MeasureRunner {
     Future<void> worker() async {
       while (true) {
         if (cancelled?.call() ?? false) return;
+        if (stopAfterWorking != null && delays.length >= stopAfterWorking) return;
         final int i = next++;
         if (i >= queue.length) return;
         final String tag = queue[i];
@@ -210,7 +216,11 @@ class MeasureRunner {
         for (final MapEntry<String, String> e in tagKeys.entries)
           if (!delays.containsKey(e.value)) e.key,
       ];
+      // No late retry when the run stopped early on purpose: the servers that
+      // said nothing were never the reason it ended, and the user is waiting on
+      // a list that is already long enough.
       if (again.isEmpty) return;
+      if (stopAfterWorking != null && delays.length >= stopAfterWorking) return;
       int at = 0;
       Future<void> retryWorker() async {
         while (true) {
