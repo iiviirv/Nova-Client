@@ -8,7 +8,7 @@
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.online.novaproxy.novaClient</string>
+		<string>group.tech.innovatenorth.novaedge</string>
 	</array>
 </dict>
 </plist>
