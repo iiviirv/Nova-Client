@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.18.0-beta (2026-08-23)
+
+- New: opening the free servers for the first time now shows what Nova is doing.
+  These are shared servers and some are always gone, so the list is only worth
+  showing once it has been checked. You get a live count of the working servers
+  as they are found, and a stop button that keeps everything found so far.
+
+- Fixed: the ping test can be stopped. Tapping the bolt while it is running ends
+  it, and leaving the server list ends it too. On a slow connection a full sweep
+  can take minutes, and there was no way out of it.
+
+- Fixed: opening a server list no longer re-downloads it and re-tests every
+  server every single time. That happens when the saved list is more than half a
+  day old, and the refresh button still checks whenever you ask. Your test
+  results stay put in between.
+
+- Fixed: a server that does not answer is asked again at the end of the run,
+  once the rest have finished. Running the whole test two or three times used to
+  be the way to get those servers back.
+
+- Removed: servers hosted inside Iran are no longer published to the free list.
+  A server inside the country carries your traffic through the very place you
+  are trying to get past. This one is already live and needs no update.
+
 ## v1.17.1-beta (2026-08-23)
 
 - Fixed: the ping test on the free servers spun for ever and never showed a

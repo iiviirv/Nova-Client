@@ -1,0 +1,4 @@
+- See what Nova is doing when the free servers first load
+- Stop the ping test at any time
+- Lists no longer re-test on every visit
+- No servers hosted inside Iran
