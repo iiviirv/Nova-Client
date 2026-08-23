@@ -25,22 +25,25 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<!--
-	  Nova uses non-exempt encryption.
+	  The export compliance answer is deliberately NOT declared here.
 
-	  This said false, which is the declaration for an app that either uses no
-	  encryption or only the standard encryption Apple's own APIs provide. Nova
-	  is neither: it ships sing-box and Xray and implements Reality, Shadowsocks
-	  ciphers and traffic obfuscation, none of which is Apple-provided standard
-	  cryptography. Declaring false was a false statement on an export
-	  compliance question, which is a worse mistake than the paperwork true
-	  costs.
+	  It used to say ITSAppUsesNonExemptEncryption = false, which is the answer
+	  for an app using no encryption or only what Apple's frameworks provide.
+	  Nova ships sing-box and Xray and implements Reality, Shadowsocks ciphers
+	  and traffic obfuscation, so that was a false statement on an export
+	  compliance question.
 
-	  With true, App Store Connect asks the export compliance questions on each
-	  submission. See docs/ios-export-compliance.md for how to answer them and
-	  what still has to be filed outside App Store Connect.
+	  Setting it to true instead is rejected at upload: with true, Apple expects
+	  an ITSEncryptionExportComplianceCode matching a declaration already on
+	  file, and Nova has none (error 90592, "the export compliance key value []
+	  ... doesn't match"). A code cannot be invented, and the first declaration
+	  has to be made through App Store Connect.
+
+	  With the key absent, App Store Connect asks the export questions at
+	  submission and the answers are given there. Once it issues a code, pinning
+	  it here with ITSEncryptionExportComplianceCode stops the prompts. See
+	  docs/ios-export-compliance.md for the answers.
 	-->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

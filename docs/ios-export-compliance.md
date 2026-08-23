@@ -14,9 +14,22 @@ obfuscation. None of that is Apple-provided standard cryptography, and hiding
 proprietary cryptographic behaviour from a network observer is the entire
 product.
 
-So the value is now `true`. That is not a formality: the previous answer was a
-false statement on an export compliance question, and the cost of the correct
-answer is paperwork rather than risk.
+Setting it to `true` instead is rejected at upload. With `true`, Apple expects an
+`ITSEncryptionExportComplianceCode` matching a declaration already on file, and
+Nova has none:
+
+```
+code : 90592
+Invalid Export Compliance Code. The export compliance key value [] in the app's
+Info.plist doesn't match the key value of the app's export compliance
+documentation.
+```
+
+A code cannot be invented, and the first declaration has to be made through App
+Store Connect. So the key is **removed entirely**. With it absent, App Store
+Connect asks the export questions at submission and the answers are given there,
+which asserts nothing false in the binary. Once Apple issues a code, pinning it
+in `Info.plist` as `ITSEncryptionExportComplianceCode` stops the prompts.
 
 ## What App Store Connect will now ask
 
