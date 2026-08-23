@@ -547,15 +547,23 @@ class _ServerRow extends StatelessWidget {
                           title: Text(s.serversExtract),
                         ),
                       ),
-                    PopupMenuItem<String>(
-                      value: 'edit',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.edit_outlined),
-                        title: Text(s.serversEdit),
+                    // Not offered for Nova's own free list. The dialog exists
+                    // to show and change a subscription's name and URL, and
+                    // neither is the user's to change here: the name is Nova's
+                    // and the URL is where the list is published, which is not
+                    // something to hand out. A source address that is easy to
+                    // read off the screen is easy to block, and the people who
+                    // would block it are the reason the list exists.
+                    if (!profile.isBuiltIn)
+                      PopupMenuItem<String>(
+                        value: 'edit',
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.edit_outlined),
+                          title: Text(s.serversEdit),
+                        ),
                       ),
-                    ),
                     // Nova's own free servers cannot be deleted. They are the
                     // one entry a person who has nothing else can always fall
                     // back to, including the person who deleted everything by

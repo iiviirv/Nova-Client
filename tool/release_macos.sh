@@ -181,17 +181,35 @@ fi
 echo "############ publish to $TAG ############"
 
 REPOS=(IRNova/Nova-Client iiviirv/Nova-Client)
-# Wait for CI to create the release. 20 minutes is well past a normal run and
-# still bounded, so a failed CI stops this instead of hanging for ever.
+
+# Wait for CI to FINISH, not merely for the release to appear.
+#
+# The Windows and Android jobs both create the release, so it exists as soon as
+# the first of them finishes. Waiting on that meant uploading while the Android
+# job was still building and then declaring the release incomplete, which is
+# exactly what happened on 1.19.0: macOS and Windows were there, the universal
+# APK 404ed, and the verification below caught it.
+#
+# 30 minutes is well past a normal run and still bounded, so a failed CI stops
+# this rather than hanging for ever.
+echo "-- waiting for CI on $TAG"
+ok=""
+for _ in {1..90}; do
+  states=$(gh run list --repo iiviirv/Nova-Client --limit 6 \
+             --json headBranch,status -q \
+             "[.[] | select(.headBranch==\"$TAG\") | .status] | join(\",\")")
+  if [[ -n "$states" && "$states" != *queued* && "$states" != *in_progress* ]]; then
+    ok=1; break
+  fi
+  sleep 20
+done
+if [[ -z "$ok" ]]; then
+  echo "!! CI for $TAG did not finish in time; nothing uploaded."
+  exit 1
+fi
 for r in "${REPOS[@]}"; do
-  echo "-- waiting for $TAG on $r"
-  ok=""
-  for _ in {1..60}; do
-    if gh release view "$TAG" --repo "$r" >/dev/null 2>&1; then ok=1; break; fi
-    sleep 20
-  done
-  if [[ -z "$ok" ]]; then
-    echo "!! $TAG never appeared on $r. CI may have failed; nothing uploaded there."
+  if ! gh release view "$TAG" --repo "$r" >/dev/null 2>&1; then
+    echo "!! $TAG has no release on $r. CI probably failed; nothing uploaded there."
     exit 1
   fi
 done
