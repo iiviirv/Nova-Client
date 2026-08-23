@@ -36,6 +36,18 @@ List<ProxyNode> parseSingboxOutbounds(String body) {
     return const <ProxyNode>[];
   }
   final List<ProxyNode> nodes = <ProxyNode>[];
+  // sing-box 1.11 moved WireGuard and AmneziaWG out of `outbounds` into their
+  // own `endpoints` array. Reading only `outbounds` meant a Nova-target
+  // subscription carrying an AmneziaWG node imported it as nothing: pasting the
+  // awg:// link by hand worked, the same server delivered by subscription
+  // silently vanished, and nothing said so.
+  if (decoded is Map && decoded['endpoints'] is List) {
+    for (final Object? raw in decoded['endpoints'] as List<dynamic>) {
+      if (raw is! Map) continue;
+      final ProxyNode? n = _endpointToNode(raw.cast<String, dynamic>());
+      if (n != null) nodes.add(n);
+    }
+  }
   for (final Object? raw in outbounds) {
     if (raw is! Map) continue;
     final ProxyNode? n = _outboundToNode(raw.cast<String, dynamic>());
@@ -51,6 +63,57 @@ bool looksLikeSingboxConfig(String body) {
   final String t = body.trimLeft();
   if (!t.startsWith('{') && !t.startsWith('[')) return false;
   return t.contains('"outbounds"') || t.contains('"type"');
+}
+
+/// A sing-box `endpoints[]` entry back into a node.
+///
+/// The inverse of AwgConfig.toEndpoint. Only WireGuard and AmneziaWG live here;
+/// anything else in the array is left alone.
+ProxyNode? _endpointToNode(Map<String, dynamic> e) {
+  final String type = (e['type'] as String? ?? '').toLowerCase();
+  if (type != 'wireguard' && type != 'awg' && type != 'amnezia') return null;
+  final List<dynamic> peers = (e['peers'] as List<dynamic>?) ?? <dynamic>[];
+  if (peers.isEmpty || peers.first is! Map) return null;
+  final Map<String, dynamic> peer =
+      (peers.first as Map).cast<String, dynamic>();
+  final String host = (peer['address'] as String? ?? '').trim();
+  final int port = (peer['port'] as num?)?.toInt() ?? 0;
+  if (host.isEmpty || port <= 0) return null;
+
+  // Rebuild the .conf text the rest of the app already understands rather than
+  // inventing a second representation of the same node. AwgConfig.parseConf is
+  // what SingboxConfig calls to write this endpoint back out, so a round trip
+  // through here lands on the JSON it came from.
+  String list(Object? v) => v is List ? v.join(', ') : (v?.toString() ?? '');
+  final StringBuffer b = StringBuffer()
+    ..writeln('[Interface]')
+    ..writeln('PrivateKey = ${e['private_key'] ?? ''}')
+    ..writeln('Address = ${list(e['address'])}');
+  if (e['mtu'] != null) b.writeln('MTU = ${e['mtu']}');
+  for (final String k in const <String>[
+    'jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4',
+    'h1', 'h2', 'h3', 'h4', 'i1', 'i2', 'i3', 'i4', 'i5',
+  ]) {
+    if (e[k] != null) b.writeln('${k.toUpperCase()} = ${e[k]}');
+  }
+  b
+    ..writeln('[Peer]')
+    ..writeln('PublicKey = ${peer['public_key'] ?? ''}')
+    ..writeln('Endpoint = $host:$port')
+    ..writeln('AllowedIPs = ${list(peer['allowed_ips'])}');
+  final Object? psk = peer['preshared_key'] ?? peer['pre_shared_key'];
+  if (psk != null) b.writeln('PresharedKey = $psk');
+  final Object? ka = peer['persistent_keepalive_interval'];
+  if (ka != null) b.writeln('PersistentKeepalive = $ka');
+
+  final String tag = (e['tag'] as String? ?? '').trim();
+  return ProxyNode(
+    protocol: NodeProtocol.awg,
+    tag: tag.isNotEmpty ? tag : '$host:$port',
+    server: host,
+    port: port,
+    awgConf: b.toString(),
+  );
 }
 
 ProxyNode? _outboundToNode(Map<String, dynamic> o) {
