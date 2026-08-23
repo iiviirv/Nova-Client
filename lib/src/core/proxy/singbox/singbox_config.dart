@@ -922,7 +922,8 @@ class SingboxConfig {
     switch (n.protocol) {
       case NodeProtocol.vless:
         o['uuid'] = n.uuid;
-        if (n.flow != null) o['flow'] = n.flow;
+        final String? flow = _singboxFlow(n.flow);
+        if (flow != null) o['flow'] = flow;
       case NodeProtocol.trojan:
         o['password'] = n.password;
       case NodeProtocol.shadowsocks:
@@ -1456,4 +1457,26 @@ class SingboxConfig {
       return v != null && v >= 0 && v <= 255;
     });
   }
+}
+
+/// The flow value sing-box will accept, or null for none.
+///
+/// Xray ships variants sing-box does not know, and an unrecognised flow is
+/// FATAL to the core rather than ignored: one such server anywhere in a
+/// subscription stops the core from starting, so the user loses every server,
+/// not just that one. Two servers out of 1918 in the public free lists carry
+/// `xtls-rprx-vision-udp443`, and each of them killed a whole 200-server batch
+/// when measuring.
+///
+/// The `-udp443` suffix is a client-side Xray behaviour switch (whether UDP/443
+/// goes through the proxy) and does not change what goes on the wire, so the
+/// base flow is the faithful translation. Anything else unrecognised is dropped
+/// rather than guessed at: a server that needs a flow Nova cannot speak will
+/// fail on its own, without taking the rest of the list with it.
+String? _singboxFlow(String? raw) {
+  final String f = (raw ?? '').trim();
+  if (f.isEmpty) return null;
+  if (f == 'xtls-rprx-vision') return f;
+  if (f.startsWith('xtls-rprx-vision')) return 'xtls-rprx-vision';
+  return null;
 }
