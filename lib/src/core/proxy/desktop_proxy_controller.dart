@@ -13,6 +13,7 @@ import '../cleanip/clean_ip_finder.dart';
 import '../cleanip/clean_ip_fronting.dart';
 import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
+import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
 import 'measure_runner.dart';
@@ -633,10 +634,35 @@ class DesktopProxyController extends ProxyController {
     final Directory dir = await getApplicationSupportDirectory();
     final String exe = Platform.isWindows ? 'sing-box.exe' : 'sing-box';
     final File out = File('${dir.path}/$exe');
-    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+    // Re-copy whenever the app's build changes, not when the file size does.
+    //
+    // Size is not a version. The core is rebuilt from a pinned source, and a
+    // small source change routinely produces a byte-identical LENGTH: the fix
+    // for the AmneziaWG crash-on-disconnect did exactly that, going from
+    // 47727954 bytes to 47727954 bytes. Anyone who had run Nova before that
+    // release kept the crashing core in their application-support folder
+    // through every later update, because the copy "matched", and the only way
+    // out was to know to delete that folder by hand. A tester spent days on it.
+    //
+    // The build number is written beside the copy and compared instead, so each
+    // new release refreshes the core exactly once and a same-size rebuild can
+    // never be mistaken for the same binary.
+    final File stamp = File('${dir.path}/core.build');
+    final String want = kNovaBuild;
+    final String have = stamp.existsSync()
+        ? (await stamp.readAsString()).trim()
+        : '';
+    if (!out.existsSync() ||
+        have != want ||
+        out.lengthSync() != src.lengthSync()) {
       await src.copy(out.path);
       if (!Platform.isWindows) {
         await Process.run('chmod', <String>['+x', out.path]);
+      }
+      try {
+        await stamp.writeAsString(want);
+      } catch (_) {
+        // A missing stamp only costs one extra copy next launch.
       }
     }
     if (Platform.isWindows) {
