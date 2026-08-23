@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.19.0-beta (2026-08-23)
+
+- Fixed: your ping results are kept. They were held in memory only, so closing
+  the app threw away a test that takes a minute or two. On Android, leaving with
+  the back button was enough to lose it.
+
+- Fixed: lists stop re-testing themselves for no reason. A list is now updated
+  when it is new, when it is more than 12 hours old, or when you press refresh,
+  and at no other time. Switching server and connecting no longer start a fresh
+  test. Settings, Test options has the setting and can turn it off.
+
+- Changed: the free list stops once it has found 30 working servers, and shows
+  only the servers that answered. Every row you see is one you can use, instead
+  of half the list sitting on a spinner.
+
+- Changed: the lightning button on the free list re-tests the servers on screen
+  rather than the few hundred they were found among. Refresh is what searches
+  again.
+
+- Changed: the free list is now built only from WebSocket servers behind
+  Cloudflare. Servers on other hosts, and Reality servers, test well and then
+  fail or stop working within hours on Iranian networks, because nothing can be
+  done for them once the address is noticed. Cloudflare addresses stay reachable
+  and the SNI-block bypass answers the filtering they do get. This is already
+  live and needs no update.
+
 ## v1.18.0-beta (2026-08-23)
 
 - New: opening the free servers for the first time now shows what Nova is doing.

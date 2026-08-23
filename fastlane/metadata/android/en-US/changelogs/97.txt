@@ -1,0 +1,3 @@
+- Your ping results are kept when you close the app
+- Lists no longer re-test themselves for no reason
+- The free list stops at 30 working servers and shows only those
