@@ -25,25 +25,24 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<!--
-	  The export compliance answer is deliberately NOT declared here.
+	  Nova's encryption is exempt, so this is false.
 
-	  It used to say ITSAppUsesNonExemptEncryption = false, which is the answer
-	  for an app using no encryption or only what Apple's frameworks provide.
-	  Nova ships sing-box and Xray and implements Reality, Shadowsocks ciphers
-	  and traffic obfuscation, so that was a false statement on an export
-	  compliance question.
+	  The key reads "uses NON-EXEMPT encryption", and the answer is no. Nova's
+	  cryptography comes from sing-box and Xray, which are publicly available
+	  open-source implementations, and publicly available encryption source code
+	  is exempt under the EAR. It is also what every Nova build distributed so
+	  far has declared, and what comparable published clients declare.
 
-	  Setting it to true instead is rejected at upload: with true, Apple expects
-	  an ITSEncryptionExportComplianceCode matching a declaration already on
-	  file, and Nova has none (error 90592, "the export compliance key value []
-	  ... doesn't match"). A code cannot be invented, and the first declaration
-	  has to be made through App Store Connect.
-
-	  With the key absent, App Store Connect asks the export questions at
-	  submission and the answers are given there. Once it issues a code, pinning
-	  it here with ITSEncryptionExportComplianceCode stops the prompts. See
-	  docs/ios-export-compliance.md for the answers.
+	  This was briefly changed to true on the reasoning that bundling
+	  non-Apple ciphers made the app non-exempt. That reasoning was wrong: it
+	  confused "encryption Apple did not write" with "encryption outside the
+	  exemptions". True was then rejected at upload (error 90592, it wants an
+	  ITSEncryptionExportComplianceCode for documentation Nova has none of), and
+	  removing the key altogether blocked TestFlight distribution outright
+	  ("Build is missing export compliance"), which is how the mistake surfaced.
 	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

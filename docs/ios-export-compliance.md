@@ -1,68 +1,67 @@
-# iOS export compliance, and why the declaration changed
+# iOS export compliance
 
-`ios/Runner/Info.plist` used to carry:
+`ios/Runner/Info.plist` declares:
 
 ```xml
 <key>ITSAppUsesNonExemptEncryption</key>
 <false/>
 ```
 
-That is the declaration for an app that uses no encryption at all, or only the
-standard encryption Apple's own frameworks provide. Nova is neither. It ships
-sing-box and Xray, and implements Reality, Shadowsocks ciphers and traffic
-obfuscation. None of that is Apple-provided standard cryptography, and hiding
-proprietary cryptographic behaviour from a network observer is the entire
-product.
+This is correct, and the reasoning is worth writing down because it is easy to
+talk yourself out of it.
 
-Setting it to `true` instead is rejected at upload. With `true`, Apple expects an
-`ITSEncryptionExportComplianceCode` matching a declaration already on file, and
-Nova has none:
+## Why false is the right answer
+
+The key asks whether the app uses **non-exempt** encryption. Nova uses plenty of
+encryption, but its cryptography comes from sing-box and Xray, which are
+publicly available open-source implementations, and publicly available
+encryption source code is exempt under the EAR. So the app uses encryption, and
+none of it is non-exempt. False.
+
+Every Nova build distributed so far has declared this, and comparable clients
+that are published on the App Store carrying the same cores declare it too.
+
+## The mistake, and how it surfaced
+
+This was briefly changed to `true`, on the reasoning that shipping Reality,
+Shadowsocks ciphers and obfuscation meant Nova was not using "standard" Apple
+cryptography and therefore could not be exempt.
+
+That reasoning conflated two different things: *encryption Apple did not write*
+and *encryption outside the exemptions*. The exemptions are not a list of
+Apple's frameworks; publicly available open-source implementations are exempt
+however exotic the protocol.
+
+Apple rejected it in two stages, which is what made the error obvious:
+
+1. With `true`, upload fails with error **90592**, "Invalid Export Compliance
+   Code ... the key value [] doesn't match the app's export compliance
+   documentation". `true` expects an `ITSEncryptionExportComplianceCode` from a
+   declaration on file, and the API confirms Nova has zero
+   `appEncryptionDeclarations`.
+2. With the key removed entirely, the upload succeeds but the build cannot be
+   distributed at all: adding it to a TestFlight group returns "Build is not
+   assignable" and submitting for beta review returns
+   **MISSING_EXPORT_COMPLIANCE**.
+
+Only the exempt answer lets a build reach testers.
+
+## If a build is ever stuck without a declaration
+
+A build uploaded without the key can be answered after the fact, without
+rebuilding, by patching the build:
 
 ```
-code : 90592
-Invalid Export Compliance Code. The export compliance key value [] in the app's
-Info.plist doesn't match the key value of the app's export compliance
-documentation.
+PATCH /v1/builds/{id}   {"data":{"type":"builds","id":"...",
+                         "attributes":{"usesNonExemptEncryption": false}}}
 ```
 
-A code cannot be invented, and the first declaration has to be made through App
-Store Connect. So the key is **removed entirely**. With it absent, App Store
-Connect asks the export questions at submission and the answers are given there,
-which asserts nothing false in the binary. Once Apple issues a code, pinning it
-in `Info.plist` as `ITSEncryptionExportComplianceCode` stops the prompts.
+That is what unblocked build 98. It returns 200 and the build becomes
+assignable immediately.
 
-## What App Store Connect will now ask
+## What this does not cover
 
-With `true`, each submission asks a short series of questions. For Nova the
-answers are:
-
-| Question | Answer |
-| --- | --- |
-| Does your app use encryption? | Yes |
-| Does it qualify for any of the exemptions? | No |
-| Does it implement any encryption algorithms other than, or in addition to, those in Apple's operating system? | **Yes** |
-| Is your app a mass market product? | Yes, it is free and publicly available |
-
-The third answer is the one that matters and the one that makes the previous
-`false` wrong. Do not be tempted by the exemption question: the exemptions cover
-apps that merely call HTTPS, not apps that carry their own cipher suites.
-
-## What has to be filed outside App Store Connect
-
-Answering these questions is not the whole obligation. A mass market
-cryptographic product is generally self-classified under **ECCN 5D992.c**, and
-US exporters self-classifying under 5D992.c file an **annual self-classification
-report** with BIS by 1 February covering the previous calendar year.
-
-This is a legal filing about the company, not a build step, and it is Vahid's to
-make or to take advice on. It is written down here because it is the part that
-is easy to miss once the App Store questions stop appearing.
-
-France has historically required a separate declaration for cryptographic
-products distributed there. Check whether that still applies before relying on
-this note.
-
-## What this does not change
-
-Nothing in how Nova works, and nothing a user sees. The binary is identical; only
-the declaration about it is now accurate.
+Nothing here is legal advice, and the classification is the company's to stand
+behind. If Nova ever ships cryptography that is **not** publicly available (an
+in-house cipher, an unpublished obfuscation), this answer stops being true and
+the whole question has to be revisited.
