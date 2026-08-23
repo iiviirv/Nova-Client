@@ -94,8 +94,27 @@ rm -rf "$STAGE" "$DMG"; mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 # -fs "HFS+" is required; the APFS default fails with "image not recognized"
+# The create races the volume it just detached and fails with "Resource
+# temporarily unavailable" often enough to have bitten three releases, so give
+# the volume time to settle and retry rather than treating one attempt as the
+# answer.
 hdiutil detach "/Volumes/Nova" 2>/dev/null
-hdiutil create -volname "Nova" -srcfolder "$STAGE" -fs "HFS+" -format UDZO -ov "$DMG" 2>&1 | tail -2
+sync; sleep 3
+for try in 1 2 3; do
+  hdiutil create -volname "Nova" -srcfolder "$STAGE" -fs "HFS+" -format UDZO -ov "$DMG" 2>&1 | tail -2
+  [[ -f "$DMG" ]] && break
+  echo "-- hdiutil attempt $try produced no image, settling and retrying"
+  hdiutil detach "/Volumes/Nova" 2>/dev/null; sync; sleep 8
+done
+# Stop here if there is still no image. Carrying on used to exit 0 and then
+# print "upload these" pointing at /tmp/Nova-macOS.dmg, which still held the
+# PREVIOUS build: a silent wrong-artifact rather than a failure. Fail loudly.
+if [[ ! -f "$DMG" ]]; then
+  echo "!! hdiutil could not create $DMG after 3 attempts."
+  echo "!! Stopping BEFORE the stable-name copies: /tmp/Nova-macOS.dmg still"
+  echo "!! holds an older build and must not be uploaded as this one."
+  exit 1
+fi
 codesign --force --timestamp -s "$ID" "${KCARGS[@]}" "$DMG" 2>&1 | tail -1
 
 echo "--- notarize DMG ---"
@@ -120,10 +139,24 @@ STABLE_DMG=/tmp/Nova-macOS.dmg
 STABLE_ZIP=/tmp/Nova-macOS.zip
 LEGACY_DMG=/tmp/Nova-macOS-arm64.dmg
 LEGACY_ZIP=/tmp/Nova-macOS-arm64.zip
-cp -f "$DMG" "$STABLE_DMG"
-cp -f "$ZIP" "$STABLE_ZIP"
-cp -f "$DMG" "$LEGACY_DMG"
-cp -f "$ZIP" "$LEGACY_ZIP"
+# Every copy is checked. A failed copy leaves the previous build's file sitting
+# under the exact name the next line tells you to upload, which is how a stale
+# DMG almost shipped as a new release.
+for pair in "$DMG:$STABLE_DMG" "$ZIP:$STABLE_ZIP" "$DMG:$LEGACY_DMG" "$ZIP:$LEGACY_ZIP"; do
+  src="${pair%%:*}"; dst="${pair##*:}"
+  if ! cp -f "$src" "$dst"; then
+    echo "!! could not copy $src -> $dst; $dst may hold an older build. Not uploading."
+    exit 1
+  fi
+done
+# Prove the shipping names are this build, not leftovers from a previous one.
+for f in "$STABLE_DMG" "$LEGACY_DMG"; do
+  if ! cmp -s "$DMG" "$f"; then echo "!! $f does not match $DMG"; exit 1; fi
+done
+for f in "$STABLE_ZIP" "$LEGACY_ZIP"; do
+  if ! cmp -s "$ZIP" "$f"; then echo "!! $f does not match $ZIP"; exit 1; fi
+done
+echo "verified: all four upload names are build $B"
 echo "upload these to the release:"
 echo "  $STABLE_DMG   (primary, universal)"
 echo "  $STABLE_ZIP"
