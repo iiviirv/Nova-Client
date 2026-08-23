@@ -989,7 +989,29 @@ class DesktopProxyController extends ProxyController {
             .where((String l) => l.isNotEmpty)
             .toList();
         if (lines.isNotEmpty) {
-          reason = lines.sublist(lines.length > 3 ? lines.length - 3 : 0).join(' | ');
+          // Prefer the core's own FATAL/ERROR line over the tail of the log.
+          //
+          // The tail is the wrong place to look. When the core dies it prints
+          // the reason and then a Go stack, so the last three lines are
+          // "cobra/command.go", "main.main()" and an address, and the user is
+          // shown a stack trace with the cause scrolled off the top. A tester
+          // on an Intel Mac reported exactly that: a message naming
+          // spf13/cobra, which says nothing about what went wrong.
+          final RegExp level = RegExp(r'\b(FATAL|ERROR)\b');
+          final List<String> named =
+              lines.where((String l) => level.hasMatch(l)).toList();
+          if (named.isNotEmpty) {
+            // The last one, and the line after it when that carries the
+            // remedy: sing-box splits "X is deprecated" from "to continue
+            // using this feature, set ..." across two lines.
+            final int at = lines.lastIndexOf(named.last);
+            reason = lines
+                .sublist(at, (at + 2).clamp(0, lines.length))
+                .join(' | ');
+          } else {
+            reason =
+                lines.sublist(lines.length > 3 ? lines.length - 3 : 0).join(' | ');
+          }
         }
       }
     } catch (_) {
@@ -1125,12 +1147,14 @@ class DesktopProxyController extends ProxyController {
       final CoreNodeHealth next = healthFromClashProxies(
           _coreTagKeys, (jsonDecode(r.body) as Map).cast<String, dynamic>());
       final CoreNodeHealth cur = coreHealth.value;
-      if (next.selectedKey == cur.selectedKey &&
-          mapEquals(next.delayMsByKey, cur.delayMsByKey) &&
-          setEquals(next.testedKeys, cur.testedKeys)) {
+      // Fold in rather than replace: see CoreNodeHealth.withLive.
+      final CoreNodeHealth merged = measuring.value ? next : cur.withLive(next);
+      if (merged.selectedKey == cur.selectedKey &&
+          mapEquals(merged.delayMsByKey, cur.delayMsByKey) &&
+          setEquals(merged.testedKeys, cur.testedKeys)) {
         return;
       }
-      coreHealth.value = next;
+      coreHealth.value = merged;
     } catch (_) {}
   }
 
@@ -1631,8 +1655,10 @@ class DesktopProxyController extends ProxyController {
     _trafficTimer = null;
     _healthTimer?.cancel();
     _healthTimer = null;
-    // The core's per-node latency only means anything while the tunnel is up.
-    coreHealth.value = CoreNodeHealth.empty;
+    // Drop the tunnel's selection, keep the measured board. A server switch is
+    // a disconnect followed by a connect, and it must not cost the user their
+    // lightning test.
+    coreHealth.value = coreHealth.value.withoutSelection;
     _coreTagKeys = const <String, String>{};
     if (_systemProxyOn) {
       await _setSystemProxy(false);

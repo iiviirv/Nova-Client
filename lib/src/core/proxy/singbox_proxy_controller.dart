@@ -243,12 +243,14 @@ class SingboxProxyController extends ProxyController {
           _stopWatchdog?.cancel();
           _stopWatchdog = null;
         }
-        // The core's per-node latency only means anything while the tunnel is up;
-        // drop it the moment we leave connected so a stale ping can't linger on
-        // the list after disconnect.
+        // Leaving connected drops the tunnel's SELECTION, not the board.
+        // Clearing the whole thing meant switching server wiped a two-minute
+        // lightning test, because a switch is a disconnect followed by a
+        // connect. Measured readings belong to the server list, not to whether
+        // a tunnel happens to be up.
         if (_state != ProxyConnectionState.connected &&
-            !coreHealth.value.isEmpty) {
-          coreHealth.value = CoreNodeHealth.empty;
+            coreHealth.value.selectedKey != null) {
+          coreHealth.value = coreHealth.value.withoutSelection;
         }
         notifyListeners();
         // Just came up: verify real traffic actually flows. A manually pinned
@@ -312,12 +314,16 @@ class SingboxProxyController extends ProxyController {
           testedKeys: next.delayMsByKey.keys.toSet());
     }
     final CoreNodeHealth cur = coreHealth.value;
-    if (next.selectedKey == cur.selectedKey &&
-        mapEquals(next.delayMsByKey, cur.delayMsByKey) &&
-        setEquals(next.testedKeys, cur.testedKeys)) {
+    // Fold in rather than replace: see CoreNodeHealth.withLive. While a measure
+    // run is in flight it owns the board outright, so the tunnel's numbers stay
+    // out of its way.
+    final CoreNodeHealth merged = measuring.value ? next : cur.withLive(next);
+    if (merged.selectedKey == cur.selectedKey &&
+        mapEquals(merged.delayMsByKey, cur.delayMsByKey) &&
+        setEquals(merged.testedKeys, cur.testedKeys)) {
       return;
     }
-    coreHealth.value = next;
+    coreHealth.value = merged;
   }
 
   /// Turns the host's `groups` payload into a [CoreNodeHealth], mapping the

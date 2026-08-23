@@ -92,6 +92,32 @@ class CoreNodeHealth {
   /// How many servers carry a verdict either way, answered or not.
   int get testedCount => testedKeys.length;
 
+  /// This board with the tunnel's own live numbers folded in.
+  ///
+  /// The live urltest and a lightning test are not the same measurement and must
+  /// not overwrite each other. Connecting used to replace the whole board with
+  /// whatever the tunnel's group reported, so switching server turned a careful
+  /// two-minute sweep into a handful of live pings, and the rest of the list
+  /// went blank. Anything already measured is therefore kept; the live numbers
+  /// only fill in servers that have no reading yet, and [selectedKey] always
+  /// follows the tunnel so the list can still show which server is carrying
+  /// traffic.
+  CoreNodeHealth withLive(CoreNodeHealth live) {
+    final Map<String, int> delays = <String, int>{...live.delayMsByKey}
+      ..addAll(delayMsByKey);
+    return CoreNodeHealth(
+      delayMsByKey: delays,
+      testedKeys: <String>{...testedKeys, ...live.testedKeys},
+      selectedKey: live.selectedKey,
+    );
+  }
+
+  /// This board with the tunnel's contribution dropped, for when the tunnel
+  /// goes away. Measured readings survive; the selection does not.
+  CoreNodeHealth get withoutSelection => selectedKey == null
+      ? this
+      : CoreNodeHealth(delayMsByKey: delayMsByKey, testedKeys: testedKeys);
+
   bool isSelected(ProxyNode node) =>
       selectedKey != null && proxyNodeKey(node) == selectedKey;
 }

@@ -57,3 +57,33 @@ Points that matter in the wording:
    away and the panel already has both paths on that same page.
 
 The check itself does not need to change. Only the sentence.
+
+## Second report, 2026-08-23, with a screenshot
+
+A tester installed clean on a fresh VPS at `134.122.61.28` and sent the panel
+screenshot. Two claims sit side by side on the Network page:
+
+> This node uses a self-signed certificate on 134.122.61.28
+>
+> The certificate for 134.122.61.28 is valid and apps will accept it.
+
+and the browser address bar, on that same panel over https, reads **Not secure**.
+
+The second line is the problem. "Valid" is not true of a self-signed certificate
+in any general sense, and "apps will accept it" is only true of apps told to skip
+verification. A user reads it as "TLS is working here", tries the panel in a
+browser, and is told the opposite by Chrome.
+
+The tester's summary is the part worth acting on: this has given a bad first
+impression to many users who do not use a domain, which is exactly the group the
+self-signed path exists to serve.
+
+Suggested copy, still on the same card:
+
+> This node uses a self-signed certificate on 134.122.61.28. Nova and other
+> apps you point at this node will connect. Browsers will warn that the site is
+> not secure, because nothing has vouched for this certificate. Add a domain
+> below to get a certificate browsers trust.
+
+That says what works, what does not, and what to do about it, and it stops the
+panel contradicting the address bar directly above it.
