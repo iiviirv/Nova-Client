@@ -1251,6 +1251,20 @@ class DesktopProxyController extends ProxyController {
     }
   }
 
+  @override
+  Future<void> cancelMeasure() async {
+    if (!measuring.value) return;
+    // Same contract as the mobile controller: clearing the flag stops the run
+    // (every `cancelled:` callback watches it) and the core is killed here so a
+    // dial still waiting out its timeout does not keep the process alive after
+    // the user has asked it to stop.
+    measuring.value = false;
+    _measureProcess?.kill();
+    _measureProcess = null;
+    _stopXray();
+    NovaLog.instance.write('Measuring stopped');
+  }
+
   /// Folds one run's results into whatever the board already shows. A run that
   /// covers the whole list ([merge] false) replaces it; re-testing a single row
   /// keeps every other row's verdict.

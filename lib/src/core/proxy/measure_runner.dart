@@ -192,10 +192,54 @@ class MeasureRunner {
       }
     }
 
+    // A second pass over only the servers that said nothing.
+    //
+    // Running the whole test again is what users were doing by hand, and it
+    // works: measured over the same 200-server pool three times, the second run
+    // found 6 servers the first had written off and the third found 3 more, so
+    // a single pass under-reports a list by a few percent even on a good
+    // connection. On a bad one, where the first pass is fighting for every
+    // socket at once, the gap is much wider.
+    //
+    // Doing it here instead means the retry happens when the pool is no longer
+    // saturated and the core's resolver is warm, which is exactly the condition
+    // that made the manual re-run succeed. Only failures pay for it, and a
+    // server that answers now is a server the user can actually use.
+    Future<void> retryFailures() async {
+      final List<String> again = <String>[
+        for (final MapEntry<String, String> e in tagKeys.entries)
+          if (!delays.containsKey(e.value)) e.key,
+      ];
+      if (again.isEmpty) return;
+      int at = 0;
+      Future<void> retryWorker() async {
+        while (true) {
+          if (cancelled?.call() ?? false) return;
+          final int i = at++;
+          if (i >= again.length) return;
+          final String tag = again[i];
+          final String? key = tagKeys[tag];
+          if (key == null) continue;
+          final int? ms = await probe(api, tag,
+              url: url, timeoutSec: timeoutSec, client: c);
+          if (ms != null) {
+            delays[key] = ms;
+            onProgress?.call(
+                Map<String, int>.from(delays), Set<String>.from(tested));
+          }
+        }
+      }
+
+      await Future.wait(<Future<void>>[
+        for (int i = 0; i < concurrency.clamp(1, 32); i++) retryWorker(),
+      ]);
+    }
+
     try {
       await Future.wait(<Future<void>>[
         for (int i = 0; i < concurrency.clamp(1, 32); i++) worker(),
       ]);
+      if (!(cancelled?.call() ?? false)) await retryFailures();
     } finally {
       if (client == null) c.close();
     }

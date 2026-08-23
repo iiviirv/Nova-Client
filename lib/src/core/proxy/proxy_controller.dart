@@ -76,6 +76,14 @@ class CoreNodeHealth {
   /// [delayFor]). False for a node outside the auto-select pool.
   bool wasTested(ProxyNode node) => testedKeys.contains(proxyNodeKey(node));
 
+  /// How many servers have answered so far. What the free-list search screen
+  /// counts up, since "found 40 working servers" is the only number in a sweep
+  /// that means anything to the person waiting for it.
+  int get workingCount => delayMsByKey.length;
+
+  /// How many servers carry a verdict either way, answered or not.
+  int get testedCount => testedKeys.length;
+
   bool isSelected(ProxyNode node) =>
       selectedKey != null && proxyNodeKey(node) == selectedKey;
 }
@@ -182,6 +190,18 @@ abstract class ProxyController extends ChangeNotifier {
   /// whole board is cleared first, which is what the lightning button does.
   Future<String?> measureNodes(List<ProxyNode> nodes, {bool merge = false}) async =>
       'Not supported on this device yet';
+
+  /// Stops a run in flight, keeping every reading it already produced.
+  ///
+  /// A sweep over a few hundred servers takes a while, and on a bad connection
+  /// each one waits out its own timeout, so the run can outlast the user's
+  /// patience by minutes. Every implementation already polls [measuring] to
+  /// decide whether to keep going, so clearing it is the whole cancel: the
+  /// current dial finishes or times out, nothing new starts, and the results so
+  /// far stand. Safe to call when nothing is running.
+  Future<void> cancelMeasure() async {
+    measuring.value = false;
+  }
 
   /// True when the tunnel reports connected but the controller has exhausted
   /// its traffic probes and its one self-heal rebuild without a single request

@@ -70,8 +70,7 @@ void main() {
     expect(out, <String, int>{'key-a': 120});
   });
 
-  test('a node that misses twice is no response, and is not dialled again',
-      () async {
+  test('a node that misses gets one late retry, then is no response', () async {
     api.answers['node-0'] = <int?>[null];
     final Map<String, int> out = await MeasureRunner.run(
       api: api.uri,
@@ -80,8 +79,43 @@ void main() {
       timeoutSec: 5,
     );
     expect(out, isEmpty, reason: 'no response, not a latency');
-    expect(api.calls, hasLength(2),
-        reason: 'a dead node costs two timeouts, never more');
+    // Two dials in the main pass, then one more after the pool has drained.
+    // The third is deliberately not immediate: the whole point is to ask again
+    // once the run is no longer saturating the connection.
+    expect(api.calls, hasLength(3),
+        reason: 'a dead node costs three timeouts, never more');
+  });
+
+  test('a server that only answers once the pool has drained is kept', () async {
+    // What users were getting by running the whole test two or three times.
+    // Over the same 200-server pool, the second run found 6 servers the first
+    // had written off and the third found 3 more.
+    api.answers['node-0'] = <int?>[null, null, 180];
+    api.answers['node-1'] = <int?>[40, 35];
+    final Map<String, int> out = await MeasureRunner.run(
+      api: api.uri,
+      tagKeys: <String, String>{'node-0': 'key-a', 'node-1': 'key-b'},
+      url: 'http://x.test/204',
+      timeoutSec: 5,
+    );
+    expect(out['key-a'], 180, reason: 'found on the late pass, not written off');
+    expect(out['key-b'], 35);
+  });
+
+  test('a cancelled run does not start the late retry', () async {
+    api.answers['node-0'] = <int?>[null];
+    bool stop = false;
+    final Map<String, int> out = await MeasureRunner.run(
+      api: api.uri,
+      tagKeys: <String, String>{'node-0': 'key-a'},
+      url: 'http://x.test/204',
+      timeoutSec: 5,
+      cancelled: () => stop,
+      onProgress: (_, __) => stop = true,
+    );
+    expect(out, isEmpty);
+    expect(api.calls.length, lessThanOrEqualTo(2),
+        reason: 'stopping means stopping, not one more round');
   });
 
   test('the timeout is sent per node and clamped to what the API can parse',

@@ -728,6 +728,13 @@ class NovaStrings {
   String get nodeAutoSub => t('node.autoSub');
   String get nodeRefresh => t('node.refresh');
   String get nodeMeasureAll => t('node.measureAll');
+  String get nodeMeasureStop => t('node.measureStop');
+  String get freeSearchTitle => t('free.searchTitle');
+  String get freeSearchBody => t('free.searchBody');
+  String get freeSearchFound => t('free.searchFound');
+  String get freeSearchProgress => t('free.searchProgress');
+  String get freeSearchStop => t('free.searchStop');
+  String get freeSearchStopHint => t('free.searchStopHint');
   String get nodeMeasureDone => t('node.measureDone');
   String get nodeRetestOne => t('node.retestOne');
   String get configsSingleNode => t('home.configsSingleNode');
@@ -1497,6 +1504,15 @@ class NovaStrings {
     'node.autoSub': 'Let Nova pick the lowest-latency node',
     'node.refresh': 'Refresh',
     'node.measureAll': 'Test all servers through the core',
+    'node.measureStop': 'Stop testing',
+    'free.searchTitle': 'Finding servers that work',
+    'free.searchBody':
+        'These are shared servers, so some are always gone. Nova is trying '
+        'each one now, and keeping the ones that answer.',
+    'free.searchFound': 'working servers found',
+    'free.searchProgress': 'Tried {n} of {total}',
+    'free.searchStop': 'Stop and use what was found',
+    'free.searchStopHint': 'You can start again any time with the refresh button.',
     'node.measureDone': 'Measured {n} servers through the core',
     'node.retestOne': 'Test this server again',
     'home.configsSingleNode':
@@ -2261,6 +2277,15 @@ class NovaStrings {
     'node.autoSub': 'نوا سریع‌ترین سرور را انتخاب می‌کند',
     'node.refresh': 'بازخوانی',
     'node.measureAll': 'تست همه سرورها از طریق هسته',
+    'node.measureStop': 'توقف تست',
+    'free.searchTitle': 'در حال یافتن سرورهای سالم',
+    'free.searchBody':
+        'این سرورها اشتراکی هستند و همیشه تعدادی از آنها از کار افتاده‌اند. '
+        'نوا الان همه را امتحان می‌کند و آنهایی را که جواب می‌دهند نگه می‌دارد.',
+    'free.searchFound': 'سرور سالم پیدا شد',
+    'free.searchProgress': '\u2066{n}\u2069 از \u2066{total}\u2069 بررسی شد',
+    'free.searchStop': 'توقف و استفاده از همین موارد',
+    'free.searchStopHint': 'هر زمان بخواهید می‌توانید با دکمه بازآوری دوباره شروع کنید.',
     'node.measureDone': '\u2066{n}\u2069 سرور از طریق هسته اندازه‌گیری شد',
     'node.retestOne': 'تست دوباره‌ی همین سرور',
     'home.configsSingleNode':

@@ -518,6 +518,21 @@ class SingboxProxyController extends ProxyController {
   }
 
 
+  @override
+  Future<void> cancelMeasure() async {
+    if (!measuring.value) return;
+    // Clearing the flag is what every `cancelled:` callback in the run is
+    // watching, so no further node is dialled. The core is stopped here as well
+    // rather than left to the run's own finally: on a slow network the current
+    // dial can still be waiting out its timeout, and a user who just asked for
+    // this to stop should not keep paying for a core they cannot see.
+    measuring.value = false;
+    try {
+      await _control.invokeMethod<Object?>('measureCancel');
+    } catch (_) {}
+    NovaLog.instance.write('Measuring stopped');
+  }
+
   /// Folds one run's results into whatever the board already shows. A run that
   /// covers the whole list ([merge] false) replaces it; re-testing a single row
   /// keeps every other row's verdict.

@@ -119,9 +119,10 @@ void main() {
     expect(h.delayFor(n[2]), 420);
     expect(h.delayFor(n[1]), isNull);
     expect(h.wasTested(n[1]), isTrue, reason: 'tried, no answer: "no response"');
-    // The dead node got its retry and then stopped; the live ones were warmed
-    // and then timed.
-    expect(seen.where((String t) => t == 'node-1'), hasLength(2));
+    // The live node was warmed and then timed. The silent one got its
+    // immediate retry and then one more after the pool drained, which is the
+    // pass that recovers servers a saturated first run writes off.
+    expect(seen.where((String t) => t == 'node-1'), hasLength(3));
     expect(seen.where((String t) => t == 'node-0'), hasLength(2));
     expect(c.measuring.value, isFalse);
     expect(stopped, isTrue, reason: 'the measuring core is always torn down');

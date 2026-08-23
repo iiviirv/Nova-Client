@@ -8,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/cleanip/clean_ip_fronting.dart';
 import '../../core/geo/node_geo_store.dart';
+import '../../core/proxy/list_freshness.dart';
+import 'free_list_search_sheet.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/proxy_controller.dart';
@@ -119,7 +121,22 @@ class _NodeListScreenState extends State<NodeListScreen> {
     _geoStore.removeListener(_onGeoChanged);
     _http.close(force: true);
     _search.dispose();
+    // Leaving the list stops any sweep it started. The run has no UI anywhere
+    // else, so letting it continue spends the user's battery and holds a
+    // measuring core open for a screen they have walked away from, and until it
+    // finished they could not connect (a measuring core needs the tunnel down).
+    unawaited(_proxyForDispose?.cancelMeasure());
     super.dispose();
+  }
+
+  /// Captured while the tree is still mounted: dispose() cannot reach an
+  /// InheritedWidget through the context any more.
+  ProxyController? _proxyForDispose;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _proxyForDispose = NovaScope.of(context).proxy;
   }
 
   void _onGeoChanged() {
@@ -183,7 +200,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (cached.isNotEmpty && mounted) {
       _applyNodes(cached, profile, stale: false);
     }
+    // Only go to the network when the saved list is actually old. Re-fetching
+    // and re-sweeping on every visit made a tab switch cost a few hundred
+    // dials, and threw away readings the user had just watched appear. The
+    // refresh button ignores this and always fetches.
+    if (cached.isNotEmpty && !ListFreshness.isStale(profile.id)) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     await _refresh(profile, hadCache: cached.isNotEmpty);
+    await ListFreshness.markSynced(profile.id);
   }
 
   /// Fetches the subscription live and updates the list, keeping whatever is on
@@ -283,7 +309,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // Refresh is an explicit "check again now", so the sweep is due again and
     // every server is back on screen until it has been re-tested.
     _autoMeasured = false;
-    _lastAutoMeasure.remove(profile.id);
+    await ListFreshness.invalidate(profile.id);
     await _refresh(profile, hadCache: _nodes.isNotEmpty, skipPing: true);
     if (!mounted) return;
     final scope = NovaScope.of(context);
@@ -335,18 +361,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
     return live.isEmpty ? nodes : live;
   }
 
-  /// When Nova's free list was last swept automatically, per profile.
-  ///
-  /// Static and not per-State on purpose: this screen is rebuilt every time the
-  /// dashboard's Configs tab is opened, and a fresh instance flag would start a
-  /// measuring core on every tab switch.
-  static final Map<String, DateTime> _lastAutoMeasure = <String, DateTime>{};
-
-  /// How long an automatic sweep is good for. Long enough that moving around
-  /// the app costs nothing, short enough that a server that died while the app
-  /// was open drops out on the next visit.
-  static const Duration _autoMeasureEvery = Duration(minutes: 15);
-
   bool _autoMeasured = false;
 
   /// Nova's own free list is other people's servers, so some of them are always
@@ -363,13 +377,58 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final ProxyController proxy = NovaScope.of(context).proxy;
     if (!proxy.canMeasureNodes || proxy.measuring.value) return;
     if (proxy.state != ProxyConnectionState.disconnected) return;
-    final DateTime? last = _lastAutoMeasure[profile.id];
-    if (last != null && DateTime.now().difference(last) < _autoMeasureEvery) {
-      return;
-    }
+    // Same window as the list fetch, and the same record, so a visit either
+    // does both or does neither. A sweep on its own would re-test servers the
+    // saved readings already describe.
+    if (!ListFreshness.isStale(profile.id)) return;
     _autoMeasured = true;
-    _lastAutoMeasure[profile.id] = DateTime.now();
-    unawaited(_measureAll(quiet: true));
+    unawaited(_runFirstSweep(profile, proxy));
+  }
+
+  /// The first sweep of Nova's free list, behind a screen that says so.
+  ///
+  /// Doing this quietly under a half-populated list meant rows appeared,
+  /// reordered and disappeared while the user was reaching for one, and there
+  /// was no way to skip it. Now it is shown, counted, and can be stopped, and
+  /// stopping keeps every server found so far.
+  ///
+  /// The sweep is marked as done either way. Stopping is a decision, not a
+  /// failure, so it should not mean being asked again on the next visit; the
+  /// refresh button is how you ask for another one.
+  Future<void> _runFirstSweep(ProxyProfile profile, ProxyController proxy) async {
+    final int total = _nodes.length;
+    bool closed = false;
+    void close() {
+      if (closed || !mounted) return;
+      closed = true;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    unawaited(showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: '',
+      // Opaque and over everything, including the bottom navigation: while this
+      // is up the rest of the app cannot be used, which is the point. A
+      // half-swept list is not something to let anyone pick from.
+      barrierColor: Theme.of(context).colorScheme.surface,
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (BuildContext ctx, _, __) => FreeListSearchSheet(
+        proxy: proxy,
+        total: total,
+        onStop: () {
+          unawaited(proxy.cancelMeasure());
+          close();
+        },
+      ),
+    ));
+
+    try {
+      await _measureAll(quiet: true);
+    } finally {
+      await ListFreshness.markSynced(profile.id);
+      close();
+    }
   }
 
   /// Tapping one row's verdict: re-test just that server, keeping every other
@@ -634,16 +693,29 @@ class _NodeListScreenState extends State<NodeListScreen> {
         if (NovaScope.of(context).proxy.canMeasureNodes)
           ValueListenableBuilder<bool>(
             valueListenable: NovaScope.of(context).proxy.measuring,
+            // While a run is in flight the button stops it instead of going
+            // dead. A sweep over a few hundred servers on a bad connection can
+            // take minutes, because every server waits out its own timeout, and
+            // a disabled button in the middle of that reads as a frozen app
+            // with no way out.
             builder: (BuildContext context, bool busy, _) => IconButton(
-              tooltip: s.nodeMeasureAll,
+              tooltip: busy ? s.nodeMeasureStop : s.nodeMeasureAll,
               icon: busy
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: <Widget>[
+                          CircularProgressIndicator(strokeWidth: 2),
+                          Icon(Icons.stop_rounded, size: 11),
+                        ],
+                      ),
                     )
                   : const Icon(Icons.bolt_rounded),
-              onPressed: busy ? null : _measureAll,
+              onPressed: busy
+                  ? () => NovaScope.of(context).proxy.cancelMeasure()
+                  : _measureAll,
             ),
           ),
         IconButton(
