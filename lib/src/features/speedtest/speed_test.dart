@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 /// The outcome of one speed test.
 ///
@@ -69,10 +68,27 @@ class SpeedTest {
   static const String _downUrl = 'https://speed.cloudflare.com/__down?bytes=';
   static const String _upUrl = 'https://speed.cloudflare.com/__up';
 
-  /// One transfer each way. Big enough that the steady-state window below is a
-  /// real measurement rather than a rounding error, small enough that someone on
-  /// a slow line is not stuck here for a minute.
-  static const int kPayloadBytes = 8 * 1024 * 1024;
+  /// The ceiling on one transfer, not the target.
+  ///
+  /// A fixed 8 MB was the original plan and it is wrong at both ends of the
+  /// range. On a 785 Mbit line 8 MB is over in 80ms, and after the warm-up that
+  /// leaves about 70ms of traffic to divide by: TCP has barely opened its
+  /// window, so the line read 330 against Cloudflare's 785 on the same phone a
+  /// minute apart. Size cannot be the stopping condition when the whole point is
+  /// to reach a steady state first.
+  ///
+  /// 64 MB and not more: speed.cloudflare.com answers 403 to a `bytes=` above
+  /// roughly 100 MB, and a refusal is indistinguishable from a very fast, very
+  /// short transfer unless the status is checked. Measured: 64 MB returns 200,
+  /// 100 MB returns 403.
+  static const int kMaxPayloadBytes = 64 * 1024 * 1024;
+
+  /// How long to stay in the steady state before reporting.
+  ///
+  /// This is the real stopping condition. Three seconds is long enough for the
+  /// congestion window to open on a fast line and short enough that nobody is
+  /// left waiting; a slow line ends earlier by hitting the payload ceiling.
+  static const Duration kMeasureFor = Duration(seconds: 3);
 
   /// Probes behind the latency and jitter figures. Twenty is enough for a stable
   /// mean without making the user wait.
@@ -226,8 +242,14 @@ class SpeedTest {
     final HttpClient c = _clientFactory();
     try {
       final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$_down$kPayloadBytes'));
+          await c.getUrl(Uri.parse('$_down$kMaxPayloadBytes'));
       final HttpClientResponse resp = await req.close();
+      // A refused request delivers a one-byte body in a millisecond, which
+      // would otherwise sail through the arithmetic below as a real reading.
+      if (resp.statusCode != 200) {
+        await resp.drain<void>();
+        return 0;
+      }
 
       int total = 0;
       // Timing starts only once the warm-up bytes are past, and counts only what
@@ -235,18 +257,36 @@ class SpeedTest {
       // both halves of the division.
       int measured = 0;
       final Stopwatch sw = Stopwatch();
-      await for (final List<int> chunk in resp) {
-        total += chunk.length;
-        if (total >= kWarmupBytes) {
+      final Completer<void> done = Completer<void>();
+      late final StreamSubscription<List<int>> sub;
+      void finish() {
+        if (!done.isCompleted) done.complete();
+      }
+
+      sub = resp.listen(
+        (List<int> chunk) {
+          total += chunk.length;
+          if (total < kWarmupBytes) return;
           if (!sw.isRunning) {
             sw.start();
-          } else {
-            measured += chunk.length;
+            return;
           }
+          measured += chunk.length;
           final int us = sw.elapsedMicroseconds;
-          if (us > 0 && measured > 0) onProgress?.call(measured * 8 / us);
-        }
-      }
+          if (us > 0) onProgress?.call(measured * 8 / us);
+          // Enough steady state to be a measurement. Stopping on time rather
+          // than on size is what lets one code path serve a 5 Mbit line and a
+          // 785 Mbit one.
+          if (sw.elapsed >= kMeasureFor) {
+            unawaited(sub.cancel());
+            finish();
+          }
+        },
+        onDone: finish,
+        onError: (Object _) => finish(),
+        cancelOnError: true,
+      );
+      await done.future;
       final int us = sw.elapsedMicroseconds;
       return us > 0 && measured > 0 ? measured * 8 / us : 0;
     } catch (_) {
@@ -277,27 +317,32 @@ class SpeedTest {
     try {
       final HttpClientRequest req = await c.postUrl(Uri.parse(_up));
       req.headers.contentType = ContentType.binary;
-      req.contentLength = kPayloadBytes;
-
-      const int chunkSize = 64 * 1024;
+      // No content length: the body is chunked so the transfer can stop on time
+      // rather than on a size decided before the speed is known.
+      // 1 MB, not 64 KB. Every chunk is followed by an awaited flush, and each
+      // of those is a trip through the event loop; at 64 KB that is a thousand
+      // round trips per transfer and the flush rate, not the line, became the
+      // ceiling. Correctness does not need the small chunk: the clock stops when
+      // the server answers, which cannot happen until it has the whole body.
+      const int chunkSize = 1024 * 1024;
       final List<int> chunk = List<int>.filled(chunkSize, 65);
       int total = 0;
       int measured = 0;
       final Stopwatch sw = Stopwatch();
 
-      while (total < kPayloadBytes) {
-        final int n = math.min(chunkSize, kPayloadBytes - total);
-        req.add(n == chunkSize ? chunk : chunk.sublist(0, n));
+      while (total < kMaxPayloadBytes) {
+        req.add(chunk);
         await req.flush();
-        total += n;
+        total += chunkSize;
         if (total >= kWarmupBytes) {
           if (!sw.isRunning) {
             sw.start();
           } else {
-            measured += n;
+            measured += chunkSize;
           }
           final int us = sw.elapsedMicroseconds;
           if (us > 0 && measured > 0) onProgress?.call(measured * 8 / us);
+          if (sw.elapsed >= kMeasureFor) break;
         }
       }
       // The far end has the whole body only once it answers; that is the end of

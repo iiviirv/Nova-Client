@@ -12,11 +12,14 @@ import 'package:nova_client/src/features/speedtest/speed_test.dart';
 /// "sent", which no mock of the client could see. A real server on 127.0.0.1
 /// exercises the real socket path, so the count has to be honest.
 class _FakeSpeedServer {
-  _FakeSpeedServer(this._server) {
+  _FakeSpeedServer(this._server, this._denyDownload) {
     _server.listen(_handle);
   }
 
   final HttpServer _server;
+
+  /// Answers downloads with 403, the way the real endpoint does above its cap.
+  final bool _denyDownload;
 
   /// Bytes the server actually received on upload requests.
   int received = 0;
@@ -24,8 +27,11 @@ class _FakeSpeedServer {
   /// Round trips served, so a test can assert the probe count.
   int probes = 0;
 
-  static Future<_FakeSpeedServer> start() async =>
-      _FakeSpeedServer(await HttpServer.bind(InternetAddress.loopbackIPv4, 0));
+  static Future<_FakeSpeedServer> start({bool denyDownload = false}) async =>
+      _FakeSpeedServer(
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+        denyDownload,
+      );
 
   String get downUrl => 'http://127.0.0.1:${_server.port}/__down?bytes=';
   String get upUrl => 'http://127.0.0.1:${_server.port}/__up';
@@ -40,6 +46,12 @@ class _FakeSpeedServer {
       return;
     }
     final int bytes = int.tryParse(req.uri.queryParameters['bytes'] ?? '0') ?? 0;
+    if (_denyDownload && bytes > 0) {
+      req.response.statusCode = 403;
+      req.response.add(<int>[0]);
+      await req.response.close();
+      return;
+    }
     if (bytes == 0) probes++;
     req.response.statusCode = 200;
     if (bytes > 0) {
@@ -75,13 +87,29 @@ void main() {
     expect(mbps, greaterThan(0));
   });
 
-  test('upload counts only what the socket accepted', () async {
+  test('upload does not return until the server has the whole body', () async {
     final double mbps = await speed.measureUpload(null);
     expect(mbps, greaterThan(0));
-    // The whole payload reached the server. The old implementation counted
-    // bytes handed to a buffered sink, so it could "finish" long before this
-    // was true and divide the full payload by a fraction of the real time.
-    expect(server.received, SpeedTest.kPayloadBytes);
+    // The old implementation counted bytes handed to a buffered sink, so it
+    // could "finish" long before the far end had them and divide the whole
+    // payload by a fraction of the real time. The transfer now stops on a clock
+    // rather than a fixed size, so what matters is not how much arrived but that
+    // every byte counted did arrive before the figure was produced.
+    expect(server.received, greaterThan(0));
+    expect(server.received, lessThanOrEqualTo(SpeedTest.kMaxPayloadBytes));
+  });
+
+  test('a refused download is not reported as a very fast one', () async {
+    // speed.cloudflare.com answers 403 above about 100 MB, and a refusal is a
+    // one-byte body delivered in a millisecond: without the status check that
+    // sailed through the arithmetic as a real reading.
+    final _FakeSpeedServer deny = await _FakeSpeedServer.start(denyDownload: true);
+    addTearDown(deny.close);
+    final double mbps = await SpeedTest(
+      downUrl: deny.downUrl,
+      upUrl: deny.upUrl,
+    ).measureDownload(null);
+    expect(mbps, 0);
   });
 
   // There is deliberately no "a slow receiver slows the reported rate" test.
