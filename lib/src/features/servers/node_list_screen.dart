@@ -209,7 +209,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final ProxyController proxy = NovaScope.of(context).proxy;
     if (proxy.coreHealth.value.isEmpty) {
       final CoreNodeHealth? saved = await HealthStore.load(profile.id);
-      if (saved != null && mounted) proxy.coreHealth.value = saved;
+      if (saved != null && mounted) {
+        proxy.coreHealth.value = saved;
+        // The count follows the restored list too, so reopening the app shows
+        // the number the user was left with rather than the pool size again.
+        _syncShownCount(saved);
+      }
     }
     // Only go to the network when the saved list is actually old. Re-fetching
     // and re-sweeping on every visit made a tab switch cost a few hundred
@@ -362,10 +367,31 @@ class _NodeListScreenState extends State<NodeListScreen> {
       await HealthStore.save(p.id, scope.proxy.coreHealth.value);
     }
     if (!mounted) return;
+    // Stopping early is a normal ending, so the count has to follow the list
+    // whether the sweep finished or the user ended it.
+    _syncShownCount(scope.proxy.coreHealth.value);
     if (quiet) return;
     final String msg = problem ??
         s.nodeMeasureDone.replaceFirst('{n}', '${_nodes.length}');
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// The number the card should show: what the user can actually choose
+  /// between, after the free list's own filtering.
+  ///
+  /// The card used to show the size of the pool. On the free list that is a few
+  /// hundred candidates that exist to be searched, not read, so someone who
+  /// stopped the search at ten working servers was told they had 144. The
+  /// number has to describe the list in front of them or it means nothing.
+  int _shownCount(CoreNodeHealth health) => _hideDead(_nodes, health).length;
+
+  /// Publishes that number, when it has changed.
+  void _syncShownCount(CoreNodeHealth health) {
+    final ProxyProfile? profile = _profile;
+    if (profile == null) return;
+    final int n = _shownCount(health);
+    if (n == 0 || n == profile.nodeCount) return;
+    NovaScope.of(context).profiles.update(profile.copyWith(nodeCount: n));
   }
 
   /// Hides the servers the last sweep proved dead, on Nova's own free list.
@@ -489,7 +515,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (p != null) {
       await HealthStore.save(p.id, scope.proxy.coreHealth.value);
     }
-    if (!mounted || problem == null) return;
+    if (!mounted) return;
+    _syncShownCount(scope.proxy.coreHealth.value);
+    if (problem == null) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(problem)));
   }
