@@ -101,3 +101,26 @@ curl -s "https://<panel>/sub?u=<user>&target=nova" | \
 The xhttp node should appear as `('vless', 'xhttp')`. In Nova-Client it then
 shows in the server list with a real ping from the lightning test, rather than
 being absent.
+
+
+## Still broken on 2026-08-24, with a side-by-side diff
+
+Checked against a live Nova Server panel,
+`https://s26ultra.mayata.sbs/sub?u=caa1dd205227b0136c8ee40e`, fetching both
+bodies and diffing them by `server:port`.
+
+The plain subscription carries nine servers. `target=nova` carries nine. They
+are not the same nine:
+
+| | plain | `target=nova` |
+| --- | --- | --- |
+| `vless` **xhttp** `104.16.4.103:2053` | present | **missing** |
+| `mieru iphone17pro.mayata.sbs:44674` | missing | present |
+
+Everything else matches. So this is not a case of the panel lacking an xhttp
+inbound: the operator has one configured, the plain body advertises it, and the
+Nova target drops exactly that node and nothing else.
+
+The client side has been ready for a long time. It runs xhttp through the Xray
+core and measures it alongside the sing-box nodes; there is simply nothing to
+run, because the node never arrives.

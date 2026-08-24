@@ -98,3 +98,26 @@ that non-standard transport type and routes the node to its bundled Xray core,
 exactly as it does for the share-link form. Only Nova-Client consumes
 `target=nova`, so the non-standard type is safe there; do not do this for
 `target=singbox`/`hiddify`, which other apps read.
+
+
+## Update 2026-08-24: this looks fixed
+
+Re-checked against a different live Nova Server panel,
+`https://s26ultra.mayata.sbs/sub?u=caa1dd205227b0136c8ee40e`:
+
+| `target=` | mieru present? |
+| --- | --- |
+| (plain, no target) | no |
+| `nova` | **yes** (`mieru iphone17pro.mayata.sbs:44674`) |
+
+So `target=nova` now carries mieru, which is what this handoff asked for, and
+the client imports it (verified: the Nova-target body parses to 9 nodes with
+mieru among them, nothing skipped).
+
+Note the inversion: mieru is now in the Nova target and NOT in the plain
+subscription. That is the right way round for this client, but worth knowing if
+anyone expects the plain body to be a superset.
+
+Whether this was fixed deliberately or the panel is simply a newer build than
+the one tested on 2026-08-18 is not established. Confirm against the panel this
+was originally reported on before closing it.
