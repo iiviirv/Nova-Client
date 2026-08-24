@@ -319,6 +319,15 @@ abstract class ProxyController extends ChangeNotifier {
   /// through the exit like every other platform.
   String? get proxyUri => null;
 
+  /// True only in proxy mode, where there is no TUN and the loopback port IS
+  /// the way traffic gets in.
+  ///
+  /// Distinct from [localProxyPort] having a value: per-app routing also opens a
+  /// loopback port, but only so the app can reach its own tunnel to ask where it
+  /// exits. Telling the user to point apps at it there would be wrong, because
+  /// the app list is what decides routing.
+  bool get isProxyMode => false;
+
   /// The panel's name for the node with this [proxyNodeKey], or null when the
   /// controller has no name for it (or is a mock). Lets the dashboard show
   /// "Connected via `name`" instead of a clean-IP node's Cloudflare address.

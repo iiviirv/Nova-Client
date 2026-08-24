@@ -404,7 +404,12 @@ class _ProxyModeCard extends StatelessWidget {
       builder: (context, _) {
         final ProxyController proxy = scope.proxy;
         final int? port = proxy.localProxyPort;
-        if (port == null || !proxy.state.isActive) return const SizedBox.shrink();
+        // Only in real proxy mode. Per-app routing opens the same port purely so
+        // the app can ask its own tunnel where it exits, and telling someone to
+        // point apps at it there would be wrong: their app list is what routes.
+        if (port == null || !proxy.isProxyMode || !proxy.state.isActive) {
+          return const SizedBox.shrink();
+        }
         final NovaStrings s = NovaStrings.of(context);
         final nova = context.nova;
         final TextTheme text = Theme.of(context).textTheme;

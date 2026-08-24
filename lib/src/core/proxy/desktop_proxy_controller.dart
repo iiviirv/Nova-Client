@@ -169,6 +169,11 @@ class DesktopProxyController extends ProxyController {
   @override
   int? get localProxyPort => tunMode ? null : socksPort;
 
+  /// Desktop has no per-app routing, so a local port and proxy mode are the
+  /// same question here.
+  @override
+  bool get isProxyMode => !tunMode;
+
   @override
   bool get systemProxyOn => _systemProxyOn;
 
@@ -665,6 +670,7 @@ class DesktopProxyController extends ProxyController {
       if (!Platform.isWindows) {
         await Process.run('chmod', <String>['+x', out.path]);
       }
+      await _unquarantine(out.path);
       try {
         await stamp.writeAsString(want);
       } catch (_) {
@@ -691,6 +697,35 @@ class DesktopProxyController extends ProxyController {
     // Remembered so a TUN failure can say which binary it actually launched.
     _lastCorePath = out.path;
     return out.path;
+  }
+
+  /// Strips `com.apple.quarantine` from a file we just copied.
+  ///
+  /// This is the whole of the "full-device mode needs administrator access"
+  /// report, and it was never about administrator access. An app downloaded as
+  /// a DMG has every file inside it quarantined. The bundle itself is notarized
+  /// and stapled so it launches, but the core is COPIED out of the bundle to
+  /// application support before it runs, Dart's File.copy carries the attribute
+  /// across, and the loose copy has no ticket of its own. Gatekeeper then kills
+  /// it: exit 137, no stdout, no stderr, no log. With no log the app fell back
+  /// to guessing that the admin prompt had been dismissed, which is why running
+  /// the whole app under sudo changed nothing and why the advice was impossible
+  /// to act on.
+  ///
+  /// It never reproduced here because a locally built app is not quarantined,
+  /// so it looked like an Intel-only fault when the only Intel tester was also
+  /// the only one installing from the DMG.
+  ///
+  /// Best-effort: a file with no such attribute makes xattr exit non-zero, which
+  /// is fine, and nothing here should ever block a connect.
+  Future<void> _unquarantine(String path) async {
+    if (!Platform.isMacOS) return;
+    try {
+      await Process.run('xattr', <String>['-d', 'com.apple.quarantine', path]);
+    } catch (_) {
+      // Not being able to run xattr is not a reason to fail the connect; the
+      // core either starts or reports its own failure.
+    }
   }
 
   /// Copies the bundled `wintun.dll` next to the running core (Windows only).
@@ -728,6 +763,7 @@ class DesktopProxyController extends ProxyController {
     final File out = File('${dir.path}/$name');
     if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
       await src.copy(out.path);
+      await _unquarantine(out.path);
     }
   }
 
@@ -857,6 +893,9 @@ class DesktopProxyController extends ProxyController {
       if (!Platform.isWindows) {
         await Process.run('chmod', <String>['+x', out.path]);
       }
+      // Same reason as the sing-box copy: a DMG install quarantines everything
+      // inside the bundle, and Gatekeeper kills the loose copy on sight.
+      await _unquarantine(out.path);
     }
     return out.path;
   }

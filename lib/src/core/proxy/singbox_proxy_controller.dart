@@ -397,6 +397,9 @@ class SingboxProxyController extends ProxyController {
   }
 
   @override
+  bool get isProxyMode => proxyPortProvider?.call() != null;
+
+  @override
   int? get localProxyPort {
     if (!_state.isActive) return null;
     final int? proxyMode = proxyPortProvider?.call();

@@ -44,6 +44,11 @@ class _StaticProxy extends ProxyController {
   @override
   int? get localProxyPort => localPort;
 
+  // A local port alone no longer means proxy mode: per-app routing opens one
+  // too, purely so the app can reach its own tunnel.
+  @override
+  bool get isProxyMode => localPort != null;
+
   @override
   ProxyConnectionState get state => _state;
 
