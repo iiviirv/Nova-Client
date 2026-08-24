@@ -10,6 +10,7 @@ import '../../core/cleanip/clean_ip_fronting.dart';
 import '../../core/geo/node_geo_store.dart';
 import '../../core/proxy/health_store.dart';
 import '../../core/proxy/list_freshness.dart';
+import '../../core/proxy/pool_order.dart';
 import 'free_list_search_sheet.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
@@ -282,9 +283,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
         level: NovaLogLevel.warn,
       );
     }
+    // Nova's own list gets this install's order, before the cap below, so the
+    // servers a device sweeps and keeps are not the same ones every other
+    // device keeps. See PoolOrder. A subscription the user added keeps the
+    // order their provider sent, which is theirs to decide.
+    final List<ProxyNode> ordered =
+        profile.isBuiltIn ? PoolOrder.shuffled(all) : all;
     final Set<String> seen = <String>{};
     final List<ProxyNode> deduped = <ProxyNode>[];
-    for (final ProxyNode n in all) {
+    for (final ProxyNode n in ordered) {
       if (seen.add(_key(n))) deduped.add(n);
       if (deduped.length >= _maxShown) break;
     }

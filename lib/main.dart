@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'src/app.dart';
 import 'src/core/cleanip/clean_ip_store.dart';
 import 'src/core/proxy/list_freshness.dart';
+import 'src/core/proxy/pool_order.dart';
 import 'src/core/desktop/tray_controller.dart';
 import 'src/core/geo/node_geo_store.dart';
 import 'src/core/proxy/conn_info_controller.dart';
@@ -126,6 +127,7 @@ Future<void> main() async {
   // Read before any server list can open, so a list that was synced recently is
   // not swept again just because the record had not loaded yet.
   await ListFreshness.load();
+  await PoolOrder.load();
 
   // Hydrate persisted preferences without blocking first paint.
   relay.load();
