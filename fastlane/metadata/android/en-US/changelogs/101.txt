@@ -1,0 +1,2 @@
+- The Configs number counts the servers you can see, not the pool
+- Each device searches the free list in its own order, spreading load

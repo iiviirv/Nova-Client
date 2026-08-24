@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.20.2-beta (2026-08-24)
+
+- Fixed: the number beside Configs now counts the servers you can actually see.
+  If you stopped the search after ten working servers it still said 144, which
+  was the size of the pool being searched rather than your list.
+
+- Changed: each device now searches the free list in its own order. Everyone was
+  searching it in the same order and stopping at the same point, so everyone
+  ended up on the same few servers while the rest went unused. Spreading that
+  out keeps those servers alive longer. Your own order stays the same between
+  visits, and subscriptions you added are untouched.
+
 ## v1.20.1-beta (2026-08-24)
 
 - Fixed, desktop: the VPN core is now replaced when you update. Nova copies the
