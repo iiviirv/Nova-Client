@@ -180,22 +180,12 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             _t('Already set up. Just press Connect.',
                 'همین حالا آماده است. فقط اتصال را بزنید.'),
             highlighted: true, onTap: () => widget.onFinish('free')),
-        const SizedBox(height: NovaSpace.sm + 2),
-        _choice(context, Icons.cloud_upload_outlined,
-            _t('Deploy your own panel', 'ساخت پنل اختصاصی'),
-            _t('Create a free Cloudflare worker', 'ساخت ورکر رایگان کلودفلر'),
-            onTap: () => widget.onFinish('deploy')),
-        const SizedBox(height: NovaSpace.sm + 2),
-        _choice(context, Icons.login_rounded,
-            _t('Import from your panel', 'وارد کردن از پنل شما'),
-            _t('Sign in and bring your configs', 'ورود و آوردن کانفیگ‌ها'),
-            onTap: () => widget.onFinish('panel')),
-        const SizedBox(height: NovaSpace.sm + 2),
-        _choice(context, Icons.dns_outlined,
-            _t('Connect your VPS', 'اتصال سرور مجازی شما'),
-            _t('Run the Nova panel on your own server',
-                'پنل کامل نوا را روی سرور خودت اجرا کن'),
-            onTap: () => widget.onFinish('vps')),
+        // Deploying a panel, signing in to one, and connecting a VPS used to
+        // sit here too. All three asked a brand new user for something they do
+        // not have yet (a Cloudflare account, a panel login, a server), and two
+        // of them opened the very same screen. They are panel-owner tools and
+        // they live where an owner looks for them: Settings > Cloudflare tools,
+        // and the Servers page's own empty state.
         const SizedBox(height: NovaSpace.sm + 2),
         _choice(context, Icons.add_rounded,
             _t('Add a config', 'افزودن کانفیگ'),

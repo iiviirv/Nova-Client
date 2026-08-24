@@ -151,6 +151,18 @@ class MainActivity : FlutterActivity() {
                     }.start()
                 }
 
+                // Every app the user could plausibly want to route, for the
+                // per-app proxy picker. Off the UI thread: on a phone with a
+                // few hundred packages, loading and rasterising the icons takes
+                // long enough to drop frames.
+                "installedApps" -> {
+                    Thread {
+                        val apps = runCatching { listInstalledApps() }
+                            .getOrElse { ArrayList() }
+                        runOnUiThread { result.success(apps) }
+                    }.start()
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -220,6 +232,61 @@ class MainActivity : FlutterActivity() {
     }
 
     @Deprecated("Using onActivityResult for the VpnService consent dialog")
+    /**
+     * Installed packages that make sense in a per-app proxy list: anything with
+     * a launcher entry (so background/system components do not bury the apps the
+     * user recognises), plus this app is skipped, since routing Nova through
+     * itself is not a thing anyone wants.
+     *
+     * Icons come back as PNG bytes so Flutter can draw the real launcher icon
+     * rather than a placeholder; an app whose icon cannot be rasterised is still
+     * listed, just without one.
+     */
+    private fun listInstalledApps(): ArrayList<HashMap<String, Any>> {
+        val pm = packageManager
+        val out = ArrayList<HashMap<String, Any>>()
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(
+                launcher,
+                PackageManager.ResolveInfoFlags.of(0L),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(launcher, 0)
+        }
+        val seen = HashSet<String>()
+        for (info in resolved) {
+            val pkg = info.activityInfo?.packageName ?: continue
+            if (pkg == packageName) continue
+            if (!seen.add(pkg)) continue
+            val entry = HashMap<String, Any>()
+            entry["package"] = pkg
+            entry["label"] = runCatching { info.loadLabel(pm).toString() }.getOrDefault(pkg)
+            runCatching { drawableToPng(info.loadIcon(pm)) }.getOrNull()?.let {
+                entry["icon"] = it
+            }
+            out.add(entry)
+        }
+        out.sortBy { (it["label"] as? String ?: "").lowercase() }
+        return out
+    }
+
+    /** A launcher icon as PNG bytes, capped at 96px so a long list stays cheap. */
+    private fun drawableToPng(drawable: android.graphics.drawable.Drawable): ByteArray {
+        val size = 96
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            size, size, android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        val stream = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+        bitmap.recycle()
+        return stream.toByteArray()
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)

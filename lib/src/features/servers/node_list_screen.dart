@@ -11,11 +11,9 @@ import '../../core/geo/node_geo_store.dart';
 import '../../core/proxy/health_store.dart';
 import '../../core/proxy/list_freshness.dart';
 import '../../core/proxy/pool_order.dart';
-import 'free_list_search_sheet.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/proxy_controller.dart';
-import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/singbox/singbox_config.dart';
 import '../../core/proxy/subscription.dart';
@@ -58,14 +56,10 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// Matched to the measuring core's own pool cap: anything Nova can put a real
   /// number against should be on screen to receive it. It used to be 80, which
   /// would have quietly truncated a longer list before the lightning test ever
-  /// saw it. Automatic probing on open is capped much lower ([_autoPingCap]);
-  /// this is only about what is listed.
+  /// saw it.
   static const int _maxShown = SingboxConfig.kMeasurePoolCap;
 
   List<ProxyNode> _nodes = <ProxyNode>[];
-
-  /// key -> what the probe could actually prove about the node.
-  final Map<String, NodeProbeResult> _probe = <String, NodeProbeResult>{};
 
   /// key -> where the node really is, when that is knowable at all.
   /// Persistent, shared across refreshes and restarts (see NodeGeoStore).
@@ -240,15 +234,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
   /// refresh button. [hadCache] means the list is already populated, so a
   /// failure is a soft "stale" note rather than a fatal error.
   Future<void> _refresh(ProxyProfile profile,
-      {required bool hadCache,
-      bool forcePing = false,
-      bool skipPing = false}) async {
+      {required bool hadCache}) async {
     if (mounted) setState(() => _refreshing = true);
     try {
       final List<ProxyNode> all = await resolveProfileNodes(profile);
       if (!mounted) return;
-      _applyNodes(all, profile,
-          stale: lastResolveWasStale, forcePing: forcePing, skipPing: skipPing);
+      _applyNodes(all, profile, stale: lastResolveWasStale);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -266,10 +257,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
   }
 
   /// Applies a resolved node list to the screen: dedupe + cap, record skipped
-  /// entries and the real count, and (re)ping only when the set actually changed
-  /// so a background refresh that returns the same servers doesn't re-probe.
+  /// entries and the real count.
+  ///
+  /// It does not test anything. Nova used to probe a list the moment it was
+  /// opened or refreshed; that probe hung, could not judge most protocols, and
+  /// fought the lightning test for the same sockets. Testing is now something
+  /// the user asks for, and only ever through the core.
   void _applyNodes(List<ProxyNode> all, ProxyProfile profile,
-      {required bool stale, bool forcePing = false, bool skipPing = false}) {
+      {required bool stale}) {
     final profiles = NovaScope.of(context).profiles;
     _stale = stale;
     // Captured right after the parse, before anything else overwrites the side
@@ -295,7 +290,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (seen.add(_key(n))) deduped.add(n);
       if (deduped.length >= _maxShown) break;
     }
-    final bool changed = !_sameKeys(deduped, _nodes);
     // The count on the card is what the user can actually choose between: the
     // deduped list, not the raw number of lines in the subscription. Nova's own
     // free list carries the same server three times over, so the raw count
@@ -306,19 +300,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
       _loading = false;
       _refreshing = false;
     });
-    _maybeAutoMeasure();
-    if (skipPing) return;
-    // Opening a subscription pings it so the rows are not blank, but on a long
-    // list that is dozens of sockets the user did not ask for and a wait before
-    // anything is usable. Past [_autoPingCap] servers the list comes up bare and
-    // ready for the lightning test instead.
-    if (deduped.length > _autoPingCap) return;
-    if (changed || forcePing) _pingAll();
   }
-
-  /// How many servers a subscription may have before opening it stops probing
-  /// them all by itself.
-  static const int _autoPingCap = 50;
 
   /// The refresh button: re-fetch the subscription now and put the fresh list
   /// up, with every ping cleared and none taken. Refresh means "get me the
@@ -333,14 +315,18 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // A provider can move a server off Cloudflare between updates, so the
     // is-this-fronted answers are re-asked with the fresh list.
     CleanIpFronting.forgetLookups();
-    _probe.clear();
+    // Refresh means the readings on screen are gone: every row goes back to
+    // "not tested" and the saved ones are dropped, here and on disk, so nothing
+    // survives that describes servers this list may no longer even carry.
+    final profiles = NovaScope.of(context).profiles;
     NovaScope.of(context).proxy.coreHealth.value = CoreNodeHealth.empty;
-    // Refresh is an explicit "check again now", so the sweep is due again and
-    // every server is back on screen until it has been re-tested.
-    _autoMeasured = false;
+    // The seed order was built from those readings, so it goes too rather than
+    // pointing the next connect at servers this list may no longer carry.
+    profiles.update(
+        profile.copyWith(lastLatencyMs: null, fastNodes: const <String>[]));
     await ListFreshness.invalidate(profile.id);
     await HealthStore.clear(profile.id);
-    await _refresh(profile, hadCache: _nodes.isNotEmpty, skipPing: true);
+    await _refresh(profile, hadCache: _nodes.isNotEmpty);
     if (!mounted) return;
     final scope = NovaScope.of(context);
     if (scope.proxy.state.isActive &&
@@ -369,10 +355,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         List<ProxyNode>.of(subject),
         merge: subject.length != _nodes.length,
         stopAfterWorking: stopAfter);
-    final ProxyProfile? p = _profile;
-    if (p != null) {
-      await HealthStore.save(p.id, scope.proxy.coreHealth.value);
-    }
+    await _persistHealth(scope.proxy.coreHealth.value);
     if (!mounted) return;
     // Stopping early is a normal ending, so the count has to follow the list
     // whether the sweep finished or the user ended it.
@@ -381,6 +364,32 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final String msg = problem ??
         s.nodeMeasureDone.replaceFirst('{n}', '${_nodes.length}');
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Keeps a lightning test's numbers: on disk against this profile, and as the
+  /// profile's own seed order for the next connect.
+  ///
+  /// The lightning test is now the only thing in Nova that measures a server, so
+  /// it is also the only thing that can say which exits Auto should reach for
+  /// first. That used to come from the outside probe, which is gone; without
+  /// this the seed order would simply have gone empty.
+  Future<void> _persistHealth(CoreNodeHealth health) async {
+    final ProxyProfile? profile = _profile;
+    if (profile == null) return;
+    await HealthStore.save(profile.id, health);
+    if (!mounted) return;
+    final List<MapEntry<String, int>> ranked = health.delayMsByKey.entries
+        .toList()
+      ..sort((MapEntry<String, int> a, MapEntry<String, int> b) =>
+          a.value.compareTo(b.value));
+    if (ranked.isEmpty) return;
+    NovaScope.of(context).profiles.update(profile.copyWith(
+          lastLatencyMs: ranked.first.value,
+          fastNodes: ranked
+              .take(24)
+              .map((MapEntry<String, int> e) => e.key)
+              .toList(),
+        ));
   }
 
   /// The number the card should show: what the user can actually choose
@@ -440,77 +449,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
     return nodes;
   }
 
-  bool _autoMeasured = false;
-
-  /// Nova's own free list is other people's servers, so some of them are always
-  /// gone. Sweep it when the list opens (only while disconnected, since a
-  /// measuring core needs the tunnel down) so the dead ones drop out without the
-  /// user having to know the lightning button exists.
-  ///
-  /// Only ever the built-in list. Doing this to a subscription the user added
-  /// would spend their battery on a decision that is theirs to make.
-  void _maybeAutoMeasure() {
-    if (_autoMeasured || _loading || _nodes.isEmpty) return;
-    final ProxyProfile? profile = _profile;
-    if (profile == null || !profile.isBuiltIn) return;
-    final ProxyController proxy = NovaScope.of(context).proxy;
-    if (!proxy.canMeasureNodes || proxy.measuring.value) return;
-    if (proxy.state != ProxyConnectionState.disconnected) return;
-    // Same window as the list fetch, and the same record, so a visit either
-    // does both or does neither. A sweep on its own would re-test servers the
-    // saved readings already describe.
-    if (!NovaScope.of(context).settings.autoRefreshLists) return;
-    if (!ListFreshness.isStale(profile.id)) return;
-    _autoMeasured = true;
-    unawaited(_runFirstSweep(profile, proxy));
-  }
-
-  /// The first sweep of Nova's free list, behind a screen that says so.
-  ///
-  /// Doing this quietly under a half-populated list meant rows appeared,
-  /// reordered and disappeared while the user was reaching for one, and there
-  /// was no way to skip it. Now it is shown, counted, and can be stopped, and
-  /// stopping keeps every server found so far.
-  ///
-  /// The sweep is marked as done either way. Stopping is a decision, not a
-  /// failure, so it should not mean being asked again on the next visit; the
-  /// refresh button is how you ask for another one.
-  Future<void> _runFirstSweep(ProxyProfile profile, ProxyController proxy) async {
-    final int total = _nodes.length;
-    bool closed = false;
-    void close() {
-      if (closed || !mounted) return;
-      closed = true;
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-
-    unawaited(showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierLabel: '',
-      // Opaque and over everything, including the bottom navigation: while this
-      // is up the rest of the app cannot be used, which is the point. A
-      // half-swept list is not something to let anyone pick from.
-      barrierColor: Theme.of(context).colorScheme.surface,
-      transitionDuration: const Duration(milliseconds: 180),
-      pageBuilder: (BuildContext ctx, _, __) => FreeListSearchSheet(
-        proxy: proxy,
-        total: total,
-        onStop: () {
-          unawaited(proxy.cancelMeasure());
-          close();
-        },
-      ),
-    ));
-
-    try {
-      await _measureAll(quiet: true, stopAfter: kFreeListTarget);
-    } finally {
-      await ListFreshness.markSynced(profile.id);
-      close();
-    }
-  }
-
   /// Tapping one row's verdict: re-test just that server, keeping every other
   /// row's reading. Same measuring core as the lightning button, a pool of one.
   Future<void> _measureOne(ProxyNode node) async {
@@ -518,60 +456,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (scope.proxy.measuring.value) return;
     final String? problem =
         await scope.proxy.measureNodes(<ProxyNode>[node], merge: true);
-    final ProxyProfile? p = _profile;
-    if (p != null) {
-      await HealthStore.save(p.id, scope.proxy.coreHealth.value);
-    }
+    await _persistHealth(scope.proxy.coreHealth.value);
     if (!mounted) return;
     _syncShownCount(scope.proxy.coreHealth.value);
     if (problem == null) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(problem)));
-  }
-
-  bool _sameKeys(List<ProxyNode> a, List<ProxyNode> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (_key(a[i]) != _key(b[i])) return false;
-    }
-    return true;
-  }
-
-  Future<void> _pingAll() async {
-    // Bounded concurrency so we don't open 80 sockets at once.
-    const int batch = 12;
-    for (int i = 0; i < _nodes.length; i += batch) {
-      final slice = _nodes.skip(i).take(batch);
-      await Future.wait(slice.map(_pingOne));
-      if (!mounted) return;
-      setState(() {});
-    }
-    _logSummary();
-    _saveFastNodes();
-    _maybeSuggestBypass();
-  }
-
-  /// Every server reads as blocked, and there are clean-IP fronted servers in
-  /// the list: the signature of a network that blocks the worker's SNI. Turn
-  /// the SNI-block bypass on for the profile (persisted) and say so, so the
-  /// next connect starts with it instead of failing the same way once more.
-  /// The probe itself cannot try the bypass (it uses the platform's TLS), so
-  /// the proof happens on connect; the controller escalates the same way there.
-  void _maybeSuggestBypass() {
-    final profile = _profile;
-    if (profile == null || profile.hardenTls || _nodes.isEmpty) return;
-    final bool allBlocked = _nodes.every((ProxyNode n) =>
-        _probe[_key(n)]?.quality == NodeProbeQuality.unreachable);
-    if (!allBlocked) return;
-    if (!_nodes.any((ProxyNode n) => n.isCleanIpFronted)) return;
-    NovaLog.instance.write(
-      'Every server in "${profile.name}" reads as blocked; turning on the '
-      'SNI-block bypass for its clean-IP servers.',
-      level: NovaLogLevel.warn,
-    );
-    NovaScope.of(context).profiles.update(profile.copyWith(hardenTls: true));
-    _bypassSuggested = true;
-    if (mounted) setState(() {});
   }
 
   /// Turn the bypass on or off by hand. Reconnects if this profile is the live
@@ -590,54 +480,6 @@ class _NodeListScreenState extends State<NodeListScreen> {
       scope.proxy.selectProfile(updated);
       if (scope.proxy.state.isActive) await scope.proxy.reconnect();
     }
-  }
-
-  /// One line in the app log for the whole sweep. Per-node lines would drown
-  /// everything else for an 80-node subscription, but the shape of the result
-  /// is exactly what a support conversation needs: "all blocked" and "all
-  /// answered but none proven" are different problems with different answers.
-  void _logSummary() {
-    final Map<NodeProbeQuality, int> tally = <NodeProbeQuality, int>{};
-    for (final ProxyNode n in _nodes) {
-      final NodeProbeResult? r = _probe[_key(n)];
-      if (r == null) continue;
-      tally[r.quality] = (tally[r.quality] ?? 0) + 1;
-    }
-    NovaLog.instance.write(
-      'Tested ${_nodes.length} servers: '
-      '${tally[NodeProbeQuality.proxied] ?? 0} carried a test request, '
-      '${tally[NodeProbeQuality.handshake] ?? 0} answered, '
-      '${tally[NodeProbeQuality.unreachable] ?? 0} blocked, '
-      '${tally[NodeProbeQuality.untestable] ?? 0} not testable',
-    );
-  }
-
-  /// Persist the nodes a probe actually proved, fastest first, so Auto-select
-  /// builds its urltest pool from these instead of the subscription's arbitrary
-  /// first few. Nodes that only completed a TCP or TLS handshake are no longer
-  /// eligible: seeding the pool with them is what put dead exits at the front.
-  void _saveFastNodes() {
-    final profile = _profile;
-    if (profile == null) return;
-    final proven = _nodes
-        .map(_key)
-        .where((k) => _probe[k]?.ok ?? false)
-        .toList()
-      ..sort((a, b) => _probe[a]!.sortKey.compareTo(_probe[b]!.sortKey));
-    if (proven.isEmpty) return;
-    NovaScope.of(context).profiles.update(profile.copyWith(
-          lastLatencyMs: _probe[proven.first]!.latencyMs,
-          fastNodes: proven.take(24).toList(),
-        ));
-  }
-
-  Future<void> _pingOne(ProxyNode n) async {
-    // A real end-to-end test, not a bare TCP connect: Cloudflare's edge accepts
-    // any TCP handshake, so a plain connect showed every node green even on
-    // networks where nothing would ever get through. See node_probe.dart for
-    // what each tier proves.
-    _probe[_key(n)] = await probeNode(n, bypass: _profile?.hardenTls ?? false);
-    await _geoOne(n);
   }
 
   /// Works out where a node really is, when that is knowable at all.
@@ -826,17 +668,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
     final bool measuring = proxy.measuring.value;
     // Ranking, best first. When connected, the core's live pings win: a node the
     // core actually measured through the tunnel leads (lowest ping first), so the
-    // working servers surface at the top instead of being buried under the nodes
-    // the outside probe can only call "not testable". Disconnected (empty health)
-    // this collapses to the old probe order. A node still being measured keeps
-    // its place until its verdict lands, so rows don't jump while the list fills.
+    // working servers surface at the top. With nothing measured yet every row
+    // ranks the same and the list keeps the order it arrived in. A node still
+    // being measured keeps its place until its verdict lands, so rows don't jump
+    // while the list fills.
     int rank(ProxyNode n) {
       final int? live = health.delayFor(n);
-      if (live != null) return live; // 0..~, measured pool nodes first by ping
+      if (live != null) return live; // 0..~, measured nodes first by ping
       if (health.wasTested(n)) return 1000000; // tested but no response
-      // Not in the live pool: fall back to the outside-probe verdict, after all
-      // core-measured rows.
-      return 2000000 + (_probe[_key(n)]?.sortKey ?? 500000);
+      return 2000000; // not tested
     }
 
     final List<ProxyNode> visible = <ProxyNode>[
@@ -899,9 +739,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
         if (i < header.length) return header[i];
         final int r = i - header.length;
         final ProxyNode n = visible[r];
+        // The flag is worked out for rows that actually get built, so a
+        // two-hundred-server list does not fire two hundred lookups the moment
+        // it opens. Cheap, cached by host, and nothing to do with testing.
+        unawaited(_geoOne(n));
         return _NodeRow(
           node: n,
-          probe: _probe[_key(n)],
           geo: _geoStore[_key(n)],
           selected: pinned == _key(n),
           // The core's live latency for this node (through the actual tunnel, so
@@ -1371,7 +1214,6 @@ List<String> _nodeDetail(ProxyNode n) {
 class _NodeRow extends StatelessWidget {
   const _NodeRow({
     required this.node,
-    required this.probe,
     required this.geo,
     required this.selected,
     required this.onTap,
@@ -1388,17 +1230,13 @@ class _NodeRow extends StatelessWidget {
   /// leaving every other row's reading alone. Null while a run is in flight.
   final VoidCallback? onRetest;
 
-  /// Null while the node is still being measured.
-  final NodeProbeResult? probe;
-
   /// Null until the location resolves, and location-free for fronted addresses.
   final NodeGeo? geo;
   final bool selected;
   final VoidCallback onTap;
 
-  /// The core's live latency for this node through the running tunnel, or null
-  /// when disconnected or the core has no figure. Takes precedence over [probe]
-  /// because it is measured through the actual path (bypass included).
+  /// The core's live latency for this node, measured through the core. Null
+  /// until a lightning test (or a single-row test) has produced one.
   final int? coreDelayMs;
 
   /// True when the core measured this node this round (it may still have failed).
@@ -1431,10 +1269,7 @@ class _NodeRow extends StatelessWidget {
       ..._transportTags(node),
       if (geo?.frontedBy != null) geo!.frontedBy!,
     ];
-    // The probe's own verdict is the most useful thing on the row when it is
-    // anything other than a plain number, so it leads the detail line.
     final List<String> detail = <String>[
-      if ((probe?.reason ?? '').isNotEmpty) probe!.reason!,
       ..._nodeDetail(node),
       if (location.isNotEmpty) location,
     ];
@@ -1579,7 +1414,6 @@ class _NodeRow extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: NovaSpace.xs, vertical: NovaSpace.xs),
                           child: _Verdict(
-                              probe: probe,
                               coreDelayMs: coreDelayMs,
                               coreTested: coreTested),
                         ),
@@ -1743,19 +1577,16 @@ class _MiddleEllipsis extends StatelessWidget {
 /// that cannot be judged from outside a tunnel says so instead of borrowing a
 /// number it did not earn. Blocked is a word on a red tint, never colour alone.
 class _Verdict extends StatelessWidget {
-  const _Verdict(
-      {required this.probe, this.coreDelayMs, this.coreTested = false});
-  final NodeProbeResult? probe;
+  const _Verdict({this.coreDelayMs, this.coreTested = false});
 
-  /// The running core's live latency for this node, measured through the tunnel
-  /// (so with the SNI-block bypass applied). When present it wins over [probe]:
-  /// it is the one honest number for a clean-IP node the outside probe had to
-  /// call "not testable", and it is fresher than any outside measurement.
+  /// The core's latency for this node. Nova measures one way only: through the
+  /// core, when the user asks for it. The outside TCP/TLS probe that used to
+  /// fill this column ran on its own, could not judge Reality, Hysteria2, SS2022
+  /// or mieru at all, and competed with the lightning test for sockets.
   final int? coreDelayMs;
 
-  /// True when the core measured this node this round but it did not answer (no
-  /// [coreDelayMs]). That is a real "no response" verdict, not "not testable":
-  /// the core tried it through the live tunnel and got nothing back.
+  /// True when the core tried this node and got nothing back. That is a real
+  /// "no response", as opposed to a node nobody has tested yet.
   final bool coreTested;
 
   @override
@@ -1763,54 +1594,24 @@ class _Verdict extends StatelessWidget {
     final NovaStrings s = NovaStrings.of(context);
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
-    // A live figure from the running core (measured through the actual tunnel,
-    // bypass included) is the truest verdict, so it leads when present. A bolt,
-    // not a check: measured live right now is a stronger claim than "reachable".
     final int? live = coreDelayMs;
     if (live != null) {
       return _LatencyBadge(ms: live, icon: Icons.bolt_rounded);
     }
-    // The core tried this node through the tunnel and got nothing back: an
-    // honest "no response", not the misleading "not testable" (it WAS tested).
     if (coreTested) {
       return _VerdictPill(
         label: s.nodeNoResponse,
         color: NovaSemantics.amber,
       );
     }
-    final NodeProbeResult? p = probe;
-    if (p == null) {
-      return const SizedBox(
-        width: 15,
-        height: 15,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-    switch (p.quality) {
-      case NodeProbeQuality.unreachable:
-        return _VerdictPill(
-          label: s.nodeBlocked,
-          color: NovaSemantics.red,
-          filled: true,
-        );
-      case NodeProbeQuality.untestable:
-        // The quietest verdict of all: a node you cannot judge from outside a
-        // tunnel is not a problem, so it whispers in muted text rather than
-        // wearing a pill that would read as an alarm.
-        return Text(
-          s.nodeUntested,
-          textAlign: TextAlign.end,
-          style: text.labelSmall?.copyWith(
-              color: nova.muted, fontWeight: FontWeight.w500, height: 1.1),
-        );
-      case NodeProbeQuality.proxied:
-      case NodeProbeQuality.handshake:
-        final int ms = p.latencyMs ?? 0;
-        final bool proven = p.quality == NodeProbeQuality.proxied;
-        // Proven traffic earns a quiet leading dot in the ping colour; a
-        // handshake-only figure stays plain so it does not overclaim.
-        return _LatencyBadge(ms: ms, marked: proven);
-    }
+    // Nobody has tested this server. Said quietly, in muted text: it is not a
+    // problem, it is just a row waiting for the lightning button.
+    return Text(
+      s.nodeNotTested,
+      textAlign: TextAlign.end,
+      style: text.labelSmall?.copyWith(
+          color: nova.muted, fontWeight: FontWeight.w500, height: 1.1),
+    );
   }
 }
 
@@ -1821,16 +1622,12 @@ class _Verdict extends StatelessWidget {
 /// a proven reading a quiet leading dot; a handshake-only number stays plain so
 /// it never looks stronger than it is.
 class _LatencyBadge extends StatelessWidget {
-  const _LatencyBadge({required this.ms, this.icon, this.marked = false});
+  const _LatencyBadge({required this.ms, this.icon});
 
   final int ms;
 
   /// A small leading glyph for a live core reading (a bolt). Null otherwise.
   final IconData? icon;
-
-  /// A quiet leading dot marking a proven (traffic-reached) reading, so
-  /// "verified" stays legible without a shield-on-tint that reads as an alarm.
-  final bool marked;
 
   @override
   Widget build(BuildContext context) {
@@ -1841,13 +1638,6 @@ class _LatencyBadge extends StatelessWidget {
         if (icon != null) ...<Widget>[
           Icon(icon, size: 13, color: c),
           const SizedBox(width: 3),
-        ] else if (marked) ...<Widget>[
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 5),
         ],
         // "42 ms" is a Latin run, held LTR so it is never mirrored in Farsi.
         Text.rich(
@@ -1885,19 +1675,18 @@ class _LatencyBadge extends StatelessWidget {
   }
 }
 
-/// A short word verdict on a tint: "blocked" (red) or "no response" (amber).
-/// Filled so the word reads as a state, never colour alone; the latency figures
-/// use [_LatencyBadge] instead.
+/// A short word verdict on a tint: "no response" (amber). Filled so the word
+/// reads as a state, never colour alone; the latency figures use
+/// [_LatencyBadge] instead.
 class _VerdictPill extends StatelessWidget {
   const _VerdictPill({
     required this.label,
     required this.color,
-    this.filled = false,
   });
 
   final String label;
   final Color color;
-  final bool filled;
+  static const bool filled = true;
 
   @override
   Widget build(BuildContext context) {

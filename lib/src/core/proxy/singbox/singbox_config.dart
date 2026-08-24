@@ -41,6 +41,8 @@ class SingboxRouteOptions {
     this.bypassFragmentMask,
     this.tunInterfaceName,
     this.mixedInboundPort,
+    this.includePackages = const <String>[],
+    this.excludePackages = const <String>[],
   });
 
   /// Proxy mode: listen on this loopback port with a `mixed` (SOCKS5 + HTTP)
@@ -185,6 +187,22 @@ class SingboxRouteOptions {
   /// drops the segment split; the desktop controller sets this.
   final bool hardenPacketFragment;
 
+  /// Per-app routing, Android only.
+  ///
+  /// [includePackages] means "send ONLY these apps through Nova"; anything not
+  /// listed keeps its normal connection. [excludePackages] is the mirror: every
+  /// app goes through Nova except these. They are mutually exclusive, which
+  /// Android enforces anyway (VpnService.Builder throws if both are used), so
+  /// the settings model only ever fills one.
+  ///
+  /// Android is the only platform that can do this. Its VpnService takes an
+  /// allow/deny list of packages; iOS reserves per-app VPN for MDM-managed
+  /// devices, and the desktop hosts route by process at a different layer. The
+  /// native service already reads these off the TUN options (see
+  /// NovaVpnService.openTun), so emitting them here is the whole wiring.
+  final List<String> includePackages;
+  final List<String> excludePackages;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -206,6 +224,8 @@ class SingboxRouteOptions {
     String? bypassFragmentMask,
     String? tunInterfaceName,
     int? mixedInboundPort,
+    List<String>? includePackages,
+    List<String>? excludePackages,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -234,6 +254,8 @@ class SingboxRouteOptions {
         bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
         tunInterfaceName: tunInterfaceName ?? this.tunInterfaceName,
         mixedInboundPort: mixedInboundPort ?? this.mixedInboundPort,
+        includePackages: includePackages ?? this.includePackages,
+        excludePackages: excludePackages ?? this.excludePackages,
       );
 }
 
@@ -836,6 +858,12 @@ class SingboxConfig {
         'mtu': (o.lean || o.gvisorStack) ? 4064 : 9000,
         'auto_route': true,
         'strict_route': true,
+        // Per-app routing. Only ever one of the two is non-empty: Android's
+        // VpnService.Builder rejects a config that uses both.
+        if (o.includePackages.isNotEmpty)
+          'include_package': <String>[...o.includePackages],
+        if (o.excludePackages.isNotEmpty)
+          'exclude_package': <String>[...o.excludePackages],
         'stack': (o.lean || o.gvisorStack) ? 'gvisor' : 'system',
         // Sniffing is NOT set here anymore. sing-box 1.13 removed the
         // inbound-level `sniff`/`sniff_override_destination` fields ("legacy

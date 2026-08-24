@@ -503,8 +503,35 @@ class SingboxProxyController extends ProxyController {
           before, delays, built.tagKeys.values.toSet(), merge: merge);
       NovaLog.instance.write(
           'Measured ${built.tagKeys.length} servers through the core: '
-          '${delays.length} answered'
-          '${delays.isEmpty && failures.isNotEmpty ? '. Why: ${failures.join('; ')}' : ''}');
+          '${delays.length} answered');
+      // Why the others said nothing, always, not just when the whole run came
+      // back empty. A run where the ws servers answer and every Reality /
+      // Hysteria2 / SS2022 / mieru server does not is the exact case that needs
+      // explaining, and it used to be the case that logged nothing at all. The
+      // tag is mapped back to the server's name and protocol, since "node-7"
+      // tells a support conversation nothing.
+      if (failures.isNotEmpty) {
+        final Map<String, ProxyNode> byKey = <String, ProxyNode>{
+          for (final ProxyNode n in resolved) proxyNodeKey(n): n,
+        };
+        String describe(String failure) {
+          final int colon = failure.indexOf(':');
+          if (colon <= 0) return failure;
+          final String tag = failure.substring(0, colon);
+          final String? key = built.tagKeys[tag];
+          final ProxyNode? n = key == null ? null : byKey[key];
+          if (n == null) return failure;
+          final String proto = n.network.isEmpty || n.network == 'tcp'
+              ? n.protocol.name
+              : '${n.protocol.name}/${n.network}';
+          return '${n.tag} ($proto)${failure.substring(colon)}';
+        }
+
+        NovaLog.instance.write(
+          'Servers that did not answer: ${failures.map(describe).join('; ')}',
+          level: NovaLogLevel.warn,
+        );
+      }
       return null;
     } on FormatException catch (e) {
       NovaLog.instance.write('Measure failed: ${e.message}', level: NovaLogLevel.warn);
@@ -608,6 +635,13 @@ class SingboxProxyController extends ProxyController {
       _state = ProxyConnectionState.error;
       notifyListeners();
       return;
+    }
+    // A measuring core and the tunnel are two cores on one device fighting for
+    // the same sockets, and the loser is whichever one the user is watching. A
+    // connect wins: stop the test rather than start a second core underneath it.
+    if (measuring.value) {
+      NovaLog.instance.write('Connecting, so the running server test is stopped');
+      await cancelMeasure();
     }
     // A fresh user-initiated connect re-arms the one-shot auto self-heal; the
     // heal's own reconnect keeps [_autoHealTried] set (via [_healing]) so it

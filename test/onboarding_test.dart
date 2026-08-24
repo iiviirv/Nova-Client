@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nova_client/src/app.dart';
+import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
@@ -32,6 +33,7 @@ void main() {
       radar: radar,
       cloudflare: cloudflare,
       settings: SettingsController(prefs: prefs),
+      appRouting: AppRouting(),
       vps: VpsController(profiles, proxy, relay),
       relay: relay,
       tunnel: tunnel,
@@ -48,6 +50,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('How would you like to start?'), findsOneWidget);
-    expect(find.text('Deploy your own panel'), findsOneWidget);
+    expect(find.text('Use the free servers'), findsOneWidget);
+    expect(find.text('Add a config'), findsOneWidget);
+    // The panel-owner entries were removed from first run on purpose; they
+    // live in Settings > Cloudflare tools and the Servers empty state.
+    expect(find.text('Deploy your own panel'), findsNothing);
+    expect(find.text('Import from your panel'), findsNothing);
+    expect(find.text('Connect your VPS'), findsNothing);
   });
 }

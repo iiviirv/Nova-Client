@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/app.dart';
+import 'src/core/proxy/app_routing.dart';
 import 'src/core/cleanip/clean_ip_store.dart';
 import 'src/core/proxy/list_freshness.dart';
 import 'src/core/proxy/pool_order.dart';
@@ -37,6 +38,7 @@ Future<void> main() async {
   final RadarController radar = RadarController();
   final CloudflareController cloudflare = CloudflareController();
   final SettingsController settings = SettingsController();
+  final AppRouting appRouting = AppRouting();
 
   // The Google relay: fetch subscriptions and reach the /admin API through a
   // Google Apps Script front when the panel's own domain is blocked.
@@ -67,7 +69,13 @@ Future<void> main() async {
   final VpsController vps = VpsController(profiles, proxy, relay);
 
   // The host builds each config from the user's live routing/DNS choices.
-  proxy.routeOptionsProvider = () => settings.routeOptions;
+  // Per-app routing lives in its own controller (it is Android-only and has
+  // nothing to do with the rest of the route settings), so it is folded in here
+  // rather than threaded through SettingsController.
+  proxy.routeOptionsProvider = () => settings.routeOptions.copyWith(
+        includePackages: appRouting.includePackages,
+        excludePackages: appRouting.excludePackages,
+      );
 
   // Route subscription refresh through the relay when it is active.
   proxy.subFetcherProvider = () => relay.subFetcher();
@@ -116,6 +124,7 @@ Future<void> main() async {
     radar: radar,
     cloudflare: cloudflare,
     settings: settings,
+    appRouting: appRouting,
     vps: vps,
     relay: relay,
     tunnel: tunnel,
@@ -138,12 +147,17 @@ Future<void> main() async {
     radar.attachPrefs(prefs);
     cloudflare.attachPrefs(prefs);
     settings.attachPrefs(prefs);
+    appRouting.attachPrefs(prefs);
     NodeGeoStore.instance.attachPrefs(prefs);
 
     // Persist each subscription's last good body so a blocked refresh
     // (workers.dev filtered) serves the saved servers instead of wiping the
     // list and stranding the user with nothing to connect to.
     subscriptionBodyStore = PrefsSubscriptionBodyStore(prefs);
+    // And its plan figures, so a subscription row can show used/remaining from
+    // the moment the list is drawn rather than only after a re-fetch.
+    subInfoStore = PrefsSubInfoStore(prefs);
+    hydrateSubInfo();
 
     // Once-a-day best-effort check for a newer release; a hit shows a small
     // banner on the dashboard. Never blocks startup and swallows any failure.

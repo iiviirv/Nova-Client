@@ -12,6 +12,7 @@ import 'core/proxy/proxy_controller.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
 import 'features/profiles/profiles_controller.dart';
 import 'features/radar/radar_controller.dart';
+import 'core/proxy/app_routing.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/relay/relay_controller.dart';
 import 'features/relay/tunnel_controller.dart';
@@ -38,6 +39,7 @@ class NovaApp extends StatelessWidget {
     required this.radar,
     required this.cloudflare,
     required this.settings,
+    required this.appRouting,
     required this.vps,
     required this.relay,
     required this.tunnel,
@@ -50,6 +52,7 @@ class NovaApp extends StatelessWidget {
   final RadarController radar;
   final CloudflareController cloudflare;
   final SettingsController settings;
+  final AppRouting appRouting;
   final VpsController vps;
   final RelayController relay;
   final TunnelController tunnel;
@@ -64,6 +67,7 @@ class NovaApp extends StatelessWidget {
       radar: radar,
       cloudflare: cloudflare,
       settings: settings,
+      appRouting: appRouting,
       vps: vps,
       relay: relay,
       tunnel: tunnel,

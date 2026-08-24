@@ -42,3 +42,61 @@ class PrefsSubscriptionBodyStore implements SubscriptionBodyStore {
     await _prefs.setString(_keyFor(url), body);
   }
 }
+
+/// A [SubInfoStore] backed by SharedPreferences, so a subscription's plan
+/// usage and expiry survive a restart.
+///
+/// Same hashed key scheme as the body store above: the subscription URL carries
+/// query auth, so it never sits in prefs in the clear. One small JSON object per
+/// subscription.
+class PrefsSubInfoStore implements SubInfoStore {
+  PrefsSubInfoStore(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  static const String _prefix = 'nova.subinfo.';
+
+  String _keyFor(String url) => '$_prefix${sha256.convert(utf8.encode(url))}';
+
+  @override
+  Map<String, SubInfo> loadAll() {
+    final Map<String, SubInfo> out = <String, SubInfo>{};
+    for (final String key in _prefs.getKeys()) {
+      if (!key.startsWith(_prefix)) continue;
+      final String? raw = _prefs.getString(key);
+      if (raw == null) continue;
+      try {
+        final Map<String, dynamic> j =
+            (jsonDecode(raw) as Map).cast<String, dynamic>();
+        final String? url = j['url'] as String?;
+        if (url == null) continue;
+        final int? exp = (j['expire'] as num?)?.toInt();
+        out[url] = SubInfo(
+          upload: (j['upload'] as num?)?.toInt() ?? 0,
+          download: (j['download'] as num?)?.toInt() ?? 0,
+          total: (j['total'] as num?)?.toInt() ?? 0,
+          expire: exp == null || exp <= 0
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(exp),
+        );
+      } catch (_) {
+        // A prefs entry we cannot read is not worth failing startup over.
+      }
+    }
+    return out;
+  }
+
+  @override
+  Future<void> save(String url, SubInfo info) async {
+    await _prefs.setString(
+      _keyFor(url),
+      jsonEncode(<String, dynamic>{
+        'url': url,
+        'upload': info.upload,
+        'download': info.download,
+        'total': info.total,
+        'expire': info.expire?.millisecondsSinceEpoch,
+      }),
+    );
+  }
+}

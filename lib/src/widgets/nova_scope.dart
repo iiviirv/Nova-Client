@@ -7,6 +7,7 @@ import '../features/profiles/profiles_controller.dart';
 import '../features/radar/radar_controller.dart';
 import '../features/relay/relay_controller.dart';
 import '../features/relay/tunnel_controller.dart';
+import '../core/proxy/app_routing.dart';
 import '../features/settings/settings_controller.dart';
 import '../features/vps/vps_controller.dart';
 import '../theme/theme_controller.dart';
@@ -28,6 +29,7 @@ class NovaScope extends InheritedWidget {
     required this.radar,
     required this.cloudflare,
     required this.settings,
+    required this.appRouting,
     required this.vps,
     required this.relay,
     required this.tunnel,
@@ -41,6 +43,7 @@ class NovaScope extends InheritedWidget {
   final RadarController radar;
   final CloudflareController cloudflare;
   final SettingsController settings;
+  final AppRouting appRouting;
   final VpsController vps;
   final RelayController relay;
   final TunnelController tunnel;
@@ -61,6 +64,7 @@ class NovaScope extends InheritedWidget {
       radar != oldWidget.radar ||
       cloudflare != oldWidget.cloudflare ||
       settings != oldWidget.settings ||
+      appRouting != oldWidget.appRouting ||
       vps != oldWidget.vps ||
       relay != oldWidget.relay ||
       tunnel != oldWidget.tunnel;

@@ -8,6 +8,7 @@
 // and name differ. We parse them, keep one as the template, and let the Radar
 // stamp clean IPs into it.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -66,6 +67,29 @@ class SubInfo {
 
 /// Session cache of the last parsed [SubInfo] per subscription URL.
 final Map<String, SubInfo> _subInfoCache = <String, SubInfo>{};
+
+/// Where the plan figures are kept between runs. Set once at startup.
+///
+/// Without this the used/remaining line on a subscription row was blank until
+/// something happened to re-fetch that subscription in this session, which on a
+/// cached list could be never. The figures are the provider's own numbers and
+/// change slowly, so the last ones seen are the right thing to show while a
+/// fresher set is on its way.
+SubInfoStore? subInfoStore;
+
+/// Persists the last [SubInfo] seen for a subscription URL.
+abstract class SubInfoStore {
+  Map<String, SubInfo> loadAll();
+  Future<void> save(String url, SubInfo info);
+}
+
+/// Seeds the session cache from [subInfoStore]. Called once at startup, before
+/// the first frame that could read a plan figure.
+void hydrateSubInfo() {
+  final SubInfoStore? store = subInfoStore;
+  if (store == null) return;
+  _subInfoCache.addAll(store.loadAll());
+}
 
 /// The most recently seen plan usage/expiry for [subscriptionUrl], if any.
 SubInfo? subInfoFor(String? subscriptionUrl) =>
@@ -616,7 +640,10 @@ Future<String> _httpFetchOnce(Uri url,
     }
     final SubInfo? info =
         SubInfo.parse(resp.headers.value('subscription-userinfo'));
-    if (info != null) _subInfoCache[url.toString()] = info;
+    if (info != null) {
+      _subInfoCache[url.toString()] = info;
+      unawaited(subInfoStore?.save(url.toString(), info));
+    }
     return await resp
         .transform(utf8.decoder)
         .join()

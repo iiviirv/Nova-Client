@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nova_client/src/app.dart';
+import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
@@ -31,6 +32,7 @@ Future<void> _pumpShell(WidgetTester tester) async {
     radar: RadarController()..attachPrefs(prefs),
     cloudflare: CloudflareController()..attachPrefs(prefs),
     settings: SettingsController(prefs: prefs),
+    appRouting: AppRouting(),
     vps: VpsController(profiles, proxy, relay),
     relay: relay,
     tunnel: tunnel,

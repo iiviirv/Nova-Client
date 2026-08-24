@@ -3,9 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
 import '../core/proxy/proxy_controller.dart';
-import '../features/cloudflare/cloudflare_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
-import '../features/vps/connect_vps_screen.dart';
 import '../features/servers/servers_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/stats/stats_screen.dart';
@@ -113,22 +111,11 @@ class _NovaAppShellState extends State<NovaAppShell> {
       });
       return;
     }
+    // The only other thing onboarding can ask for is "add a config", which is
+    // the Servers tab. The deploy / panel / VPS branches went with their
+    // onboarding entries; both screens are still reached from the Servers empty
+    // state and from Settings > Cloudflare tools.
     _index = 1; // Servers/Configs
-    if (action == 'deploy' || action == 'panel') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
-        );
-      });
-    } else if (action == 'vps') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const ConnectVpsScreen()),
-        );
-      });
-    }
   }
 
   void _toggleConnect() {

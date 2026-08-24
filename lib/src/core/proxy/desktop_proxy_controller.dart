@@ -193,6 +193,12 @@ class DesktopProxyController extends ProxyController {
       _fail('Select a config first');
       return;
     }
+    // Same rule as the mobile controller: never run a measuring core and the
+    // tunnel at once. The connect the user just asked for wins.
+    if (measuring.value) {
+      NovaLog.instance.write('Connecting, so the running server test is stopped');
+      await cancelMeasure();
+    }
     // A fresh user-initiated connect re-arms the one-shot self-heal; the heal's
     // own reconnect keeps [_autoHealTried] set (via [_healing]) so it can't loop.
     if (!_healing) _autoHealTried = false;

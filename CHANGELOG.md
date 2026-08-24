@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.20.3-beta (2026-08-24)
+
+- Removed: the automatic server test. It ran when a list refreshed, when you
+  opened a subscription, and after a server switch, it regularly hung with no
+  result, and it could not judge Reality, Hysteria2, SS2022 or mieru at all.
+  Nothing tests a server now unless you ask it to.
+
+- Changed: after a refresh every server reads "not tested" and the old readings
+  are dropped, on screen and on disk. A lightning test's numbers then stay until
+  you run another one, until the twelve-hour refresh, or until you save the list
+  by hand.
+
+- Fixed: the lightning test no longer fights the old background test for the same
+  sockets, and starting a connection now stops a running test instead of putting a
+  second core underneath it.
+
+- Fixed: servers that need a real handshake to open a session (Reality, Hysteria2,
+  SS2022, mieru) were being called dead. They all dial a bare VPS and pay a full
+  handshake, while the ones that always passed ride a CDN edge and are up in a
+  couple of hundred milliseconds; on one shared five-second budget the cheap ones
+  finished and the rest were written off. The warm-up dial now gets its own,
+  longer budget. The number you see is unchanged, still measured on a warm dial.
+
+- Added: a server that does not answer now says so in the log, with its name,
+  protocol and the actual reason. Previously a run where the ws servers passed and
+  every Reality server failed logged nothing at all.
+
+- Added: subscriptions show data used and remaining beside their name in the
+  server list, and the figures survive a restart.
+
+- Added: per-app proxy on Android. Send only the apps you pick through Nova, or
+  everything except the ones you pick. Android is the only platform whose VPN
+  layer supports this.
+
+- Changed: Radar and the Cloudflare panel moved into Settings, under Cloudflare
+  tools.
+
+- Changed: first run offers the free servers or adding a config. Deploying a
+  panel, signing in to one and connecting a VPS asked for an account, a login or
+  a server that nobody has on first run, and two of them opened the same screen.
+  Both are still in Settings and on the Servers page.
+
 ## v1.20.2-beta (2026-08-24)
 
 - Fixed: the number beside Configs now counts the servers you can actually see.

@@ -90,5 +90,17 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!--
+            So the per-app proxy picker can list the apps the user recognises.
+            Android 11 hides other packages by default; declaring the launcher
+            intent asks only for apps that have a launcher entry, which is
+            exactly the list the picker shows. Deliberately NOT
+            QUERY_ALL_PACKAGES: that is a Play-restricted permission and this
+            feature does not need it.
+        -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
     </queries>
 </manifest>

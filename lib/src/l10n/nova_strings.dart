@@ -197,6 +197,22 @@ class NovaStrings {
   String get setServerOwner => t('set.serverOwner');
   String get setServerOwnerSub => t('set.serverOwnerSub');
   String get setRoutingSub => t('set.routingSub');
+  String get setTools => t('set.tools');
+  String get perAppTitle => t('perApp.title');
+  String get perAppSub => t('perApp.sub');
+  String get perAppSubtitle => t('perApp.subtitle');
+  String get perAppClear => t('perApp.clear');
+  String get perAppSearch => t('perApp.search');
+  String get perAppNone => t('perApp.none');
+  String get perAppModeAll => t('perApp.modeAll');
+  String get perAppModeOnly => t('perApp.modeOnly');
+  String get perAppModeExcept => t('perApp.modeExcept');
+  String get perAppModeAllNote => t('perApp.modeAllNote');
+  String get perAppReconnectNote => t('perApp.reconnectNote');
+  String get perAppCount => t('perApp.count');
+
+  String get serversPlanUnlimited => t('servers.planUnlimited');
+  String get serversPlanLeft => t('servers.planLeft');
   String get setRadarSub => t('set.radarSub');
   String get setCloudflare => t('set.cloudflare');
   String get setCloudflareSub => t('set.cloudflareSub');
@@ -757,6 +773,7 @@ class NovaStrings {
 
   /// Verdict on a node that cannot be judged without connecting to it.
   String get nodeUntested => t('node.untested');
+  String get nodeNotTested => t('node.notTested');
 
   /// Verdict on a pool node the core tested through the live tunnel but that
   /// never answered: a dead or unusable exit, not one that "can't be tested".
@@ -931,6 +948,22 @@ class NovaStrings {
     'set.serverOwnerSub': 'Your panel address and its shortcut',
     'set.routing': 'Routing & DNS',
     'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
+    'set.tools': 'Cloudflare tools',
+    'perApp.title': 'Per-app proxy',
+    'perApp.sub': 'Choose which apps go through Nova',
+    'perApp.subtitle': 'By default every app on the phone goes through Nova. You can narrow that to a few apps, or send everything except a few.',
+    'perApp.clear': 'Clear',
+    'perApp.search': 'Search apps',
+    'perApp.none': 'No apps to show.',
+    'perApp.modeAll': 'All apps',
+    'perApp.modeOnly': 'Only the apps I pick',
+    'perApp.modeExcept': 'All apps except the ones I pick',
+    'perApp.modeAllNote': 'Every app goes through Nova. Pick one of the other two options to choose apps.',
+    'perApp.reconnectNote': 'Takes effect the next time you connect.',
+    'perApp.count': '{n} apps',
+
+    'servers.planUnlimited': 'used',
+    'servers.planLeft': '{n} left',
     'set.radarSub': 'Scan for clean Cloudflare IPs',
     'set.cloudflare': 'Cloudflare',
     'set.cloudflareSub': 'Sign in to manage your panel',
@@ -1543,6 +1576,7 @@ class NovaStrings {
     'node.count': '{n} nodes',
     'node.blocked': 'blocked',
     'node.untested': 'not testable',
+    'node.notTested': 'not tested',
     'node.noResponse': 'no response',
     'node.staleList':
         'Could not refresh from the panel, so these are your saved servers. '
@@ -1714,6 +1748,22 @@ class NovaStrings {
     'set.serverOwnerSub': 'آدرس پنل شما و میان‌بر آن',
     'set.routing': 'مسیریابی و DNS',
     'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
+    'set.tools': 'ابزارهای کلودفلر',
+    'perApp.title': 'پروکسی برای هر برنامه',
+    'perApp.sub': 'انتخاب کنید کدام برنامه‌ها از نوا عبور کنند',
+    'perApp.subtitle': 'به‌طور پیش‌فرض همه‌ی برنامه‌های گوشی از نوا عبور می‌کنند. می‌توانید آن را به چند برنامه محدود کنید، یا همه را جز چند برنامه بفرستید.',
+    'perApp.clear': 'پاک کردن',
+    'perApp.search': 'جست‌وجوی برنامه‌ها',
+    'perApp.none': 'برنامه‌ای برای نمایش نیست.',
+    'perApp.modeAll': 'همه‌ی برنامه‌ها',
+    'perApp.modeOnly': 'فقط برنامه‌هایی که انتخاب می‌کنم',
+    'perApp.modeExcept': 'همه‌ی برنامه‌ها جز آن‌هایی که انتخاب می‌کنم',
+    'perApp.modeAllNote': 'همه‌ی برنامه‌ها از نوا عبور می‌کنند. برای انتخاب برنامه، یکی از دو گزینه‌ی دیگر را بزنید.',
+    'perApp.reconnectNote': 'از اتصال بعدی اعمال می‌شود.',
+    'perApp.count': '\u2066{n}\u2069 برنامه',
+
+    'servers.planUnlimited': 'مصرف شده',
+    'servers.planLeft': '\u2066{n}\u2069 باقی‌مانده',
     'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
     'set.cloudflare': 'کلودفلر',
     'set.cloudflareSub': 'ورود برای مدیریت پنل شما',
@@ -2323,6 +2373,7 @@ class NovaStrings {
     'node.count': '{n} سرور',
     'node.blocked': 'مسدود',
     'node.untested': 'قابل تست نیست',
+    'node.notTested': 'تست نشده',
     'node.noResponse': 'بدون پاسخ',
     'node.staleList':
         'به‌روزرسانی از پنل ممکن نشد، پس این‌ها سرورهای ذخیره‌شده‌ی شما هستند. '

@@ -8,7 +8,6 @@ import 'package:file_selector/file_selector.dart';
 
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/singbox/awg_config.dart';
-import '../../core/proxy/singbox/node_probe.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../relay/relay_link.dart';
 import '../../l10n/nova_strings.dart';
@@ -18,6 +17,9 @@ import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_pill.dart';
+import '../../core/util/format.dart';
+import '../../core/proxy/health_store.dart';
+import '../../core/proxy/list_freshness.dart';
 import '../../core/proxy/subscription.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../widgets/nova_scope.dart';
@@ -292,6 +294,11 @@ class _ServersBodyState extends State<ServersBody> {
     profiles.update(updated);
     // The source may have changed; drop cached nodes so the next resolve refetches.
     clearSubscriptionCache();
+    // Saving a list by hand is a decision that its servers may not be the same
+    // servers, so every reading taken against the old ones goes with it. The
+    // rows come back as "not tested" until the next lightning test.
+    unawaited(HealthStore.clear(p.id));
+    unawaited(ListFreshness.invalidate(p.id));
     _profileMetadataScheduled.remove(p.id);
     _scheduleProfileMetadata(profiles, updated);
   }
@@ -431,6 +438,20 @@ class _ServerRow extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final s = NovaStrings.of(context);
     final int? latency = profile.lastLatencyMs;
+    // A subscription's plan, from the provider's own `subscription-userinfo`
+    // header, on the row where the user is choosing between subscriptions.
+    // Unlimited plans say so rather than showing a remaining figure that would
+    // always read zero.
+    final SubInfo? sub =
+        profile.isSubscription ? subInfoFor(profile.subscriptionUrl) : null;
+    final String? plan = sub == null
+        ? null
+        : sub.total > 0
+            ? '${Fmt.bytes(sub.used)} / ${Fmt.bytes(sub.total)}'
+            : '${Fmt.bytes(sub.used)} ${s.serversPlanUnlimited}';
+    final String? planLeft = sub != null && sub.total > 0
+        ? s.serversPlanLeft.replaceFirst('{n}', Fmt.bytes(sub.remaining))
+        : null;
 
     // The active row is the one thing to find at a glance: a cyan hairline and
     // a faint tint, with the check as the non-colour signal.
@@ -486,6 +507,40 @@ class _ServerRow extends StatelessWidget {
                             _LatencyReadout(latencyMs: latency),
                         ],
                       ),
+                      // Byte figures are Latin runs, held LTR so they are not
+                      // mirrored when the app is in Farsi.
+                      if (plan != null) ...<Widget>[
+                        const SizedBox(height: NovaSpace.xs),
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: NovaSpace.sm,
+                          runSpacing: NovaSpace.xs,
+                          children: <Widget>[
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(Icons.data_usage_rounded,
+                                    size: 12, color: nova.muted),
+                                const SizedBox(width: 4),
+                                Directionality(
+                                  textDirection: TextDirection.ltr,
+                                  child: Text(plan,
+                                      style: text.labelSmall
+                                          ?.copyWith(color: nova.muted)),
+                                ),
+                              ],
+                            ),
+                            if (planLeft != null)
+                              Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Text(planLeft,
+                                    style: text.labelSmall?.copyWith(
+                                        color: nova.cyan,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -837,9 +892,12 @@ void _scheduleProfileMetadata(
   unawaited(_resolveProfileMetadata(profiles, profile));
 }
 
-/// Resolves the real node count and measures a representative live latency for
-/// the Servers/Home cards. A bounded sample keeps large subscriptions cheap;
-/// opening the node list still measures up to 80 exits in detail.
+/// Resolves the real node count for the Servers/Home cards.
+///
+/// It used to probe a sample of exits here as well, to put a latency on the
+/// card. That was a test the user never asked for, running every time this page
+/// opened, on a probe that could not judge most protocols; it is gone. A card's
+/// latency now comes from a lightning test, and stays blank until there is one.
 Future<void> _resolveProfileMetadata(
     ProfilesController profiles, ProxyProfile snapshot) async {
   try {
@@ -854,21 +912,6 @@ Future<void> _resolveProfileMetadata(
         if (seen.add(proxyNodeKey(n))) n,
     ];
 
-    final measured = await Future.wait(
-      nodes.take(12).map((ProxyNode node) async => (
-            node: node,
-            probe: await probeNode(
-              node,
-              timeout: const Duration(seconds: 5),
-            ),
-          )),
-    );
-    // Only nodes a probe could actually prove are worth putting on a card or
-    // seeding auto-select with; a TCP connect that proved nothing used to land
-    // here as a latency.
-    final reachable = measured.where((result) => result.probe.ok).toList()
-      ..sort((a, b) => a.probe.sortKey.compareTo(b.probe.sortKey));
-
     ProxyProfile? current;
     for (final ProxyProfile candidate in profiles.profiles) {
       if (candidate.id == snapshot.id) {
@@ -882,18 +925,7 @@ Future<void> _resolveProfileMetadata(
       return;
     }
 
-    profiles.update(current.copyWith(
-      nodeCount: nodes.length,
-      lastLatencyMs: reachable.isEmpty
-          ? current.lastLatencyMs
-          : reachable.first.probe.latencyMs,
-      fastNodes: reachable.isEmpty
-          ? current.fastNodes
-          : reachable
-              .take(24)
-              .map((result) => proxyNodeKey(result.node))
-              .toList(),
-    ));
+    profiles.update(current.copyWith(nodeCount: nodes.length));
   } catch (_) {
     // Keep the existing metadata; a later app launch or node-list refresh will
     // try again.

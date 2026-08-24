@@ -133,6 +133,22 @@ class MeasureRunner {
     required String url,
     required int timeoutSec,
     int concurrency = kDefaultConcurrency,
+    /// The budget for the first (cold) dial, which is a different question from
+    /// the budget for the number the user sees.
+    ///
+    /// Everything that failed here failed the same way: Reality, Hysteria2,
+    /// SS2022 and mieru all dial a bare VPS and all pay a real handshake to open
+    /// the session (QUIC + congestion setup, a TLS handshake against the
+    /// borrowed SNI, a mieru session), while the ones that always passed
+    /// (VLESS-ws, xhttp, NaiveProxy) ride a CDN edge and are up in a couple of
+    /// hundred milliseconds. On the default five seconds, shared with seven
+    /// other cold dials, the cheap ones finished and the expensive ones were
+    /// called dead - and the retry ran while the pool was still saturated, which
+    /// is why the same server answered on one run and not the next.
+    ///
+    /// Only the warm-up gets this. The reported figure still comes from the hot
+    /// dial on the normal timeout, so no number moves because of it.
+    int? warmTimeoutSec,
     void Function(Map<String, int> delays, Set<String> tested)? onProgress,
     bool Function()? cancelled,
     http.Client? client,
@@ -148,6 +164,7 @@ class MeasureRunner {
     int? stopAfterWorking,
   }) async {
     final http.Client c = client ?? http.Client();
+    final int warmSec = (warmTimeoutSec ?? timeoutSec * 3).clamp(timeoutSec, 60);
     final Map<String, int> delays = <String, int>{};
     final Set<String> tested = <String>{};
     final List<String> queue = tagKeys.keys.toList();
@@ -167,10 +184,10 @@ class MeasureRunner {
         // Its number is thrown away; it is the setup cost, not the latency.
         int? warm = await probe(api, tag,
             url: url,
-            timeoutSec: timeoutSec,
+            timeoutSec: warmSec,
             client: c,
             onFailure: (String why) {
-              if (failures != null && failures.length < 3) failures.add(why);
+              if (failures != null && failures.length < 12) failures.add(why);
             });
         if (warm == null && !(cancelled?.call() ?? false)) {
           // One retry before a server is written off. Measured against Nova's
@@ -180,7 +197,7 @@ class MeasureRunner {
           // from the people who have nothing else. Only a node that is already
           // failing pays for this.
           warm = await probe(api, tag,
-              url: url, timeoutSec: timeoutSec, client: c);
+              url: url, timeoutSec: warmSec, client: c);
         }
         int? best = warm;
         if (warm != null) {
@@ -231,7 +248,12 @@ class MeasureRunner {
           final String? key = tagKeys[tag];
           if (key == null) continue;
           final int? ms = await probe(api, tag,
-              url: url, timeoutSec: timeoutSec, client: c);
+              url: url,
+              timeoutSec: warmSec,
+              client: c,
+              onFailure: (String why) {
+                if (failures != null && failures.length < 12) failures.add(why);
+              });
           if (ms != null) {
             delays[key] = ms;
             onProgress?.call(

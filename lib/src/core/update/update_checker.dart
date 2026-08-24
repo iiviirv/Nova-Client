@@ -8,13 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The GitHub release tag this build shipped as. The daily update check compares
 /// it to the latest release; if they differ, an update is offered. Bump this in
 /// step with the build number every release (see settings_screen's kNovaBuild).
-const String kNovaReleaseTag = 'v1.20.2-beta';
+const String kNovaReleaseTag = 'v1.20.3-beta';
 
 /// The marketing version and build number this build shipped as, shown in
 /// Settings' About footer. They mirror pubspec.yaml's `version:` (a test pins
 /// them to it, because they sat at 0.3.3 (82) through five releases).
-const String kNovaVersion = '0.9.2';
-const String kNovaBuild = '101';
+const String kNovaVersion = '0.9.3';
+const String kNovaBuild = '103';
 
 /// The public repo whose releases the app updates from.
 const String kNovaRepo = 'IRNova/Nova-Client';
@@ -48,6 +48,12 @@ Future<void> checkForNovaUpdate(
   int nowMs = 0,
   Future<String> Function(Uri)? fetch,
 }) async {
+  // Never on iOS. The banner's whole job is to send someone to the GitHub
+  // releases page, and an iPhone cannot install from it: there, a new build
+  // arrives through the App Store or TestFlight or not at all. Showing it would
+  // point users (and an App Store reviewer) at a download outside the store,
+  // which is both useless to them and a bad look on the review.
+  if (Platform.isIOS) return;
   // Restore the last verdict so a banner survives an app restart within the day.
   final String? remembered = prefs.getString(_kLatestTagKey);
   if (remembered != null && _isNewer(remembered)) {

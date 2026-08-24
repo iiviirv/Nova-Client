@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/proxy/app_routing.dart';
 import '../../core/update/update_checker.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
@@ -12,7 +15,10 @@ import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../logs/log_screen.dart';
+import '../apps/per_app_screen.dart';
+import '../cloudflare/cloudflare_screen.dart';
 import '../panel/open_panel.dart';
+import '../radar/radar_screen.dart';
 import '../routing/routing_screen.dart';
 import 'server_owner_screen.dart';
 import 'test_options_screen.dart';
@@ -87,6 +93,31 @@ class SettingsScreen extends StatelessWidget {
                           onTap: () =>
                               _push(context, const ServerOwnerScreen()),
                         ),
+                        // Android only: its VpnService is the one host of the
+                        // four that takes a per-app allow/deny list. iOS
+                        // reserves per-app VPN for MDM-managed devices, and the
+                        // desktop hosts have no equivalent at this layer.
+                        if (Platform.isAndroid) ...<Widget>[
+                          _div(nova.border),
+                          ListenableBuilder(
+                            listenable: NovaScope.of(context).appRouting,
+                            builder: (BuildContext context, _) {
+                              final AppRouting r =
+                                  NovaScope.of(context).appRouting;
+                              return _NavRow(
+                                icon: Icons.apps_rounded,
+                                color: nova.violet,
+                                title: s.perAppTitle,
+                                subtitle: r.isActive
+                                    ? s.perAppCount.replaceFirst(
+                                        '{n}', '${r.packages.length}')
+                                    : s.perAppSub,
+                                onTap: () =>
+                                    _push(context, const PerAppScreen()),
+                              );
+                            },
+                          ),
+                        ],
                         _div(nova.border),
                         // Radar, Cloudflare and Google relay were removed
                         // from Settings on the operator's request
@@ -101,6 +132,38 @@ class SettingsScreen extends StatelessWidget {
                           title: s.logsTitle,
                           subtitle: s.logsSubtitle,
                           onTap: () => _push(context, const LogScreen()),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: NovaSpace.xl),
+
+                // Radar and the Cloudflare hub are the two things this app does
+                // that a generic client does not, so they get their own group
+                // rather than sitting in General. They left the dashboard in
+                // the declutter round; Settings is where an owner looks for
+                // them, and the App Store listing describes both.
+                _Section(
+                  label: s.setTools,
+                  child: NovaCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: <Widget>[
+                        _NavRow(
+                          icon: Icons.radar_rounded,
+                          color: nova.cyan,
+                          title: s.navRadar,
+                          subtitle: s.setRadarSub,
+                          onTap: () => _push(context, const RadarScreen()),
+                        ),
+                        _div(nova.border),
+                        _NavRow(
+                          icon: Icons.cloud_upload_rounded,
+                          color: nova.indigo,
+                          title: s.setCloudflare,
+                          subtitle: s.setCloudflareSub,
+                          onTap: () => _push(context, const CloudflareScreen()),
                         ),
                       ],
                     ),

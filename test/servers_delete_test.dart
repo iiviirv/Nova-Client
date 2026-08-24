@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/models/proxy_profile.dart';
+import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/core/proxy/proxy_controller.dart';
@@ -75,6 +76,7 @@ Future<ProfilesController> _pumpServers(
     radar: RadarController()..attachPrefs(prefs),
     cloudflare: CloudflareController()..attachPrefs(prefs),
     settings: SettingsController(prefs: prefs),
+    appRouting: AppRouting(),
     vps: VpsController(profileCtl, proxyCtl, relay),
     relay: relay,
     tunnel: TunnelController(relay.transportFor),
