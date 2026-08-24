@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/cleanip/clean_ip_store.dart';
 import '../../core/proxy/subscription.dart';
 import 'models.dart';
 import 'scanner.dart';
@@ -60,10 +61,33 @@ class RadarController extends ChangeNotifier {
   /// Binds the active subscription's core config (and the exit colo used for
   /// flagging) so scans emit real, importable nodes named like the worker.
   /// Pass `null` to unbind and fall back to bare `ip:port#name` results.
-  void applyCoreConfig(NovaCoreConfig? config, {String colo = ''}) {
+  ///
+  /// [ownDomain] marks a config that came from a subscription the user pays
+  /// for, which changes what the scan is allowed to dial. See [scanHost].
+  void applyCoreConfig(NovaCoreConfig? config,
+      {String colo = '', bool ownDomain = false}) {
     _coreConfig = config;
     _exitColo = colo;
+    _configIsOwnDomain = ownDomain;
     notifyListeners();
+  }
+
+  bool _configIsOwnDomain = false;
+
+  /// The SNI a scan dials, which is deliberately NOT the user's own domain.
+  ///
+  /// A scan is hundreds of TLS handshakes to one name in a few seconds, and
+  /// Iranian DPI reacts to exactly that: the domain being scanned starts getting
+  /// disrupted within hours. When that domain is the panel someone pays for,
+  /// Radar burns the very thing it was run to improve. So the handshakes go to a
+  /// Cloudflare name that is ours to spend, and the user's config is still used
+  /// as the template for the nodes a scan emits, because what the scan is
+  /// looking for is a reachable edge IP and reachability does not depend on
+  /// which name rode the handshake.
+  String get scanHost {
+    if (_configIsOwnDomain) return kVlessSni;
+    final String? sni = _coreConfig?.sni;
+    return (sni == null || sni.isEmpty) ? kVlessSni : sni;
   }
 
   bool _binding = false;
@@ -75,9 +99,12 @@ class RadarController extends ChangeNotifier {
   /// Fetches [subUrl], derives the core config and exit colo, and binds them.
   /// Best-effort: progress shows via [isBindingSubscription] and failures via
   /// [bindError]. [fetch] overrides the transport (used in tests).
+  /// [ownDomain] says this subscription is one the user pays for, so its
+  /// domain must not be the one a scan dials. See [scanHost].
   Future<void> bindSubscription(
     String subUrl, {
     SubscriptionFetcher? fetch,
+    bool ownDomain = true,
   }) async {
     if (_binding || subUrl.isEmpty) return;
     _binding = true;
@@ -93,7 +120,7 @@ class RadarController extends ChangeNotifier {
       }
       final String colo = await fetchExitColo(fetch: fetch);
       _binding = false;
-      applyCoreConfig(cfg, colo: colo);
+      applyCoreConfig(cfg, colo: colo, ownDomain: ownDomain);
     } catch (e) {
       _bindError = e.toString();
       _binding = false;
@@ -210,8 +237,33 @@ class RadarController extends ChangeNotifier {
       secondPass: false,
     );
 
+    // Keep the best few for the free list. Doing it here rather than on the
+    // toggle means the addresses are already there the moment someone turns it
+    // on, instead of the setting doing nothing until the next scan.
+    await _keepBestForFreeList(finalResults);
+
     await _teardownScanner();
     notifyListeners();
+  }
+
+  /// Stores the best [CleanIpStore.kPoolSize] addresses of a scan.
+  Future<void> _keepBestForFreeList(List<ScanResult> results) async {
+    if (results.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // Ranked by the scanner's own score, which already folds in jitter and
+    // loss rather than latency alone, so the kept few are the ones that were
+    // steady and not merely quick once.
+    final List<ScanResult> best = <ScanResult>[...results]
+      ..sort((ScanResult a, ScanResult b) => a.score.compareTo(b.score));
+    await CleanIpStore.instance.recordPool(<CleanIp>[
+      for (final ScanResult r in best.take(CleanIpStore.kPoolSize))
+        CleanIp(
+          ip: r.ip,
+          port: r.port,
+          latencyMs: r.latencyMs,
+          foundAtMs: now,
+        ),
+    ]);
   }
 
   void stopScan() => _scanner?.stop();
@@ -225,7 +277,7 @@ class RadarController extends ChangeNotifier {
     _testingDelays = true;
     notifyListeners();
 
-    final String host = _coreConfig?.sni ?? kVlessSni;
+    final String host = scanHost;
     final List<ScanResult> snapshot = List<ScanResult>.of(_results);
     final Iterator<ScanResult> it = snapshot.iterator;
     const int concurrency = 8;

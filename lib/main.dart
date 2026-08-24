@@ -170,7 +170,11 @@ Future<void> main() async {
     if (active != null &&
         active.isSubscription &&
         (active.subscriptionUrl ?? '').isNotEmpty) {
-      radar.bindSubscription(active.subscriptionUrl!);
+      // ownDomain decides whether a scan may dial this subscription's name.
+      // Nova's own free list is ours to spend; a panel the user pays for is not,
+      // and a scan is what gets a domain noticed. See RadarController.scanHost.
+      radar.bindSubscription(active.subscriptionUrl!,
+          ownDomain: !active.isBuiltIn);
     }
   });
 }

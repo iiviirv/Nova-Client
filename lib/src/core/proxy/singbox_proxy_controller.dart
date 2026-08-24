@@ -389,9 +389,24 @@ class SingboxProxyController extends ProxyController {
   /// the whole device with a TUN, or null for the ordinary full-device tunnel.
   int? Function()? proxyPortProvider;
 
+  /// True when the route options carry an app allow/deny list, so the tunnel
+  /// does not include Nova itself.
+  bool get _perAppActive {
+    final SingboxRouteOptions o = routeOptions;
+    return o.includePackages.isNotEmpty || o.excludePackages.isNotEmpty;
+  }
+
   @override
-  int? get localProxyPort =>
-      _state.isActive ? proxyPortProvider?.call() : null;
+  int? get localProxyPort {
+    if (!_state.isActive) return null;
+    final int? proxyMode = proxyPortProvider?.call();
+    if (proxyMode != null) return proxyMode;
+    // Per-app routing: the loopback inbound exists beside the TUN purely so the
+    // app can reach its own tunnel. Reporting it here is what points the
+    // dashboard's IP and country probes through it instead of out the user's
+    // own line.
+    return _perAppActive ? kDefaultLocalProxyPort : null;
+  }
 
   /// In proxy mode the phone itself is NOT tunnelled, so anything the app
   /// measures on its own sockets is measuring the user's real connection: the
@@ -424,7 +439,9 @@ class SingboxProxyController extends ProxyController {
 
   @override
   Future<String?> measureNodes(List<ProxyNode> nodes,
-      {bool merge = false, int? stopAfterWorking}) async {
+      {bool merge = false,
+      int? stopAfterWorking,
+      bool Function(Map<String, int> delays)? stopWhen}) async {
     if (!canMeasureNodes || measuring.value || nodes.isEmpty) return null;
     if (_state != ProxyConnectionState.disconnected &&
         _state != ProxyConnectionState.error) {
@@ -493,6 +510,7 @@ class SingboxProxyController extends ProxyController {
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
         stopAfterWorking: stopAfterWorking,
+        stopWhen: stopWhen,
         cancelled: () => !measuring.value,
         onProgress: (Map<String, int> d, Set<String> tested) {
           coreHealth.value = _mergeHealth(before, d, tested, merge: merge);
@@ -944,7 +962,15 @@ class SingboxProxyController extends ProxyController {
       gvisorStack: Platform.isAndroid,
       // Proxy mode: a loopback SOCKS5/HTTP port instead of a TUN, so the phone
       // itself is untouched and only apps pointed at the port go through Nova.
-      mixedInboundPort: proxyPortProvider?.call(),
+      //
+      // Per-app routing needs the same port for a different reason: the TUN
+      // stays, but Nova is normally not one of the apps inside it, so the app
+      // has no way to ask its own tunnel anything. With this the config carries
+      // both inbounds and the dashboard's probes have a way in. See
+      // SingboxRouteOptions.tunWithLocalProxy.
+      mixedInboundPort: proxyPortProvider?.call() ??
+          (_perAppActive ? kDefaultLocalProxyPort : null),
+      tunWithLocalProxy: proxyPortProvider?.call() == null && _perAppActive,
     );
     // Per-ISP optimization: detect the phone's carrier and fold in the DPI-best
     // uTLS fingerprint + fragmentation for it. Best-effort and time-boxed - any

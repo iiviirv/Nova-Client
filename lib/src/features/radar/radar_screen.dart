@@ -11,6 +11,7 @@ import '../../widgets/nova_card.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import 'models.dart';
+import '../../core/cleanip/clean_ip_store.dart';
 import 'radar_controller.dart';
 import 'widgets/radar_sweep.dart';
 
@@ -443,6 +444,33 @@ class _ResultsSection extends StatelessWidget {
               onPressed: radar.isTestingDelays ? null : radar.testRealDelays,
             ),
           ],
+          // Off by default: it changes the address every server in the free
+          // list dials, which is not something to do to someone quietly.
+          const SizedBox(height: NovaSpace.sm),
+          const Divider(height: 1),
+          ListenableBuilder(
+            listenable: CleanIpStore.instance,
+            builder: (BuildContext context, _) {
+              final CleanIpStore store = CleanIpStore.instance;
+              final int kept = store.freshPool.length;
+              return SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: store.boostFreeList,
+                onChanged: (bool v) => store.setBoostFreeList(v),
+                title: Text(s.radarBoostTitle,
+                    style: Theme.of(context).textTheme.titleSmall),
+                subtitle: Text(
+                  kept == 0
+                      ? s.radarBoostEmpty
+                      : s.radarBoostSub.replaceFirst('{n}', '$kept'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: nova.muted),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: NovaSpace.sm),
           if (results.isEmpty)
             Padding(

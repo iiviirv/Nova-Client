@@ -57,6 +57,13 @@ class CleanIpStore extends ChangeNotifier {
   static final CleanIpStore instance = CleanIpStore._();
 
   static const String _kKey = 'nova.cleanip.best';
+  static const String _kPoolKey = 'nova.cleanip.pool';
+  static const String _kBoostKey = 'nova.cleanip.boost';
+
+  /// How many of a scan's best addresses are kept to spread across the free
+  /// list. Five is enough that losing one does not empty the list, and few
+  /// enough that they are all genuinely fast.
+  static const int kPoolSize = 5;
 
   /// How long a find is trusted. A clean address usually stays clean for days,
   /// but the network the phone is on can change under it, so it is re-checked
@@ -69,6 +76,52 @@ class CleanIpStore extends ChangeNotifier {
 
   bool _searching = false;
   bool get searching => _searching;
+
+  List<CleanIp> _pool = const <CleanIp>[];
+
+  /// The best addresses the last scan found, freshest first. Empty until a scan
+  /// has run.
+  List<CleanIp> get pool => List<CleanIp>.unmodifiable(_pool);
+
+  /// Only the ones still young enough to dial.
+  List<CleanIp> get freshPool {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return <CleanIp>[
+      for (final CleanIp c in _pool)
+        if (now - c.foundAtMs >= 0 && now - c.foundAtMs < maxAge.inMilliseconds)
+          c,
+    ];
+  }
+
+  bool _boost = false;
+
+  /// Whether a free-list refresh should re-address its servers through
+  /// [freshPool]. Off by default: it changes what every server in the list
+  /// dials, which is not something to do to someone without asking.
+  bool get boostFreeList => _boost;
+
+  Future<void> setBoostFreeList(bool on) async {
+    if (_boost == on) return;
+    _boost = on;
+    notifyListeners();
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kBoostKey, on);
+  }
+
+  /// Keeps the best [kPoolSize] of a scan's results.
+  Future<void> recordPool(List<CleanIp> ips) async {
+    final List<CleanIp> sorted = <CleanIp>[...ips]
+      ..sort((CleanIp a, CleanIp b) => a.latencyMs.compareTo(b.latencyMs));
+    _pool = sorted.take(kPoolSize).toList();
+    notifyListeners();
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kPoolKey,
+        jsonEncode(<Map<String, dynamic>>[
+          for (final CleanIp c in _pool) c.toJson(),
+        ]));
+    NovaLog.instance.write(
+        'Kept ${_pool.length} scanned addresses for the free list');
+  }
 
   /// A stored address that is still young enough to use.
   CleanIp? get fresh {
@@ -87,6 +140,22 @@ class CleanIpStore extends ChangeNotifier {
           (jsonDecode(raw) as Map).cast<String, dynamic>());
       notifyListeners();
     } catch (_) {}
+    _boost = _prefs!.getBool(_kBoostKey) ?? false;
+    final String? poolRaw = _prefs!.getString(_kPoolKey);
+    if (poolRaw != null) {
+      try {
+        final List<CleanIp> loaded = <CleanIp>[];
+        for (final Object? e in jsonDecode(poolRaw) as List<dynamic>) {
+          if (e is! Map) continue;
+          final CleanIp? c = CleanIp.fromJson(e.cast<String, dynamic>());
+          if (c != null) loaded.add(c);
+        }
+        _pool = loaded;
+      } catch (_) {
+        _pool = const <CleanIp>[];
+      }
+    }
+    notifyListeners();
   }
 
   Future<void> record(CleanIp ip) async {

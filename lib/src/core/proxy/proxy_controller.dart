@@ -53,6 +53,17 @@ class TrafficStats {
 /// wait from minutes into seconds.
 const int kFreeListTarget = 30;
 
+/// A server has to answer faster than this to count as one of the good ones.
+const int kFreeListFastMs = 300;
+
+/// How many of the found servers must be under [kFreeListFastMs] before a free
+/// list search is allowed to stop.
+///
+/// Thirty working servers is not a useful list if every one of them answers in
+/// two seconds. When the fast ones are not there, the search keeps going into
+/// the rest of the pool rather than handing over thirty servers nobody wants.
+const int kFreeListFastMin = 5;
+
 class CoreNodeHealth {
   const CoreNodeHealth({
     required this.delayMsByKey,
@@ -222,12 +233,17 @@ abstract class ProxyController extends ChangeNotifier {
   /// With [merge] the existing readings are kept and only the nodes in this run
   /// are updated, which is what re-testing a single row does; without it the
   /// whole board is cleared first, which is what the lightning button does.
+  /// With [stopWhen] the run ends as soon as the predicate accepts the delays
+  /// found so far (see kFreeListTarget / kFreeListFastMin).
+  ///
   /// With [stopAfterWorking] the run ends as soon as that many servers have
   /// answered. The free list uses it: the pool is deliberately larger than
   /// anyone needs, so testing all of it spends minutes to produce a list nobody
   /// scrolls through.
   Future<String?> measureNodes(List<ProxyNode> nodes,
-          {bool merge = false, int? stopAfterWorking}) async =>
+          {bool merge = false,
+          int? stopAfterWorking,
+          bool Function(Map<String, int> delays)? stopWhen}) async =>
       'Not supported on this device yet';
 
   /// Stops a run in flight, keeping every reading it already produced.

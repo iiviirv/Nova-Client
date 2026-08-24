@@ -43,6 +43,7 @@ class SingboxRouteOptions {
     this.mixedInboundPort,
     this.includePackages = const <String>[],
     this.excludePackages = const <String>[],
+    this.tunWithLocalProxy = false,
   });
 
   /// Proxy mode: listen on this loopback port with a `mixed` (SOCKS5 + HTTP)
@@ -203,6 +204,10 @@ class SingboxRouteOptions {
   final List<String> includePackages;
   final List<String> excludePackages;
 
+  /// Keep the TUN and add a loopback proxy beside it. Set when per-app routing
+  /// is on, so the app can reach its own tunnel to ask where it exits.
+  final bool tunWithLocalProxy;
+
   SingboxRouteOptions copyWith({
     bool? lean,
     bool? localRuleSets,
@@ -226,6 +231,7 @@ class SingboxRouteOptions {
     int? mixedInboundPort,
     List<String>? includePackages,
     List<String>? excludePackages,
+    bool? tunWithLocalProxy,
   }) =>
       SingboxRouteOptions(
         mode: mode,
@@ -256,6 +262,7 @@ class SingboxRouteOptions {
         mixedInboundPort: mixedInboundPort ?? this.mixedInboundPort,
         includePackages: includePackages ?? this.includePackages,
         excludePackages: excludePackages ?? this.excludePackages,
+        tunWithLocalProxy: tunWithLocalProxy ?? this.tunWithLocalProxy,
       );
 }
 
@@ -320,7 +327,7 @@ class SingboxConfig {
         ..._ruleSetHosts,
         ..._directHosts,
       }),
-      'inbounds': <Map<String, dynamic>>[_inbound(options)],
+      'inbounds': _inbounds(options),
       'outbounds': <Map<String, dynamic>>[
         // The Xray core's local SOCKS inbound. Tagged `proxy` so the shared route
         // targets it exactly like any real exit.
@@ -409,7 +416,7 @@ class SingboxConfig {
             ..._ruleSetHosts,
             ..._directHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_inbound(options)],
+      'inbounds': _inbounds(options),
       'outbounds': <Map<String, dynamic>>[
         // AmneziaWG is an endpoint (below), so the proxy slot is only filled by a
         // real outbound protocol; awg keeps just direct/block here.
@@ -754,7 +761,7 @@ class SingboxConfig {
             ..._ruleSetHosts,
             ..._directHosts,
           }),
-      'inbounds': <Map<String, dynamic>>[_inbound(options)],
+      'inbounds': _inbounds(options),
       'outbounds': <Map<String, dynamic>>[
         // Auto-pick the fastest node and keep tracking it. Every node exits the
         // same Cloudflare worker, so their measured latencies all sit within a
@@ -814,11 +821,24 @@ class SingboxConfig {
     return out;
   }
 
-  /// The one inbound the core listens on: a TUN that takes the whole device,
-  /// or, in proxy mode, a loopback SOCKS5 + HTTP port that takes only what is
-  /// pointed at it.
-  static Map<String, dynamic> _inbound(SingboxRouteOptions o) =>
-      o.mixedInboundPort != null ? _mixedInbound(o) : _tunInbound(o);
+  /// What the core listens on: a TUN that takes the whole device, or, in proxy
+  /// mode, a loopback SOCKS5 + HTTP port that takes only what is pointed at it.
+  ///
+  /// Per-app routing gets BOTH. With an allow/deny list the app itself is
+  /// normally outside its own tunnel, so anything Nova measures on its own
+  /// sockets measures the user's real line: the dashboard read back the user's
+  /// own IP and country and presented them as the exit. A loopback inbound
+  /// alongside the TUN gives the app a way into its own tunnel to ask, without
+  /// putting Nova into the user's app list and changing what they chose.
+  static List<Map<String, dynamic>> _inbounds(SingboxRouteOptions o) {
+    if (o.mixedInboundPort == null) {
+      return <Map<String, dynamic>>[_tunInbound(o)];
+    }
+    if (o.tunWithLocalProxy) {
+      return <Map<String, dynamic>>[_tunInbound(o), _mixedInbound(o)];
+    }
+    return <Map<String, dynamic>>[_mixedInbound(o)];
+  }
 
   static Map<String, dynamic> _mixedInbound(SingboxRouteOptions o) =>
       <String, dynamic>{

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/cleanip/clean_ip_fronting.dart';
+import '../../core/cleanip/clean_ip_store.dart';
 import '../../core/geo/node_geo_store.dart';
 import '../../core/proxy/health_store.dart';
 import '../../core/proxy/list_freshness.dart';
@@ -18,6 +19,7 @@ import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/singbox/singbox_config.dart';
 import '../../core/proxy/subscription.dart';
 import '../../l10n/nova_strings.dart';
+import 'free_list_search_sheet.dart';
 import '../../theme/nova_colors.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_semantics.dart';
@@ -303,11 +305,20 @@ class _NodeListScreenState extends State<NodeListScreen> {
   }
 
   /// The refresh button: re-fetch the subscription now and put the fresh list
-  /// up, with every ping cleared and none taken. Refresh means "get me the
-  /// current servers", not "spend the next half minute probing them"; the list
-  /// comes back bare and ready for the lightning test. If this profile is the
-  /// live tunnel it reconnects, so the freshest list's best node is the one
-  /// carrying traffic. Keeps the servers on screen the whole time.
+  /// up, with every ping cleared and none taken.
+  ///
+  /// On a subscription the user added, that is the whole job: their provider's
+  /// servers are theirs, and testing them is the lightning button's business.
+  ///
+  /// On Nova's own free list it is not. That pool is a few hundred other
+  /// people's servers, most of which are gone at any moment, so a bare list of
+  /// two hundred untested rows is not something anyone can pick from. Refresh
+  /// there searches, behind the screen that shows the count and can be stopped,
+  /// and hands back a list that works. This is the user asking, so it is not
+  /// the automatic testing that was removed: nothing starts until this button.
+  ///
+  /// If this profile is the live tunnel it reconnects, so the freshest list's
+  /// best node is the one carrying traffic.
   Future<void> _manualRefresh() async {
     final ProxyProfile? profile = _profile;
     if (profile == null || _refreshing) return;
@@ -328,6 +339,12 @@ class _NodeListScreenState extends State<NodeListScreen> {
     await HealthStore.clear(profile.id);
     await _refresh(profile, hadCache: _nodes.isNotEmpty);
     if (!mounted) return;
+    if (profile.isBuiltIn) {
+      await _boostFreeListAddresses();
+      if (!mounted) return;
+      await _searchFreeList(profile);
+    }
+    if (!mounted) return;
     final scope = NovaScope.of(context);
     if (scope.proxy.state.isActive &&
         scope.proxy.activeProfile?.id == profile.id) {
@@ -336,10 +353,98 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
   }
 
+  /// Re-addresses the fresh free list through the best addresses Radar found,
+  /// when the user has asked for that.
+  ///
+  /// The free list's servers are handed out by domain, and in Iran those domains
+  /// are filtered within days while the Cloudflare addresses behind them keep
+  /// working. A scan already finds addresses that are fast from THIS network, so
+  /// this puts them to use: each server gets one of the best few at random, the
+  /// domain moves to the TLS name so the server still sees what it expects, and
+  /// the search below then measures the list as re-addressed rather than as it
+  /// arrived.
+  ///
+  /// Off unless the user turned it on in Radar, and a no-op when no scan has run
+  /// or its addresses have aged out.
+  Future<void> _boostFreeListAddresses() async {
+    final CleanIpStore store = CleanIpStore.instance;
+    if (!store.boostFreeList) return;
+    final List<CleanIp> pool = store.freshPool;
+    if (pool.isEmpty || _nodes.isEmpty) return;
+    final List<ProxyNode> rewritten =
+        await CleanIpFronting.applySpread(_nodes, pool);
+    if (!mounted) return;
+    setState(() => _nodes = rewritten);
+  }
+
+  /// Searches the freshly fetched free list behind a blocking screen, until it
+  /// has a list worth handing over.
+  ///
+  /// "Worth handing over" is [kFreeListTarget] servers that answered, of which
+  /// at least [kFreeListFastMin] are under [kFreeListFastMs]. Thirty servers
+  /// that all answer in two seconds is a list nobody wants, so when the fast
+  /// ones are not among the first thirty the search keeps going into the rest of
+  /// the pool instead of stopping on a technicality. If the pool runs out first,
+  /// whatever was found stands.
+  Future<void> _searchFreeList(ProxyProfile profile) async {
+    if (_nodes.isEmpty) return;
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    if (!proxy.canMeasureNodes || proxy.measuring.value) return;
+    if (proxy.state != ProxyConnectionState.disconnected) return;
+
+    final int total = _nodes.length;
+    bool closed = false;
+    void close() {
+      if (closed || !mounted) return;
+      closed = true;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    unawaited(showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: '',
+      // Opaque and over everything, including the bottom navigation: while this
+      // is up the rest of the app cannot be used, which is the point. A
+      // half-searched list is not something to let anyone pick from.
+      barrierColor: Theme.of(context).colorScheme.surface,
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (BuildContext ctx, _, __) => FreeListSearchSheet(
+        proxy: proxy,
+        total: total,
+        onStop: () {
+          unawaited(proxy.cancelMeasure());
+          close();
+        },
+      ),
+    ));
+
+    try {
+      await _measureAll(quiet: true, stopWhen: _freeListSearchDone);
+    } finally {
+      await ListFreshness.markSynced(profile.id);
+      close();
+    }
+  }
+
+  /// Enough servers, and enough of them fast. See [_searchFreeList].
+  static bool _freeListSearchDone(Map<String, int> delays) {
+    if (delays.length < kFreeListTarget) return false;
+    int fast = 0;
+    for (final int ms in delays.values) {
+      if (ms < kFreeListFastMs) fast++;
+    }
+    return fast >= kFreeListFastMin;
+  }
+
   /// The lightning button: measure every listed server through a measuring
   /// core (see ProxyController.measureNodes). Results land on coreHealth, which
   /// the rows already render as the live bolt badge / "no response".
-  Future<void> _measureAll({bool quiet = false, int? stopAfter}) async {
+  Future<void> _measureAll({
+    bool quiet = false,
+    int? stopAfter,
+    bool Function(Map<String, int> delays)? stopWhen,
+  }) async {
     if (_nodes.isEmpty) return;
     final scope = NovaScope.of(context);
     final NovaStrings s = NovaStrings.of(context);
@@ -348,13 +453,15 @@ class _NodeListScreenState extends State<NodeListScreen> {
     // of a working list into the whole search again, which is what refresh is
     // for.
     final CoreNodeHealth health = scope.proxy.coreHealth.value;
-    final List<ProxyNode> subject = (stopAfter == null && !health.isEmpty)
+    final bool bounded = stopAfter != null || stopWhen != null;
+    final List<ProxyNode> subject = (!bounded && !health.isEmpty)
         ? _hideDead(_nodes, health)
         : _nodes;
     final String? problem = await scope.proxy.measureNodes(
         List<ProxyNode>.of(subject),
         merge: subject.length != _nodes.length,
-        stopAfterWorking: stopAfter);
+        stopAfterWorking: stopAfter,
+        stopWhen: stopWhen);
     await _persistHealth(scope.proxy.coreHealth.value);
     if (!mounted) return;
     // Stopping early is a normal ending, so the count has to follow the list
@@ -695,8 +802,14 @@ class _NodeListScreenState extends State<NodeListScreen> {
         _MeasureHint(onDismiss: _dismissMeasureHint),
       if (_stale) const _StaleNote(),
       if (!_skipped.isEmpty) _SkippedNote(skipped: _skipped),
-      const _SocialRow(),
-      const Divider(height: 1),
+      // Nova's own channels belong on Nova's own list. Someone looking at the
+      // subscription they bought from their own provider did not come here for
+      // our Telegram, and putting it on their servers reads as advertising in
+      // a place that is not ours.
+      if (_profile?.isBuiltIn ?? false) ...<Widget>[
+        const _SocialRow(),
+        const Divider(height: 1),
+      ],
       _AutoRow(
         selected: pinned == null,
         onTap: () => _pin(null),

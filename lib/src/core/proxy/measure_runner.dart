@@ -162,6 +162,10 @@ class MeasureRunner {
     /// spends minutes producing a list nobody scrolls through. Servers already
     /// dialled keep their verdicts; the rest are simply not started.
     int? stopAfterWorking,
+    /// Ends the run as soon as this accepts the delays found so far. Richer
+    /// than [stopAfterWorking], which can only count: the free list needs "the
+    /// list is long enough AND enough of it is fast enough".
+    bool Function(Map<String, int> delays)? stopWhen,
   }) async {
     final http.Client c = client ?? http.Client();
     final int warmSec = (warmTimeoutSec ?? timeoutSec * 3).clamp(timeoutSec, 60);
@@ -174,6 +178,7 @@ class MeasureRunner {
       while (true) {
         if (cancelled?.call() ?? false) return;
         if (stopAfterWorking != null && delays.length >= stopAfterWorking) return;
+        if (stopWhen != null && stopWhen(delays)) return;
         final int i = next++;
         if (i >= queue.length) return;
         final String tag = queue[i];
@@ -238,6 +243,7 @@ class MeasureRunner {
       // a list that is already long enough.
       if (again.isEmpty) return;
       if (stopAfterWorking != null && delays.length >= stopAfterWorking) return;
+      if (stopWhen != null && stopWhen(delays)) return;
       int at = 0;
       Future<void> retryWorker() async {
         while (true) {

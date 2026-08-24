@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import '../logging/nova_log.dart';
 import '../proxy/singbox/proxy_node.dart';
@@ -69,6 +70,54 @@ class CleanIpFronting {
     if (rewritten > 0) {
       NovaLog.instance.write(
           'Dialling $rewritten Cloudflare servers through ${ip.ip}:${ip.port}');
+    }
+    return out;
+  }
+
+  /// Spreads [ips] across [nodes], one address per node, chosen at random.
+  ///
+  /// One address for a whole list is a single point of failure and a single
+  /// thing for a filter to notice: every device that ran a scan ends up dialling
+  /// the same IP for every server it has. Handing each server a different
+  /// address out of the best few keeps the list working when one of them goes,
+  /// and keeps a hundred servers from looking like a hundred connections to one
+  /// endpoint.
+  ///
+  /// [seed] makes the choice reproducible in tests. Falls back to [apply] when
+  /// there is only one address, and returns [nodes] untouched when there are
+  /// none.
+  static Future<List<ProxyNode>> applySpread(
+    List<ProxyNode> nodes,
+    List<CleanIp> ips, {
+    Duration lookupTimeout = const Duration(seconds: 4),
+    int? seed,
+  }) async {
+    if (nodes.isEmpty || ips.isEmpty) return nodes;
+    if (ips.length == 1) {
+      return apply(nodes, ips.first, lookupTimeout: lookupTimeout);
+    }
+    final math.Random rnd = math.Random(seed);
+    final List<ProxyNode> out = <ProxyNode>[];
+    int rewritten = 0;
+    for (final ProxyNode n in nodes) {
+      if (!couldBeFronted(n) ||
+          !await _behindCloudflare(n.server, lookupTimeout)) {
+        out.add(n);
+        continue;
+      }
+      final CleanIp ip = ips[rnd.nextInt(ips.length)];
+      out.add(n.copyWith(
+        server: ip.ip,
+        port: ip.port,
+        // Whatever the config already said wins; only fill in what is missing.
+        sni: n.sni ?? n.server,
+        wsHost: n.wsHost ?? n.server,
+      ));
+      rewritten++;
+    }
+    if (rewritten > 0) {
+      NovaLog.instance.write('Dialling $rewritten Cloudflare servers through '
+          '${ips.length} scanned addresses');
     }
     return out;
   }

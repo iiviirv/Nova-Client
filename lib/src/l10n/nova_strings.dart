@@ -198,6 +198,9 @@ class NovaStrings {
   String get setServerOwnerSub => t('set.serverOwnerSub');
   String get setRoutingSub => t('set.routingSub');
   String get setTools => t('set.tools');
+  String get radarBoostTitle => t('radar.boostTitle');
+  String get radarBoostSub => t('radar.boostSub');
+  String get radarBoostEmpty => t('radar.boostEmpty');
   String get perAppTitle => t('perApp.title');
   String get perAppSub => t('perApp.sub');
   String get perAppSubtitle => t('perApp.subtitle');
@@ -952,6 +955,10 @@ class NovaStrings {
     'set.routing': 'Routing & DNS',
     'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
     'set.tools': 'Cloudflare tools',
+    'radar.boostTitle': 'Use these addresses for the free servers',
+    'radar.boostSub':
+        'Each free server will dial one of the best {n} addresses found here, picked at random, instead of its own domain. Applied on the next refresh of the free list.',
+    'radar.boostEmpty': 'Run a scan first, then this can use what it finds.',
     'perApp.title': 'Per-app proxy',
     'perApp.sub': 'Choose which apps go through Nova',
     'perApp.subtitle': 'By default every app on the phone goes through Nova. You can narrow that to a few apps, or send everything except a few.',
@@ -1755,6 +1762,10 @@ class NovaStrings {
     'set.routing': 'مسیریابی و DNS',
     'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
     'set.tools': 'ابزارهای کلودفلر',
+    'radar.boostTitle': 'استفاده از این آدرس‌ها برای سرورهای رایگان',
+    'radar.boostSub':
+        'هر سرور رایگان به‌جای دامنه‌ی خودش، یکی از \u2066{n}\u2069 آدرس برترِ پیداشده در اینجا را به‌صورت تصادفی می‌گیرد. در رفرش بعدیِ لیست رایگان اعمال می‌شود.',
+    'radar.boostEmpty': 'اول یک اسکن بگیرید تا این گزینه بتواند از نتیجه‌اش استفاده کند.',
     'perApp.title': 'پروکسی برای هر برنامه',
     'perApp.sub': 'انتخاب کنید کدام برنامه‌ها از نوا عبور کنند',
     'perApp.subtitle': 'به‌طور پیش‌فرض همه‌ی برنامه‌های گوشی از نوا عبور می‌کنند. می‌توانید آن را به چند برنامه محدود کنید، یا همه را جز چند برنامه بفرستید.',
