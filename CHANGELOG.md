@@ -1,5 +1,48 @@
 # Changelog
 
+## v1.20.4-beta (2026-08-24)
+
+- Fixed: Nova on a Mac installed from the DMG could not start full-device
+  mode, and said it needed administrator access. It did not. A downloaded app
+  has every file inside it quarantined, and Nova copies its core out of the
+  bundle before running it, so macOS killed the copy on sight. With nothing in
+  the log to go on, Nova guessed the admin prompt had been dismissed, which is
+  why approving it never helped and why running the app as an administrator
+  changed nothing either.
+
+- Fixed: the speed test. Upload counted bytes handed to a buffer rather than
+  bytes that reached the network, so it reported thousands of Mbit/s. Ping
+  timed one cold connection, so it included the DNS and TLS setup and read
+  roughly three times high. Both directions now run one at a time, for three
+  seconds each, and only after the connection settles.
+
+- Added: jitter and packet loss on the speed test. Latency is the average of
+  twenty round trips and jitter is how much they move; loss is over a thousand
+  probes, shown as a percentage. For a game these two decide more than raw
+  speed does.
+
+- Changed: refreshing the free list searches it again, on screen and stoppable,
+  and stops once it has thirty servers of which at least five answer in under
+  300ms. Thirty servers that all take two seconds is not a list anyone can use,
+  so when the fast ones are missing it keeps looking.
+
+- Fixed: with per-app routing on, the dashboard showed your own IP and country
+  instead of the server's, because Nova itself was outside its own tunnel.
+
+- Added: Nova Radar can hand its best addresses to the free list. With it on,
+  each free server dials one of the five best addresses your last scan found
+  instead of its own domain. Off unless you turn it on.
+
+- Fixed: Radar scanned using the domain of whichever subscription was active,
+  so scanning while on a panel you pay for pointed hundreds of handshakes at
+  your own domain in a few seconds, which is exactly what gets a domain
+  noticed and disrupted. Scans no longer touch it.
+
+- Added: Nova on Linux.
+
+- Changed: Nova's own links no longer appear on subscriptions you added
+  yourself.
+
 ## v1.20.3-beta (2026-08-24)
 
 - Removed: the automatic server test. It ran when a list refreshed, when you
