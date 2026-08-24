@@ -40,21 +40,20 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
     });
     try {
       final SpeedResult r = await SpeedTest().run(
+        onPhase: (String phase) {
+          if (!mounted) return;
+          setState(() => _phase = switch (phase) {
+                'latency' => s.speedPhasePing,
+                'loss' => s.speedPhaseLoss,
+                'download' => s.speedPhaseDown,
+                _ => s.speedPhaseUp,
+              });
+        },
         onDown: (double m) {
-          if (mounted) {
-            setState(() {
-              _down = m;
-              _phase = s.speedPhaseDown;
-            });
-          }
+          if (mounted) setState(() => _down = m);
         },
         onUp: (double m) {
-          if (mounted) {
-            setState(() {
-              _up = m;
-              _phase = s.speedPhaseUp;
-            });
-          }
+          if (mounted) setState(() => _up = m);
         },
       );
       if (!mounted) return;
@@ -77,6 +76,7 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
     final text = Theme.of(context).textTheme;
     final ProxyController proxy = NovaScope.of(context).proxy;
     final bool connected = proxy.state.isActive;
+    final SpeedResult? r = _result;
 
     return Scaffold(
       appBar: AppBar(title: Text(s.speedTitle)),
@@ -152,6 +152,30 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
                       label: s.speedPing,
                       value: _ping == 0 ? '-' : '$_ping',
                       unit: 'ms',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: NovaSpace.md),
+              // The two numbers that decide whether a config is playable. A
+              // steady 90ms beats a 40ms line that swings 60ms or drops 3%.
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _MiniStat(
+                      label: s.speedJitter,
+                      value: r == null ? '-' : r.jitterMs.toStringAsFixed(1),
+                      unit: 'ms',
+                    ),
+                  ),
+                  const SizedBox(width: NovaSpace.md),
+                  Expanded(
+                    child: _MiniStat(
+                      label: s.speedLoss,
+                      value: r == null || r.probesSent == 0
+                          ? '-'
+                          : r.lossPercent.toStringAsFixed(2),
+                      unit: '%',
                     ),
                   ),
                 ],

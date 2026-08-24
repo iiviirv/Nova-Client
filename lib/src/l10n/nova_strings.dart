@@ -271,6 +271,9 @@ class NovaStrings {
   String get speedPhaseUp => t('speed.phaseUp');
   String get speedNote => t('speed.note');
   String get speedTest => t('speed.test');
+  String get speedPhaseLoss => t('speed.phaseLoss');
+  String get speedJitter => t('speed.jitter');
+  String get speedLoss => t('speed.loss');
   String get speedTestSub => t('speed.testSub');
 
   // ---- Find a working setup (connection fixer) ----
@@ -1019,11 +1022,14 @@ class NovaStrings {
     'speed.run': 'Run test',
     'speed.again': 'Test again',
     'speed.running': 'Testing…',
-    'speed.phasePing': 'Pinging…',
+    'speed.phasePing': 'Measuring latency…',
+    'speed.phaseLoss': 'Checking for loss…',
     'speed.phaseDown': 'Downloading…',
     'speed.phaseUp': 'Uploading…',
+    'speed.jitter': 'Jitter',
+    'speed.loss': 'Packet loss',
     'speed.note':
-        'Tip: connect through one config, test, then switch config (or turn on Speed boost) and test again to see which is fastest on your network.',
+        'Download and upload are measured one at a time, on 8 MB each, and only after the connection settles. Latency is the average of 20 round trips, and jitter is how much they move. Packet loss is the share of 1000 probes that never came back.',
     'speed.test': 'Speed test',
     'speed.testSub': 'Measure your real download/upload speed',
     'fix.title': 'Find a working setup',
@@ -1818,11 +1824,14 @@ class NovaStrings {
     'speed.run': 'اجرای تست',
     'speed.again': 'تست دوباره',
     'speed.running': 'در حال تست…',
-    'speed.phasePing': 'در حال پینگ…',
+    'speed.phasePing': 'در حال سنجش تأخیر…',
+    'speed.phaseLoss': 'در حال بررسی اتلاف…',
     'speed.phaseDown': 'در حال دانلود…',
     'speed.phaseUp': 'در حال آپلود…',
+    'speed.jitter': 'جیتر',
+    'speed.loss': 'اتلاف بسته',
     'speed.note':
-        'نکته: به یک کانفیگ وصل شو و تست بگیر، بعد کانفیگ را عوض کن (یا افزایش سرعت را روشن کن) و دوباره تست بگیر تا ببینی کدام روی شبکه‌ات سریع‌تر است.',
+        'دانلود و آپلود جدا از هم و هرکدام با \u20668 مگابایت\u2069 سنجیده می‌شوند، آن هم بعد از پایدار شدن اتصال. تأخیر میانگین \u206620\u2069 رفت‌وبرگشت است و جیتر یعنی این عدد چقدر نوسان دارد. اتلاف بسته سهم آن دسته از \u20661000\u2069 پروب است که پاسخی برنگرداندند.',
     'speed.test': 'تست سرعت',
     'speed.testSub': 'سرعت واقعی دانلود/آپلودت را بسنج',
     'fix.title': 'یافتن یک روش کارآمد',

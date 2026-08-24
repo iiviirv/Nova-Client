@@ -11,7 +11,7 @@
 # months. This builds a core that can actually run what the app asks of it, and
 # refuses to hand back one that cannot.
 #
-# Usage:  tool/core/build-desktop.sh [darwin|windows|all]   (default: all)
+# Usage:  tool/core/build-desktop.sh [darwin|windows|linux|all]   (default: all)
 # Needs:  go, git, shasum. No CGO: both targets cross-compile from macOS.
 # See docs/core-amneziawg.md for the pinning record.
 
@@ -36,6 +36,9 @@ TAGS="with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_clash_api,wit
 #           wintun.dll already is, and the desktop controller mirrors it into the
 #           run directory. The load is lazy: a user who never opens a Naive
 #           server never touches it.
+#   Linux   the same purego path as Windows, with libcronet.so instead. Cross
+#           compiles from this Mac with CGO off, so a Linux build needs no Linux
+#           machine and no container.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 patch_file="$repo_root/tool/core/amneziawg.patch"
@@ -104,17 +107,17 @@ build() {
   ls -lh "$out" | awk '{print "  " $5, $9}'
 }
 
-# The cronet DLL the Windows core loads for NaiveProxy, taken from the exact
-# module version the patched tree resolves to (so the DLL and the Go bindings
-# that call into it were built together).
-cronet_dll() {
-  local dir
-  dir="$(go list -m -f '{{.Dir}}' github.com/sagernet/cronet-go/lib/windows_amd64 2>/dev/null || true)"
-  if [ -z "$dir" ] || [ ! -f "$dir/libcronet.dll" ]; then
-    echo "cannot locate lib/windows_amd64/libcronet.dll in the module cache" >&2
+# The cronet shared library a purego core loads for NaiveProxy, taken from the
+# exact module version the patched tree resolves to (so the library and the Go
+# bindings that call into it were built together).
+cronet_lib() {
+  local platform="$1" file="$2" dir
+  dir="$(go list -m -f '{{.Dir}}' "github.com/sagernet/cronet-go/lib/$platform" 2>/dev/null || true)"
+  if [ -z "$dir" ] || [ ! -f "$dir/$file" ]; then
+    echo "cannot locate lib/$platform/$file in the module cache" >&2
     exit 1
   fi
-  printf '%s' "$dir/libcronet.dll"
+  printf '%s' "$dir/$file"
 }
 
 # Refuse to ship a core that cannot run what the app emits. `check` parses and
@@ -189,11 +192,26 @@ if [ "$target" = "windows" ] || [ "$target" = "all" ]; then
   verify "$work/sing-box-windows-amd64.exe"
   rm -f "$out_dir/sing-box-windows-amd64.exe"
   cp "$work/sing-box-windows-amd64.exe" "$out_dir/sing-box-windows-amd64.exe"
-  dll="$(cronet_dll)"
+  dll="$(cronet_lib windows_amd64 libcronet.dll)"
   rm -f "$out_dir/libcronet.dll"
   cp "$dll" "$out_dir/libcronet.dll"
   chmod u+w "$out_dir/libcronet.dll"
   ls -lh "$out_dir/libcronet.dll" | awk '{print "  " $5, $9}'
+fi
+if [ "$target" = "linux" ] || [ "$target" = "all" ]; then
+  # Same purego path as Windows, so this cross-compiles from a Mac. glibc is the
+  # default target; the musl variants in the module are there if a musl build is
+  # ever wanted.
+  build linux amd64 "$work/sing-box-linux-amd64" 0 "$TAGS,with_purego"
+  verify "$work/sing-box-linux-amd64"
+  rm -f "$out_dir/sing-box-linux-amd64"
+  cp "$work/sing-box-linux-amd64" "$out_dir/sing-box-linux-amd64"
+  chmod +x "$out_dir/sing-box-linux-amd64"
+  so="$(cronet_lib linux_amd64 libcronet.so)"
+  rm -f "$out_dir/libcronet.so"
+  cp "$so" "$out_dir/libcronet.so"
+  chmod u+w "$out_dir/libcronet.so"
+  ls -lh "$out_dir/libcronet.so" | awk '{print "  " $5, $9}'
 fi
 
 say "Done"

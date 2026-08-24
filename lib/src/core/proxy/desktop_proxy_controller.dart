@@ -682,7 +682,14 @@ class DesktopProxyController extends ProxyController {
       // tool/core/build-desktop.sh). Lazily, so a user who never opens a Naive
       // server never touches it; but when they do, it has to be next to the exe.
       await _ensureSideDll(dir, 'libcronet.dll');
+    } else if (Platform.isLinux) {
+      // Same purego NaiveProxy path as Windows, with the ELF shared object.
+      // Linux needs no wintun equivalent: the kernel provides /dev/net/tun and
+      // sing-box opens it directly once the core is elevated.
+      await _ensureSideDll(dir, 'libcronet.so');
     }
+    // Remembered so a TUN failure can say which binary it actually launched.
+    _lastCorePath = out.path;
     return out.path;
   }
 
@@ -703,16 +710,20 @@ class DesktopProxyController extends ProxyController {
     }
   }
 
-  /// Mirror a DLL that ships beside the core into the run directory, so the
-  /// core finds it in its own directory at load time. No-op when it was not
-  /// shipped (an older bundle), which just leaves the matching feature off.
+  /// Mirror a shared library that ships beside the core into the run directory,
+  /// so the core finds it in its own directory at load time. No-op when it was
+  /// not shipped (an older bundle), which just leaves the matching feature off.
   Future<void> _ensureSideDll(Directory dir, String name) async {
     final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    final String sep = Platform.isWindows ? '\\' : '/';
     final File src = <File>[
-      File('${exeDir.path}\\$name'),
+      File('${exeDir.path}$sep$name'),
+      // On Linux the bundle puts the core under lib/ alongside the runner's
+      // data, so look there too before falling back to a source-tree run.
+      File('${exeDir.path}${sep}lib$sep$name'),
       File('assets/bin/$name'),
     ].firstWhere((File f) => f.existsSync(),
-        orElse: () => File('${exeDir.path}\\$name'));
+        orElse: () => File('${exeDir.path}$sep$name'));
     if (!src.existsSync()) return;
     final File out = File('${dir.path}/$name');
     if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
@@ -773,9 +784,11 @@ class DesktopProxyController extends ProxyController {
   }
 
   /// Locates the core binary shipped alongside the app executable:
-  /// macOS `Nova.app/Contents/Resources/`, Windows next to `nova_client.exe`.
-  /// Falls back to the repo `assets/bin/` path when running from source
-  /// (`flutter run`), where the executable lives in the build tree.
+  /// macOS `Nova.app/Contents/Resources/`, Windows next to `nova_client.exe`,
+  /// Linux next to the runner or under its `lib/` (where a Flutter Linux bundle
+  /// keeps its shared files). Falls back to the repo `assets/bin/` path when
+  /// running from source (`flutter run`), where the executable lives in the
+  /// build tree.
   File _bundledBinary() {
     final String name = _assetName();
     final Directory exeDir = File(Platform.resolvedExecutable).parent;
@@ -786,6 +799,14 @@ class DesktopProxyController extends ProxyController {
     } else if (Platform.isWindows) {
       final File f = File('${exeDir.path}\\$name');
       if (f.existsSync()) return f;
+    } else if (Platform.isLinux) {
+      for (final String p in <String>[
+        '${exeDir.path}/$name',
+        '${exeDir.path}/lib/$name',
+      ]) {
+        final File f = File(p);
+        if (f.existsSync()) return f;
+      }
     }
     return File('assets/bin/$name');
   }
@@ -1050,19 +1071,46 @@ class DesktopProxyController extends ProxyController {
       // Best-effort; fall back to the generic guidance below.
     }
     if (reason.isEmpty) {
-      // No tun log means the elevated core never ran. Say WHY, when the
-      // elevation helper told us; only fall back to the "approve the prompt"
-      // guess when it did not.
+      // No tun log means the elevated core never wrote one. WHY it did not is
+      // three different problems, and this used to answer all three with
+      // "approve the admin prompt". That guess cost two rounds of debugging with
+      // a tester who was already running the app under sudo: there was no prompt
+      // to approve, so the advice was not just unhelpful but impossible to act
+      // on. Say what actually happened instead, and when we genuinely do not
+      // know, say that and hand over the evidence.
       final String elev = _elevationError;
       if (elev.isNotEmpty && !elev.contains('User canceled')) {
         return 'Full-device mode could not get administrator access: $elev. '
             'You can turn off full-device mode in Settings to use proxy mode, '
             'which needs no admin access.';
       }
-      return 'The tunnel did not come up. Full-device mode needs the admin '
-          '(UAC) prompt approved so it can create the network adapter. Approve '
-          'it and try again, or turn off full-device mode in Settings to use '
-          'proxy mode (no admin needed).';
+      if (elev.contains('User canceled')) {
+        return 'Full-device mode needs the administrator prompt approved so it '
+            'can create the network adapter. Approve it and try again, or turn '
+            'off full-device mode in Settings to use proxy mode, which needs no '
+            'admin access.';
+      }
+      // The helper did not report a failure, so elevation is not the story: the
+      // core was launched and produced nothing. Report what we can actually see
+      // about it, which is what a support conversation needs.
+      final StringBuffer facts = StringBuffer();
+      try {
+        final File bin = File(_lastCorePath);
+        facts.write(' Core: ');
+        facts.write(_lastCorePath.isEmpty ? '(never copied)' : _lastCorePath);
+        if (_lastCorePath.isNotEmpty) {
+          facts.write(bin.existsSync()
+              ? ' (present, ${bin.lengthSync()} bytes)'
+              : ' (MISSING)');
+        }
+      } catch (_) {
+        // Diagnostics must never be the thing that throws.
+      }
+      return 'Full-device mode started the core with administrator access, but '
+          'it exited without writing a log, so it failed before it could say '
+          'why.$facts Expected log: $logPath. Please send that path and the '
+          'app log to support. Proxy mode works without any of this: turn off '
+          'full-device mode in Settings.';
     }
     // The core ran but failed: surface its actual reason and the log path.
     return 'Full-device mode failed to start: $reason. Log: $logPath. You can '
@@ -1079,6 +1127,9 @@ class DesktopProxyController extends ProxyController {
   /// "User canceled. (-128)", and anything else is a different problem
   /// entirely.
   String _elevationError = '';
+
+  /// The core binary the last run copied into place, for failure reporting.
+  String _lastCorePath = '';
 
   void _watchElevation(Process p, String helper) {
     _elevationError = '';

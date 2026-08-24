@@ -1,0 +1,113 @@
+name: Build Linux
+
+# Builds the Nova Client Linux desktop app (bundling the committed
+# sing-box-linux-amd64 core) and uploads a ready-to-run Nova-Linux.tar.gz as a
+# workflow artifact. Runs on push to the desktop branch, can be triggered
+# manually, and on a v* tag it also attaches Nova-Linux.tar.gz to the public
+# IRNova/Nova-Client release.
+#
+# Linux is the only desktop target that cannot be built on the Mac that cuts the
+# releases (Flutter has no cross-compilation for desktop), so unlike macOS this
+# one only exists here.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    branches:
+      - claude/macos-desktop-core
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux desktop app
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # GTK and the usual Flutter Linux desktop toolchain. ninja + libgtk are
+      # what `flutter build linux` needs; libayatana-appindicator is for
+      # tray_manager, which puts Nova in the notification area.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libayatana-appindicator3-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.3
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux (release)
+        run: flutter build linux --release
+
+      # The cores are not Flutter assets (that bloated the mobile builds), so
+      # place them where DesktopProxyController looks: beside the runner, or in
+      # its lib/ directory. Beside the runner is the simpler of the two.
+      - name: Bundle the sing-box core next to the app
+        run: cp assets/bin/sing-box-linux-amd64 build/linux/x64/release/bundle/
+
+      # Xray is the second core, for xhttp/SplitHTTP exits sing-box cannot run.
+      - name: Bundle the Xray core next to the app
+        run: cp assets/bin/xray-linux-amd64 build/linux/x64/release/bundle/
+
+      # libcronet.so is Chromium's network stack, which the core loads lazily
+      # from beside itself for NaiveProxy servers. The Linux core is built with
+      # purego (see tool/core/build-desktop.sh) so the Go half cross-compiles
+      # from a Mac; this is the native half. Without it a NaiveProxy server
+      # fails and every other protocol is unaffected.
+      - name: Bundle libcronet.so next to the app
+        run: cp assets/bin/libcronet.so build/linux/x64/release/bundle/
+
+      - name: Make the cores executable
+        run: chmod +x build/linux/x64/release/bundle/sing-box-linux-amd64 build/linux/x64/release/bundle/xray-linux-amd64
+
+      # tar, not zip: it is what a Linux user expects, and it keeps the
+      # executable bits that the cores need.
+      - name: Package Nova-Linux.tar.gz
+        run: tar -C build/linux/x64/release/bundle -czf Nova-Linux.tar.gz .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nova-Linux
+          path: Nova-Linux.tar.gz
+          if-no-files-found: error
+
+      - name: Build release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        run: bash tool/release_notes.sh "${GITHUB_REF_NAME}" CHANGELOG.md > notes.md
+
+      # Publish here first with the built-in token, so a release always lands
+      # even if the cross-org PAT below has expired.
+      - name: Publish the Linux build here
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: Nova-Linux.tar.gz
+          body_path: notes.md
+          generate_release_notes: false
+
+      # Mirror to IRNova (where the website's download links point). Non-fatal:
+      # an expired IRNOVA_TOKEN must not fail an otherwise good release.
+      - name: Mirror the Linux build to the IRNova release
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: IRNova/Nova-Client
+          token: ${{ secrets.IRNOVA_TOKEN }}
+          files: Nova-Linux.tar.gz
+          body_path: notes.md
+          generate_release_notes: false
