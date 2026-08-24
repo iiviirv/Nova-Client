@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.20.1-beta (2026-08-24)
+
+- Fixed, desktop: the VPN core is now replaced when you update. Nova copies the
+  core out of the app and runs that copy, and it only replaced the copy when the
+  file size changed. Core updates are often the same size, so a fix could reach
+  you in an update and never actually run, and reinstalling did not help either.
+  One tester spent days on a crash that had been fixed a week earlier. This
+  update replaces the copy for everyone, once.
+
+- Fixed, desktop: when full-device mode cannot get administrator access, the
+  error says what went wrong. It used to always say "approve the admin prompt",
+  even for people who had already approved it.
+
 ## v1.20.0-beta (2026-08-23)
 
 - Fixed: switching server no longer throws away your ping results. A switch is a

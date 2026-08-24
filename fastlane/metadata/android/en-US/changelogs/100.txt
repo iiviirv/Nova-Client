@@ -1,0 +1,2 @@
+- Desktop: the VPN core is now properly replaced when you update
+- Desktop: clearer error when full-device mode cannot get admin access
