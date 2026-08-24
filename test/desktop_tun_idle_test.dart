@@ -46,7 +46,11 @@ void main() {
     // waits for the command AND for its descriptors to close, so both the
     // background & and the redirections are load-bearing.
     final String branch = unixBranchCode();
-    expect(branch, contains('nohup sh -c'));
+    // The work lives in a script file now (see the note in the source): the
+    // inline form had to carry the core's environment and a path containing a
+    // space through four layers of quoting, and when that broke it broke
+    // silently. What still matters here is that the launch is detached.
+    expect(branch, contains('nohup /bin/sh'));
     expect(branch, contains('> /dev/null 2>&1 &'));
   });
 

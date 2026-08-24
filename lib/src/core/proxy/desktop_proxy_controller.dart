@@ -1628,19 +1628,39 @@ class DesktopProxyController extends ProxyController {
     // macOS / Linux: run via an admin AppleScript (macOS) so the core gets root.
     final File ctl = File('${dir.path}/nova-tun.ctl');
     await _makeFifo(ctl);
-    final String envPrefix = _coreEnv.entries
-        .map((MapEntry<String, String> e) => '${e.key}=${_shq(e.value)}')
-        .join(' ');
-    // The work itself: start the core, then block reading the control FIFO
-    // until the app closes its end, then stop the core.
-    final String inner =
-        '$envPrefix ${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 & '
-        'SB=\$!; cat ${_shq(ctl.path)} > /dev/null 2>&1; '
-        'kill \$SB 2>/dev/null';
+
+    // The work goes in a script FILE rather than into the command string.
+    //
+    // It used to be built inline, which meant the core's environment and every
+    // path had to survive shell double quotes, then single quotes, then
+    // AppleScript escaping, then the admin trampoline. That is four layers of
+    // quoting around a path that contains a space on every Mac
+    // ("Application Support"), to carry an environment variable the core FATALs
+    // without. Nothing about that is worth debugging a second time, and when it
+    // fails it fails silently: no core, therefore no log, therefore no reason.
+    //
+    // A file has no quoting. It also means the exact thing Nova ran is sitting
+    // on disk afterwards, so a failure can be reproduced by hand instead of
+    // reconstructed from source.
+    final File runner = File('${dir.path}/nova-tun.sh');
+    final StringBuffer sh = StringBuffer('#!/bin/sh\n');
+    for (final MapEntry<String, String> e in _coreEnv.entries) {
+      sh.writeln('export ${e.key}=${_shq(e.value)}');
+    }
+    sh
+      ..writeln('${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 &')
+      ..writeln('SB=\$!')
+      ..writeln('cat ${_shq(ctl.path)} > /dev/null 2>&1')
+      ..writeln('kill \$SB 2>/dev/null');
+    await runner.writeAsString(sh.toString());
+    await Process.run('chmod', <String>['+x', runner.path]);
+    await _unquarantine(runner.path);
+
     // Detached, with every file descriptor closed, so `do shell script` has
     // nothing left to wait on and osascript exits immediately. See the note on
     // this method: an osascript left supervising the session IS the 5%.
-    final String cmd = 'nohup sh -c ${_shSingleQ(inner)} > /dev/null 2>&1 &';
+    final String cmd =
+        'nohup /bin/sh ${_shq(runner.path)} > /dev/null 2>&1 &';
     if (Platform.isMacOS) {
       final String appleScript =
           'do shell script "${_asEsc(cmd)}" with administrator privileges';
@@ -1674,14 +1694,6 @@ class DesktopProxyController extends ProxyController {
   /// Shell double-quoting for a path (handles spaces; app-support paths carry no
   /// quotes/backslashes on these platforms).
   String _shq(String p) => '"${p.replaceAll('"', r'\"')}"';
-
-  /// Single-quoting, for embedding a whole command as one `sh -c` argument.
-  /// Single quotes protect everything else, so the only case to handle is a
-  /// literal single quote, which has to leave and re-enter the quoting.
-  String _shSingleQ(String s) {
-    final String escaped = s.replaceAll("'", r"'\''");
-    return "'$escaped'";
-  }
 
   /// Escape a shell command for embedding inside an AppleScript string literal.
   String _asEsc(String s) =>
