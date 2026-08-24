@@ -258,10 +258,20 @@ class SpeedTest {
 
   /// Upload [kPayloadBytes] and return the steady-state Mbit/s.
   ///
-  /// Every chunk is flushed before the next is counted. The old version added
-  /// each chunk to a buffered sink and counted it as sent, so it timed how fast
-  /// Dart fills memory: it reported 3345 Mbit/s on an 80 Mbit line. Waiting for
-  /// the flush means the count tracks what the socket actually accepted.
+  /// Two things make this honest, and it took both.
+  ///
+  /// Every chunk is flushed before the next is counted. The original version
+  /// added each chunk to a buffered sink and counted it as sent, so it timed how
+  /// fast Dart fills memory: 3345 Mbit/s on an 80 Mbit line.
+  ///
+  /// And the clock stops when the SERVER answers, not when the last flush
+  /// returns. A flush only means the kernel took the bytes, and on a fast link
+  /// its send buffer can still be holding megabytes that are not on the wire, so
+  /// stopping at the last flush still over-reports: on an iPhone it claimed
+  /// 578 Mbit/s up on a line whose download measured 453. The response to a POST
+  /// cannot arrive until the far end has received the whole body, so waiting for
+  /// it bounds the transfer honestly. It costs one round trip, which on an 8 MB
+  /// transfer is noise.
   Future<double> measureUpload(void Function(double)? onProgress) async {
     final HttpClient c = _clientFactory();
     try {
@@ -290,10 +300,11 @@ class SpeedTest {
           if (us > 0 && measured > 0) onProgress?.call(measured * 8 / us);
         }
       }
-      final int us = sw.elapsedMicroseconds;
-      // Close and read the response so the server's ack is part of the exchange
-      // rather than left dangling, but do not count that time as transfer.
+      // The far end has the whole body only once it answers; that is the end of
+      // the transfer, and anything still sitting in a send buffer is counted.
       await req.close().then((HttpClientResponse r) => r.drain<void>());
+      sw.stop();
+      final int us = sw.elapsedMicroseconds;
       return us > 0 && measured > 0 ? measured * 8 / us : 0;
     } catch (_) {
       return 0;
