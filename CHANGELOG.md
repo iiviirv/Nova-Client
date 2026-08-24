@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.20.5-beta (2026-08-25)
+
+- Fixed: full-device mode on macOS. The core would not start and Nova blamed
+  administrator access, which was never the problem. The core needs one setting
+  to accept the current DNS format, and the way Nova launched it with
+  administrator rights could lose that setting on the way. Nova now writes what
+  it is about to run to a file and runs the file, so there is nothing to lose.
+
+- Changed: when full-device mode does fail, there is now always a log to read.
+  Previously the core could die before writing anything, which is why this took
+  three attempts to find: no log meant no reason, and Nova guessed the wrong one.
+
 ## v1.20.4-beta (2026-08-24)
 
 - Fixed: Nova on a Mac installed from the DMG could not start full-device
