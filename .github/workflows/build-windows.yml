@@ -78,11 +78,16 @@ jobs:
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products * -property installationPath
-          $ver = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt").Trim()
-          # VC143.CRT is the toolset Flutter builds with; glob the folder rather
-          # than naming each DLL, since the exact set varies between toolsets.
-          $crt = Join-Path $vs "VC\Redist\MSVC\$ver\x64\Microsoft.VC143.CRT"
-          if (-not (Test-Path $crt)) { Write-Error "no CRT redist at $crt"; exit 1 }
+          # Locate the CRT by the DLL we actually need, not by a toolset folder
+          # name: the runner moved from VS17 to VS18 and "Microsoft.VC143.CRT"
+          # stopped existing, which broke the first version of this step.
+          # Exclude onecore/debug/spectre variants, which are not what a normal
+          # desktop build links against.
+          $dll = Get-ChildItem "$vs\VC\Redist\MSVC" -Recurse -Filter vcruntime140_1.dll -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|debug|spectre' } |
+                 Select-Object -First 1
+          if (-not $dll) { Write-Error "no x64 CRT redist found under $vs\VC\Redist\MSVC"; exit 1 }
+          $crt = $dll.Directory.FullName
           Write-Host "copying the CRT from $crt"
           Copy-Item "$crt\*.dll" -Destination build/windows/x64/runner/Release/ -Force
           Get-ChildItem "$crt\*.dll" | ForEach-Object { Write-Host "  $($_.Name)" }
