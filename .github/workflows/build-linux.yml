@@ -72,6 +72,31 @@ jobs:
       - name: Make the cores executable
         run: chmod +x build/linux/x64/release/bundle/sing-box-linux-amd64 build/linux/x64/release/bundle/xray-linux-amd64
 
+      # "It compiled" is not "it runs", and nobody here has a Linux desktop to
+      # find that out on. So the runner proves it: the cores execute, and the
+      # app itself starts under a virtual display and is still alive a few
+      # seconds later. A missing shared library or a broken bundle layout shows
+      # up here rather than in somebody's download.
+      - name: Smoke test the built bundle
+        run: |
+          set -e
+          cd build/linux/x64/release/bundle
+          echo "--- cores execute on real Linux ---"
+          ./sing-box-linux-amd64 version
+          ./xray-linux-amd64 -version | head -2
+          echo "--- the app starts and stays up ---"
+          sudo apt-get install -y xvfb >/dev/null
+          xvfb-run -a ./nova_client > /tmp/nova-run.log 2>&1 &
+          APP=$!
+          sleep 12
+          if ! kill -0 $APP 2>/dev/null; then
+            echo "the app exited on its own:"; cat /tmp/nova-run.log; exit 1
+          fi
+          kill $APP 2>/dev/null || true
+          echo "still running after 12s"
+          echo "--- its output ---"
+          cat /tmp/nova-run.log | head -20
+
       # tar, not zip: it is what a Linux user expects, and it keeps the
       # executable bits that the cores need.
       - name: Package Nova-Linux.tar.gz
