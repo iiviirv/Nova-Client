@@ -83,10 +83,16 @@ jobs:
           # stopped existing, which broke the first version of this step.
           # Exclude onecore/debug/spectre variants, which are not what a normal
           # desktop build links against.
-          $dll = Get-ChildItem "$vs\VC\Redist\MSVC" -Recurse -Filter vcruntime140_1.dll -ErrorAction SilentlyContinue |
-                 Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|debug|spectre' } |
-                 Select-Object -First 1
-          if (-not $dll) { Write-Error "no x64 CRT redist found under $vs\VC\Redist\MSVC"; exit 1 }
+          $found = Get-ChildItem "$vs\VC\Redist\MSVC" -Recurse -Filter vcruntime140_1.dll -ErrorAction SilentlyContinue |
+                   Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|debug|spectre' }
+          if (-not $found) { Write-Error "no x64 CRT redist found under $vs\VC\Redist\MSVC"; exit 1 }
+          # Newest wins. The runner ships several redist versions side by side,
+          # and taking whichever the directory walk hit first picked a 14.29 CRT
+          # for a binary built with the 14.51 toolset. Too-old is not a harmless
+          # mismatch: the exe can reference exports the older CRT never had, and
+          # that surfaces as "entry point not found" rather than a clear error.
+          $dll = $found | Sort-Object { [version]$_.VersionInfo.FileVersion } -Descending | Select-Object -First 1
+          Write-Host "CRT version $($dll.VersionInfo.FileVersion)"'''
           $crt = $dll.Directory.FullName
           Write-Host "copying the CRT from $crt"
           Copy-Item "$crt\*.dll" -Destination build/windows/x64/runner/Release/ -Force
