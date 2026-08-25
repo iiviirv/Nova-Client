@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.8-beta (2026-08-25)
+
+- Fixed: the Windows app refused to start on any PC without Microsoft's Visual
+  C++ Redistributable installed, showing "the code execution cannot proceed
+  because VCRUNTIME140_1.dll was not found". Windows was stopping the app before
+  a line of Nova code ran, so nothing appeared in the logs. Nova now carries that
+  runtime inside the download and no longer depends on what the machine already
+  has.
+
 ## v1.20.7-beta (2026-08-25)
 
 - Changed: Nova now writes its DNS settings in the format current versions of
