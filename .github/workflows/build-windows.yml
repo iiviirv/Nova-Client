@@ -92,7 +92,7 @@ jobs:
           # mismatch: the exe can reference exports the older CRT never had, and
           # that surfaces as "entry point not found" rather than a clear error.
           $dll = $found | Sort-Object { [version]$_.VersionInfo.FileVersion } -Descending | Select-Object -First 1
-          Write-Host "CRT version $($dll.VersionInfo.FileVersion)"'''
+          Write-Host "CRT version $($dll.VersionInfo.FileVersion)"
           $crt = $dll.Directory.FullName
           Write-Host "copying the CRT from $crt"
           Copy-Item "$crt\*.dll" -Destination build/windows/x64/runner/Release/ -Force
