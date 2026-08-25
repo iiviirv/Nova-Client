@@ -274,6 +274,27 @@ class NovaStrings {
   String get speedPhaseUp => t('speed.phaseUp');
   String get speedNote => t('speed.note');
   String get speedTest => t('speed.test');
+  String get gamingRun => t('gaming.run');
+  String get gamingAgain => t('gaming.again');
+  String get gamingRunning => t('gaming.running');
+  String get gamingLatencySpread => t('gaming.latencySpread');
+  String get gamingStability => t('gaming.stability');
+  String get gamingBreakdown => t('gaming.breakdown');
+  String get gamingMin => t('gaming.min');
+  String get gamingAvg => t('gaming.avg');
+  String get gamingMedian => t('gaming.median');
+  String get gamingP95 => t('gaming.p95');
+  String get gamingMax => t('gaming.max');
+  String get gamingSpike => t('gaming.spike');
+  String get gamingBurst => t('gaming.burst');
+  String get gamingSamples => t('gaming.samples');
+  String get gamingNote => t('gaming.note');
+  String get gamingGradeExcellent => t('gaming.gradeExcellent');
+  String get gamingGradeGood => t('gaming.gradeGood');
+  String get gamingGradeOk => t('gaming.gradeOk');
+  String get gamingGradePoor => t('gaming.gradePoor');
+  String get gamingGradeBad => t('gaming.gradeBad');
+
   String get speedPhaseLoss => t('speed.phaseLoss');
   String get speedJitter => t('speed.jitter');
   String get speedLoss => t('speed.loss');
@@ -1037,6 +1058,27 @@ class NovaStrings {
     'speed.loss': 'Packet loss',
     'speed.note':
         'Download and upload are measured one at a time, on 8 MB each, and only after the connection settles. Latency is the average of 20 round trips, and jitter is how much they move. Packet loss is the share of 1000 probes that never came back.',
+    'gaming.run': 'Gaming test',
+    'gaming.again': 'Test again',
+    'gaming.running': 'Sampling {n} of {t}…',
+    'gaming.latencySpread': 'LATENCY',
+    'gaming.stability': 'STABILITY',
+    'gaming.breakdown': 'HOW THIS WAS SCORED',
+    'gaming.min': 'Min',
+    'gaming.avg': 'Average',
+    'gaming.median': 'Median',
+    'gaming.p95': 'P95',
+    'gaming.max': 'Max',
+    'gaming.spike': 'Spike',
+    'gaming.burst': 'Worst run of losses',
+    'gaming.samples': 'Answered',
+    'gaming.gradeExcellent': 'Excellent',
+    'gaming.gradeGood': 'Good',
+    'gaming.gradeOk': 'Playable',
+    'gaming.gradePoor': 'Rough',
+    'gaming.gradeBad': 'Unplayable',
+    'gaming.note':
+        'Scored on steadiness rather than distance. Reaching European servers from Iran costs 80 to 100 ms and that is normal, so it is barely penalised. What is penalised is the connection moving: spikes above the median, jitter, and above all losses that arrive back to back.',
     'speed.test': 'Speed test',
     'speed.testSub': 'Measure your real download/upload speed',
     'fix.title': 'Find a working setup',
@@ -1843,6 +1885,27 @@ class NovaStrings {
     'speed.loss': 'اتلاف بسته',
     'speed.note':
         'دانلود و آپلود جدا از هم و هرکدام با \u20668 مگابایت\u2069 سنجیده می‌شوند، آن هم بعد از پایدار شدن اتصال. تأخیر میانگین \u206620\u2069 رفت‌وبرگشت است و جیتر یعنی این عدد چقدر نوسان دارد. اتلاف بسته سهم آن دسته از \u20661000\u2069 پروب است که پاسخی برنگرداندند.',
+    'gaming.run': 'تست گیمینگ',
+    'gaming.again': 'تست دوباره',
+    'gaming.running': 'نمونه \u2066{n}\u2069 از \u2066{t}\u2069…',
+    'gaming.latencySpread': 'تأخیر',
+    'gaming.stability': 'پایداری',
+    'gaming.breakdown': 'امتیاز چطور حساب شد',
+    'gaming.min': 'کمینه',
+    'gaming.avg': 'میانگین',
+    'gaming.median': 'میانه',
+    'gaming.p95': '\u2066P95\u2069',
+    'gaming.max': 'بیشینه',
+    'gaming.spike': 'جهش',
+    'gaming.burst': 'بدترین رشته‌ی اتلاف',
+    'gaming.samples': 'پاسخ‌داده',
+    'gaming.gradeExcellent': 'عالی',
+    'gaming.gradeGood': 'خوب',
+    'gaming.gradeOk': 'قابل بازی',
+    'gaming.gradePoor': 'ناهموار',
+    'gaming.gradeBad': 'غیرقابل بازی',
+    'gaming.note':
+        'امتیاز بر پایه‌ی پایداری است نه فاصله. رسیدن به سرورهای اروپا از ایران \u206680\u2069 تا \u2066100\u2069 میلی‌ثانیه هزینه دارد و این طبیعی است، پس تقریباً جریمه‌ای ندارد. چیزی که جریمه می‌شود نوسان اتصال است: جهش نسبت به میانه، جیتر، و از همه مهم‌تر اتلاف‌هایی که پشت سر هم می‌آیند.',
     'speed.test': 'تست سرعت',
     'speed.testSub': 'سرعت واقعی دانلود/آپلودت را بسنج',
     'fix.title': 'یافتن یک روش کارآمد',

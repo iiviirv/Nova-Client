@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_radii.dart';
+import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_button.dart';
 import '../../widgets/nova_card.dart';
@@ -27,6 +28,34 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
   int _ping = 0;
   String _phase = '';
   SpeedResult? _result;
+
+  bool _gaming = false;
+  int _gamingDone = 0;
+  GamingResult? _gamingResult;
+
+  /// The gaming test. Long and strictly sequential, so it gets its own button
+  /// rather than being folded into the speed test: someone checking whether a
+  /// config is playable is asking a different question from someone checking
+  /// how fast it is, and the answer takes a hundred probes to give.
+  Future<void> _runGaming() async {
+    setState(() {
+      _gaming = true;
+      _gamingResult = null;
+      _gamingDone = 0;
+    });
+    try {
+      final GamingResult r = await SpeedTest().measureGaming(
+        onProgress: (int done, int total) {
+          if (mounted) setState(() => _gamingDone = done);
+        },
+        cancelled: () => !mounted,
+      );
+      if (!mounted) return;
+      setState(() => _gamingResult = r);
+    } finally {
+      if (mounted) setState(() => _gaming = false);
+    }
+  }
 
   Future<void> _run() async {
     final NovaStrings s = NovaStrings.of(context);
@@ -192,6 +221,23 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
                 onPressed: _running ? null : _run,
               ),
               const SizedBox(height: NovaSpace.md),
+              NovaButton(
+                label: _gaming
+                    ? s.gamingRunning
+                        .replaceFirst('{n}', '$_gamingDone')
+                        .replaceFirst('{t}', '${SpeedTest.kGamingProbes}')
+                    : (_gamingResult == null ? s.gamingRun : s.gamingAgain),
+                icon: Icons.sports_esports_rounded,
+                variant: NovaButtonVariant.secondary,
+                expand: true,
+                loading: _gaming,
+                onPressed: (_gaming || _running) ? null : _runGaming,
+              ),
+              if (_gamingResult != null) ...<Widget>[
+                const SizedBox(height: NovaSpace.md),
+                _GamingCard(result: _gamingResult!),
+              ],
+              const SizedBox(height: NovaSpace.md),
               Text(
                 s.speedNote,
                 style: text.bodySmall?.copyWith(color: nova.muted),
@@ -200,6 +246,224 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The gaming verdict: one score, then the numbers behind it, then how that
+/// score was arrived at. The breakdown is shown rather than hidden because the
+/// whole point of the weighting is that it is arguable.
+class _GamingCard extends StatelessWidget {
+  const _GamingCard({required this.result});
+
+  final GamingResult result;
+
+  Color _scoreColor(BuildContext context, int score) {
+    final nova = context.nova;
+    if (score >= 85) return NovaSemantics.successGreen;
+    if (score >= 70) return nova.cyan;
+    if (score >= 50) return NovaSemantics.amber;
+    return NovaSemantics.red;
+  }
+
+  String _grade(NovaStrings s, int score) {
+    if (score >= 85) return s.gamingGradeExcellent;
+    if (score >= 70) return s.gamingGradeGood;
+    if (score >= 50) return s.gamingGradeOk;
+    if (score >= 30) return s.gamingGradePoor;
+    return s.gamingGradeBad;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    final GamingResult r = result;
+    final Color c = _scoreColor(context, r.score);
+    String ms(double v) => v.toStringAsFixed(v >= 100 ? 0 : 1);
+
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text('${r.score}',
+                    style: text.displaySmall
+                        ?.copyWith(fontWeight: FontWeight.w700, color: c)),
+              ),
+              const SizedBox(width: NovaSpace.sm),
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text('/ 100',
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+              ),
+              const Spacer(),
+              _Pill(label: _grade(s, r.score), color: c),
+            ],
+          ),
+          const SizedBox(height: NovaSpace.md),
+          const Divider(height: 1),
+          const SizedBox(height: NovaSpace.md),
+
+          Text(s.gamingLatencySpread,
+              style: text.labelSmall?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.xs),
+          _Row2(a: s.gamingMin, av: '${ms(r.minMs)} ms',
+                b: s.gamingMedian, bv: '${ms(r.medianMs)} ms'),
+          _Row2(a: s.gamingAvg, av: '${ms(r.avgMs)} ms',
+                b: s.gamingP95, bv: '${ms(r.p95Ms)} ms'),
+          _Row2(a: s.gamingMax, av: '${ms(r.maxMs)} ms',
+                b: s.speedJitter, bv: '${ms(r.jitterMs)} ms'),
+
+          const SizedBox(height: NovaSpace.md),
+          Text(s.gamingStability,
+              style: text.labelSmall?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.xs),
+          _Row2(
+            a: s.speedLoss,
+            av: '${r.lossPercent.toStringAsFixed(2)} %',
+            b: s.gamingBurst,
+            bv: '${r.maxConsecutiveLoss}',
+          ),
+          _Row2(
+            a: s.gamingSpike,
+            av: '${ms(r.spikeMs)} ms',
+            b: s.gamingSamples,
+            bv: '${r.received} / ${r.samples}',
+          ),
+
+          const SizedBox(height: NovaSpace.md),
+          Text(s.gamingBreakdown,
+              style: text.labelSmall?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.xs),
+          _Bar(label: s.speedLoss, score: r.lossScore, weight: GamingWeights.loss),
+          _Bar(label: s.speedJitter, score: r.jitterScore, weight: GamingWeights.jitter),
+          _Bar(label: s.gamingSpike, score: r.spikeScore, weight: GamingWeights.spike),
+          _Bar(label: s.speedPing, score: r.latencyScore, weight: GamingWeights.latency),
+
+          const SizedBox(height: NovaSpace.sm),
+          Text(s.gamingNote,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
+        ],
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: NovaSpace.md, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: NovaRadii.iconChipR,
+        ),
+        child: Text(label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: color, fontWeight: FontWeight.w700)),
+      );
+}
+
+/// Two label/value pairs on one line. Values are Latin runs, held LTR so they
+/// are not mirrored when the app is in Farsi.
+class _Row2 extends StatelessWidget {
+  const _Row2({required this.a, required this.av, required this.b, required this.bv});
+  final String a, av, b, bv;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final TextTheme t = Theme.of(context).textTheme;
+    Widget cell(String label, String value) => Expanded(
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(label,
+                    style: t.bodySmall?.copyWith(color: nova.muted),
+                    overflow: TextOverflow.ellipsis),
+              ),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(value,
+                    style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: <Widget>[
+          cell(a, av),
+          const SizedBox(width: NovaSpace.lg),
+          cell(b, bv),
+        ],
+      ),
+    );
+  }
+}
+
+/// One component of the score, with the weight it carried.
+class _Bar extends StatelessWidget {
+  const _Bar({required this.label, required this.score, required this.weight});
+  final String label;
+  final int score;
+  final int weight;
+
+  @override
+  Widget build(BuildContext context) {
+    final nova = context.nova;
+    final TextTheme t = Theme.of(context).textTheme;
+    final Color c = score >= 85
+        ? NovaSemantics.successGreen
+        : score >= 70
+            ? nova.cyan
+            : score >= 50
+                ? NovaSemantics.amber
+                : NovaSemantics.red;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 92,
+            child: Text(label,
+                style: t.bodySmall?.copyWith(color: nova.muted),
+                overflow: TextOverflow.ellipsis),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: score / 100,
+                minHeight: 6,
+                backgroundColor: nova.border,
+                valueColor: AlwaysStoppedAnimation<Color>(c),
+              ),
+            ),
+          ),
+          const SizedBox(width: NovaSpace.sm),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox(
+              width: 64,
+              child: Text('$score  x$weight',
+                  textAlign: TextAlign.end,
+                  style: t.labelSmall?.copyWith(color: nova.muted)),
+            ),
+          ),
+        ],
       ),
     );
   }
