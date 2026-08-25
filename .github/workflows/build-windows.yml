@@ -91,7 +91,10 @@ jobs:
           # for a binary built with the 14.51 toolset. Too-old is not a harmless
           # mismatch: the exe can reference exports the older CRT never had, and
           # that surfaces as "entry point not found" rather than a clear error.
-          $dll = $found | Sort-Object { [version]$_.VersionInfo.FileVersion } -Descending | Select-Object -First 1
+          # FileVersion reads "14.29.30157.0 built by: cloudtest" on these DLLs,
+          # so take the numeric prefix before comparing; the raw string will not
+          # cast to [version].
+          $dll = $found | Sort-Object { [version](($_.VersionInfo.FileVersion -split ' ')[0]) } -Descending | Select-Object -First 1
           Write-Host "CRT version $($dll.VersionInfo.FileVersion)"
           $crt = $dll.Directory.FullName
           Write-Host "copying the CRT from $crt"
