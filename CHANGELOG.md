@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.20.7-beta (2026-08-25)
+
+- Changed: Nova now writes its DNS settings in the format current versions of
+  the core expect. The old format still worked on phones but the desktop core
+  refused to start on it, and the next core release removes it everywhere. This
+  is the underlying cause of the macOS tunnel failures, fixed at the root
+  rather than worked around.
+
+- Fixed: the ad blocker answers blocked domains the same way it always did, an
+  empty success, so apps stop asking instead of retrying.
+
+- Changed: the speed test explanation now sits under the speed test rather than
+  under the gaming results, where it read as if it described them.
+
 ## v1.20.6-beta (2026-08-25)
 
 - Fixed: full-device mode on macOS, properly this time. The password prompt
