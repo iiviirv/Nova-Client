@@ -417,8 +417,9 @@ void main() {
       ]) {
         final servers = ((cfg['dns'] as Map)['servers'] as List).cast<Map>();
         final remote = servers.firstWhere((s) => s['tag'] == 'remote');
-        expect(remote['address'], contains('8.8.8.8'));
-        expect(remote['address'], isNot(contains('1.1.1.1')));
+        expect(remote['type'], 'https');
+        expect(remote['server'], contains('8.8.8.8'));
+        expect(remote['server'], isNot(contains('1.1.1.1')));
         // fake-ip stays reverted for now.
         expect((cfg['dns'] as Map).containsKey('fakeip'), isFalse);
       }

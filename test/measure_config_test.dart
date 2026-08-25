@@ -97,10 +97,15 @@ void main() {
     expect(servers, hasLength(1), reason: 'a resolver, not the tunnel module');
     final Map<String, dynamic> server =
         (servers.single as Map).cast<String, dynamic>();
-    // Direct, so it never loops back through the proxy being measured, and
-    // IP-addressed, so it needs no bootstrap resolver of its own.
-    expect(server['detour'], 'direct');
-    expect(server['address'], contains('223.5.5.5'));
+    // No detour, which is what makes it direct: a DNS server without one dials
+    // directly and never passes through the route, so it cannot loop back
+    // through the proxy being measured. Naming the direct outbound explicitly
+    // used to be how this was expressed and is now fatal at startup ("detour to
+    // an empty direct outbound makes no sense"). IP-addressed, so it needs no
+    // bootstrap resolver of its own either.
+    expect(server.containsKey('detour'), isFalse);
+    expect(server['type'], 'https');
+    expect(server['server'], contains('223.5.5.5'));
     expect(dns['final'], 'local');
     // Still none of the tunnel's rule-set machinery.
     expect(dns['rules'], isNull);

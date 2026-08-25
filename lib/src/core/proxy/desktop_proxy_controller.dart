@@ -618,18 +618,22 @@ class DesktopProxyController extends ProxyController {
 
   /// Environment the core process runs with.
   ///
-  /// The desktop core is the sing-box CLI, and unlike libbox on the phones the
-  /// CLI enforces deprecations: on 1.13 it refuses to start on the legacy DNS
-  /// server format the app still emits ("to continuing using this feature, set
-  /// environment variable ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true"). The
-  /// phones only get a warning for the same document, which is why this never
-  /// showed up there. The proper fix is migrating `dns.servers` to the 1.12
-  /// typed format for every platform, and that has to happen before a 1.14
-  /// core, which removes the legacy form outright. Until then this keeps the
-  /// desktop core starting.
-  static const Map<String, String> _coreEnv = <String, String>{
-    'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS': 'true',
-  };
+  /// Empty, and worth keeping empty.
+  ///
+  /// It used to carry ENABLE_DEPRECATED_LEGACY_DNS_SERVERS, because the DNS
+  /// block Nova emitted used a format sing-box deprecated in 1.12 and removes in
+  /// 1.14. The desktop CLI enforced that deprecation as FATAL while libbox on
+  /// the phones only warned, which is why it only ever broke on desktop.
+  ///
+  /// Carrying a deprecation flag into an elevated process is what cost a tester
+  /// several days: it had to survive an AppleScript admin trampoline, and when
+  /// it did not arrive the core died before writing a single line, so there was
+  /// no log, and the app guessed the wrong cause three times over.
+  ///
+  /// The config emits the current typed format now (see SingboxConfig._dns), so
+  /// there is nothing to carry and no 1.14 deadline. Adding anything back here
+  /// means asking whether it will survive elevation on every host.
+  static const Map<String, String> _coreEnv = <String, String>{};
 
   /// Copy the bundled core binary to a writable, executable path (cached).
   ///

@@ -654,10 +654,13 @@ class SingboxConfig {
     // cannot loop back through the proxy it is measuring.
     cfg['dns'] = <String, dynamic>{
       'servers': <Map<String, dynamic>>[
+        // No detour: see the note in _dns. A DNS server without one dials
+        // directly, which is what this needs, and naming the direct outbound
+        // explicitly is fatal at startup in the typed format.
         <String, dynamic>{
+          'type': 'https',
           'tag': 'local',
-          'address': 'https://223.5.5.5/dns-query',
-          'detour': 'direct',
+          'server': '223.5.5.5',
         },
       ],
       'final': 'local',
@@ -919,18 +922,33 @@ class SingboxConfig {
     final List<String> direct = directDomains.toList();
 
     return <String, dynamic>{
+      // The typed server format, not the `address: "https://..."` URL form.
+      //
+      // sing-box deprecated the URL form in 1.12 and REMOVES it in 1.14. On the
+      // desktop CLI core it was already fatal, not a warning: the core refused
+      // to start at all unless ENABLE_DEPRECATED_LEGACY_DNS_SERVERS was set,
+      // which is a thing Nova was carrying purely to keep this block working.
+      // That variable is gone now, and so is the deadline.
       'servers': <Map<String, dynamic>>[
         <String, dynamic>{
+          'type': 'https',
           'tag': 'remote',
-          'address': 'https://$remote/dns-query',
+          'server': remote,
           'detour': 'proxy',
         },
+        // No detour. It used to say `detour: "direct"`, which the typed format
+        // rejects outright at STARTUP (not at parse time): "detour to an empty
+        // direct outbound makes no sense". A DNS server with no detour dials
+        // directly and does not pass through the route at all, which is what
+        // that detour was for. Verified rather than assumed: with the route's
+        // final outbound pointed at a dead proxy, this server still resolved.
         <String, dynamic>{
+          'type': 'https',
           'tag': 'local',
-          'address': 'https://223.5.5.5/dns-query',
-          'detour': 'direct',
+          'server': '223.5.5.5',
         },
-        <String, dynamic>{'tag': 'block', 'address': 'rcode://success'},
+        // No 'block' server any more: `rcode://success` was a server in the old
+        // form and is a RULE ACTION in the new one. See the ad rule below.
       ],
       'rules': <Map<String, dynamic>>[
         // The proxy's own server domains MUST resolve directly. Otherwise
@@ -942,8 +960,16 @@ class SingboxConfig {
         // These reference rule-sets that _route() defines (remote on the full
         // path, bundled-local on the lean/iOS path), so both can resolve Iran
         // domains for real and drop ads.
+        // Answer ad domains with an empty success rather than sending them
+        // anywhere. NOERROR is the new spelling of what `rcode://success` did:
+        // the query succeeds with no address, so the client stops instead of
+        // retrying the way it would after a refusal or NXDOMAIN.
         if (o.blockAds && o.mode != SingboxMode.direct)
-          <String, dynamic>{'rule_set': 'geosite-ads', 'server': 'block'},
+          <String, dynamic>{
+            'rule_set': 'geosite-ads',
+            'action': 'predefined',
+            'rcode': 'NOERROR',
+          },
         if (o.bypassIran && o.mode == SingboxMode.rule)
           <String, dynamic>{'rule_set': 'geosite-ir', 'server': 'local'},
       ],

@@ -97,9 +97,11 @@ void main() {
     final def = SingboxConfig.buildMap(node);
     final quad9 = SingboxConfig.buildMap(node,
         options: const SingboxRouteOptions(dns: '9.9.9.9'));
+    // The typed server format: `server` holds the host, `type` the transport,
+    // where the removed legacy form packed both into an `address` URL.
     String remote(Map<String, dynamic> c) => ((c['dns'] as Map)['servers']
             as List)
-        .firstWhere((dynamic s) => (s as Map)['tag'] == 'remote')['address']
+        .firstWhere((dynamic s) => (s as Map)['tag'] == 'remote')['server']
         as String;
     // Default is off-Cloudflare (Google), because the CF-Worker exit can't relay
     // to Cloudflare's own 1.1.1.1 (loop protection) so DoH there would fail.
