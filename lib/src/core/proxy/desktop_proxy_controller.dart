@@ -1170,6 +1170,9 @@ class DesktopProxyController extends ProxyController {
   /// The core binary the last run copied into place, for failure reporting.
   String _lastCorePath = '';
 
+  /// The launchd job the elevated macOS tunnel runs under.
+  static const String _tunJobLabel = 'online.novaproxy.nova-tun';
+
   void _watchElevation(Process p, String helper) {
     _elevationError = '';
     final StringBuffer err = StringBuffer();
@@ -1553,10 +1556,25 @@ class DesktopProxyController extends ProxyController {
   /// the cost. **osascript itself burns about 5% of a core just staying alive**
   /// while `do shell script` waits on its command, whatever that command does.
   ///
-  /// So the command is backgrounded with every descriptor closed, which leaves
-  /// `do shell script` nothing to wait on: osascript spawns the work and exits,
-  /// and no osascript process remains. Measured the same way, what is left uses
-  /// 0.01s of CPU over 20 seconds, which is to say none.
+  /// So the work must not be left hanging off osascript. It used to be
+  /// backgrounded with every descriptor closed, which leaves `do shell script`
+  /// nothing to wait on: osascript spawns the work and exits, and no osascript
+  /// process remains. Measured the same way, what is left uses 0.01s of CPU over
+  /// 20 seconds, which is to say none.
+  ///
+  /// That worked unelevated and silently did nothing elevated. With
+  /// `with administrator privileges` the command runs through macOS's privileged
+  /// trampoline, which reaps the process group when it returns, so the
+  /// backgrounded core was killed before it could open its own log. The symptom
+  /// was the worst kind: the password prompt appeared, the user typed it, the
+  /// helper reported success, and nothing existed afterwards to say why, not
+  /// even an empty log. It cost a tester several rounds and me three wrong
+  /// diagnoses.
+  ///
+  /// So macOS hands the script to launchd instead. `launchctl submit` runs it in
+  /// root's domain, parented to PID 1, which the trampoline cannot reap, and
+  /// osascript still exits immediately so the 5% never comes back. The FIFO
+  /// below is unchanged and still ends the job.
   ///
   /// The waiter then blocks reading a FIFO instead of polling a flag file. That
   /// is worth doing on its own (no fork per second) but it also makes the
@@ -1656,17 +1674,26 @@ class DesktopProxyController extends ProxyController {
     await Process.run('chmod', <String>['+x', runner.path]);
     await _unquarantine(runner.path);
 
-    // Detached, with every file descriptor closed, so `do shell script` has
-    // nothing left to wait on and osascript exits immediately. See the note on
-    // this method: an osascript left supervising the session IS the 5%.
-    final String cmd =
-        'nohup /bin/sh ${_shq(runner.path)} > /dev/null 2>&1 &';
     if (Platform.isMacOS) {
+      // Handed to launchd rather than backgrounded off osascript. See the note
+      // on this method for why: a backgrounded child does not survive the
+      // privileged trampoline, and an osascript left supervising costs 5% of a
+      // core for the whole session. launchd is neither.
+      //
+      // The remove first clears any job left by a previous run, and its failure
+      // is expected and ignored; `do shell script` fails the whole command on a
+      // non-zero exit, so the submit has to be what decides the exit code.
+      final String cmd = 'launchctl remove $_tunJobLabel 2>/dev/null; '
+          'launchctl submit -l $_tunJobLabel -- /bin/sh ${_shq(runner.path)}';
       final String appleScript =
           'do shell script "${_asEsc(cmd)}" with administrator privileges';
       _elevated = await Process.start('osascript', <String>['-e', appleScript]);
       _watchElevation(_elevated!, 'osascript');
     } else {
+      // Linux keeps the detached form: pkexec has no trampoline that reaps the
+      // group, and there is no launchd.
+      final String cmd =
+          'nohup /bin/sh ${_shq(runner.path)} > /dev/null 2>&1 &';
       // Linux: best-effort via pkexec (graphical sudo).
       _elevated = await Process.start('pkexec', <String>['sh', '-c', cmd]);
       _watchElevation(_elevated!, 'pkexec');

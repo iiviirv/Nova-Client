@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.20.6-beta (2026-08-25)
+
+- Fixed: full-device mode on macOS, properly this time. The password prompt
+  appeared, you typed it, macOS said yes, and then nothing happened. The core
+  was being started in a way macOS shuts down again the moment it grants
+  administrator rights, so it never ran and never left anything behind to say
+  so. Nova now hands the job to the system's own launcher, which keeps it.
+
+- Added: a gaming test on the speed test screen. It takes a hundred readings
+  back to back and reports min, average, median, P95, max and jitter, plus how
+  many packets were lost in a row rather than just how many in total, since a
+  run of losses is what a game shows you as a freeze.
+
+- Added: a playability score out of 100. It weighs steadiness far above
+  distance, because reaching European servers from Iran costs 80 to 100 ms and
+  that is normal, not a bad connection. Loss counts most, then jitter, then
+  spikes, then raw ping. The breakdown is shown so you can see how the number
+  was reached.
+
 ## v1.20.5-beta (2026-08-25)
 
 - Fixed: full-device mode on macOS. The core would not start and Nova blamed

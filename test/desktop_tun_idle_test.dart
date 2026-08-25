@@ -82,4 +82,21 @@ void main() {
     expect(source, contains('if (!_visible) return;'));
     expect(source, contains('AppLifecycleListener'));
   });
+
+  test('macOS hands the elevated job to launchd, not to a background shell', () {
+    // The bug this exists to stop coming back: a command backgrounded off
+    // `do shell script ... with administrator privileges` is reaped by the
+    // privileged trampoline before it can run. It works unelevated, which is why
+    // it survived so long, and when it fails it leaves nothing behind at all,
+    // not even an empty log. launchd is parented to PID 1 and cannot be reaped.
+    expect(source, contains('launchctl submit'));
+    expect(source, contains('with administrator privileges'));
+  });
+
+  test('the stale launchd job is cleared before submitting', () {
+    // `do shell script` fails the whole command on a non-zero exit, so the
+    // remove must not be the last thing to run and must swallow its own failure.
+    expect(source, contains('launchctl remove'));
+    expect(source, contains(r'launchctl remove $_tunJobLabel 2>/dev/null; '));
+  });
 }
