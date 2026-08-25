@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:screen_retriever/screen_retriever.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -40,6 +43,7 @@ class TrayController with TrayListener, WindowListener {
     _started = true;
     try {
       await windowManager.ensureInitialized();
+      await _restoreBounds();
       // Closing the window hides it instead of ending the process. Without
       // this, "close" and "quit" are the same thing and the tray is pointless.
       await windowManager.setPreventClose(true);
@@ -62,9 +66,76 @@ class TrayController with TrayListener, WindowListener {
     _proxy.removeListener(_onProxyChanged);
     trayManager.removeListener(this);
     windowManager.removeListener(this);
+    _boundsSave?.cancel();
     await trayManager.destroy();
     _started = false;
   }
+
+  /// What the menu last displayed, so an unchanged rebuild is skipped.
+  String? _menuSig;
+
+  Timer? _boundsSave;
+
+  static const String _boundsKey = 'window_bounds';
+
+  /// Put the window back where the user left it.
+  ///
+  /// Every launch used to open at the default size in the default place, so
+  /// anyone who had sized Nova to a corner of their screen had to do it again
+  /// after each quit.
+  Future<void> _restoreBounds() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final List<String>? v = prefs.getStringList(_boundsKey);
+      if (v == null || v.length != 4) return;
+      final List<double?> n = v.map(double.tryParse).toList();
+      if (n.any((double? d) => d == null || !d.isFinite)) return;
+      final double w = n[2]!, h = n[3]!;
+      // A saved size below the minimum, or a window parked off a screen that is
+      // no longer attached, would restore to somewhere the user cannot reach it.
+      if (w < 320 || h < 400) return;
+      final Rect saved = Rect.fromLTWH(n[0]!, n[1]!, w, h);
+      final Display d = await screenRetriever.getPrimaryDisplay();
+      final Size screen = d.size;
+      if (saved.left < -saved.width + 80 ||
+          saved.top < -40 ||
+          saved.left > screen.width - 80 ||
+          saved.top > screen.height - 40) {
+        // Off-screen: keep the size the user chose, drop the position.
+        await windowManager.setSize(saved.size);
+        return;
+      }
+      await windowManager.setBounds(saved);
+    } catch (e) {
+      NovaLog.instance.write('Could not restore the window position: $e',
+          level: NovaLogLevel.warn);
+    }
+  }
+
+  /// Remember the geometry, a moment after the user stops dragging. Resizing
+  /// fires continuously, so writing on every frame would hammer the disk for a
+  /// value only the last one of which matters.
+  void _rememberBounds() {
+    _boundsSave?.cancel();
+    _boundsSave = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final Rect b = await windowManager.getBounds();
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_boundsKey, <String>[
+          '${b.left}',
+          '${b.top}',
+          '${b.width}',
+          '${b.height}',
+        ]);
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void onWindowResized() => _rememberBounds();
+
+  @override
+  void onWindowMoved() => _rememberBounds();
 
   Future<void> _applyIcon() async {
     // macOS wants a template image (alpha only) so the menu bar can tint it for
@@ -83,7 +154,7 @@ class TrayController with TrayListener, WindowListener {
     unawaited(_rebuildMenu());
   }
 
-  Future<void> _rebuildMenu() async {
+  Future<void> _rebuildMenu({bool force = false}) async {
     if (!_started) return;
     final TrayStrings s = strings();
     final bool active = _proxy.state.isActive;
@@ -93,6 +164,14 @@ class TrayController with TrayListener, WindowListener {
         : active
             ? s.connected
             : s.disconnected;
+    // Only touch the tray when what it displays actually changed. The proxy
+    // notifies on every traffic-stats tick, once a second while connected, and
+    // rebuilding on each one meant Windows replaced the menu underneath itself:
+    // an open menu visibly re-rendered every second and would not dismiss when
+    // it lost focus. None of those ticks change a label here.
+    final String sig = '$status|$active|$busy|${s.show}|${s.quit}';
+    if (!force && sig == _menuSig) return;
+    _menuSig = sig;
     try {
       await trayManager.setToolTip('Nova  ${status.toLowerCase()}');
       await trayManager.setContextMenu(Menu(items: <MenuItem>[
@@ -147,7 +226,7 @@ class TrayController with TrayListener, WindowListener {
   }
 
   /// The UI language changed: rebuild the menu so it is in it.
-  void refreshLabels() => unawaited(_rebuildMenu());
+  void refreshLabels() => unawaited(_rebuildMenu(force: true));
 
   /// Ends the app for real. Disconnects first and waits for it, so no core is
   /// left running behind a window and an icon that are both gone.

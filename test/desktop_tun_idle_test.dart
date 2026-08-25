@@ -56,10 +56,31 @@ void main() {
 
   test('it never sleeps in a loop', () {
     final String branch = unixBranchCode();
-    expect(branch, isNot(contains('sleep')),
-        reason: 'forking /bin/sleep once a second is the whole bug');
     expect(branch, isNot(contains('while ')),
         reason: 'any spin here keeps the CPU out of its idle states');
+    // The waiting is still done by the blocking read above, which is the point.
+    // A `sleep` on the teardown path is a different thing from a poll: it runs
+    // once, after the tunnel is already coming down, to give the core a moment
+    // to honour a TERM before it is forced. Guard the shape, not the word, so
+    // this keeps catching a reintroduced poll without banning a single wait.
+    final int sleeps = 'sleep '.allMatches(branch).length;
+    expect(sleeps, lessThanOrEqualTo(1),
+        reason: 'more than one sleep here means something is polling again');
+  });
+
+  test('a restarted launchd job does not dial back out', () {
+    // launchd owns the job once it is submitted and may start it again after it
+    // exits. Without this guard that turns every disconnect into a reconnect:
+    // the core dies, the script ends, the job comes back and dials out, and the
+    // user sees a Disconnect button that does nothing and a tunnel that
+    // survives quitting Nova.
+    expect(unixBranchCode(), contains(r"[ -f ${_shq(flag.path)} ] || exit 0"));
+  });
+
+  test('the tunnel is forced down if it ignores the first signal', () {
+    final String branch = unixBranchCode();
+    expect(branch, contains(r'kill -9 \$SB'),
+        reason: '"disconnected" on screen has to mean the tunnel is down');
   });
 
   test('the FIFO is opened read-write, which never blocks', () {

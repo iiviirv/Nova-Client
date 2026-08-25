@@ -113,7 +113,7 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: ListView(
-            padding: const EdgeInsets.all(NovaSpace.xl),
+            padding: NovaSpace.page(context),
             children: <Widget>[
               // Connected-or-not banner: makes clear WHAT is being measured.
               Container(

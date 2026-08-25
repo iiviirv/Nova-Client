@@ -61,6 +61,10 @@ dependencies:
   # with the window closed, and put Connect / Disconnect / Quit in its menu, so
   # the app does not have to sit open on the desktop to stay connected.
   tray_manager: ^0.5.3
+  # Already in the tree under window_manager; named here because the window
+  # geometry restore needs the primary display's size to reject a position on a
+  # monitor that is no longer attached.
+  screen_retriever: ^0.2.0
   window_manager: ^0.5.2
 
 dev_dependencies:

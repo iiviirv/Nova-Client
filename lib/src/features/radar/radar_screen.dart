@@ -41,7 +41,7 @@ class RadarScreen extends StatelessWidget {
               constraints:
                   const BoxConstraints(maxWidth: NovaSpace.maxContentWidth),
               child: ListView(
-                padding: const EdgeInsets.all(NovaSpace.xl),
+                padding: NovaSpace.page(context),
                 children: <Widget>[
                   _RadarHeader(s: s),
                   const SizedBox(height: NovaSpace.xl),

@@ -14,6 +14,24 @@ class AppDelegate: FlutterAppDelegate {
     return false
   }
 
+  /// Clicking the Dock icon brings the window back.
+  ///
+  /// Closing the window only hides it (see above), and with nothing handling
+  /// reopen the Dock icon did nothing at all afterwards: the only way back in
+  /// was Show Nova in the menu bar, which is not where anyone looks first.
+  /// macOS calls this with hasVisibleWindows false in exactly that state.
+  override func applicationShouldHandleReopen(
+    _ sender: NSApplication, hasVisibleWindows flag: Bool
+  ) -> Bool {
+    if !flag {
+      for window in sender.windows {
+        window.makeKeyAndOrderFront(self)
+      }
+      NSApp.activate(ignoringOtherApps: true)
+    }
+    return true
+  }
+
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
     return true
   }

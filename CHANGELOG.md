@@ -9,6 +9,37 @@
   runtime inside the download and no longer depends on what the machine already
   has.
 
+- Fixed: on macOS, disconnecting could leave the tunnel up, and so could quitting
+  Nova, with the core still carrying traffic after the window was gone. Once the
+  elevated job was handed to the system launcher, the system was free to start it
+  again the moment it ended, so killing the core simply brought it back. Nova now
+  says plainly when it does not want a tunnel, and a restart in that state does
+  nothing instead of dialling out again. The core is also forced down if it
+  ignores the first request to stop, so "disconnected" on screen means it is.
+
+- Fixed: on macOS, clicking Nova's Dock icon did nothing once the window had been
+  closed. Getting back in meant finding Show Nova in the menu bar. The Dock icon
+  brings the window back now, which is where anyone looks first.
+
+- Added: Nova reopens at the size and position you left it, on macOS and Windows
+  both. It used to return to the default place after every quit. A window saved
+  on a screen that is no longer attached keeps its size and comes back somewhere
+  you can reach it.
+
+- Fixed: on Windows, the tray icon's menu flickered and re-drew about once a
+  second while it was open, and would not close when you clicked away from it.
+  The menu was being rebuilt on every traffic reading even though nothing it
+  displays had changed. It is now rebuilt only when it actually differs.
+
+- Changed: quitting on Windows is quicker. Disconnecting waited up to a second
+  for a check that now runs three times a second, and quitting waits for the
+  disconnect. Closing or crashing Nova on Windows also takes the tunnel down with
+  it, which previously only happened on macOS.
+
+- Fixed: on Android, the bottom of the speed test sat underneath the navigation
+  bar, out of reach. Four other screens had the same problem: Radar, the
+  Cloudflare tools, and both relay screens.
+
 ## v1.20.7-beta (2026-08-25)
 
 - Changed: Nova now writes its DNS settings in the format current versions of

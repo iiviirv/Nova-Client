@@ -1632,7 +1632,18 @@ class DesktopProxyController extends ProxyController {
         "-RedirectStandardError '$log' "
         "-RedirectStandardOutput '${outLog.path}' "
         "-WindowStyle Hidden -PassThru\n"
-        "while (Test-Path '${flag.path}') { Start-Sleep -Seconds 1 }\n"
+        // Two stop signals: Nova removed the flag, or Nova is gone. Watching
+        // the app's pid means quitting or crashing takes the tunnel down with
+        // it rather than leaving a core routing traffic behind a window that no
+        // longer exists. (macOS gets the same property from the FIFO, which the
+        // kernel closes when the app dies.)
+        //
+        // Polled every 300ms rather than every second: at one second a
+        // disconnect, and so a quit, spent most of its time waiting for this
+        // loop to notice. Start-Sleep is in-process here, so it forks nothing.
+        "while ((Test-Path '${flag.path}') -and "
+            "(Get-Process -Id $pid -ErrorAction SilentlyContinue)) "
+            "{ Start-Sleep -Milliseconds 300 }\n"
         "try { Stop-Process -Id \$p.Id -Force } catch {}\n",
       );
       _elevated = await Process.start('powershell', <String>[
@@ -1666,6 +1677,16 @@ class DesktopProxyController extends ProxyController {
     // reconstructed from source.
     final File runner = File('${dir.path}/nova-tun.sh');
     final StringBuffer sh = StringBuffer('#!/bin/sh\n');
+    // Refuse to start if Nova is not asking for a tunnel right now.
+    //
+    // launchd owns this job once it is submitted, and a job that exits can be
+    // started again without Nova having any say in it. That turns a disconnect
+    // into a reconnect: the core is killed, the script ends, the job comes back
+    // and dials straight out again, which from the outside is a Disconnect
+    // button that does nothing and a tunnel that survives quitting the app.
+    // The flag is removed the moment Nova wants the tunnel down, so checking it
+    // here makes any restart after that point a no-op.
+    sh.writeln('[ -f ${_shq(flag.path)} ] || exit 0');
     for (final MapEntry<String, String> e in _coreEnv.entries) {
       sh.writeln('export ${e.key}=${_shq(e.value)}');
     }
@@ -1673,7 +1694,17 @@ class DesktopProxyController extends ProxyController {
       ..writeln('${_shq(binary)} run -c ${_shq(cfgFile.path)} > ${_shq(log)} 2>&1 &')
       ..writeln('SB=\$!')
       ..writeln('cat ${_shq(ctl.path)} > /dev/null 2>&1')
-      ..writeln('kill \$SB 2>/dev/null');
+      // Not a poll: one read that blocks for the whole session and returns the
+      // instant Nova's end of the FIFO closes, whether that is a disconnect or
+      // the app dying.
+      ..writeln('kill \$SB 2>/dev/null')
+      // A core busy writing can sit on a TERM. Wait once, then insist, so
+      // "disconnected" on screen always means the tunnel is really down. This
+      // is a single wait on the way out, not a loop.
+      ..writeln('sleep 1')
+      ..writeln('kill -9 \$SB 2>/dev/null')
+      // Leave nothing that would let a restarted job think it should dial.
+      ..writeln('rm -f ${_shq(flag.path)} 2>/dev/null');
     await runner.writeAsString(sh.toString());
     await Process.run('chmod', <String>['+x', runner.path]);
     await _unquarantine(runner.path);

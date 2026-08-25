@@ -383,7 +383,7 @@ class _RelayScreenState extends State<RelayScreen> {
               final bool active = relay.active;
               final bool configured = relay.execUrl.trim().isNotEmpty;
               return ListView(
-                padding: const EdgeInsets.all(NovaSpace.xl),
+                padding: NovaSpace.page(context),
                 children: <Widget>[
                   // ---- Header: intro + live status ----
                   Row(
@@ -799,7 +799,7 @@ class RelayGuideScreen extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: ListView(
-            padding: const EdgeInsets.all(NovaSpace.xl),
+            padding: NovaSpace.page(context),
             children: <Widget>[
               _GuideSection(
                 icon: Icons.hub_rounded,

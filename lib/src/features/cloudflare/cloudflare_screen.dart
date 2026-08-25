@@ -52,7 +52,7 @@ class CloudflareScreen extends StatelessWidget {
             listenable: cf,
             builder: (context, _) {
               return ListView(
-                padding: const EdgeInsets.all(NovaSpace.xl),
+                padding: NovaSpace.page(context),
                 children: <Widget>[
                   if (cf.error.isNotEmpty)
                     Padding(
