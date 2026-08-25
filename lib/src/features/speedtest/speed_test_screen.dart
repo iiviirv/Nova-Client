@@ -220,7 +220,16 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
                 loading: _running,
                 onPressed: _running ? null : _run,
               ),
-              const SizedBox(height: NovaSpace.md),
+              const SizedBox(height: NovaSpace.sm),
+              // Directly under the test it describes. It used to sit at the
+              // bottom of the screen, which put it beneath the gaming results
+              // and made it read as an explanation of those instead.
+              Text(
+                s.speedNote,
+                style: text.bodySmall?.copyWith(color: nova.muted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: NovaSpace.lg),
               NovaButton(
                 label: _gaming
                     ? s.gamingRunning
@@ -237,12 +246,6 @@ class _SpeedTestScreenState extends State<SpeedTestScreen> {
                 const SizedBox(height: NovaSpace.md),
                 _GamingCard(result: _gamingResult!),
               ],
-              const SizedBox(height: NovaSpace.md),
-              Text(
-                s.speedNote,
-                style: text.bodySmall?.copyWith(color: nova.muted),
-                textAlign: TextAlign.center,
-              ),
             ],
           ),
         ),
