@@ -64,6 +64,46 @@ jobs:
       - name: Bundle libcronet.dll next to the app
         run: Copy-Item assets/bin/libcronet.dll -Destination build/windows/x64/runner/Release/ -Force
 
+      # Flutter links the MSVC runtime dynamically, so the .exe needs
+      # vcruntime140_1.dll and friends present on the machine. A Windows user hit
+      # "The code execution cannot proceed because VCRUNTIME140_1.dll was not
+      # found" on 2026-08-25: the app died before a line of Nova code ran, purely
+      # because that PC had no Visual C++ Redistributable installed. Telling every
+      # user to go install one first is not a fix. Microsoft supports shipping the
+      # CRT beside the executable (app-local deployment), which is exactly what
+      # the Redist folder in Visual Studio exists for, so copy it into the bundle
+      # and stop depending on what the machine happens to already have.
+      - name: Bundle the Visual C++ runtime next to the app
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $ver = (Get-Content "$vs\VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt").Trim()
+          # VC143.CRT is the toolset Flutter builds with; glob the folder rather
+          # than naming each DLL, since the exact set varies between toolsets.
+          $crt = Join-Path $vs "VC\Redist\MSVC\$ver\x64\Microsoft.VC143.CRT"
+          if (-not (Test-Path $crt)) { Write-Error "no CRT redist at $crt"; exit 1 }
+          Write-Host "copying the CRT from $crt"
+          Copy-Item "$crt\*.dll" -Destination build/windows/x64/runner/Release/ -Force
+          Get-ChildItem "$crt\*.dll" | ForEach-Object { Write-Host "  $($_.Name)" }
+
+      # "It built" is not "it starts on someone else's PC", and that is the exact
+      # gap the missing CRT fell through. Fail the build here rather than shipping
+      # another zip that dies on launch.
+      - name: Verify the bundle is complete
+        shell: pwsh
+        run: |
+          $dir = 'build/windows/x64/runner/Release'
+          $need = @(
+            'nova_client.exe', 'flutter_windows.dll',
+            'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
+            'sing-box-windows-amd64.exe', 'xray-windows-amd64.exe',
+            'wintun.dll', 'libcronet.dll'
+          )
+          $missing = $need | Where-Object { -not (Test-Path (Join-Path $dir $_)) }
+          if ($missing) { Write-Error "missing from the bundle: $($missing -join ', ')"; exit 1 }
+          Write-Host "all $($need.Count) required files are present"
+
       - name: Package Nova-Windows.zip
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Nova-Windows.zip
 
