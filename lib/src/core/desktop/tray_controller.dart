@@ -202,14 +202,26 @@ class TrayController with TrayListener, WindowListener {
     if (Platform.isWindows) {
       unawaited(_show());
     } else {
-      unawaited(trayManager.popUpContextMenu());
+      unawaited(_popUpMenu());
     }
   }
 
   @override
   void onTrayIconRightMouseDown() {
-    unawaited(trayManager.popUpContextMenu());
+    unawaited(_popUpMenu());
   }
+
+  /// Show the tray menu.
+  ///
+  /// On Windows the menu would not go away when you clicked somewhere else: it
+  /// stayed up until you picked something from it. That is the documented
+  /// consequence of calling TrackPopupMenu for a notification-area icon without
+  /// making the owner window the foreground window first, and the plugin only
+  /// does that when it is asked to. Windows is the only platform that needs it;
+  /// asking for it on macOS would drag the window forward on every menu-bar
+  /// click, which is not what a menu-bar app should do.
+  Future<void> _popUpMenu() =>
+      trayManager.popUpContextMenu(bringAppToFront: Platform.isWindows);
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {

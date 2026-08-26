@@ -258,10 +258,21 @@ class SingboxProxyController extends ProxyController {
         // exit whose urltest pool led with a dead node gets one clean rebuild.
         if (_state == ProxyConnectionState.connected &&
             prev != ProxyConnectionState.connected) {
-          if (_active?.pinnedNode != null) {
+          if (_active?.isSubscription ?? false) {
+            if (_active?.pinnedNode != null) {
+              unawaited(_verifyPinnedConnectivity());
+            } else {
+              unawaited(_verifyAutoConnectivity());
+            }
+          } else {
+            // A single manually added config is neither pinned nor a
+            // subscription, and used to get no verification at all: the orb
+            // went green, the probe never ran, and the dashboard sat on
+            // "Verifying" for as long as the tunnel was up, with no way to
+            // reach "No traffic". It is checked the same way a pin is, which
+            // reports rather than switching, because there is nothing to
+            // switch to.
             unawaited(_verifyPinnedConnectivity());
-          } else if (_active?.isSubscription ?? false) {
-            unawaited(_verifyAutoConnectivity());
           }
         }
       case 'traffic':
@@ -1141,7 +1152,10 @@ class SingboxProxyController extends ProxyController {
   /// says the exit is not passing traffic, and switching stays a tap away.
   Future<void> _verifyPinnedConnectivity() async {
     final ProxyProfile? profile = _active;
-    if (profile == null || profile.pinnedNode == null) return;
+    // A pinned node, or a single manual config, which has no pin to compare but
+    // needs the same answer: is anything actually getting through?
+    if (profile == null) return;
+    if (profile.pinnedNode == null && profile.isSubscription) return;
     // Let the tunnel settle before probing.
     await Future<void>.delayed(const Duration(seconds: 3));
     // Bail if the user disconnected or switched away in the meantime.
