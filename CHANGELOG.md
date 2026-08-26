@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.20.9-beta (2026-08-26)
+
+- Fixed: on Android, a connection that never came up could leave Nova stuck on
+  "Connecting" with no way out. Disconnect did nothing, closing the app and
+  reopening it came straight back to the same screen, and the only thing that
+  helped was restarting the phone. Nova gave up after thirty seconds but only
+  changed what it said on screen, while the tunnel service kept running in the
+  background. It now shuts that down properly, so a server that will not connect
+  leaves you back at the start instead of stranded.
+
+- Fixed: on iPhone, locking the screen while Nova was searching the free server
+  list could close the app. The search kept dialling servers while the system was
+  putting the app to sleep around it. Searching now stops when you leave the app
+  and keeps whatever it had already measured.
+
+- Fixed: on Windows, the tray icon's menu stayed open until you picked something
+  from it. Clicking anywhere else left it on screen.
+
+- Fixed: a server added on its own, rather than through a subscription, was never
+  checked for whether traffic was really flowing, so the dashboard could sit on
+  "Verifying" for as long as it was connected and never reach "No traffic".
+
 ## v1.20.8-beta (2026-08-25)
 
 - Fixed: the Windows app refused to start on any PC without Microsoft's Visual
