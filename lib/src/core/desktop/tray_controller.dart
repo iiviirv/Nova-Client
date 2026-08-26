@@ -220,6 +220,12 @@ class TrayController with TrayListener, WindowListener {
   /// does that when it is asked to. Windows is the only platform that needs it;
   /// asking for it on macOS would drag the window forward on every menu-bar
   /// click, which is not what a menu-bar app should do.
+  ///
+  /// The flag is marked deprecated upstream as "Windows only", with no
+  /// replacement offered: it is still the only way to ask for the one Win32
+  /// call that fixes this. Dropping it to silence the warning would put the bug
+  /// straight back, so it is silenced here instead.
+  // ignore: deprecated_member_use
   Future<void> _popUpMenu() =>
       trayManager.popUpContextMenu(bringAppToFront: Platform.isWindows);
 
