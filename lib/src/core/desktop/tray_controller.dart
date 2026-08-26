@@ -225,8 +225,8 @@ class TrayController with TrayListener, WindowListener {
   /// replacement offered: it is still the only way to ask for the one Win32
   /// call that fixes this. Dropping it to silence the warning would put the bug
   /// straight back, so it is silenced here instead.
-  // ignore: deprecated_member_use
   Future<void> _popUpMenu() =>
+      // ignore: deprecated_member_use
       trayManager.popUpContextMenu(bringAppToFront: Platform.isWindows);
 
   @override
