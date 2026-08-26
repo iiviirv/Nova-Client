@@ -1366,7 +1366,11 @@ class DesktopProxyController extends ProxyController {
         xhttp = await _startXray(dir,
             XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort));
       }
-      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
+      final ({
+    Map<String, dynamic> config,
+    Map<String, String> tagKeys,
+    Map<String, int> endpointPorts
+  }) built =
           SingboxConfig.buildMeasureMap(resolved,
               options: opts,
               mixedPort: mixedPort,
@@ -1408,6 +1412,7 @@ class DesktopProxyController extends ProxyController {
         api: api,
         failures: failures,
         tagKeys: built.tagKeys,
+        endpointPorts: built.endpointPorts,
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
         stopAfterWorking: stopAfterWorking,

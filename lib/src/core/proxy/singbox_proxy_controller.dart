@@ -492,7 +492,11 @@ class SingboxProxyController extends ProxyController {
       }
       final int mixedPort = await _freeLoopbackPort();
       final int apiPort = await _freeLoopbackPort();
-      final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
+      final ({
+    Map<String, dynamic> config,
+    Map<String, String> tagKeys,
+    Map<String, int> endpointPorts
+  }) built =
           SingboxConfig.buildMeasureMap(resolved,
               options: opts,
               mixedPort: mixedPort,
@@ -521,6 +525,7 @@ class SingboxProxyController extends ProxyController {
         api: api,
         failures: failures,
         tagKeys: built.tagKeys,
+        endpointPorts: built.endpointPorts,
         url: opts.urlTestUrl,
         timeoutSec: timeoutSec,
         stopAfterWorking: stopAfterWorking,

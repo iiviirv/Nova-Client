@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -56,6 +57,55 @@ class MeasureRunner {
     if (u.isEmpty) return 'HTTP://www.gstatic.com/generate_204';
     if (u.startsWith('http://')) return 'HTTP://${u.substring(7)}';
     return u;
+  }
+
+  /// Where an endpoint node is measured to.
+  ///
+  /// An IP literal on purpose. Measuring through an endpoint's own inbound
+  /// showed the core failing DNS on that path ("cannot marshal DNS message"),
+  /// so a hostname target cannot be resolved there however healthy the tunnel
+  /// is. Against a live AmneziaWG server this address answered in 245ms while
+  /// a hostname timed out, and the redirect it returns is fine: what is being
+  /// timed is the round trip, not the body.
+  static const String kEndpointProbeUrl = 'http://1.1.1.1/';
+
+  /// Tests one endpoint node (AmneziaWG / WireGuard) by timing a request
+  /// through the local inbound that [SingboxConfig.buildMeasureMap] pinned to
+  /// it, rather than asking the Clash API.
+  ///
+  /// The Clash API lists endpoints but cannot dial one: a delay request against
+  /// an AmneziaWG tag fails immediately without the core so much as attempting
+  /// a connection. Every such server therefore read "no response" while
+  /// connecting to it worked perfectly.
+  static Future<int?> probeEndpoint(
+    int port, {
+    required int timeoutSec,
+    String url = kEndpointProbeUrl,
+    void Function(String reason)? onFailure,
+  }) async {
+    final Duration budget = Duration(seconds: timeoutSec.clamp(1, 60));
+    // Not a cascade: an arrow closure swallows the following `..`, so the rest
+    // would be set on the String it returns.
+    final HttpClient c = HttpClient();
+    c.findProxy = (Uri _) => 'PROXY 127.0.0.1:$port';
+    c.connectionTimeout = budget;
+    c.idleTimeout = const Duration(seconds: 1);
+    c.autoUncompress = false;
+    final Stopwatch clock = Stopwatch()..start();
+    try {
+      final HttpClientRequest req =
+          await c.getUrl(Uri.parse(url)).timeout(budget);
+      req.followRedirects = false;
+      final HttpClientResponse res = await req.close().timeout(budget);
+      clock.stop();
+      unawaited(res.drain<void>().catchError((Object _) {}));
+      return clock.elapsedMilliseconds;
+    } catch (e) {
+      onFailure?.call('endpoint on :$port: $e');
+      return null;
+    } finally {
+      c.close(force: true);
+    }
   }
 
   /// Waits for a freshly started measuring core to answer on its Clash API.
@@ -132,6 +182,9 @@ class MeasureRunner {
     required Map<String, String> tagKeys,
     required String url,
     required int timeoutSec,
+    /// Node tag to the local port pinned to it, for endpoint nodes that the
+    /// Clash API cannot dial. Empty for a pool with no WireGuard/AmneziaWG.
+    Map<String, int> endpointPorts = const <String, int>{},
     int concurrency = kDefaultConcurrency,
     /// The budget for the first (cold) dial, which is a different question from
     /// the budget for the number the user sees.
@@ -174,6 +227,21 @@ class MeasureRunner {
     final List<String> queue = tagKeys.keys.toList();
     int next = 0;
 
+    /// One measurement of one node, by whichever route can actually reach it.
+    ///
+    /// Endpoint nodes (AmneziaWG / WireGuard) go through the local inbound that
+    /// [SingboxConfig.buildMeasureMap] pinned to them; everything else goes
+    /// through the Clash API as before.
+    Future<int?> dial(String tag,
+        {required int seconds, void Function(String reason)? onFailure}) {
+      final int? port = endpointPorts[tag];
+      if (port != null) {
+        return probeEndpoint(port, timeoutSec: seconds, onFailure: onFailure);
+      }
+      return probe(api, tag,
+          url: url, timeoutSec: seconds, client: c, onFailure: onFailure);
+    }
+
     Future<void> worker() async {
       while (true) {
         if (cancelled?.call() ?? false) return;
@@ -187,13 +255,10 @@ class MeasureRunner {
         // First dial: builds whatever the protocol needs to build (a mieru
         // session, a NaiveProxy TLS + HTTP/2 connection, a TLS session ticket).
         // Its number is thrown away; it is the setup cost, not the latency.
-        int? warm = await probe(api, tag,
-            url: url,
-            timeoutSec: warmSec,
-            client: c,
+        int? warm = await dial(tag, seconds: warmSec,
             onFailure: (String why) {
-              if (failures != null && failures.length < 12) failures.add(why);
-            });
+          if (failures != null && failures.length < 12) failures.add(why);
+        });
         if (warm == null && !(cancelled?.call() ?? false)) {
           // One retry before a server is written off. Measured against Nova's
           // own free list, where the servers are busy and often answer late:
@@ -201,8 +266,7 @@ class MeasureRunner {
           // 229 to 1516ms. Calling those dead would have hidden working servers
           // from the people who have nothing else. Only a node that is already
           // failing pays for this.
-          warm = await probe(api, tag,
-              url: url, timeoutSec: warmSec, client: c);
+          warm = await dial(tag, seconds: warmSec);
         }
         int? best = warm;
         if (warm != null) {
@@ -210,8 +274,7 @@ class MeasureRunner {
           // Second dial, on everything the first one warmed up. This is the
           // number the user sees, and the one that matches what they measure
           // from inside the tunnel.
-          final int? hot = await probe(api, tag,
-              url: url, timeoutSec: timeoutSec, client: c);
+          final int? hot = await dial(tag, seconds: timeoutSec);
           if (hot != null && hot < best!) best = hot;
         }
         tested.add(key);
@@ -253,13 +316,10 @@ class MeasureRunner {
           final String tag = again[i];
           final String? key = tagKeys[tag];
           if (key == null) continue;
-          final int? ms = await probe(api, tag,
-              url: url,
-              timeoutSec: warmSec,
-              client: c,
+          final int? ms = await dial(tag, seconds: warmSec,
               onFailure: (String why) {
-                if (failures != null && failures.length < 12) failures.add(why);
-              });
+            if (failures != null && failures.length < 12) failures.add(why);
+          });
           if (ms != null) {
             delays[key] = ms;
             onProgress?.call(

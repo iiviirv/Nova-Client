@@ -594,12 +594,17 @@ class SingboxConfig {
   /// Returns the config and the `node-i` tag -> stable node key map the
   /// controller needs to land results on the right rows. Throws
   /// [FormatException] when no node can be measured (all xhttp).
-  static ({Map<String, dynamic> config, Map<String, String> tagKeys})
-      buildMeasureMap(
+  static ({
+    Map<String, dynamic> config,
+    Map<String, String> tagKeys,
+    Map<String, int> endpointPorts,
+  }) buildMeasureMap(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     required int mixedPort,
     required int clashPort,
+    /// First local port for the per-endpoint probe inbounds (see below).
+    int endpointBasePort = 19200,
     // With [includeXhttp] the xhttp nodes sit in the pool as local socks
     // outbounds to an Xray instance the host runs alongside (one inbound per
     // node from [xhttpBasePort] up, see XrayConfig.buildMulti), so they get
@@ -666,8 +671,47 @@ class SingboxConfig {
       'final': 'local',
       'strategy': 'prefer_ipv4',
     };
+    // AmneziaWG and WireGuard nodes need their own way to be measured.
+    //
+    // They are sing-box `endpoints`, not outbounds. The Clash API lists them
+    // (as type AmneziaWG) so they look testable, but asking it for a delay on
+    // one fails instantly and the core never even attempts a dial: no
+    // "outbound connection to ..." line is logged at all. The result was that
+    // every AmneziaWG server read "no response" while connecting to the very
+    // same server worked, which is what a user reported.
+    //
+    // So each endpoint gets a local inbound of its own, and a route rule
+    // pinning that inbound to it. Measuring one is then a plain timed request
+    // through its port, which exercises the real dial path. Verified against a
+    // live server: an endpoint the Clash API refused to test answered in 245ms
+    // this way.
+    final List<Map<String, dynamic>> rules = <Map<String, dynamic>>[];
+    final Map<String, int> endpointPorts = <String, int>{};
+    final List<dynamic> eps =
+        (cfg['endpoints'] as List<dynamic>?) ?? const <dynamic>[];
+    final List<Map<String, dynamic>> ins =
+        (cfg['inbounds'] as List).cast<Map<String, dynamic>>();
+    for (int i = 0; i < eps.length; i++) {
+      final Object? e = eps[i];
+      if (e is! Map) continue;
+      final String? tag = e['tag'] as String?;
+      if (tag == null || tag.isEmpty) continue;
+      final int port = endpointBasePort + i;
+      final String inTag = 'measure-ep-$i';
+      ins.add(<String, dynamic>{
+        'type': 'mixed',
+        'tag': inTag,
+        'listen': '127.0.0.1',
+        'listen_port': port,
+      });
+      rules.add(<String, dynamic>{
+        'inbound': <String>[inTag],
+        'outbound': tag,
+      });
+      endpointPorts[tag] = port;
+    }
     cfg['route'] = <String, dynamic>{
-      'rules': <Map<String, dynamic>>[],
+      'rules': rules,
       'final': 'direct',
       'auto_detect_interface': true,
     };
@@ -678,7 +722,7 @@ class SingboxConfig {
       'external_controller': '127.0.0.1:$clashPort',
     };
     cfg['experimental'] = experimental;
-    return (config: cfg, tagKeys: tagKeys);
+    return (config: cfg, tagKeys: tagKeys, endpointPorts: endpointPorts);
   }
 
   /// The xhttp nodes that will sit in the auto pool, in the same order they take

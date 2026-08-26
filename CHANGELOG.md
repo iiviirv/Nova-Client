@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.10-beta (2026-08-26)
+
+- Fixed: AmneziaWG servers always read "no response" in the lightning test, even
+  though connecting to the very same server worked. Nova was asking the core to
+  time them the way it times every other server, and for this kind of server that
+  request fails without the core even trying to connect. They are now measured
+  over a real connection instead. Two servers that reported nothing before now
+  answer in about 250 ms.
+
 ## v1.20.9-beta (2026-08-26)
 
 - Fixed: on Android, a connection that never came up could leave Nova stuck on
