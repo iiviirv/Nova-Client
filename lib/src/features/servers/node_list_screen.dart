@@ -400,6 +400,23 @@ class _NodeListScreenState extends State<NodeListScreen> {
       Navigator.of(context, rootNavigator: true).pop();
     }
 
+    // Locking the screen used to crash Nova on iOS mid-search, and it is easy to
+    // see why the window existed: the sweep kept dialling dozens of servers
+    // while the system was tearing the app's networking down around it. Nothing
+    // good comes of measuring servers with the screen off in any case, so the
+    // search stops when the app leaves the foreground rather than racing the
+    // system. The partial results already measured are kept.
+    AppLifecycleListener? life;
+    void stopForBackground() {
+      unawaited(proxy.cancelMeasure());
+      close();
+    }
+
+    life = AppLifecycleListener(
+      onPause: stopForBackground,
+      onDetach: stopForBackground,
+    );
+
     unawaited(showGeneralDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -422,6 +439,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
     try {
       await _measureAll(quiet: true, stopWhen: _freeListSearchDone);
     } finally {
+      life.dispose();
       await ListFreshness.markSynced(profile.id);
       close();
     }

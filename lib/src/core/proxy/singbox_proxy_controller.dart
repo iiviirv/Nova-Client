@@ -782,13 +782,27 @@ class SingboxProxyController extends ProxyController {
 
   void _armWatchdog() {
     _watchdog?.cancel();
-    _watchdog = Timer(_connectTimeout, () {
-      if (_state == ProxyConnectionState.connecting) {
-        _lastError = 'The tunnel did not come up in time. The server may be '
-            'unreachable, try another config or scan a clean IP in Radar.';
-        _state = ProxyConnectionState.error;
-        notifyListeners();
+    _watchdog = Timer(_connectTimeout, () async {
+      if (_state != ProxyConnectionState.connecting) return;
+      const String msg = 'The tunnel did not come up in time. The server may be '
+          'unreachable, try another config or scan a clean IP in Radar.';
+      // Tear the tunnel down for real, do not just relabel it.
+      //
+      // This used to set the state to error and stop there, which left the
+      // VpnService running and stuck. Android keeps a foreground service alive
+      // across the app being swiped away, so reopening Nova asked the platform
+      // for its state and got "connecting" straight back: the app looked wedged,
+      // Disconnect did nothing because there was nothing on this side to stop,
+      // and the only way out was rebooting the phone. One user hit exactly that.
+      // Stopping the platform tunnel here is what makes the error recoverable.
+      try {
+        await disconnect();
+      } catch (_) {
+        // Best effort. Reporting the timeout matters more than a clean stop.
       }
+      _lastError = msg;
+      _state = ProxyConnectionState.error;
+      notifyListeners();
     });
   }
 
