@@ -75,6 +75,12 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned, like the Windows and Linux jobs. Floating on `stable` broke
+          # the build with "Unable to determine Flutter version for channel:
+          # stable version: 3.47.2": the action resolved a newer stable than it
+          # had an x64 build for, on a release that had changed nothing about
+          # Android. A release must not fail because an SDK moved underneath it.
+          flutter-version: 3.44.3
           cache: true
 
       # The patch's hash is part of the key on purpose: editing the core patch
