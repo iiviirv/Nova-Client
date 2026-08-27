@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.14-beta (2026-08-27)
+
+- Fixed: a single AmneziaWG server could stop the whole lightning test, leaving
+  every server untested behind "Could not start the measuring core". It happened
+  when Nova could not look up that server's address, which is exactly what
+  happens when your panel is unreachable and the saved list is all you have, so
+  it hit at the worst moment. That one server now shows as untested and the rest
+  are measured as normal.
+
 ## v1.20.13-beta (2026-08-27)
 
 - Fixed: testing servers got worse the more you used it. After a few tests, or a
