@@ -537,18 +537,43 @@ class DesktopProxyController extends ProxyController {
       if (nodes.length == 1 && nodes.first.network == 'xhttp') {
         final ProxyNode x = await _resolveXhttpServer(nodes.first);
         _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort);
-        // Pass the resolved server IP so the sing-box side routes it direct. In
-        // TUN mode this is what stops Xray's own dial from looping back through
-        // the tunnel; in proxy mode it's harmless (the server IP is the tunnel
-        // endpoint, which belongs direct anyway).
-        final String? serverIp =
-            InternetAddress.tryParse(x.server) != null ? x.server : null;
+        // The server goes on the direct path so Xray's own dial is not captured
+        // by the tunnel and fed back into the socks->Xray chain. It used to be
+        // passed only when it had resolved to an IP, so a server whose name did
+        // not resolve silently got no rule at all and the tunnel carried
+        // nothing. The address is handed over either way now; the route helper
+        // matches an IP by ip_cidr and a name by domain.
         cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort,
-            options: opts, directServerIp: serverIp);
+            options: opts, directServers: <String>[x.server]);
+      } else if (nodes.length == 1) {
+        cfg = SingboxConfig.buildMap(nodes.first, options: opts);
       } else {
-        cfg = nodes.length == 1
-            ? SingboxConfig.buildMap(nodes.first, options: opts)
-            : SingboxConfig.buildMultiMap(nodes, options: opts);
+        // A pool with xhttp nodes in it needs Xray too.
+        //
+        // This branch used to call buildMultiMap with no includeXhttp and never
+        // start Xray, so every xhttp server in a subscription was dropped from
+        // the pool on desktop while the SAME servers were measured, listed and
+        // pickable. Mobile has run them all along, which is why a subscription
+        // that worked on Android did not on Windows or macOS.
+        final List<ProxyNode> xhttpNodes = SingboxConfig.pickedXhttpNodes(
+            nodes,
+            options: opts);
+        final List<String> directServers = <String>[];
+        if (xhttpNodes.isNotEmpty) {
+          final List<ProxyNode> resolvedX = <ProxyNode>[
+            for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
+          ];
+          for (final ProxyNode x in resolvedX) {
+            directServers.add(x.server);
+          }
+          _pendingXrayConfig =
+              XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort);
+        }
+        cfg = SingboxConfig.buildMultiMap(nodes,
+            options: opts,
+            includeXhttp: xhttpNodes.isNotEmpty,
+            xhttpBasePort: _xraySocksPort,
+            xhttpDirectServers: directServers);
       }
       // Remember which real node each `node-i` tag maps to, so the core's live
       // per-node latency (read back from the Clash API) lands on the right

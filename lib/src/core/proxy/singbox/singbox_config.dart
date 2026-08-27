@@ -320,6 +320,10 @@ class SingboxConfig {
     int socksPort, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
     String? directServerIp,
+    /// The xhttp exit's address, resolved or not. Preferred over
+    /// [directServerIp], which only ever accepted an IP and so left the rule
+    /// off entirely when a name did not resolve.
+    List<String> directServers = const <String>[],
   }) {
     return <String, dynamic>{
       'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
@@ -343,7 +347,8 @@ class SingboxConfig {
       ],
       // QUIC stays blocked: the xhttp exit is TCP, and letting UDP escape direct
       // would leak outside the tunnel.
-      'route': _routeResolvingForXray(options, directServerIp: directServerIp),
+      'route': _routeResolvingForXray(options,
+          directServerIp: directServerIp, directServers: directServers),
     };
   }
 
@@ -358,26 +363,57 @@ class SingboxConfig {
   /// LAST, after the domain-based direct/block rules (so those still match on the
   /// name) and before `final: proxy`, so it only touches proxy-bound connections.
   static Map<String, dynamic> _routeResolvingForXray(SingboxRouteOptions o,
-      {String? directServerIp}) {
+      {String? directServerIp, List<String> directServers = const <String>[]}) {
     final Map<String, dynamic> route = _route(o, blockQuic: true);
     final List<dynamic> rules = route['rules'] as List<dynamic>;
-    // Break the TUN loop before anything else: the server IP goes direct, so
-    // Xray's own dial to it (captured by the tunnel) exits on the real interface
-    // instead of re-entering the socks->Xray chain. Placed first so no later rule
-    // can steer it back into the proxy. IPv4 only (the resolver returns v4).
-    if (directServerIp != null &&
-        directServerIp.isNotEmpty &&
-        !directServerIp.contains(':')) {
-      rules.insert(0, <String, dynamic>{
-        'ip_cidr': <String>['$directServerIp/32'],
-        'outbound': 'direct',
-      });
-    }
+    xhttpDirectRules(rules, <String>[
+      if (directServerIp != null && directServerIp.isNotEmpty) directServerIp,
+      ...directServers,
+    ]);
     rules.add(<String, dynamic>{
       'action': 'resolve',
       'strategy': 'prefer_ipv4',
     });
     return route;
+  }
+
+  /// Puts every xhttp exit's address on the `direct` path, ahead of everything.
+  ///
+  /// This is what stops a TUN loop. Xray is a separate process, so its own dial
+  /// to the server is captured by sing-box's tunnel and fed back into the
+  /// socks->Xray chain forever. Sending the server straight out breaks the
+  /// cycle, and it has to be the first rule so nothing later steers it back.
+  ///
+  /// Addresses arrive resolved, and an IP is matched as an `ip_cidr` because
+  /// that is what Xray will actually dial. A name that failed to resolve is
+  /// still matched, by domain, rather than dropped: an omitted rule is not a
+  /// missing optimisation here, it is a tunnel that never carries traffic, and
+  /// that silent failure is exactly what made this hard to find.
+  static void xhttpDirectRules(List<dynamic> rules, List<String> servers) {
+    final List<String> ips = <String>[];
+    final List<String> domains = <String>[];
+    for (final String a in servers) {
+      final String v = a.trim();
+      if (v.isEmpty) continue;
+      if (v.contains(':')) continue; // IPv6: the resolver returns v4
+      if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(v)) {
+        if (!ips.contains(v)) ips.add(v);
+      } else if (!domains.contains(v)) {
+        domains.add(v);
+      }
+    }
+    if (domains.isNotEmpty) {
+      rules.insert(0, <String, dynamic>{
+        'domain': domains,
+        'outbound': 'direct',
+      });
+    }
+    if (ips.isNotEmpty) {
+      rules.insert(0, <String, dynamic>{
+        'ip_cidr': <String>[for (final String ip in ips) '$ip/32'],
+        'outbound': 'direct',
+      });
+    }
   }
 
   /// Returns the config as a map (useful for tests / further mutation).
@@ -746,6 +782,11 @@ class SingboxConfig {
     int xhttpBasePort = 10808,
     int? poolCap,
     bool forceGroup = false,
+    /// The xhttp exits' addresses, already resolved where possible. Needed in
+    /// TUN mode for the same reason the single-node path needs it: without them
+    /// Xray's own dial loops back through the tunnel. Ignored when the pool has
+    /// no xhttp nodes.
+    List<String> xhttpDirectServers = const <String>[],
   }) {
     final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
         options: options, includeXhttp: includeXhttp, poolCap: poolCap);
@@ -851,8 +892,14 @@ class SingboxConfig {
       if (nodeEndpoints.isNotEmpty) 'endpoints': nodeEndpoints,
       // If any exit in the pool is UDP-native (Hysteria2/TUIC/AmneziaWG), let
       // QUIC flow; otherwise (an all-worker pool) keep blocking it.
-      'route': _route(options,
-          blockQuic: !picked.any((ProxyNode n) => n.protocol.isUdpNative)),
+      'route': () {
+        final Map<String, dynamic> r = _route(options,
+            blockQuic: !picked.any((ProxyNode n) => n.protocol.isUdpNative));
+        if (xhttpDirectServers.isNotEmpty) {
+          xhttpDirectRules(r['rules'] as List<dynamic>, xhttpDirectServers);
+        }
+        return r;
+      }(),
     };
   }
 

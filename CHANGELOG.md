@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.20.11-beta (2026-08-26)
+
+- Fixed: on Windows and macOS, xhttp servers from a subscription did not work.
+  Two separate faults, both of them silent: a subscription's xhttp servers were
+  left out of the pool entirely on desktop even though the same servers were
+  measured and shown as choosable, and the rule that keeps the second core's own
+  connection out of the tunnel was skipped whenever the server's name did not
+  resolve. Either one leaves you looking at "Connected" with nothing loading.
+  Phones were never affected, which is why the same subscription worked there.
+
+- Added: a subscription can offer a Telegram proxy, and Nova now shows it. When
+  yours includes one, a Telegram proxy row appears on the subscription card on
+  the home screen and opens it. Nothing connects through it and it is not a Nova
+  server; it is a shortcut, and it is absent when your subscription has none.
+
 ## v1.20.10-beta (2026-08-26)
 
 - Fixed: AmneziaWG servers always read "no response" in the lightning test, even
