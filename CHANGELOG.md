@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.20.12-beta (2026-08-27)
+
+- Fixed: tapping a subscription's Telegram proxy opened a web page instead of
+  adding the proxy to Telegram. It now hands the proxy straight to the Telegram
+  app, and only falls back to the web page when there is no Telegram installed
+  to take it.
+
+- Added: a subscription can now ask for the SNI-block bypass to be on from the
+  start, for a server the operator knows sits behind a network that blocks the
+  domain. Your own switch still decides: once you have set it yourself, refreshing
+  the subscription leaves it exactly as you left it.
+
 ## v1.20.11-beta (2026-08-26)
 
 - Fixed: on Windows and macOS, xhttp servers from a subscription did not work.

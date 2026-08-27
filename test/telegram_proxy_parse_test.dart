@@ -1,49 +1,79 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/subscription.dart';
 
-/// A `target=nova` subscription can advertise a Telegram proxy alongside the
-/// servers. It is not a Nova exit and nothing connects to it; it is a link the
-/// user can hand to Telegram, so the client's only job is to find it and offer
-/// it. A user reported seeing it in the subscription but nowhere in the app.
+/// A `target=nova` subscription can advertise a Telegram proxy and an
+/// SNI-block default alongside the servers.
+///
+/// Nova Server 1.72.0 renamed the proxy fields from `tg`/`tme` to
+/// `url`/`webUrl`, with the old names removed rather than aliased. The rename
+/// exists to fix a real mistake: `tme` only opens a web page showing a proxy
+/// the reader cannot add, and Nova shipped it as the primary action. `url` is
+/// the `tg://` link that hands the proxy to Telegram, and it is what must be
+/// tapped first.
 void main() {
   String body(String inner) => '{"outbounds":[],"nova":{$inner}}';
 
-  test('reads the t.me form in preference to the tg:// one', () {
-    final String? url = parseNovaTelegramProxy(body(
-        '"telegramProxy":{"tme":"https://t.me/proxy?server=a&port=1&secret=s",'
-        '"tg":"tg://proxy?server=a&port=1&secret=s"}'));
-    expect(url, 'https://t.me/proxy?server=a&port=1&secret=s');
+  group('telegram proxy', () {
+    test('uses the app link, and keeps the web one only as a fallback', () {
+      final TelegramProxy? p = parseNovaTelegramProxy(body(
+          '"telegramProxy":{"url":"tg://proxy?server=a&port=1&secret=s",'
+          '"webUrl":"https://t.me/proxy?server=a&port=1&secret=s"}'));
+      expect(p!.url, startsWith('tg://'),
+          reason: 'the web link must never be the primary action');
+      expect(p.webUrl, startsWith('https://t.me/'));
+    });
+
+    test('still reads a pre-1.72.0 panel, which used tg/tme', () {
+      final TelegramProxy? p = parseNovaTelegramProxy(body(
+          '"telegramProxy":{"tg":"tg://proxy?server=a&port=1&secret=s",'
+          '"tme":"https://t.me/proxy?server=a&port=1&secret=s"}'));
+      expect(p!.url, startsWith('tg://'));
+      expect(p.webUrl, startsWith('https://t.me/'));
+    });
+
+    test('builds the app link from the parts when no link is given', () {
+      final TelegramProxy? p = parseNovaTelegramProxy(body(
+          '"telegramProxy":{"server":"vpn.example.com","port":2053,"secret":"ab"}'));
+      expect(p!.url, 'tg://proxy?server=vpn.example.com&port=2053&secret=ab');
+      expect(p.webUrl,
+          'https://t.me/proxy?server=vpn.example.com&port=2053&secret=ab');
+    });
+
+    test('a web link on its own is still offered rather than dropped', () {
+      final TelegramProxy? p = parseNovaTelegramProxy(
+          body('"telegramProxy":{"webUrl":"https://t.me/proxy?server=a"}'));
+      expect(p!.url, startsWith('https://t.me/'));
+    });
+
+    test('no proxy, a link-list body, or junk all yield null', () {
+      expect(parseNovaTelegramProxy('{"outbounds":[]}'), isNull);
+      expect(parseNovaTelegramProxy(body('"somethingElse":1')), isNull);
+      expect(parseNovaTelegramProxy('vless://x@a:1?type=ws'), isNull);
+      expect(parseNovaTelegramProxy(''), isNull);
+    });
   });
 
-  test('falls back to the tg:// form when that is all there is', () {
-    final String? url = parseNovaTelegramProxy(
-        body('"telegramProxy":{"tg":"tg://proxy?server=a&port=1&secret=s"}'));
-    expect(url, 'tg://proxy?server=a&port=1&secret=s');
+  group('sni block bypass', () {
+    test('present and true means on', () {
+      expect(parseNovaSniBlockBypass(body('"sniBlockBypass":true')), isTrue);
+    });
+
+    test('absent means off, which is how the server says off', () {
+      expect(parseNovaSniBlockBypass(body('"telegramProxy":{}')), isFalse);
+      expect(parseNovaSniBlockBypass('{"outbounds":[]}'), isFalse);
+      expect(parseNovaSniBlockBypass('vless://x@a:1'), isFalse);
+    });
   });
 
-  test('assembles one from the parts when neither link is given', () {
-    final String? url = parseNovaTelegramProxy(body(
-        '"telegramProxy":{"server":"vpn.example.com","port":2053,"secret":"ab"}'));
-    expect(url, 'https://t.me/proxy?server=vpn.example.com&port=2053&secret=ab');
-  });
-
-  test('a subscription with no Telegram proxy yields null, not an error', () {
-    expect(parseNovaTelegramProxy('{"outbounds":[]}'), isNull);
-    expect(parseNovaTelegramProxy(body('"somethingElse":1')), isNull);
-  });
-
-  test('a link-list subscription is not JSON and must not throw', () {
-    expect(parseNovaTelegramProxy('vless://x@a:1?type=ws\ntrojan://y@b:2'), isNull);
-    expect(parseNovaTelegramProxy(''), isNull);
-  });
-
-  test('parsing a body sets the side channel, and clears it for one without',
-      () {
+  test('parsing sets both side channels, and clears them for a plain body', () {
     parseSubscriptionBody(body(
-        '"telegramProxy":{"tme":"https://t.me/proxy?server=a&port=1&secret=s"}'));
-    expect(lastTelegramProxy, 'https://t.me/proxy?server=a&port=1&secret=s');
-    // A later subscription with none must not inherit the previous one's link.
+        '"telegramProxy":{"url":"tg://proxy?server=a&port=1&secret=s"},'
+        '"sniBlockBypass":true'));
+    expect(lastTelegramProxy!.url, 'tg://proxy?server=a&port=1&secret=s');
+    expect(lastSniBlockBypass, isTrue);
+    // A later subscription with neither must not inherit the previous one's.
     parseSubscriptionBody('vless://x@a:1?type=ws');
     expect(lastTelegramProxy, isNull);
+    expect(lastSniBlockBypass, isFalse);
   });
 }

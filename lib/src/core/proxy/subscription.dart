@@ -162,44 +162,89 @@ class SkippedLinks {
 /// wants the nodes, and only the node list wants to explain the gaps.
 SkippedLinks lastSkippedLinks = SkippedLinks(<String, int>{});
 
-/// The Telegram proxy a `target=nova` subscription advertises, or null when the
-/// last body carried none.
+/// A Telegram proxy a `target=nova` subscription advertises.
+///
+/// Two links for one proxy. [url] is `tg://proxy?...` and hands the proxy
+/// straight to the Telegram app, which is the point of the entry. [webUrl] is
+/// `https://t.me/proxy?...` and only opens a web page, so it is the fallback for
+/// a device with no Telegram installed and never the primary action: a customer
+/// who taps it lands in a browser looking at a proxy they cannot add. Nova
+/// shipped the web link as the primary action once, which is the mistake the
+/// server renamed these fields to stop.
+class TelegramProxy {
+  const TelegramProxy({required this.url, this.webUrl});
+
+  final String url;
+  final String? webUrl;
+}
+
+/// The Telegram proxy the last parsed subscription advertised, or null.
 ///
 /// A side channel for the same reason as [lastSkippedLinks]: every caller wants
 /// the nodes, and threading a second return value through all of them to carry
 /// one optional link is not worth it. Set on every parse, so it always describes
 /// the body just read.
-String? lastTelegramProxy;
+TelegramProxy? lastTelegramProxy;
 
-/// The Telegram proxy link out of a `target=nova` body's `nova` block.
+/// Whether the last parsed subscription asked for the SNI-block bypass on by
+/// default (`nova.sniBlockBypass`).
 ///
-/// The panel publishes it as `nova.telegramProxy`, with a `tme`
-/// (`https://t.me/proxy?...`) and a `tg` (`tg://proxy?...`) form. The t.me one
-/// is preferred: it opens Telegram when Telegram is installed and still shows
-/// something useful when it is not, whereas a `tg://` link that nothing handles
-/// simply fails. Falls back to assembling one when only the parts are present.
-String? parseNovaTelegramProxy(String text) {
+/// Absent means off; the server never sends `false`. This is the operator
+/// saying "this subscription sits behind a network that blocks the domain", not
+/// a lock: the user's own switch still wins, and a refresh must not turn it back
+/// on after they have turned it off.
+bool lastSniBlockBypass = false;
+
+/// The Telegram proxy out of a `target=nova` body's `nova` block.
+///
+/// Reads `url` / `webUrl`, and still accepts the `tg` / `tme` names Nova Server
+/// used before 1.72.0 so a client this new keeps working against a panel that
+/// is not. Falls back to assembling the link from the parts.
+TelegramProxy? parseNovaTelegramProxy(String text) {
+  final Map<String, dynamic>? nova = _novaBlock(text);
+  if (nova == null) return null;
+  final Object? tp = nova['telegramProxy'];
+  if (tp is! Map) return null;
+  String? str(String k) {
+    final Object? v = tp[k];
+    return v is String && v.trim().isNotEmpty ? v.trim() : null;
+  }
+
+  final String? web = str('webUrl') ?? str('tme');
+  final String? direct = str('url') ?? str('tg');
+  if (direct != null) return TelegramProxy(url: direct, webUrl: web);
+  // No direct link: build one, because the app link is what the entry is for.
+  final Object? server = tp['server'];
+  final Object? port = tp['port'];
+  final String? secret = str('secret');
+  if (server is String && server.isNotEmpty && port != null && secret != null) {
+    return TelegramProxy(
+      url: 'tg://proxy?server=$server&port=$port&secret=$secret',
+      webUrl: web ??
+          'https://t.me/proxy?server=$server&port=$port&secret=$secret',
+    );
+  }
+  // Only a web link. Better than nothing, and the UI falls back to it anyway.
+  if (web != null) return TelegramProxy(url: web);
+  return null;
+}
+
+/// Whether the body asks for the SNI-block bypass on by default.
+bool parseNovaSniBlockBypass(String text) =>
+    _novaBlock(text)?['sniBlockBypass'] == true;
+
+/// The `nova` block of a `target=nova` document, or null for anything else.
+Map<String, dynamic>? _novaBlock(String text) {
   try {
     final Object? decoded = jsonDecode(text);
     if (decoded is! Map) return null;
     final Object? nova = decoded['nova'];
     if (nova is! Map) return null;
-    final Object? tp = nova['telegramProxy'];
-    if (tp is! Map) return null;
-    final Object? tme = tp['tme'];
-    if (tme is String && tme.trim().isNotEmpty) return tme.trim();
-    final Object? tg = tp['tg'];
-    if (tg is String && tg.trim().isNotEmpty) return tg.trim();
-    final Object? server = tp['server'];
-    final Object? port = tp['port'];
-    final Object? secret = tp['secret'];
-    if (server is String && server.isNotEmpty && port != null && secret is String) {
-      return 'https://t.me/proxy?server=$server&port=$port&secret=$secret';
-    }
+    return nova.cast<String, dynamic>();
   } catch (_) {
-    // Not JSON, or not the shape we expect: no Telegram proxy, not an error.
+    // Not JSON, or not the shape we expect: no nova block, not an error.
+    return null;
   }
-  return null;
 }
 
 /// Parses a subscription body (base64 or plaintext newline-separated links)
@@ -211,8 +256,10 @@ List<ProxyNode> parseSubscriptionBody(String body) {
   // how a Nova-target subscription imported with zero servers. Take that shape
   // first (base64-wrapped or plain), then fall through to the link parser.
   lastTelegramProxy = null;
+  lastSniBlockBypass = false;
   if (looksLikeSingboxConfig(text)) {
     lastTelegramProxy = parseNovaTelegramProxy(text);
+    lastSniBlockBypass = parseNovaSniBlockBypass(text);
     final List<ProxyNode> fromConfig = parseSingboxOutbounds(text)
         .where((ProxyNode n) => !_isPlaceholderNode(n))
         .toList();

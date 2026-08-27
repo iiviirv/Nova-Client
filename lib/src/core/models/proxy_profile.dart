@@ -63,6 +63,8 @@ class ProxyProfile {
     this.bypassCipherSuites,
     this.bypassFragmentMask,
     this.telegramProxy,
+    this.telegramProxyWeb,
+    this.hardenTlsUserSet = false,
   });
 
   final String id;
@@ -76,10 +78,23 @@ class ProxyProfile {
   final String? subscriptionUrl;
 
   /// Number of nodes resolved from a subscription (1 for single links).
-  /// A Telegram proxy the subscription advertises (`nova.telegramProxy`), as a
-  /// link to open. Null for a subscription that publishes none, and for every
-  /// non-subscription profile.
+  /// The Telegram proxy a subscription advertises (`nova.telegramProxy`), as
+  /// the `tg://` link that hands it to the Telegram app. Null for a
+  /// subscription that publishes none, and every non-subscription profile.
   final String? telegramProxy;
+
+  /// The web fallback for [telegramProxy], used only when the device has no
+  /// Telegram app to take the `tg://` link. Never the primary action: it opens
+  /// a page showing a proxy the reader cannot add.
+  final String? telegramProxyWeb;
+
+  /// Whether the user has decided about [hardenTls] themselves.
+  ///
+  /// A subscription can ask for the bypass on by default (`nova.sniBlockBypass`)
+  /// because the operator knows it sits behind a network that blocks the domain.
+  /// That is a default, not a lock: once the user has set the switch either way,
+  /// this is true and a later refresh must leave their choice alone.
+  final bool hardenTlsUserSet;
 
   final int nodeCount;
 
@@ -135,6 +150,8 @@ class ProxyProfile {
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
+    String? telegramProxyWeb,
+    bool? hardenTlsUserSet,
     String? telegramProxy,
     String? name,
     String? uri,
@@ -175,6 +192,8 @@ class ProxyProfile {
           ? this.bypassCipherSuites
           : bypassCipherSuites as List<String>?,
       telegramProxy: telegramProxy ?? this.telegramProxy,
+        telegramProxyWeb: telegramProxyWeb ?? this.telegramProxyWeb,
+        hardenTlsUserSet: hardenTlsUserSet ?? this.hardenTlsUserSet,
         bypassFragmentMask: bypassFragmentMask == _unset
           ? this.bypassFragmentMask
           : bypassFragmentMask as String?,
@@ -183,6 +202,8 @@ class ProxyProfile {
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         if (telegramProxy != null) 'telegramProxy': telegramProxy,
+        if (telegramProxyWeb != null) 'telegramProxyWeb': telegramProxyWeb,
+        if (hardenTlsUserSet) 'hardenTlsUserSet': true,
         'id': id,
         'name': name,
         'kind': kind.name,
@@ -203,6 +224,8 @@ class ProxyProfile {
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
         telegramProxy: json['telegramProxy'] as String?,
+        telegramProxyWeb: json['telegramProxyWeb'] as String?,
+        hardenTlsUserSet: json['hardenTlsUserSet'] as bool? ?? false,
         id: json['id'] as String,
         name: json['name'] as String,
         kind: ProxyKind.values.firstWhere(

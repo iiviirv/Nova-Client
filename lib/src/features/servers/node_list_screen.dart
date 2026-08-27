@@ -597,7 +597,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (profile == null || profile.hardenTls == on) return;
     NovaLog.instance.write(
         'You turned the SNI-block bypass ${on ? 'on' : 'off'} for "${profile.name}"');
-    final updated = profile.copyWith(hardenTls: on);
+    // Mark it decided: a subscription can ask for this on by default, and once
+    // the user has chosen, a refresh must not quietly change it back.
+    final updated = profile.copyWith(hardenTls: on, hardenTlsUserSet: true);
     scope.profiles.update(updated);
     _bypassSuggested = false;
     if (mounted) setState(() {});

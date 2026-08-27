@@ -1316,7 +1316,10 @@ class _ConfigCardBody extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: NovaSpace.sm),
               child: Divider(height: 1, color: nova.border),
             ),
-            _TelegramProxyRow(url: active.telegramProxy!),
+            _TelegramProxyRow(
+              url: active.telegramProxy!,
+              webUrl: active.telegramProxyWeb,
+            ),
           ],
         ],
       ),
@@ -1326,23 +1329,36 @@ class _ConfigCardBody extends StatelessWidget {
 
 /// The "open this subscription's Telegram proxy" shortcut.
 ///
-/// Tapping hands the link to the system, which is what opens Telegram. A
-/// failure is silent on purpose: the only ways this fails are Telegram not
-/// being installed or the platform refusing the scheme, and neither is
-/// something an error dialog on Nova's dashboard helps with.
+/// Tapping hands the `tg://` link to Telegram, which adds the proxy in one
+/// step. [webUrl] is tried only if nothing on the device takes that scheme,
+/// which in practice means Telegram is not installed. It is never tried first:
+/// it opens a web page showing a proxy the reader cannot add from there, and
+/// making that the primary action was the bug the server renamed these fields
+/// to stop.
+///
+/// Failing silently after both is deliberate. By then the only explanation is
+/// that the device has no Telegram and no browser willing to take it, and an
+/// error dialog on Nova's dashboard does not help with either.
 class _TelegramProxyRow extends StatelessWidget {
-  const _TelegramProxyRow({required this.url});
+  const _TelegramProxyRow({required this.url, this.webUrl});
 
   final String url;
+  final String? webUrl;
+
+  Future<bool> _launch(String? raw) async {
+    if (raw == null || raw.isEmpty) return false;
+    final Uri? u = Uri.tryParse(raw);
+    if (u == null) return false;
+    try {
+      return await launchUrl(u, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> _open() async {
-    final Uri? u = Uri.tryParse(url);
-    if (u == null) return;
-    try {
-      await launchUrl(u, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // Nothing to recover: see the note above.
-    }
+    if (await _launch(url)) return;
+    await _launch(webUrl);
   }
 
   @override

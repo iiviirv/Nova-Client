@@ -925,11 +925,21 @@ Future<void> _resolveProfileMetadata(
       return;
     }
 
-    // The Telegram proxy the panel advertises comes out of the same parse (see
-    // lastTelegramProxy), so it is picked up whenever the node count is.
+    // The Telegram proxy and the operator's SNI-block default come out of the
+    // same parse (see lastTelegramProxy / lastSniBlockBypass), so they are
+    // picked up whenever the node count is.
+    //
+    // The bypass is a DEFAULT, not a lock. It is applied only while the user has
+    // not decided for themselves: once they have touched the switch, their
+    // choice stands and a refresh leaves it alone. Without that, an operator who
+    // turns it on would silently re-enable it every time the list refreshed, on
+    // top of the user having turned it off.
+    final bool applyBypass = lastSniBlockBypass && !current.hardenTlsUserSet;
     profiles.update(current.copyWith(
       nodeCount: nodes.length,
-      telegramProxy: lastTelegramProxy,
+      telegramProxy: lastTelegramProxy?.url,
+      telegramProxyWeb: lastTelegramProxy?.webUrl,
+      hardenTls: applyBypass ? true : null,
     ));
   } catch (_) {
     // Keep the existing metadata; a later app launch or node-list refresh will
