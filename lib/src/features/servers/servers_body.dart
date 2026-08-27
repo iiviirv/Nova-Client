@@ -925,7 +925,12 @@ Future<void> _resolveProfileMetadata(
       return;
     }
 
-    profiles.update(current.copyWith(nodeCount: nodes.length));
+    // The Telegram proxy the panel advertises comes out of the same parse (see
+    // lastTelegramProxy), so it is picked up whenever the node count is.
+    profiles.update(current.copyWith(
+      nodeCount: nodes.length,
+      telegramProxy: lastTelegramProxy,
+    ));
   } catch (_) {
     // Keep the existing metadata; a later app launch or node-list refresh will
     // try again.

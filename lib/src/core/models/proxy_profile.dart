@@ -62,6 +62,7 @@ class ProxyProfile {
     this.bypassFingerprint,
     this.bypassCipherSuites,
     this.bypassFragmentMask,
+    this.telegramProxy,
   });
 
   final String id;
@@ -75,6 +76,11 @@ class ProxyProfile {
   final String? subscriptionUrl;
 
   /// Number of nodes resolved from a subscription (1 for single links).
+  /// A Telegram proxy the subscription advertises (`nova.telegramProxy`), as a
+  /// link to open. Null for a subscription that publishes none, and for every
+  /// non-subscription profile.
+  final String? telegramProxy;
+
   final int nodeCount;
 
   /// Most recent measured latency, if probed.
@@ -129,6 +135,7 @@ class ProxyProfile {
   bool get isSubscription => kind == ProxyKind.subscription;
 
   ProxyProfile copyWith({
+    String? telegramProxy,
     String? name,
     String? uri,
     String? subscriptionUrl,
@@ -167,13 +174,15 @@ class ProxyProfile {
       bypassCipherSuites: bypassCipherSuites == _unset
           ? this.bypassCipherSuites
           : bypassCipherSuites as List<String>?,
-      bypassFragmentMask: bypassFragmentMask == _unset
+      telegramProxy: telegramProxy ?? this.telegramProxy,
+        bypassFragmentMask: bypassFragmentMask == _unset
           ? this.bypassFragmentMask
           : bypassFragmentMask as String?,
     );
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
+        if (telegramProxy != null) 'telegramProxy': telegramProxy,
         'id': id,
         'name': name,
         'kind': kind.name,
@@ -193,6 +202,7 @@ class ProxyProfile {
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
+        telegramProxy: json['telegramProxy'] as String?,
         id: json['id'] as String,
         name: json['name'] as String,
         kind: ProxyKind.values.firstWhere(

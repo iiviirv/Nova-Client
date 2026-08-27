@@ -157,6 +157,7 @@ class NovaStrings {
   String get homeTime => t('home.time');
   String get homeData => t('home.data');
   String get homeExpiry => t('home.expiry');
+  String get homeTelegramProxy => t('home.telegramProxy');
   String get homeSingleConfig => t('home.singleConfig');
 
   /// Small banner shown on the dashboard when a newer release exists.
@@ -948,6 +949,7 @@ class NovaStrings {
     'home.connectedVia': 'Connected via',
     'home.connectedAuto': 'Auto (picking the fastest)',
     'home.expiry': 'Expiry',
+    'home.telegramProxy': 'Telegram proxy',
     'home.singleConfig': 'Single config',
     'cf.connectedTo': 'Connected to Cloudflare',
     'cf.connect': 'Connect Cloudflare',
@@ -1776,6 +1778,7 @@ class NovaStrings {
     'home.connectedVia': 'متصل از طریق',
     'home.connectedAuto': 'خودکار (انتخاب سریع‌ترین)',
     'home.expiry': 'انقضا',
+    'home.telegramProxy': 'پروکسی تلگرام',
     'home.singleConfig': 'پیکربندی تکی',
     'cf.connectedTo': 'متصل به کلودفلر',
     'cf.connect': 'اتصال به کلودفلر',

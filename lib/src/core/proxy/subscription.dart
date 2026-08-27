@@ -162,6 +162,46 @@ class SkippedLinks {
 /// wants the nodes, and only the node list wants to explain the gaps.
 SkippedLinks lastSkippedLinks = SkippedLinks(<String, int>{});
 
+/// The Telegram proxy a `target=nova` subscription advertises, or null when the
+/// last body carried none.
+///
+/// A side channel for the same reason as [lastSkippedLinks]: every caller wants
+/// the nodes, and threading a second return value through all of them to carry
+/// one optional link is not worth it. Set on every parse, so it always describes
+/// the body just read.
+String? lastTelegramProxy;
+
+/// The Telegram proxy link out of a `target=nova` body's `nova` block.
+///
+/// The panel publishes it as `nova.telegramProxy`, with a `tme`
+/// (`https://t.me/proxy?...`) and a `tg` (`tg://proxy?...`) form. The t.me one
+/// is preferred: it opens Telegram when Telegram is installed and still shows
+/// something useful when it is not, whereas a `tg://` link that nothing handles
+/// simply fails. Falls back to assembling one when only the parts are present.
+String? parseNovaTelegramProxy(String text) {
+  try {
+    final Object? decoded = jsonDecode(text);
+    if (decoded is! Map) return null;
+    final Object? nova = decoded['nova'];
+    if (nova is! Map) return null;
+    final Object? tp = nova['telegramProxy'];
+    if (tp is! Map) return null;
+    final Object? tme = tp['tme'];
+    if (tme is String && tme.trim().isNotEmpty) return tme.trim();
+    final Object? tg = tp['tg'];
+    if (tg is String && tg.trim().isNotEmpty) return tg.trim();
+    final Object? server = tp['server'];
+    final Object? port = tp['port'];
+    final Object? secret = tp['secret'];
+    if (server is String && server.isNotEmpty && port != null && secret is String) {
+      return 'https://t.me/proxy?server=$server&port=$port&secret=$secret';
+    }
+  } catch (_) {
+    // Not JSON, or not the shape we expect: no Telegram proxy, not an error.
+  }
+  return null;
+}
+
 /// Parses a subscription body (base64 or plaintext newline-separated links)
 /// into nodes, skipping anything that doesn't parse.
 List<ProxyNode> parseSubscriptionBody(String body) {
@@ -170,7 +210,9 @@ List<ProxyNode> parseSubscriptionBody(String body) {
   // list of share links; the line parser below finds nothing in it, which is
   // how a Nova-target subscription imported with zero servers. Take that shape
   // first (base64-wrapped or plain), then fall through to the link parser.
+  lastTelegramProxy = null;
   if (looksLikeSingboxConfig(text)) {
+    lastTelegramProxy = parseNovaTelegramProxy(text);
     final List<ProxyNode> fromConfig = parseSingboxOutbounds(text)
         .where((ProxyNode n) => !_isPlaceholderNode(n))
         .toList();

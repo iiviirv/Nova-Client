@@ -1306,7 +1306,67 @@ class _ConfigCardBody extends StatelessWidget {
               ),
             ],
           ),
+          // A subscription can advertise a Telegram proxy (nova.telegramProxy).
+          // It is not a Nova server and nothing here connects to it: it is a
+          // link Telegram itself handles, so it is offered as a shortcut and
+          // nothing more. Absent from every subscription that does not publish
+          // one, which is most of them.
+          if (active.telegramProxy != null) ...<Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: NovaSpace.sm),
+              child: Divider(height: 1, color: nova.border),
+            ),
+            _TelegramProxyRow(url: active.telegramProxy!),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// The "open this subscription's Telegram proxy" shortcut.
+///
+/// Tapping hands the link to the system, which is what opens Telegram. A
+/// failure is silent on purpose: the only ways this fails are Telegram not
+/// being installed or the platform refusing the scheme, and neither is
+/// something an error dialog on Nova's dashboard helps with.
+class _TelegramProxyRow extends StatelessWidget {
+  const _TelegramProxyRow({required this.url});
+
+  final String url;
+
+  Future<void> _open() async {
+    final Uri? u = Uri.tryParse(url);
+    if (u == null) return;
+    try {
+      await launchUrl(u, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Nothing to recover: see the note above.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    return InkWell(
+      onTap: _open,
+      borderRadius: BorderRadius.circular(NovaRadii.card),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: NovaSpace.sm),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.send_rounded, size: 18, color: nova.indigo),
+            const SizedBox(width: NovaSpace.md),
+            Expanded(
+              child: Text(
+                s.homeTelegramProxy,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded, size: 16, color: nova.muted),
+          ],
+        ),
       ),
     );
   }
