@@ -336,11 +336,21 @@ class DesktopProxyController extends ProxyController {
   /// orb "connected" while nothing loads; probe for ~18s (letting urltest settle)
   /// and, if still nothing, rebuild the core ONCE so it re-picks. Guarded against
   /// looping; the dashboard's honest "Verifying…" label covers the wait.
+  /// How long to wait before the nth connectivity probe. See the note on the
+  /// mobile controller's `_probeBackoff`: a flat three seconds meant a tunnel
+  /// already carrying traffic still sat on "Verifying" for three of them.
+  static Duration _probeBackoff(int attempt) => switch (attempt) {
+        0 => const Duration(milliseconds: 500),
+        1 => const Duration(milliseconds: 900),
+        2 => const Duration(milliseconds: 1600),
+        _ => const Duration(seconds: 3),
+      };
+
   Future<void> _verifyAutoConnectivity() async {
     final ProxyProfile? profile = _active;
     if (profile == null || !profile.isSubscription) return;
-    for (int attempt = 0; attempt < 6; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
+    for (int attempt = 0; attempt < 7; attempt++) {
+      await Future<void>.delayed(_probeBackoff(attempt));
       if (_state != ProxyConnectionState.connected || _active?.id != profile.id) {
         return;
       }
@@ -1348,12 +1358,40 @@ class DesktopProxyController extends ProxyController {
 
   Process? _measureProcess;
 
+  /// Serialises measuring runs; see the note on the mobile controller's
+  /// `_measureLock`. [cancelMeasure] clears `measuring` at once while the run it
+  /// cancelled is still inside dials that can take up to a minute to give up, so
+  /// the flag alone let a second measuring core start on top of the first. The
+  /// protocols that pay a real handshake (Reality, Hysteria2, SS2022, mieru) are
+  /// the ones that lose that race and read "no response".
+  Future<void> _measureTail = Future<void>.value();
+
+  Future<T> _serialiseMeasure<T>(Future<T> Function() body) {
+    final Future<T> result = _measureTail.then((_) => body());
+    _measureTail = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   @override
   Future<String?> measureNodes(List<ProxyNode> nodes,
       {bool merge = false,
       int? stopAfterWorking,
+      bool Function(Map<String, int> delays)? stopWhen}) {
+    if (measuring.value) return Future<String?>.value();
+    if (nodes.isEmpty) return Future<String?>.value();
+    return _serialiseMeasure(() async {
+      // Re-check under the lock: the run we queued behind may have already done
+      // this, or the tunnel may have come up while we waited.
+      if (measuring.value) return null;
+      return _measureNodes(nodes,
+          merge: merge, stopAfterWorking: stopAfterWorking, stopWhen: stopWhen);
+    });
+  }
+
+  Future<String?> _measureNodes(List<ProxyNode> nodes,
+      {bool merge = false,
+      int? stopAfterWorking,
       bool Function(Map<String, int> delays)? stopWhen}) async {
-    if (measuring.value) return null;
     if (nodes.isEmpty) return null;
     if (tunMode && (_state.isActive || _state.isBusy)) {
       // In full-device mode every dial the measuring core makes would itself

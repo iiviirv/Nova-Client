@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.20.13-beta (2026-08-27)
+
+- Fixed: testing servers got worse the more you used it. After a few tests, or a
+  few server switches, Reality, Hysteria2 and Shadowsocks 2022 servers started
+  reporting "no response" even though they worked, and only a longer timeout or a
+  freshly opened app made it right again. Stopping a test cleared it from the
+  screen while it was still running underneath, so the next test started a second
+  one on top of the first. The two competed, and the servers that need a real
+  handshake to open a connection were the ones that ran out of time. A new test
+  now waits for the previous one to actually finish.
+
+- Changed: connecting spends much less time on "Verifying". Nova waited three
+  seconds before its first check and three between each one after, so a server
+  already carrying traffic still sat there for three seconds, and a dead one took
+  up to eighteen to say so. It now checks almost immediately and slows down only
+  if the first answers do not come, so a working server turns green about as fast
+  as it connects.
+
+- Fixed: on iPhone, locking the screen during a lightning test could close the
+  app. Testing now stops when Nova leaves the foreground, as the free server
+  search already did. A tunnel keeps running with the screen off, as before.
+
 ## v1.20.12-beta (2026-08-27)
 
 - Fixed: tapping a subscription's Telegram proxy opened a web page instead of

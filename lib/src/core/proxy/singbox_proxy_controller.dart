@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState;
 import 'package:path_provider/path_provider.dart';
 
 import '../cleanip/clean_ip_finder.dart';
@@ -110,6 +111,29 @@ class SingboxProxyController extends ProxyController {
         _events = events ?? const EventChannel('nova.proxy/events'),
         _features = features ?? CoreFeatures.instance {
     _subscribe();
+    _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
+  }
+
+  AppLifecycleListener? _lifecycle;
+
+  /// Stop measuring when the app leaves the foreground.
+  ///
+  /// A lightning test is dozens of concurrent dials. On iOS, locking the screen
+  /// while one is running crashed the app: the sweep kept dialling while the
+  /// system tore the app's networking down around it. Desktop has had a
+  /// lifecycle listener for its pollers; this side had none at all, so nothing
+  /// stopped the sweep.
+  ///
+  /// Only measuring is stopped. A tunnel must keep running with the screen off,
+  /// which is the whole point of it.
+  void _onLifecycle(AppLifecycleState state) {
+    final bool background = state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached;
+    if (background && measuring.value) {
+      NovaLog.instance.write('Stopped measuring: Nova left the foreground');
+      unawaited(cancelMeasure());
+    }
   }
 
   final MethodChannel _control;
@@ -461,6 +485,24 @@ class SingboxProxyController extends ProxyController {
         _state != ProxyConnectionState.error) {
       return 'Disconnect first to measure all servers.';
     }
+    return _measureLock.synchronized(() async {
+      // Re-check under the lock: the run we queued behind may have already done
+      // what this one was going to do, and the tunnel may have come up while we
+      // waited.
+      if (measuring.value) return null;
+      if (_state != ProxyConnectionState.disconnected &&
+          _state != ProxyConnectionState.error) {
+        return 'Disconnect first to measure all servers.';
+      }
+      return _measureNodes(nodes,
+          merge: merge, stopAfterWorking: stopAfterWorking, stopWhen: stopWhen);
+    });
+  }
+
+  Future<String?> _measureNodes(List<ProxyNode> nodes,
+      {bool merge = false,
+      int? stopAfterWorking,
+      bool Function(Map<String, int> delays)? stopWhen}) async {
     measuring.value = true;
     try {
       final List<ProxyNode> resolved =
@@ -1155,6 +1197,22 @@ class SingboxProxyController extends ProxyController {
     });
   }
 
+  /// Serialises measuring runs.
+  ///
+  /// [cancelMeasure] clears `measuring` at once, but the run it cancelled is
+  /// still unwinding: its workers are inside dials that can take up to a minute
+  /// to give up. The flag was the only thing guarding re-entry, so cancelling
+  /// and immediately re-testing, or switching server and testing again, started
+  /// a SECOND measuring core while the first was still dialling. Two cores
+  /// competing is not evenly unfair: Reality, Hysteria2, SS2022 and mieru each
+  /// pay a real handshake to open a session, so they are the ones that run out
+  /// of time and read "no response", while the CDN-fronted nodes still answer.
+  ///
+  /// That is why it got worse the more you tested, why a longer timeout hid it,
+  /// and why a freshly opened app was always fast. A new run now waits for the
+  /// previous one to actually finish.
+  final _AsyncLock _measureLock = _AsyncLock();
+
   final _AsyncLock _ruleSetLock = _AsyncLock();
 
   /// After coming up on a manually pinned exit, confirm the exit really carries
@@ -1169,14 +1227,30 @@ class SingboxProxyController extends ProxyController {
   /// fired on a false negative (the probe endpoint being unreachable for its own
   /// reasons), throwing away a working choice. Now the pin stands, the dashboard
   /// says the exit is not passing traffic, and switching stays a tap away.
+  /// How long to wait before the nth connectivity probe.
+  ///
+  /// This used to be a flat three seconds, which meant a tunnel that was
+  /// carrying traffic in under a second still sat on "Verifying" for three, and
+  /// a dead one took twelve to eighteen seconds to say so. Users reported both
+  /// halves as the app feeling slow. Probing quickly first and backing off gets
+  /// the common case (it works) onto the screen almost at once, while still
+  /// giving a slow exit as long as it had before deciding against it.
+  static Duration _probeBackoff(int attempt) => switch (attempt) {
+        0 => const Duration(milliseconds: 500),
+        1 => const Duration(milliseconds: 900),
+        2 => const Duration(milliseconds: 1600),
+        _ => const Duration(seconds: 3),
+      };
+
   Future<void> _verifyPinnedConnectivity() async {
     final ProxyProfile? profile = _active;
     // A pinned node, or a single manual config, which has no pin to compare but
     // needs the same answer: is anything actually getting through?
     if (profile == null) return;
     if (profile.pinnedNode == null && profile.isSubscription) return;
-    // Let the tunnel settle before probing.
-    await Future<void>.delayed(const Duration(seconds: 3));
+    // Let the tunnel settle before probing. Short: a working exit answers at
+    // once, and the retries below cover one that needs longer.
+    await Future<void>.delayed(_probeBackoff(0));
     // Bail if the user disconnected or switched away in the meantime.
     if (_state != ProxyConnectionState.connected ||
         _active?.pinnedNode != profile.pinnedNode) {
@@ -1185,7 +1259,7 @@ class SingboxProxyController extends ProxyController {
     // Retry a few times before calling it: a tunnel that has just come up can
     // need a couple of seconds more than the settle delay, and one missed probe
     // is not evidence the exit is dead.
-    for (int attempt = 0; attempt < 3; attempt++) {
+    for (int attempt = 0; attempt < 4; attempt++) {
       if (await _probeInternet()) {
         if (exitUnreachable) {
           exitUnreachable = false;
@@ -1197,7 +1271,7 @@ class SingboxProxyController extends ProxyController {
           _active?.pinnedNode != profile.pinnedNode) {
         return;
       }
-      await Future<void>.delayed(const Duration(seconds: 3));
+      await Future<void>.delayed(_probeBackoff(attempt + 1));
     }
     if (_state != ProxyConnectionState.connected ||
         _active?.pinnedNode != profile.pinnedNode) {
@@ -1243,10 +1317,12 @@ class SingboxProxyController extends ProxyController {
         profile.pinnedNode != null) {
       return;
     }
-    // Probe periodically over ~18s, giving urltest time to converge on a live
-    // node before we consider a heavier rebuild.
-    for (int attempt = 0; attempt < 6; attempt++) {
-      await Future<void>.delayed(const Duration(seconds: 3));
+    // Probe quickly, then back off, giving urltest time to converge on a live
+    // node before we consider a heavier rebuild. The total budget is about what
+    // it was; what changed is that a pool which is already working no longer
+    // waits three seconds to say so.
+    for (int attempt = 0; attempt < 7; attempt++) {
+      await Future<void>.delayed(_probeBackoff(attempt));
       // Bail if the user disconnected, switched profile, or pinned in between.
       if (_state != ProxyConnectionState.connected ||
           _active?.id != profile.id ||
@@ -1521,6 +1597,8 @@ class SingboxProxyController extends ProxyController {
   void dispose() {
     _watchdog?.cancel();
     _eventSub?.cancel();
+    _lifecycle?.dispose();
+    _lifecycle = null;
     super.dispose();
   }
 }
