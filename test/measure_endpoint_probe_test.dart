@@ -95,6 +95,32 @@ AllowedIPs = 0.0.0.0/0
     }
   });
 
+  test('an endpoint whose peer is still a name is left out, not fatal', () {
+    // The core parses a peer with ParseAddr and rejects a hostname at STARTUP,
+    // so one unresolved endpoint used to stop the whole measuring core: every
+    // server in the list read as untested behind "Could not start the measuring
+    // core". A user hit this exactly when their panel's domain was unreachable,
+    // which is when resolution fails and when they most need the rest tested.
+    final unresolved = ProxyNode(
+      protocol: NodeProtocol.awg,
+      server: 'vpn.example.com',
+      port: 32418,
+      tag: 'name-peer',
+      awgConf: conf.replaceAll('203.0.113.10:32418', 'vpn.example.com:32418'),
+    );
+    final built = SingboxConfig.buildMeasureMap(
+      <ProxyNode>[unresolved, ws('b'), awg('c', '203.0.113.11', 45874)],
+      mixedPort: 19090,
+      clashPort: 19091,
+    );
+    // The resolvable one is still measured; the other is simply absent.
+    expect(built.endpointPorts.length, 1);
+    final String json = built.config.toString();
+    expect(json.contains('vpn.example.com'), isFalse,
+        reason: 'a name-peer endpoint must never reach the core');
+    expect(built.tagKeys.length, 2, reason: 'the other two are still tested');
+  });
+
   test('a pool with no endpoints adds no inbounds and no rules', () {
     final built = SingboxConfig.buildMeasureMap(
       <ProxyNode>[ws('b')],

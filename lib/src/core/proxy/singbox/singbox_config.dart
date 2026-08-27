@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show InternetAddress;
 
 import 'awg_config.dart';
 import 'proxy_node.dart';
@@ -593,6 +594,16 @@ class SingboxConfig {
     return <String>[for (final ProxyNode n in picked) proxyNodeKey(n)];
   }
 
+  /// Whether an endpoint node's peer address is a literal IP, which is the only
+  /// thing the core will accept. A node with no config at all counts as not
+  /// measurable rather than being handed over to fail at startup.
+  static bool _endpointIsNumeric(ProxyNode n) {
+    final String conf = n.awgConf ?? '';
+    if (conf.isEmpty) return false;
+    final String? host = awgEndpointHost(conf);
+    return host != null && InternetAddress.tryParse(host) != null;
+  }
+
   /// The pool budget for a measuring run: every node a subscription is likely
   /// to carry, with a ceiling so a pathological list cannot start a core with
   /// thousands of idle outbounds.
@@ -648,7 +659,21 @@ class SingboxConfig {
     bool includeXhttp = false,
     int xhttpBasePort = 10808,
   }) {
-    final List<ProxyNode> picked = pickedMultiNodes(inputNodes,
+    // Leave out any endpoint whose peer is still a name.
+    //
+    // The core parses a WireGuard/AmneziaWG peer with ParseAddr and rejects a
+    // hostname outright, and it does so at STARTUP: one such endpoint and the
+    // whole measuring core refuses to run, so every server in the list reads as
+    // untested behind "Could not start the measuring core". The controllers
+    // resolve these before measuring, but resolution can simply fail, and it
+    // fails exactly when the panel's own domain is unreachable, which is when a
+    // user most needs the rest of their list tested. One server that cannot be
+    // measured must cost that server its reading, not the whole run.
+    final List<ProxyNode> measurable = <ProxyNode>[
+      for (final ProxyNode n in inputNodes)
+        if (!n.protocol.isEndpoint || _endpointIsNumeric(n)) n,
+    ];
+    final List<ProxyNode> picked = pickedMultiNodes(measurable,
         options: options, poolCap: kMeasurePoolCap, includeXhttp: includeXhttp);
     if (picked.isEmpty) {
       throw const FormatException(
