@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.20.15-beta (2026-08-27)
+
+- Added: support for AmneziaWG 3, the version built to survive the blocking that
+  started catching AmneziaWG 2 in mid-2026. It varies packet sizes, padding and
+  timings so a connection is harder to recognise by its statistics rather than by
+  any single giveaway. Nothing to turn on: when your provider's server offers it,
+  Nova uses it.
+
+- Unchanged: servers running the older AmneziaWG keep working exactly as they did.
+  Nova only sends the new settings when the server has asked for them.
+
 ## v1.20.14-beta (2026-08-27)
 
 - Fixed: a single AmneziaWG server could stop the whole lightning test, leaving
