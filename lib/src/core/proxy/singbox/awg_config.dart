@@ -34,6 +34,13 @@ class AwgConfig {
     this.i3,
     this.i4,
     this.i5,
+    this.headerProtectionKey,
+    this.contentPaddingAddition,
+    this.rekeyAfterTime,
+    this.rekeyTimeout,
+    this.rejectAfterTime,
+    this.keepaliveTimeout,
+    this.maxHandshakeAttempts,
   });
 
   final String privateKey;
@@ -44,6 +51,30 @@ class AwgConfig {
   // Obfuscation params. Present => AmneziaWG; all null => plain WireGuard.
   final int? jc, jmin, jmax, s1, s2, s3, s4;
   final String? h1, h2, h3, h4, i1, i2, i3, i4, i5;
+
+  /// AmneziaWG 3.x. Strings because that is what they are on the wire: a hex
+  /// key for header protection, and "min-max" ranges for the rest. Null means
+  /// the server did not send one and nothing is emitted for it, so a 2.0 config
+  /// produces exactly the endpoint it always did.
+  final String? headerProtectionKey,
+      contentPaddingAddition,
+      rekeyAfterTime,
+      rekeyTimeout,
+      rejectAfterTime,
+      keepaliveTimeout,
+      maxHandshakeAttempts;
+
+  /// The smallest S1-S4 the core will accept before it uses header protection.
+  /// Below this it refuses the whole device with "S%d must be more then %d to
+  /// use headerProtection", so the key is withheld rather than handed over to
+  /// fail.
+  static const int kHeaderProtectionMinPadding = 12;
+
+  bool get headerProtectionUsable =>
+      (s1 ?? 0) >= kHeaderProtectionMinPadding &&
+      (s2 ?? 0) >= kHeaderProtectionMinPadding &&
+      (s3 ?? 0) >= kHeaderProtectionMinPadding &&
+      (s4 ?? 0) >= kHeaderProtectionMinPadding;
 
   final AwgPeer peer;
 
@@ -129,6 +160,14 @@ class AwgConfig {
       i3: strOf(iface, 'i3'),
       i4: strOf(iface, 'i4'),
       i5: strOf(iface, 'i5'),
+      // AmneziaWG 3.x. Absent in a 2.0 config, which leaves them null.
+      headerProtectionKey: strOf(iface, 'headerprotectionkey'),
+      contentPaddingAddition: strOf(iface, 'contentpaddingaddition'),
+      rekeyAfterTime: strOf(iface, 'rekeyaftertime'),
+      rekeyTimeout: strOf(iface, 'rekeytimeout'),
+      rejectAfterTime: strOf(iface, 'rejectaftertime'),
+      keepaliveTimeout: strOf(iface, 'keepalivetimeout'),
+      maxHandshakeAttempts: strOf(iface, 'maxhandshakeattempts'),
       peer: AwgPeer(
         publicKey: pub,
         presharedKey: strOf(peer, 'presharedkey'),
@@ -187,6 +226,19 @@ class AwgConfig {
       if (i3 != null) 'i3': i3,
       if (i4 != null) 'i4': i4,
       if (i5 != null) 'i5': i5,
+      // AmneziaWG 3.x. Header protection is withheld unless the padding is big
+      // enough for it; the core refuses the whole device otherwise, and a
+      // tunnel that will not start is worse than one without header protection.
+      if (headerProtectionKey != null && headerProtectionUsable)
+        'header_protection_key': headerProtectionKey,
+      if (contentPaddingAddition != null)
+        'content_padding_addition': contentPaddingAddition,
+      if (rekeyAfterTime != null) 'rekey_after_time': rekeyAfterTime,
+      if (rekeyTimeout != null) 'rekey_timeout': rekeyTimeout,
+      if (rejectAfterTime != null) 'reject_after_time': rejectAfterTime,
+      if (keepaliveTimeout != null) 'keepalive_timeout': keepaliveTimeout,
+      if (maxHandshakeAttempts != null)
+        'max_handshake_attempts': maxHandshakeAttempts,
       'peers': <Map<String, dynamic>>[peerObj],
     };
   }
