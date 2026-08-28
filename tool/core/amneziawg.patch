@@ -58,29 +58,34 @@ index 278a46c..89316ab 100644
  		return "Hysteria"
  	case TypeTor:
 diff --git a/go.mod b/go.mod
-index 0c1ceda..9f7c8a8 100644
+index 6f8e242..ebf65e3 100644
 --- a/go.mod
 +++ b/go.mod
-@@ -1,8 +1,9 @@
+@@ -1,6 +1,6 @@
  module github.com/sagernet/sing-box
  
 -go 1.24.7
 +go 1.25.0
  
  require (
-+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
  	github.com/anthropics/anthropic-sdk-go v1.26.0
- 	github.com/anytls/sing-anytls v0.0.11
- 	github.com/caddyserver/certmagic v0.25.2
-@@ -164,5 +165,6 @@ require (
- 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
- 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
- 	gopkg.in/yaml.v3 v3.0.1 // indirect
-+	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
- 	lukechampine.com/blake3 v1.3.0 // indirect
+@@ -63,11 +63,14 @@ require (
+ 	howett.net/plist v1.0.1
  )
+ 
++require gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
++
+ require (
+ 	filippo.io/edwards25519 v1.1.0 // indirect
+ 	github.com/ajg/form v1.5.1 // indirect
+ 	github.com/akutz/memconn v0.1.0 // indirect
+ 	github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa // indirect
++	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
+ 	github.com/andybalholm/brotli v1.1.0 // indirect
+ 	github.com/caddyserver/zerossl v0.1.5 // indirect
+ 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 diff --git a/go.sum b/go.sum
-index 2de2f39..8d56e73 100644
+index 6ab540b..4b93ab0 100644
 --- a/go.sum
 +++ b/go.sum
 @@ -8,6 +8,8 @@ github.com/akutz/memconn v0.1.0 h1:NawI0TORU4hcOMsMr11g7vwlCdkYeLKXBcxWu2W/P8A=
@@ -250,7 +255,7 @@ index 0000000..910d024
 +}
 diff --git a/protocol/awg/endpoint.go b/protocol/awg/endpoint.go
 new file mode 100644
-index 0000000..719a394
+index 0000000..c6c607a
 --- /dev/null
 +++ b/protocol/awg/endpoint.go
 @@ -0,0 +1,285 @@
