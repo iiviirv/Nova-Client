@@ -16,7 +16,7 @@ the whole Flutter UI and Dart logic work unchanged.
   Group `group.tech.innovatenorth.novaedge`).
 - **Dart**: `main.dart` already routes iOS to `SingboxProxyController`.
 
-## Remaining (Xcode, with the Apple Developer account @irnova_proxy)
+## Remaining (Xcode, with the Apple Developer account (Innovate Northtech))
 These steps create the extension target and wire the provided files into it.
 
 1. **Add the target**: File > New > Target > **Network Extension** (Packet Tunnel
