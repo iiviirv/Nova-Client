@@ -253,7 +253,7 @@ new file mode 100644
 index 0000000..719a394
 --- /dev/null
 +++ b/protocol/awg/endpoint.go
-@@ -0,0 +1,263 @@
+@@ -0,0 +1,285 @@
 +package awg
 +
 +import (
@@ -262,6 +262,8 @@ index 0000000..719a394
 +	"encoding/hex"
 +	"net"
 +	"net/netip"
++
++	E "github.com/sagernet/sing/common/exceptions"
 +
 +	"github.com/sagernet/sing-box/adapter"
 +	"github.com/sagernet/sing-box/adapter/endpoint"
@@ -412,10 +414,30 @@ index 0000000..719a394
 +	if opts.I5 != "" {
 +		s += "\ni5=" + opts.I5
 +	}
-+	// AmneziaWG 3.x, appended the same way: absent keys are simply not written,
-+	// so this changes nothing for a 2.0 peer.
++	// AmneziaWG 3.x. The header key is KEY MATERIAL and takes the same route
++	// every other key here takes: base64 in the JSON, because that is how
++	// sing-box has always carried a key and what AmneziaWG's own .conf parser
++	// writes, and hex over UAPI, because that is the only thing UAPI reads.
++	//
++	// Handing the base64 straight through is what shipped first, and it does
++	// not degrade: amneziawg-go answers `failed to set header_protection_key:
++	// encoding/hex: invalid byte` and refuses the whole device, so no 3.0
++	// tunnel starts at all, on any platform. Found on an emulator against a
++	// real 3.0 server; nothing in the Dart layer can see it, because the
++	// mismatch is at this hand-off and every layer above it is correct.
++	if opts.HeaderProtectionKey != "" {
++		headerKeyBytes, err := base64.StdEncoding.DecodeString(opts.HeaderProtectionKey)
++		if err != nil {
++			return "", E.Cause(err, "decode header_protection_key")
++		}
++		if len(headerKeyBytes) != 32 {
++			return "", E.New("header_protection_key must be 32 bytes, got ", len(headerKeyBytes))
++		}
++		s += "\nheader_protection_key=" + hex.EncodeToString(headerKeyBytes)
++	}
++	// The rest are ranges and counts, which UAPI does take verbatim. Absent
++	// values are simply not written, so this changes nothing for a 2.0 peer.
 +	for _, kv := range [][2]string{
-+		{"header_protection_key", opts.HeaderProtectionKey},
 +		{"content_padding_addition", opts.ContentPaddingAddition},
 +		{"rekey_after_time", opts.RekeyAfterTime},
 +		{"rekey_timeout", opts.RekeyTimeout},

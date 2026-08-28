@@ -23,7 +23,7 @@ echo "Installing gomobile/gobind…"
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
 
-echo "Tidying $pkg_dir…"
+echo "Tidying ${pkg_dir}…"
 ( cd "$pkg_dir" && go mod tidy && go build ./... )
 
 # All runnable Android ABIs. arm64 alone for a quick spike; the full set matches
