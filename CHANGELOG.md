@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.20.21-beta (2026-08-28)
+
+- Fixed: on a Mac running macOS 15 or older, connecting failed with "Core failed
+  to start (exit -9)" and an empty log. The engine Nova runs was built in a way
+  that told macOS it needed the very newest version of the system, so older Macs
+  refused to start it before it could say anything. It is built for macOS 12 and
+  later now. This hit every Intel Mac, since almost none of them can run the
+  newest macOS, and any Apple Silicon Mac that has not updated.
+
+- Nova now checks that its engine will actually run before a connection depends
+  on it, falls back to the copy inside the app if the system refuses the other
+  one, and says what happened instead of showing an exit code.
+
+- Fixed: the free server list refreshes on its own again. It is rebuilt every
+  hour, and Nova was showing whatever it had downloaded when you first opened
+  the app, for as long as the app stayed open. It now looks for a new list about
+  once an hour, including when you come back to Nova.
+
+- AmneziaWG servers show their version in the server list: AMNEZIAWG VER 1, 2 or
+  3, where before only 2 and 3 were named.
+
 ## v1.20.20-beta (2026-08-28)
 
 - Fixed: on Windows, a single AmneziaWG server stopped the whole server test with
