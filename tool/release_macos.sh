@@ -172,6 +172,11 @@ TAG="${NOVA_TAG:-$(git -C "$PROJ" describe --tags --abbrev=0 2>/dev/null)}"
 if [[ -n "${NOVA_NO_UPLOAD:-}" ]]; then
   echo "built only (NOVA_NO_UPLOAD set). Files: $STABLE_DMG $STABLE_ZIP"
   echo "RELEASE_MACOS_DONE b$B"
+# iOS is a separate script and a separate store, and it is the one that gets
+# forgotten: v1.20.16-beta shipped as "every platform" with no iPhone build at
+# all, so a fix reached Android, Windows and Linux and no iPhone. Say so here,
+# where whoever cut the release is looking.
+echo "-- iOS is NOT part of this. Run: ./tool/release_ios.sh $B \"what to test\""
   exit 0
 fi
 if [[ -z "$TAG" ]]; then
