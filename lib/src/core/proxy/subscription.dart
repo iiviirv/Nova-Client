@@ -9,6 +9,8 @@
 // stamp clean IPs into it.
 
 import 'dart:async';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'dart:convert';
 import 'dart:io';
 
@@ -498,6 +500,28 @@ bool _isHttpUrl(String raw) {
 final Map<String, List<ProxyNode>> _nodeCache = <String, List<ProxyNode>>{};
 
 void clearSubscriptionCache() => _nodeCache.clear();
+
+/// Drops the session cache for one profile only, so its next resolve goes to
+/// the network.
+///
+/// This is what the staleness timer needs. [clearSubscriptionCache] is global:
+/// using it here would cost every other profile its resolved nodes because one
+/// list went out of date. Without either, a stale list re-resolves straight out
+/// of [_nodeCache] and the automatic refresh fetches nothing at all for anyone
+/// who leaves Nova running.
+void forgetProfileNodes(ProxyProfile profile) =>
+    _nodeCache.remove(_profilePayload(profile));
+
+/// The URLs currently held in the session cache. Test-only: the cache is
+/// written on the real network path, which a test never takes.
+@visibleForTesting
+Set<String> debugSubscriptionCacheKeys() => _nodeCache.keys.toSet();
+
+/// Puts [nodes] in the session cache under [url], so a test can stand where a
+/// real fetch would have left it. Test-only, for the same reason.
+@visibleForTesting
+void debugSeedSubscriptionCache(String url, List<ProxyNode> nodes) =>
+    _nodeCache[url] = nodes;
 
 /// Persists the last good raw body of each subscription across app restarts.
 ///

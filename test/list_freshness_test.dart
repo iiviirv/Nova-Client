@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nova_client/src/core/models/proxy_profile.dart';
 import 'package:nova_client/src/core/proxy/list_freshness.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,8 +22,29 @@ void main() {
     expect(ListFreshness.lastSync('p1'), isNotNull);
   });
 
-  test('the window is twelve hours', () {
+  test('the window is twelve hours for a subscription of the user own', () {
     expect(ListFreshness.maxAge, const Duration(hours: 12));
+    expect(ListFreshness.maxAgeFor('some-profile'), const Duration(hours: 12));
+  });
+
+  test('the free list gets an hour, because it is rebuilt hourly', () {
+    expect(ListFreshness.maxAgeFor(kFreeProfileId), const Duration(hours: 1));
+  });
+
+  test('a free list synced two hours ago is due, a subscription is not',
+      () async {
+    final int twoHoursAgo = DateTime.now()
+        .subtract(const Duration(hours: 2))
+        .millisecondsSinceEpoch;
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'nova.listfresh.$kFreeProfileId': twoHoursAgo,
+      'nova.listfresh.mine': twoHoursAgo,
+    });
+    await ListFreshness.load();
+    expect(ListFreshness.isStale(kFreeProfileId), isTrue,
+        reason: 'the upstream list has been rebuilt twice since');
+    expect(ListFreshness.isStale('mine'), isFalse,
+        reason: 'the regression this whole mechanism exists to prevent');
   });
 
   test('refresh puts the list back in the queue', () async {

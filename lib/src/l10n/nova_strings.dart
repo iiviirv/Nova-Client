@@ -1608,10 +1608,12 @@ class NovaStrings {
     'free.searchStop': 'Stop and use what was found',
     'free.searchStopHint': 'You can start again any time with the refresh button.',
     'test.autoRefreshTitle': 'Update server lists on their own',
-    'test.autoRefreshBody': 'Re-download a list and re-test it when it is more '
-        'than {h} hours old.',
-    'test.autoRefreshOn': 'A list is checked at most once every {h} hours, and '
-        'only when you open it. Your test results are kept in between. The '
+    'test.autoRefreshBody': 'Re-download a list and re-test it when it is out '
+        'of date: after {h} hours for your own subscriptions, and about an hour '
+        'for the free list, which is rebuilt that often.',
+    'test.autoRefreshOn': 'Your own subscriptions are checked at most once '
+        'every {h} hours and the free list about once an hour, when you open it '
+        'or come back to Nova. Your test results are kept in between. The '
         'refresh button always checks straight away.',
     'test.autoRefreshOff': 'Lists will only change when you press refresh.',
     'node.measureDone': 'Measured {n} servers through the core',
@@ -2434,11 +2436,13 @@ class NovaStrings {
     'free.searchStop': 'توقف و استفاده از همین موارد',
     'free.searchStopHint': 'هر زمان بخواهید می‌توانید با دکمه بازآوری دوباره شروع کنید.',
     'test.autoRefreshTitle': 'بروزرسانی خودکار لیست سرورها',
-    'test.autoRefreshBody': 'اگر بیش از {h} ساعت از آخرین بروزرسانی گذشته باشد، '
-        'لیست دوباره دانلود و تست می‌شود.',
-    'test.autoRefreshOn': 'هر لیست حداکثر هر {h} ساعت یک‌بار و فقط هنگام باز '
-        'کردن آن بررسی می‌شود. نتیجه تست‌ها در این فاصله حفظ می‌شود. دکمه '
-        'بازآوری همیشه بلافاصله بررسی می‌کند.',
+    'test.autoRefreshBody': 'وقتی لیست قدیمی شد دوباره دانلود و تست می‌شود: '
+        'برای اشتراک‌های خودتان بعد از {h} ساعت، و برای لیست رایگان حدود یک '
+        'ساعت، چون هر ساعت دوباره ساخته می‌شود.',
+    'test.autoRefreshOn': 'اشتراک‌های خودتان حداکثر هر {h} ساعت یک‌بار و لیست '
+        'رایگان حدود هر یک ساعت بررسی می‌شود، هنگام باز کردن آن یا برگشتن به '
+        'نوا. نتیجه تست‌ها در این فاصله حفظ می‌شود. دکمه بازآوری همیشه '
+        'بلافاصله بررسی می‌کند.',
     'test.autoRefreshOff': 'لیست‌ها فقط با زدن دکمه بازآوری تغییر می‌کنند.',
     'node.measureDone': '\u2066{n}\u2069 سرور از طریق هسته اندازه‌گیری شد',
     'node.retestOne': 'تست دوباره‌ی همین سرور',

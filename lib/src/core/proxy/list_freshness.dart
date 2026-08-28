@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/proxy_profile.dart';
+
 /// When each subscription's server list was last fetched and swept.
 ///
 /// Opening a server list used to re-download the subscription and run a sweep
@@ -20,14 +22,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ListFreshness {
   ListFreshness._();
 
+  /// The window for a subscription the user added themselves. Their provider's
+  /// servers are stable, so re-sweeping them more often is wasted work.
   static const Duration maxAge = Duration(hours: 12);
+
+  /// The window for Nova's own free list, which is a different kind of list:
+  /// it is rebuilt upstream every hour and loses roughly 40% of its servers in
+  /// four, so 12 hours hands people a list that is mostly gone by the time they
+  /// look at it. Measured 2026-08-28: of 87 servers published at 11:39 UTC, 50
+  /// still carried traffic five hours later.
+  static const Duration freeMaxAge = Duration(hours: 1);
+
+  /// How old [profileId]'s list may get before it is re-fetched.
+  static Duration maxAgeFor(String profileId) =>
+      profileId == kFreeProfileId ? freeMaxAge : maxAge;
   static const String _prefix = 'nova.listfresh.';
 
   static SharedPreferences? _prefs;
   static final Map<String, int> _memory = <String, int>{};
 
   static Future<void> load() async {
-    _prefs ??= await SharedPreferences.getInstance();
+    // Re-read rather than reuse: load means "take the state from disk", so
+    // calling it twice must agree with disk both times.
+    _prefs = await SharedPreferences.getInstance();
+    _memory.clear();
     for (final String k in _prefs!.getKeys()) {
       if (!k.startsWith(_prefix)) continue;
       final int? v = _prefs!.getInt(k);
@@ -41,7 +59,7 @@ class ListFreshness {
     final int? at = _memory[profileId];
     if (at == null) return true;
     final int age = DateTime.now().millisecondsSinceEpoch - at;
-    return age < 0 || age >= maxAge.inMilliseconds;
+    return age < 0 || age >= maxAgeFor(profileId).inMilliseconds;
   }
 
   static DateTime? lastSync(String profileId) {

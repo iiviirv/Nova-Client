@@ -70,8 +70,9 @@ class AwgConfig {
   /// Read from the settings each version introduced rather than from a version
   /// field, because there isn't one: version 3 brought header protection,
   /// content padding and the randomised timings; version 2 brought the
-  /// signature packets I1 to I5. A config carrying only junk packets and
-  /// headers predates both, and gets no number rather than a guessed one.
+  /// signature packets I1 to I5; version 1 is the original obfuscation, the
+  /// junk packets and the fake handshake headers. Plain WireGuard carries none
+  /// of them and gets no number rather than a version it does not have.
   String? get versionLabel {
     if (headerProtectionKey != null ||
         contentPaddingAddition != null ||
@@ -85,7 +86,7 @@ class AwgConfig {
     if (i1 != null || i2 != null || i3 != null || i4 != null || i5 != null) {
       return '2';
     }
-    return null;
+    return isObfuscated ? '1' : null;
   }
 
   /// The smallest S1-S4 the core will accept before it uses header protection.
@@ -103,6 +104,10 @@ class AwgConfig {
   final AwgPeer peer;
 
   /// True when any obfuscation field is set, i.e. this is AmneziaWG not plain WG.
+  ///
+  /// Every generation's fields count, not just version 1's. A config that
+  /// carries only later settings would otherwise be built as a plain WireGuard
+  /// endpoint, which silently drops all of them.
   bool get isObfuscated =>
       jc != null ||
       jmin != null ||
@@ -112,7 +117,21 @@ class AwgConfig {
       s3 != null ||
       s4 != null ||
       h1 != null ||
-      i1 != null;
+      h2 != null ||
+      h3 != null ||
+      h4 != null ||
+      i1 != null ||
+      i2 != null ||
+      i3 != null ||
+      i4 != null ||
+      i5 != null ||
+      headerProtectionKey != null ||
+      contentPaddingAddition != null ||
+      rekeyAfterTime != null ||
+      rekeyTimeout != null ||
+      rejectAfterTime != null ||
+      keepaliveTimeout != null ||
+      maxHandshakeAttempts != null;
 
   /// The endpoint host:port as `host:port` (for display / a share link).
   String get endpoint => '${peer.host}:${peer.port}';
@@ -409,7 +428,8 @@ String rewriteAwgEndpointHost(String conf, String ip) {
   return (s.substring(0, colon), int.tryParse(s.substring(colon + 1)) ?? 51820);
 }
 
-/// [AwgConfig.versionLabel] for a raw `.conf`, or null when it will not parse.
+/// [AwgConfig.versionLabel] for a raw `.conf`: "3", "2", "1", or null when the
+/// config is plain WireGuard or will not parse.
 ///
 /// Cached: the server list rebuilds a row on every ping update, and reparsing
 /// the same config each time to draw one badge is work for nothing.

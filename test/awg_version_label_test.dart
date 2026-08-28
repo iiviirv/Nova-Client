@@ -52,9 +52,24 @@ AllowedIPs = 0.0.0.0/0
         '3');
   });
 
-  test('junk packets and headers alone claim no version', () {
-    expect(awgVersionLabel(conf()), isNull,
-        reason: 'guessing a number is worse than showing none');
+  test('junk packets and headers alone mean version 1', () {
+    expect(awgVersionLabel(conf()), '1',
+        reason: 'the original obfuscation, and no later setting');
+  });
+
+  test('plain WireGuard claims no AmneziaWG version', () {
+    const String wg = '''
+[Interface]
+PrivateKey = IMLJ1cUmM0jZlNSRXPZ4mHtQBLZ1sBGCUlmM8xVUZ1Y=
+Address = 10.0.0.2/32
+
+[Peer]
+PublicKey = IMLJ1cUmM0jZlNSRXPZ4mHtQBLZ1sBGCUlmM8xVUZ1Y=
+Endpoint = 203.0.113.10:51820
+AllowedIPs = 0.0.0.0/0
+''';
+    expect(awgVersionLabel(wg), isNull,
+        reason: 'it has no AmneziaWG version to show');
   });
 
   test('nothing, or an unparsable config, is not an error', () {

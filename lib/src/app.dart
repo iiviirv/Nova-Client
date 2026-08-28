@@ -8,11 +8,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/models/proxy_profile.dart';
 import 'core/platform/windows_url_scheme.dart';
 import 'core/proxy/conn_info_controller.dart';
+import 'core/proxy/list_freshness.dart';
 import 'core/proxy/proxy_controller.dart';
+import 'core/proxy/singbox/proxy_node.dart';
 import 'features/cloudflare/cloudflare_controller.dart';
 import 'features/profiles/profiles_controller.dart';
 import 'features/radar/radar_controller.dart';
 import 'core/proxy/app_routing.dart';
+import 'core/proxy/subscription.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/relay/relay_controller.dart';
 import 'features/relay/tunnel_controller.dart';
@@ -209,6 +212,39 @@ class _RootGateState extends State<_RootGate> with WidgetsBindingObserver {
       // kUpdateCheckGateMs), best-effort, never blocks.
       unawaited(SharedPreferences.getInstance().then((SharedPreferences p) =>
           checkForNovaUpdate(p, nowMs: DateTime.now().millisecondsSinceEpoch)));
+      unawaited(_refreshStaleListOnResume());
+    }
+  }
+
+  /// Re-fetches the active profile's server list on return to the app when it
+  /// has gone stale.
+  ///
+  /// Opening the Servers tab already does this, but that is the only thing that
+  /// does, and a user who leaves Nova running and connected may not open that
+  /// tab for days while the free list is rebuilt hourly underneath them. So the
+  /// same check the tab makes runs here, and the fresh list is waiting the next
+  /// time they look.
+  ///
+  /// Best-effort in every direction: it respects the user's auto-refresh
+  /// setting, does nothing to a list that is still inside its window, and
+  /// swallows a failed fetch (the saved list is still there and still
+  /// connectable). It only fetches; the sweep stays where the user can see it.
+  Future<void> _refreshStaleListOnResume() async {
+    if (!mounted) return;
+    final NovaScope scope = NovaScope.of(context);
+    if (!scope.settings.autoRefreshLists) return;
+    final ProxyProfile? profile = scope.profiles.active;
+    if (profile == null || !ListFreshness.isStale(profile.id)) return;
+    try {
+      forgetProfileNodes(profile);
+      final List<ProxyNode> nodes = await resolveProfileNodes(profile);
+      // Only a fetch that actually produced servers counts as a sync; a stale
+      // fallback must leave the list due so the next open tries again.
+      if (nodes.isEmpty || lastResolveWasStale) return;
+      await ListFreshness.markSynced(profile.id);
+    } catch (_) {
+      // Unreachable subscription, no connectivity yet on resume: the saved list
+      // stays exactly as it was and the Servers tab retries on its own.
     }
   }
 

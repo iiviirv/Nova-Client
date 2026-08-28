@@ -228,6 +228,13 @@ class _NodeListScreenState extends State<NodeListScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // Past its window, so this has to be a real fetch. The session cache is
+    // keyed by URL and lives as long as the process, so without dropping this
+    // profile's entry the staleness timer fires, resolveProfileNodes hands back
+    // the nodes it cached hours ago, and nothing refreshes at all for the many
+    // users who never quit Nova. Only this profile is forgotten: the global
+    // clear would cost every other list its resolved nodes as a side effect.
+    forgetProfileNodes(profile);
     await _refresh(profile, hadCache: cached.isNotEmpty);
     await ListFreshness.markSynced(profile.id);
   }
@@ -1587,9 +1594,9 @@ class _ProtoBadge extends StatelessWidget {
   const _ProtoBadge({required this.protocol, this.awgVersion});
   final NodeProtocol protocol;
 
-  /// For AmneziaWG, which generation the server is offering ("3", "2"), so the
-  /// badge reads AMNEZIAWG VER 3. Null when the config says nothing about it,
-  /// and the badge stays as it was rather than claiming a version.
+  /// For AmneziaWG, which generation the server is offering ("3", "2", "1"), so
+  /// the badge reads AMNEZIAWG VER 3. Null for a plain WireGuard config, which
+  /// has no AmneziaWG version to show.
   final String? awgVersion;
 
   Color _color(NovaColors nova) => switch (protocol) {
