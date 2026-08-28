@@ -411,6 +411,9 @@ class NovaStrings {
   String get routeBypassLan => t('route.bypassLan');
   String get routeBypassLanSub => t('route.bypassLanSub');
   String get routeTun => t('route.tun');
+  String get dashTunOn => t('dash.tunOn');
+  String get dashTunOff => t('dash.tunOff');
+  String get dashTunApplies => t('dash.tunApplies');
   String get routeTunSub => t('route.tunSub');
   String get routeSysProxy => t('route.sysProxy');
   String get urlTestTitle => t('urlTest.title');
@@ -1221,6 +1224,12 @@ class NovaStrings {
     'route.bypassLan': 'Bypass LAN',
     'route.bypassLanSub': 'Private/local ranges stay direct',
     'route.tun': 'Full-device tunnel (TUN)',
+    'dash.tunOn': 'Every app on this computer goes through Nova. Asks for '
+        'permission each time you connect.',
+    'dash.tunOff': 'Nova runs a local proxy and points your system at it. Apps '
+        'that follow the system proxy go through Nova, and nothing asks for '
+        'permission.',
+    'dash.tunApplies': 'Reconnecting to apply the new mode',
     'route.tunSub': 'Route every app, not just proxy-aware ones. Needs '
         'one admin approval when you connect. Off: Nova runs a local '
         'SOCKS5/HTTP proxy on 127.0.0.1 and can set it as the system proxy.',
@@ -2051,6 +2060,12 @@ class NovaStrings {
     'route.bypassLan': 'عبور از شبکهٔ محلی',
     'route.bypassLanSub': 'محدوده‌های خصوصی و محلی مستقیم می‌مانند',
     'route.tun': 'تونل کل دستگاه (TUN)',
+    'dash.tunOn': 'همه برنامه‌های این کامپیوتر از نوا رد می‌شوند. هر بار که وصل '
+        'می‌شوید یک بار اجازه می‌خواهد.',
+    'dash.tunOff': 'نوا یک پروکسی محلی اجرا می‌کند و سیستم را به آن وصل '
+        'می‌کند. برنامه‌هایی که از پروکسی سیستم استفاده می‌کنند از نوا رد '
+        'می‌شوند و هیچ اجازه‌ای خواسته نمی‌شود.',
+    'dash.tunApplies': 'در حال اتصال دوباره برای اعمال حالت جدید',
     'route.tunSub': 'همهٔ برنامه‌ها را تونل می‌کند، نه فقط برنامه‌های سازگار با '
         'پروکسی. هنگام اتصال به یک‌ بار تأیید مدیر نیاز دارد. خاموش: نوا یک '
         'پروکسی محلی \u2066SOCKS5/HTTP\u2069 روی \u2066127.0.0.1\u2069 اجرا می‌کند و '

@@ -9,6 +9,8 @@ import 'package:nova_client/src/core/proxy/singbox/awg_config.dart';
 /// There is no version field in a WireGuard config, so this reads the settings
 /// each version introduced.
 void main() {
+  /// A 1.0 config: junk packets, the two handshake paddings, and fixed fake
+  /// headers. Deliberately no S3 or S4, which are what makes a config 2.0.
   String conf({String extra = ''}) => '''
 [Interface]
 PrivateKey = IMLJ1cUmM0jZlNSRXPZ4mHtQBLZ1sBGCUlmM8xVUZ1Y=
@@ -18,8 +20,6 @@ Jmin = 40
 Jmax = 70
 S1 = 86
 S2 = 574
-S3 = 45
-S4 = 12
 H1 = 1
 H2 = 2
 H3 = 3
@@ -42,7 +42,40 @@ AllowedIPs = 0.0.0.0/0
     expect(awgVersionLabel(conf(extra: 'MaxHandshakeAttempts = 10-20')), '3');
   });
 
-  test('signature packets mean version 2', () {
+  test('padding beyond S1 and S2 means version 2', () {
+    // What Nova's own server writes for a 2.0 node, and what its tests assert:
+    // S3 (cookie padding) and S4 (transport padding), no I packets anywhere.
+    // Reading only I1 to I5 called every real Nova 2.0 server version 1.
+    expect(awgVersionLabel(conf(extra: 'S3 = 45\nS4 = 12')), '2');
+    expect(awgVersionLabel(conf(extra: 'S3 = 45')), '2',
+        reason: "Amnezia's own client calls S3 alone AWG2");
+    expect(awgVersionLabel(conf(extra: 'S4 = 12')), '2');
+  });
+
+  test('a ranged fake header means version 2', () {
+    const String ranged = '''
+[Interface]
+PrivateKey = IMLJ1cUmM0jZlNSRXPZ4mHtQBLZ1sBGCUlmM8xVUZ1Y=
+Address = 10.0.0.2/32
+Jc = 4
+Jmin = 40
+Jmax = 70
+S1 = 86
+S2 = 574
+H1 = 100000-800000
+H2 = 2
+H3 = 3
+H4 = 4
+
+[Peer]
+PublicKey = IMLJ1cUmM0jZlNSRXPZ4mHtQBLZ1sBGCUlmM8xVUZ1Y=
+Endpoint = 203.0.113.10:51820
+AllowedIPs = 0.0.0.0/0
+''';
+    expect(awgVersionLabel(ranged), '2');
+  });
+
+  test('signature packets mean version 2 as well', () {
     expect(awgVersionLabel(conf(extra: 'I1 = <b 0xf1>')), '2');
   });
 

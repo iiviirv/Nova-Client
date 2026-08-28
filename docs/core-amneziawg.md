@@ -360,3 +360,41 @@ whole app down rather than surfacing as an error.
 Fix: only close the tun ourselves when no awg device ever took ownership of it,
 and clear both fields so a second `Close` is a no-op. Verified with five
 start/stop cycles: zero panics, clean worker shutdown.
+
+## Domain destinations reached the tunnel unresolved (fixed 2026-08-28)
+
+Symptom: an AmneziaWG server connects, the app says connected, and then nothing
+loads. It sits on "Verifying" forever. Whole-device (TUN) mode on the same
+server, same config, same day, works. Reported on macOS and Windows; the tester
+guessed it was an administrator prompt that never appeared.
+
+It was not about privileges at all. Every request failed inside the core:
+
+    ERROR connection: open connection to api.ipify.org:443 using outbound/awg[proxy]:
+    dial: lookup api.ipify.org: cannot marshal DNS message
+
+`protocol/awg.Endpoint` embedded `*awg.Device` and inherited its `DialContext`,
+which hands the destination straight to the userspace network stack. That
+stack's resolver is built from the DNS servers in a WireGuard config, and
+sing-box has no such field, so the list was always empty and every name failed.
+The `dnsRouter` field was declared in the first version of this port and never
+assigned.
+
+Why only proxy mode: behind a TUN inbound the name is resolved before the
+connection is routed, so the endpoint only ever sees an address. A SOCKS or HTTP
+client hands over the name itself, which is exactly what the endpoint could not
+resolve. Upstream `protocol/wireguard` has always resolved through the router's
+DNS module first; the port did not.
+
+Fix: `DialContext` and `ListenPacket` resolve a domain through
+`dnsRouter.Lookup` and then dial the addresses, matching `protocol/wireguard`.
+
+Verified against a live 3.1 server with the core run as an ordinary user and a
+plain mixed inbound, which is exactly what proxy mode runs:
+
+    curl -x socks5h://127.0.0.1:2081 https://api.ipify.org
+    before: (nothing, "cannot marshal DNS message" in the log)
+    after:  164.90.169.98    <- the server, not the machine's own 70.52.139.56
+    HTTP proxy, generate_204: 204 in 0.42s
+
+Every core carries it: both macOS, Windows, Linux, all three Android ABIs, iOS.

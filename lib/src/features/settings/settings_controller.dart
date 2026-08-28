@@ -94,7 +94,19 @@ class SettingsController extends ChangeNotifier {
   /// desktop so every app on the device is proxied (full-device VPN), matching
   /// what mobile already does; the user can turn it off in Routing to fall back
   /// to the unprivileged OS-proxy path. Mobile ignores this (it is always TUN).
-  bool _tunMode = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  /// Whole-device tunnel, on by default everywhere except Windows.
+  ///
+  /// Windows starts in proxy mode because there it costs nothing: the system
+  /// proxy is a per-user registry setting, so Nova sets it with no UAC prompt
+  /// at all, and every browser follows it. TUN on Windows needs an elevation
+  /// prompt on every single connect, which is a lot to ask of someone who just
+  /// wants a browser to work. The dashboard card switches it on in one tap for
+  /// anyone who wants every app covered.
+  ///
+  /// macOS and Linux keep the tunnel: setting the system proxy there needs
+  /// administrator approval too, so proxy mode would trade one prompt for
+  /// another and cover fewer apps.
+  bool _tunMode = Platform.isMacOS || Platform.isLinux;
   bool get tunMode => _tunMode;
 
   /// Desktop proxy mode: set the OS system proxy to Nova's local port on
@@ -238,8 +250,7 @@ class SettingsController extends ChangeNotifier {
     _bypassIran = p.getBool(_kBypassIran) ?? true;
     _bypassLan = p.getBool(_kBypassLan) ?? true;
     _dns = p.getString(_kDns) ?? '';
-    _tunMode = p.getBool(_kTunMode) ??
-        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    _tunMode = p.getBool(_kTunMode) ?? (Platform.isMacOS || Platform.isLinux);
     _autoSystemProxy = p.getBool(_kAutoSysProxy) ?? true;
     _proxyPort = p.getInt(_kProxyPort) ?? kDefaultLocalProxyPort;
     _mobileProxyMode = p.getBool(_kMobileProxyMode) ?? false;

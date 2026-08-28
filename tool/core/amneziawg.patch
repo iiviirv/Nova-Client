@@ -255,10 +255,10 @@ index 0000000..910d024
 +}
 diff --git a/protocol/awg/endpoint.go b/protocol/awg/endpoint.go
 new file mode 100644
-index 0000000..c6c607a
+index 0000000..ef5f793
 --- /dev/null
 +++ b/protocol/awg/endpoint.go
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,345 @@
 +package awg
 +
 +import (
@@ -281,6 +281,7 @@ index 0000000..c6c607a
 +	"github.com/sagernet/sing/common/format"
 +	M "github.com/sagernet/sing/common/metadata"
 +	N "github.com/sagernet/sing/common/network"
++	"github.com/sagernet/sing/service"
 +
 +	"go4.org/netipx"
 +)
@@ -358,7 +359,11 @@ index 0000000..c6c607a
 +		address: options.Address,
 +		router:  router,
 +		logger:  logger,
-+		ctx:     ctx,
++		// Declared since the first version of this port and never filled in,
++		// which left every name that reached the tunnel to the stack's own
++		// resolver. See DialContext.
++		dnsRouter: service.FromContext[adapter.DNSRouter](ctx),
++		ctx:       ctx,
 +	}, nil
 +}
 +
@@ -543,6 +548,61 @@ index 0000000..c6c607a
 +
 +func (w *Endpoint) IsReady() bool {
 +	return w.started
++}
++
++// DialContext resolves a name through sing-box's DNS before it reaches the
++// tunnel, and dials an address straight through.
++//
++// Without this the embedded Device handed the name to the userspace network
++// stack, whose resolver is built from the DNS servers in a WireGuard config.
++// sing-box has no such field, so that list is always empty and every name
++// failed with "cannot marshal DNS message": the tunnel came up, said it was
++// connected, and carried nothing.
++//
++// It only showed in proxy mode. Behind a TUN inbound the name is already
++// resolved by the time the connection is routed, so the endpoint only ever
++// sees an address; a SOCKS or HTTP client hands over the name itself. That is
++// why AmneziaWG worked whole-device and failed on the same server in proxy
++// mode, on every platform. protocol/wireguard does exactly this.
++func (w *Endpoint) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	if !w.started {
++		return nil, E.New("AmneziaWG is not ready yet")
++	}
++	if !destination.IsDomain() {
++		return w.Device.DialContext(ctx, network, destination)
++	}
++	addresses, err := w.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
++	if err != nil {
++		return nil, err
++	}
++	return N.DialSerial(ctx, w.Device, network, destination, addresses)
++}
++
++// ListenPacket is the same story for UDP, which is what QUIC and plain DNS ride
++// on, so leaving it to the stack's resolver would keep those broken after TCP
++// was fixed.
++func (w *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++	if !w.started {
++		return nil, E.New("AmneziaWG is not ready yet")
++	}
++	if !destination.IsDomain() {
++		return w.Device.ListenPacket(ctx, destination)
++	}
++	addresses, err := w.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
++	if err != nil {
++		return nil, err
++	}
++	conn, resolved, err := N.ListenSerial(ctx, w.Device, destination, addresses)
++	if err != nil {
++		return nil, err
++	}
++	// The caller addressed a name and gets packets back from an address, so the
++	// two are mapped for it, as protocol/wireguard does.
++	if resolved.IsValid() && destination != M.SocksaddrFrom(resolved, destination.Port) {
++		return bufio.NewNATPacketConn(bufio.NewPacketConn(conn),
++			M.SocksaddrFrom(resolved, destination.Port), destination), nil
++	}
++	return conn, nil
 +}
 diff --git a/transport/awg/bind.go b/transport/awg/bind.go
 new file mode 100644

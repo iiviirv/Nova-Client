@@ -69,10 +69,19 @@ class AwgConfig {
   ///
   /// Read from the settings each version introduced rather than from a version
   /// field, because there isn't one: version 3 brought header protection,
-  /// content padding and the randomised timings; version 2 brought the
-  /// signature packets I1 to I5; version 1 is the original obfuscation, the
-  /// junk packets and the fake handshake headers. Plain WireGuard carries none
-  /// of them and gets no number rather than a version it does not have.
+  /// content padding and the randomised timings; version 1 is the original
+  /// obfuscation, the junk packets and the fake handshake headers. Plain
+  /// WireGuard carries none of them and gets no number rather than a version it
+  /// does not have.
+  ///
+  /// Version 2 is the one worth being careful about. Its most visible feature
+  /// is the signature packets I1 to I5, but a config can be 2.0 without them:
+  /// Amnezia's own client (`awgProtocolConfig.cpp`) calls a config AWG2 when S3
+  /// or S4 is set, or when a header carries a range, and S3 alone is enough.
+  /// Nova's own server writes exactly that and deliberately writes no I packets
+  /// at all, because their chain grammar differs between the kernel module and
+  /// amneziawg-go and an unknown tag is a hard error on both. So reading only
+  /// I1 to I5 labelled every real Nova 2.0 server as version 1.
   String? get versionLabel {
     if (headerProtectionKey != null ||
         contentPaddingAddition != null ||
@@ -83,11 +92,24 @@ class AwgConfig {
         maxHandshakeAttempts != null) {
       return '3';
     }
-    if (i1 != null || i2 != null || i3 != null || i4 != null || i5 != null) {
+    if (s3 != null ||
+        s4 != null ||
+        _rangedHeader ||
+        i1 != null ||
+        i2 != null ||
+        i3 != null ||
+        i4 != null ||
+        i5 != null) {
       return '2';
     }
     return isObfuscated ? '1' : null;
   }
+
+  /// Whether any fake-header setting is a range (`H1 = 100000-800000`) rather
+  /// than a single number. Ranged headers arrived with 2.0, so a server that
+  /// uses them is 2.0 even with no padding set.
+  bool get _rangedHeader => <String?>[h1, h2, h3, h4]
+      .any((String? h) => h != null && h.contains('-'));
 
   /// The smallest S1-S4 the core will accept before it uses header protection.
   /// Below this it refuses the whole device with "S%d must be more then %d to

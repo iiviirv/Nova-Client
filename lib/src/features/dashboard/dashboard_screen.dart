@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import '../settings/settings_controller.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -374,11 +376,84 @@ class _SummaryView extends StatelessWidget {
         const _ConnectionPanel(),
         const _ProxyModeCard(),
         const _ConfigCard(),
+        const _TunModeCard(),
         if (kShowDashboardTools) ...<Widget>[
           const SizedBox(height: NovaSpace.md),
           const _ToolsStrip(),
         ],
       ],
+    );
+  }
+}
+
+/// The connection mode, on the dashboard rather than three taps into Settings.
+///
+/// Tester report: "you move a finger in the app and it asks for a password".
+/// Whole-device mode needs administrator approval on every connect, because
+/// creating the tunnel device does. That is a fair price when someone wants
+/// every app covered, and a bad one when they only want a browser to work, so
+/// the choice belongs where the connect button is instead of buried in routing
+/// settings. Desktop only: a phone's VPN permission is granted once and never
+/// asked again, so there is nothing to spare anyone there.
+///
+/// Switching while connected reconnects, because the mode is decided when the
+/// core starts. A toggle that silently did nothing until the next connect would
+/// be worse than no toggle.
+class _TunModeCard extends StatelessWidget {
+  const _TunModeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    if (Platform.isAndroid || Platform.isIOS) return const SizedBox.shrink();
+    final scope = NovaScope.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[scope.settings, scope.proxy]),
+      builder: (context, _) {
+        final NovaStrings s = NovaStrings.of(context);
+        final nova = context.nova;
+        final TextTheme text = Theme.of(context).textTheme;
+        final SettingsController settings = scope.settings;
+        final bool on = settings.tunMode;
+        return Padding(
+          padding: const EdgeInsets.only(top: NovaSpace.md),
+          child: NovaCard(
+            child: Row(
+              children: <Widget>[
+                NovaIconChip(
+                    icon: Icons.devices_rounded,
+                    color: on ? nova.cyan : nova.muted),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(s.routeTun,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(on ? s.dashTunOn : s.dashTunOff,
+                          style: text.bodySmall?.copyWith(color: nova.muted)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: NovaSpace.sm),
+                Switch(
+                  value: on,
+                  onChanged: (bool v) async {
+                    await settings.setTunMode(v);
+                    if (!scope.proxy.state.isActive) return;
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(s.dashTunApplies)));
+                    }
+                    await scope.proxy.reconnect();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
