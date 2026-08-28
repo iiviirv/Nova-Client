@@ -64,6 +64,30 @@ class AwgConfig {
       keepaliveTimeout,
       maxHandshakeAttempts;
 
+  /// Which AmneziaWG generation this config uses, as a short label, or null
+  /// when nothing in it identifies one.
+  ///
+  /// Read from the settings each version introduced rather than from a version
+  /// field, because there isn't one: version 3 brought header protection,
+  /// content padding and the randomised timings; version 2 brought the
+  /// signature packets I1 to I5. A config carrying only junk packets and
+  /// headers predates both, and gets no number rather than a guessed one.
+  String? get versionLabel {
+    if (headerProtectionKey != null ||
+        contentPaddingAddition != null ||
+        rekeyAfterTime != null ||
+        rekeyTimeout != null ||
+        rejectAfterTime != null ||
+        keepaliveTimeout != null ||
+        maxHandshakeAttempts != null) {
+      return '3';
+    }
+    if (i1 != null || i2 != null || i3 != null || i4 != null || i5 != null) {
+      return '2';
+    }
+    return null;
+  }
+
   /// The smallest S1-S4 the core will accept before it uses header protection.
   /// Below this it refuses the whole device with "S%d must be more then %d to
   /// use headerProtection", so the key is withheld rather than handed over to
@@ -383,4 +407,21 @@ String rewriteAwgEndpointHost(String conf, String ip) {
   final int colon = s.lastIndexOf(':');
   if (colon < 0) return (s, 51820);
   return (s.substring(0, colon), int.tryParse(s.substring(colon + 1)) ?? 51820);
+}
+
+/// [AwgConfig.versionLabel] for a raw `.conf`, or null when it will not parse.
+///
+/// Cached: the server list rebuilds a row on every ping update, and reparsing
+/// the same config each time to draw one badge is work for nothing.
+final Map<String, String?> _versionCache = <String, String?>{};
+
+String? awgVersionLabel(String? conf) {
+  if (conf == null || conf.isEmpty) return null;
+  return _versionCache.putIfAbsent(conf, () {
+    try {
+      return AwgConfig.parseConf(conf).versionLabel;
+    } catch (_) {
+      return null;
+    }
+  });
 }

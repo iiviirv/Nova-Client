@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.20.20-beta (2026-08-28)
+
+- Fixed: on Windows, a single AmneziaWG server stopped the whole server test with
+  "Could not start the measuring core", so nothing in the list could be tested and
+  connecting failed too. Nova gave up as soon as one half of the network setup
+  failed, and on Windows that half routinely fails in a way that is harmless. It
+  now carries on as long as either half works.
+
+- Added: AmneziaWG servers show which version they offer, so the list reads
+  "AMNEZIAWG VER 3". Servers that do not say get no number rather than a guess.
+
 ## v1.20.19-beta (2026-08-28)
 
 - Fixed: AmneziaWG 3 servers from a subscription connected and then carried

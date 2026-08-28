@@ -546,10 +546,10 @@ index 0000000..c6c607a
 +}
 diff --git a/transport/awg/bind.go b/transport/awg/bind.go
 new file mode 100644
-index 0000000..fe559e0
+index 0000000..977c139
 --- /dev/null
 +++ b/transport/awg/bind.go
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,199 @@
 +package awg
 +
 +import (
@@ -616,20 +616,35 @@ index 0000000..fe559e0
 +		return nil, 0, conn.ErrBindAlreadyOpen
 +	}
 +
-+	conn4, err := b.connect(netip.IPv4Unspecified(), port)
-+	if err != nil && !errors.Is(err, syscall.EAFNOSUPPORT) {
-+		return nil, 0, E.Cause(err, "create ipv4 connection")
-+	}
++	// One address family failing is not the bind failing.
++	//
++	// This used to give up the moment the IPv4 listen returned anything other
++	// than EAFNOSUPPORT, so the IPv6 attempt never happened. Windows answers a
++	// failed unspecified-address UDP listen with WSAEINVAL ("An invalid
++	// argument was supplied"), which is not EAFNOSUPPORT, so one AmneziaWG
++	// server took the whole core down with it: "Could not start the measuring
++	// core", and nothing in the list could be tested.
++	//
++	// Both are tried now, and it is only an error when neither opened.
++	conn4, err4 := b.connect(netip.IPv4Unspecified(), port)
 +	if conn4 != nil {
 +		fns = append(fns, b.receive(conn4))
 +	}
 +
-+	conn6, err := b.connect(netip.IPv6Unspecified(), port)
-+	if err != nil && !errors.Is(err, syscall.EAFNOSUPPORT) {
-+		return nil, 0, E.Cause(err, "create ipv6 connection")
-+	}
++	conn6, err6 := b.connect(netip.IPv6Unspecified(), port)
 +	if conn6 != nil {
 +		fns = append(fns, b.receive(conn6))
++	}
++
++	if conn4 == nil && conn6 == nil {
++		err := err4
++		if err == nil || errors.Is(err, syscall.EAFNOSUPPORT) {
++			err = err6
++		}
++		if err == nil {
++			err = syscall.EAFNOSUPPORT
++		}
++		return nil, 0, E.Cause(err, "create connection")
 +	}
 +
 +	b.conn4 = conn4

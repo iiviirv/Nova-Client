@@ -15,6 +15,7 @@ import '../../core/proxy/pool_order.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/proxy_controller.dart';
+import '../../core/proxy/singbox/awg_config.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../../core/proxy/singbox/singbox_config.dart';
 import '../../core/proxy/subscription.dart';
@@ -1477,7 +1478,10 @@ class _NodeRow extends StatelessWidget {
                       // wrapping to two lines.
                       Row(
                         children: <Widget>[
-                          _ProtoBadge(protocol: node.protocol),
+                          _ProtoBadge(
+                            protocol: node.protocol,
+                            awgVersion: awgVersionLabel(node.awgConf),
+                          ),
                           const SizedBox(width: NovaSpace.sm),
                           Expanded(
                             child: Directionality(
@@ -1580,8 +1584,13 @@ class _NodeRow extends StatelessWidget {
 /// A small colored pill naming the node's protocol (VLESS, VMess, ...), so it
 /// is always readable instead of being truncated inside the name.
 class _ProtoBadge extends StatelessWidget {
-  const _ProtoBadge({required this.protocol});
+  const _ProtoBadge({required this.protocol, this.awgVersion});
   final NodeProtocol protocol;
+
+  /// For AmneziaWG, which generation the server is offering ("3", "2"), so the
+  /// badge reads AMNEZIAWG VER 3. Null when the config says nothing about it,
+  /// and the badge stays as it was rather than claiming a version.
+  final String? awgVersion;
 
   Color _color(NovaColors nova) => switch (protocol) {
         NodeProtocol.vless => nova.cyan,
@@ -1608,7 +1617,9 @@ class _ProtoBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        protocol.label.toUpperCase(),
+        awgVersion == null
+            ? protocol.label.toUpperCase()
+            : '${protocol.label.toUpperCase()} VER $awgVersion',
         style: TextStyle(
             color: c,
             fontWeight: FontWeight.w700,
