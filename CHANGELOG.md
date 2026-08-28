@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.20.22-beta (2026-08-28)
+
+- Fixed: an AmneziaWG server would connect and then carry nothing, sitting on
+  "Verifying" forever, unless the full-device tunnel was on. Names were being
+  sent into the tunnel without being looked up first, so every request failed.
+  This was not about permissions, and it affected every platform.
+
+- Fixed: an AmneziaWG 2 server was labelled AMNEZIAWG VER 1. Nova now reads the
+  settings its own servers actually write for version 2.
+
+- On Windows, Nova starts in proxy mode. The full-device tunnel asks Windows for
+  permission every time you connect, and the proxy asks for nothing while
+  browsers still go through Nova. The full-device tunnel is one tap away on the
+  dashboard, and if you have already chosen a mode, that choice is kept.
+
+- The connection mode is on the dashboard now, under your subscription, instead
+  of inside the routing settings. Switching it while connected reconnects.
+
 ## v1.20.21-beta (2026-08-28)
 
 - Fixed: on a Mac running macOS 15 or older, connecting failed with "Core failed
