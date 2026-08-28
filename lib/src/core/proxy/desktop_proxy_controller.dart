@@ -300,6 +300,18 @@ class DesktopProxyController extends ProxyController {
                 'connect again.$suffix';
           }
           if (_coreExitCode != null) {
+            // A negative code is a signal, so the core was killed rather than
+            // having failed, and it produced no output at all on the way out.
+            // On macOS that is the system refusing to run the binary. Saying
+            // "exit -9" sends people looking for a bad server; this says what
+            // actually happened and gives the one command that shows why.
+            if (Platform.isMacOS && _coreExitCode! < 0 && reason.isEmpty) {
+              throw 'macOS stopped the Nova core before it could start '
+                  '(signal ${-_coreExitCode!}). The system refused to run it, '
+                  'so this is not a problem with your servers. Please send this '
+                  'to support, with the output of running this in Terminal: '
+                  '$_lastCorePath version$suffix';
+            }
             // The process FATAL-exited before the API came up: report the exit
             // code and the last core output (the real reason).
             throw 'Core failed to start (exit $_coreExitCode).'
@@ -733,9 +745,56 @@ class DesktopProxyController extends ProxyController {
       // sing-box opens it directly once the core is elevated.
       await _ensureSideDll(dir, 'libcronet.so');
     }
+    if (Platform.isMacOS) {
+      // Prove the copy actually runs before the connect depends on it. macOS
+      // kills a binary it will not run before that binary writes a single byte,
+      // so the failure arrives as "exit -9" with an empty log and no reason
+      // anywhere: no stdout, no stderr, no crash report. A user cannot act on
+      // that, and neither can we.
+      //
+      // The original inside the app bundle is the one Apple notarized and
+      // stapled, so when the loose copy will not run it is the thing to fall
+      // back to. Costs one fast exec per connect.
+      if (!await _canExecute(out.path)) {
+        NovaLog.instance.write(
+          'macOS refused the staged core at ${out.path}; '
+          'running the notarized one from the app bundle instead',
+          level: NovaLogLevel.warn,
+        );
+        if (await _canExecute(src.path)) {
+          _lastCorePath = src.path;
+          return src.path;
+        }
+        // Both refused. Let the connect fail with the real exit code and say
+        // so plainly rather than pretending a fallback happened.
+        NovaLog.instance.write(
+          'macOS refused the core inside the app bundle too (${src.path})',
+          level: NovaLogLevel.error,
+        );
+      }
+    }
     // Remembered so a TUN failure can say which binary it actually launched.
     _lastCorePath = out.path;
     return out.path;
+  }
+
+  /// Whether this machine will actually run [path].
+  ///
+  /// Asks the core for its version, which is fast and touches nothing. A
+  /// negative exit code is a signal: the process was killed rather than having
+  /// failed, which on macOS means the system refused it (an invalid signature,
+  /// a quarantined copy, a security tool), not that anything is wrong with
+  /// Nova's config or the server.
+  Future<bool> _canExecute(String path) async {
+    try {
+      final ProcessResult r = await Process.run(path, <String>['version'])
+          .timeout(const Duration(seconds: 10));
+      return r.exitCode >= 0;
+    } catch (_) {
+      // Could not even spawn it: a missing file, the wrong architecture, no
+      // execute bit. Treated the same as refused.
+      return false;
+    }
   }
 
   /// Strips `com.apple.quarantine` from a file we just copied.

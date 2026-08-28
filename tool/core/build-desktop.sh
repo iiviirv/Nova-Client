@@ -98,13 +98,38 @@ GOFLAGS=-mod=mod go mod tidy
 # Reproducible bytes for one toolchain, same flags as the Android build.
 LDFLAGS="-s -w -buildid= -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_TAG#v}-nova"
 
+# The oldest macOS the cores run on.
+#
+# A cgo build takes its minimum from the host SDK unless it is told otherwise,
+# so building on a Mac running the newest macOS stamped the cores as needing
+# that same version. Nothing here notices, because the machine that builds them
+# is always new enough to run them.
+#
+# 12.0 is Go's own floor for darwin, and it matches the Xray core we ship
+# beside these, so the pair agree on what they support.
+MACOS_MIN=12.0
+
 build() {
   local goos="$1" goarch="$2" out="$3" cgo="$4" tags="$5"
   say "Building $goos/$goarch (CGO_ENABLED=$cgo, tags $tags)"
   CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
+    MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN" \
     go build -trimpath -buildvcs=false -tags "$tags" -ldflags "$LDFLAGS" \
       -o "$out" ./cmd/sing-box
   ls -lh "$out" | awk '{print "  " $5, $9}'
+}
+
+# Refuse to ship a macOS core that claims to need a newer macOS than we support.
+# Checked rather than trusted: the deployment target is an environment variable,
+# and an environment variable that stops being read fails silently.
+check_min() {
+  local bin="$1" got
+  got="$(vtool -show-build "$bin" 2>/dev/null | awk '/minos/ {print $2}')"
+  echo "  minos $got (want $MACOS_MIN)"
+  [ "$got" = "$MACOS_MIN" ] || {
+    echo "$(basename "$bin") wants macOS $got, not $MACOS_MIN" >&2
+    exit 1
+  }
 }
 
 # The cronet shared library a purego core loads for NaiveProxy, taken from the
@@ -170,6 +195,7 @@ mkdir -p "$out_dir"
 if [ "$target" = "darwin" ] || [ "$target" = "all" ]; then
   [ "$(uname -s)" = "Darwin" ] || { echo "the macOS core needs cgo and must be built on a Mac" >&2; exit 1; }
   build darwin arm64 "$work/sing-box-macos-arm64" 1 "$TAGS"
+  check_min "$work/sing-box-macos-arm64"
   verify "$work/sing-box-macos-arm64"
   rm -f "$out_dir/sing-box-macos-arm64"
   cp "$work/sing-box-macos-arm64" "$out_dir/sing-box-macos-arm64"
@@ -182,6 +208,7 @@ if [ "$target" = "darwin" ] || [ "$target" = "all" ]; then
   # host; cronet-go resolves lib/darwin_amd64 for the static link on its own.
   CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
     build darwin amd64 "$work/sing-box-macos-amd64" 1 "$TAGS"
+  check_min "$work/sing-box-macos-amd64"
   verify "$work/sing-box-macos-amd64"
   rm -f "$out_dir/sing-box-macos-amd64"
   cp "$work/sing-box-macos-amd64" "$out_dir/sing-box-macos-amd64"
