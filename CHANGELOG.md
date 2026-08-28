@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.20.19-beta (2026-08-28)
+
+- Fixed: AmneziaWG 3 servers from a subscription connected and then carried
+  nothing. Everything looked right, the tunnel came up, and every site timed out.
+  Nova was dropping the server's header protection setting on the way in, so it
+  spoke to the server without the protection the server expected. The same server
+  imported from a file worked, which is what made this hard to spot. All of the
+  version 3 settings now survive, and servers on the older version are unaffected.
+
 ## v1.20.18-beta (2026-08-28)
 
 - Changed: the connection core moves to sing-box 1.13.19, six patch releases

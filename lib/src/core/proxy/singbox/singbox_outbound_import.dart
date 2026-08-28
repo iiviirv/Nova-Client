@@ -96,6 +96,30 @@ ProxyNode? _endpointToNode(Map<String, dynamic> e) {
   ]) {
     if (e[k] != null) b.writeln('${k.toUpperCase()} = ${e[k]}');
   }
+  // AmneziaWG 3.x.
+  //
+  // Spelled out rather than upper-cased from the JSON key, because the .conf
+  // parser lowercases a key but does not strip underscores: HEADER_PROTECTION_KEY
+  // would never match the 'headerprotectionkey' it looks for, and the value
+  // would be dropped exactly as silently as it was before.
+  //
+  // Leaving these out is what broke AmneziaWG 3 from a subscription. The same
+  // server imported from a .conf file kept its header key and worked, while the
+  // subscription lost it here, so the client sent unprotected headers to a
+  // server expecting protected ones: the tunnel came up and then carried
+  // nothing, and every lookup through it timed out.
+  const Map<String, String> awg3 = <String, String>{
+    'header_protection_key': 'HeaderProtectionKey',
+    'content_padding_addition': 'ContentPaddingAddition',
+    'rekey_after_time': 'RekeyAfterTime',
+    'rekey_timeout': 'RekeyTimeout',
+    'reject_after_time': 'RejectAfterTime',
+    'keepalive_timeout': 'KeepaliveTimeout',
+    'max_handshake_attempts': 'MaxHandshakeAttempts',
+  };
+  for (final MapEntry<String, String> kv in awg3.entries) {
+    if (e[kv.key] != null) b.writeln('${kv.value} = ${e[kv.key]}');
+  }
   b
     ..writeln('[Peer]')
     ..writeln('PublicKey = ${peer['public_key'] ?? ''}')

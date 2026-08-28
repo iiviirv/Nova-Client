@@ -29,11 +29,11 @@
 <div align="center">
 
 [![Website](https://img.shields.io/badge/🌐%20سایت-novaproxy.online-0ea5e9?style=for-the-badge)](https://novaproxy.online/)
-[![Telegram Channel](https://img.shields.io/badge/✈️%20کانال%20تلگرام-@irnova__proxy-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova)
-[![Telegram Group](https://img.shields.io/badge/👥%20گروه%20تلگرام-@irnovaproxy__group-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnovaproxy_group)
+[![Telegram Channel](https://img.shields.io/badge/✈️%20کانال%20تلگرام-@irnova-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova)
+[![Telegram Group](https://img.shields.io/badge/👥%20گروه%20تلگرام-@irnova__group-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova_group)
 [![YouTube](https://img.shields.io/badge/▶️%20یوتیوب-@novaproxyir-ff0000?style=for-the-badge&logo=youtube)](https://youtube.com/@novaproxyir)
 [![X (Twitter)](https://img.shields.io/badge/𝕏%20شبکه%20ایکس-@irNovaProxy-000000?style=for-the-badge&logo=x)](https://x.com/irNovaProxy)
-[![Instagram](https://img.shields.io/badge/📸%20اینستاگرام-@irnova__proxy-E4405F?style=for-the-badge&logo=instagram)](https://www.instagram.com/irnova_proxy)
+[![Instagram](https://img.shields.io/badge/📸%20اینستاگرام-@irnova__team-E4405F?style=for-the-badge&logo=instagram)](https://www.instagram.com/irnova_team)
 
 </div>
 
@@ -121,10 +121,10 @@
 
 - وب‌سایت: ⁦https://novaproxy.online/⁩
 - کانال تلگرام: ⁦https://t.me/irnova⁩
-- گروه تلگرام: ⁦https://t.me/irnovaproxy_group⁩
+- گروه تلگرام: ⁦https://t.me/irnova_group⁩
 - یوتیوب: ⁦https://youtube.com/@novaproxyir⁩
 - ایکس: ⁦https://x.com/irNovaProxy⁩
-- اینستاگرام: ⁦https://www.instagram.com/irnova_proxy⁩
+- اینستاگرام: ⁦https://www.instagram.com/irnova_team⁩
 
 ## اعتبار و مجوز
 

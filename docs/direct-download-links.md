@@ -11,15 +11,27 @@ pinned in Telegram, printed, or handed out anywhere:
 | Android (smaller, 64-bit ARM) | `.../releases/latest/download/nova-client-arm64-v8a.apk` |
 | Android (smaller, 32-bit ARM) | `.../releases/latest/download/nova-client-armeabi-v7a.apk` |
 | Windows | `.../releases/latest/download/Nova-Windows.zip` |
-| macOS | `.../releases/latest/download/Nova-macOS-arm64.dmg` |
+| Linux | `.../releases/latest/download/Nova-Linux.tar.gz` |
+| macOS (Apple Silicon and Intel) | `.../releases/latest/download/Nova-macOS.dmg` |
 
 The per-ABI Android builds are about 42 MB against 121 MB for the universal one.
 Most modern phones want `arm64-v8a`. If someone is unsure, the universal
 `nova-client.apk` always works.
 
+There is only one macOS build and it is universal: the app binary, every bundled
+framework and both cores are `x86_64 arm64`, so `Nova-macOS.dmg` runs natively
+on Apple Silicon and on Intel. `Nova-macOS-arm64.dmg` is a byte-identical copy
+under the old name, kept so links already shared keep resolving. Hand out the
+plain name; the arm64 one reads as "not for Intel" when it serves both.
+
 **These only keep working if asset names stay stable across releases.** See
 `irnova-site/docs/download-links.md`; a build number in the macOS filename is
 what made that link 404 for weeks.
+
+**And macOS only exists if someone builds it.** It has no CI job, so a release
+can go out complete on every other platform with no Mac file at all, which
+404s the link above until it is uploaded. That happened on `v1.20.16-beta` and
+`v1.20.18-beta`. Run `tool/release_macos.sh <build>` as part of every release.
 
 ## Auto-updates without any store
 

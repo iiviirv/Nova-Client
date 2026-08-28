@@ -26,11 +26,11 @@ with a proper right-to-left interface.
 <div align="center">
 
 [![Website](https://img.shields.io/badge/🌐%20Website-novaproxy.online-0ea5e9?style=for-the-badge)](https://novaproxy.online/)
-[![Telegram Channel](https://img.shields.io/badge/✈️%20Telegram%20Channel-@irnova__proxy-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova)
-[![Telegram Group](https://img.shields.io/badge/👥%20Telegram%20Group-@irnovaproxy__group-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnovaproxy_group)
+[![Telegram Channel](https://img.shields.io/badge/✈️%20Telegram%20Channel-@irnova-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova)
+[![Telegram Group](https://img.shields.io/badge/👥%20Telegram%20Group-@irnova__group-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova_group)
 [![YouTube](https://img.shields.io/badge/▶️%20YouTube-@novaproxyir-ff0000?style=for-the-badge&logo=youtube)](https://youtube.com/@novaproxyir)
 [![X (Twitter)](https://img.shields.io/badge/𝕏%20X-@irNovaProxy-000000?style=for-the-badge&logo=x)](https://x.com/irNovaProxy)
-[![Instagram](https://img.shields.io/badge/📸%20Instagram-@irnova__proxy-E4405F?style=for-the-badge&logo=instagram)](https://www.instagram.com/irnova_proxy)
+[![Instagram](https://img.shields.io/badge/📸%20Instagram-@irnova__team-E4405F?style=for-the-badge&logo=instagram)](https://www.instagram.com/irnova_team)
 
 </div>
 
@@ -118,10 +118,10 @@ Questions, feature requests, and clean-IP tips all live with the wider Nova comm
 
 - Website: https://novaproxy.online/
 - Telegram channel: https://t.me/irnova
-- Telegram group: https://t.me/irnovaproxy_group
+- Telegram group: https://t.me/irnova_group
 - YouTube: https://youtube.com/@novaproxyir
 - X: https://x.com/irNovaProxy
-- Instagram: https://www.instagram.com/irnova_proxy
+- Instagram: https://www.instagram.com/irnova_team
 
 ## Credits and license
 

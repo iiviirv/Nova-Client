@@ -275,8 +275,8 @@ class SettingsScreen extends StatelessWidget {
                         _div(nova.border),
                         _LinkTile(
                           icon: Icons.camera_alt_rounded,
-                          title: 'Instagram - @irnova_proxy',
-                          url: 'https://instagram.com/irnova_proxy',
+                          title: 'Instagram - @irnova_team',
+                          url: 'https://instagram.com/irnova_team',
                         ),
                         _div(nova.border),
                         _LinkTile(
