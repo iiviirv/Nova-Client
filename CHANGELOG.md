@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.20.18-beta (2026-08-28)
+
+- Changed: the connection core moves to sing-box 1.13.19, six patch releases
+  forward. Nothing you do changes; this is upstream's accumulated fixes, plus a
+  privacy change that stops one protocol sending client details it did not need
+  to, and a newer NaiveProxy on desktop.
+
 ## v1.20.17-beta (2026-08-27)
 
 - Fixed: Nova kept telling you a new version was available after you had already
