@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.20.17-beta (2026-08-27)
+
+- Fixed: Nova kept telling you a new version was available after you had already
+  installed it. The last release reported itself by the previous version's number,
+  so the update check never saw itself as current and offered the same update
+  again and again.
+
+- Fixed: the macOS download was missing from the last release, so the download
+  button on the website did not work. It is back.
+
+- Fixed: AmneziaWG 3 servers could not connect on macOS or iPhone. The fix for
+  this went out for Android, Windows and Linux in the last release but those two
+  never received it, so the core refused to start and nothing connected at all:
+  no server, no test, no traffic.
+
+- Fixed: a server imported from a WireGuard file was listed with ".bin" on the
+  end of its name.
+
 ## v1.20.16-beta (2026-08-27)
 
 - Fixed: AmneziaWG 3 could not connect at all. The tunnel was set up and then

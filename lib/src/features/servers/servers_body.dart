@@ -1041,7 +1041,11 @@ class _ConfigDialogState extends State<_ConfigDialog> {
         _kind = ProxyKind.awg;
         if (_nameCtrl.text.trim().isEmpty && file.name.isNotEmpty) {
           _nameCtrl.text =
-              file.name.replaceAll(RegExp(r'\.conf$', caseSensitive: false), '');
+              // Strip whatever extension the picker reports, not just .conf.
+              // iOS hands a WireGuard .conf back as a BIN file, so a server
+              // imported from one was listed as "nova-awg3.bin".
+              file.name.replaceAll(
+                  RegExp(r'\.(conf|bin|txt|dat)$', caseSensitive: false), '');
         }
       });
     } on FormatException {
