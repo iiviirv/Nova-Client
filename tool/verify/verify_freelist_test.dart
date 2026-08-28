@@ -78,8 +78,12 @@ Future<void> _verify() async {
 
     final int mixed = 24080 + (start ~/ kBatch) * 2;
     final int clash = mixed + 1;
-    final ({Map<String, dynamic> config, Map<String, String> tagKeys}) built =
-        SingboxConfig.buildMeasureMap(nodes,
+    // `var`, not the record spelled out: this only reads `.config`, and writing
+    // the shape here means every field added to buildMeasureMap breaks a tool
+    // that does not use it. That is what happened when `endpointPorts` was
+    // added, and it left the analyze job red on every commit for a day, which
+    // is long enough to stop anyone reading it.
+    final built = SingboxConfig.buildMeasureMap(nodes,
             mixedPort: mixed, clashPort: clash);
 
     final Directory tmp = Directory.systemTemp.createTempSync('novaverify');
