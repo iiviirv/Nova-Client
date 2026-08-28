@@ -23,9 +23,6 @@ import '../../widgets/nova_components.dart';
 import '../../widgets/nova_connect_orb.dart';
 import '../../widgets/nova_scope.dart';
 import '../../widgets/nova_segmented_tabs.dart';
-import '../cloudflare/cloudflare_controller.dart';
-import '../cloudflare/cloudflare_screen.dart';
-import '../cloudflare/deploy_screen.dart';
 import '../profiles/profiles_controller.dart';
 import '../radar/radar_screen.dart';
 import '../panel/open_panel.dart';
@@ -33,20 +30,19 @@ import '../servers/node_list_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
 
-/// The home screen: a Summary/Configs segmented header, a Cloudflare status
-/// line, the connect orb with a live uptime timer, one connection panel (exit
-/// country, IP, ping and live throughput), the active config card, and a
-/// tools strip.
+/// The home screen: a Summary/Configs segmented header, the connect orb with a
+/// live uptime timer, one connection panel (exit country, IP, ping and live
+/// throughput), the active config card, the connection mode switch, and a tools
+/// strip.
 ///
 /// Rebuilds are scoped on purpose. The proxy controller notifies once a second
 /// while connected (traffic samples), so nothing above the hero listens to it:
-/// the header, tabs and Cloudflare line only rebuild for their own reasons, and
-/// each block below listens to exactly the controllers it reads.
+/// the header and tabs only rebuild for their own reasons, and each block below
+/// listens to exactly the controllers it reads.
 /// Temporarily hidden from the dashboard pending a product decision, kept fully
 /// wired so re-enabling is a one-line flip. Mutable (not `const`) on purpose so
 /// the widgets they gate still count as referenced.
-bool kShowCloudflareLine = false; // the "Connect Cloudflare" row above the hero
-bool kShowDashboardTools = false; // the Radar / Deploy / Panel strip
+bool kShowDashboardTools = false; // the Radar strip
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, this.resetToSummary});
@@ -144,10 +140,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: NovaSpace.xs),
             const _UpdateBanner(),
-            if (kShowCloudflareLine) ...<Widget>[
-              const _CloudflareLine(),
-              const SizedBox(height: NovaSpace.sm),
-            ],
             if (_tab == 0) const _SummaryView() else const _ConfigsView(),
           ],
         ),
@@ -211,83 +203,6 @@ class _HomeHeader extends StatelessWidget {
     return NovaScreenHeader(
       title: s.t('home.title'),
       subtitle: s.t('home.subtitle'),
-    );
-  }
-}
-
-/// Cloudflare status as a quiet, borderless line rather than another boxed
-/// card: it is a secondary status, and the hero below is the focal element.
-/// Opens the Cloudflare hub.
-class _CloudflareLine extends StatelessWidget {
-  const _CloudflareLine();
-
-  @override
-  Widget build(BuildContext context) {
-    final nova = context.nova;
-    final s = NovaStrings.of(context);
-    final cf = NovaScope.of(context).cloudflare;
-    final text = Theme.of(context).textTheme;
-
-    return ListenableBuilder(
-      listenable: cf,
-      builder: (context, _) {
-        final bool connected = cf.phase == CfPhase.connected;
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: NovaRadii.smR,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: NovaSpace.sm, vertical: NovaSpace.md),
-              child: Row(
-                children: <Widget>[
-                  Icon(Icons.cloud_rounded,
-                      size: 16,
-                      color: connected ? NovaSemantics.successGreen : nova.muted),
-                  const SizedBox(width: NovaSpace.sm),
-                  Expanded(
-                    child: connected
-                        ? Text.rich(
-                            TextSpan(children: <InlineSpan>[
-                              TextSpan(
-                                text: '${s.cfConnectedTo} ',
-                                style: text.labelMedium
-                                    ?.copyWith(color: nova.muted),
-                              ),
-                              TextSpan(
-                                text: cf.accountName.isEmpty
-                                    ? s.setCloudflare
-                                    : cf.accountName,
-                                style: text.labelMedium?.copyWith(
-                                  color: nova.text,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ]),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          )
-                        : Text(
-                            s.cfConnect,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: text.labelMedium?.copyWith(
-                              color: nova.muted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                  Icon(Icons.chevron_right_rounded,
-                      size: 18, color: nova.muted),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -1660,29 +1575,6 @@ class _ToolsStrip extends StatelessWidget {
                 color: nova.cyan,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const RadarScreen()),
-                ),
-              ),
-            ),
-            const _VRule(),
-            Expanded(
-              child: _ToolCell(
-                icon: Icons.cloud_upload_rounded,
-                label: s.toolDeploy,
-                color: nova.indigo,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
-                ),
-              ),
-            ),
-            const _VRule(),
-            Expanded(
-              child: _ToolCell(
-                icon: Icons.dashboard_rounded,
-                label: s.toolPanel,
-                color: nova.violet,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                      builder: (_) => const CloudflareScreen()),
                 ),
               ),
             ),

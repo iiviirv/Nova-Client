@@ -19,7 +19,6 @@ import 'src/core/proxy/singbox_proxy_controller.dart';
 import 'src/core/proxy/subscription.dart';
 import 'src/core/proxy/subscription_body_store.dart';
 import 'src/core/update/update_checker.dart';
-import 'src/features/cloudflare/cloudflare_controller.dart';
 import 'src/features/profiles/profiles_controller.dart';
 import 'src/features/radar/radar_controller.dart';
 import 'src/features/relay/relay_controller.dart';
@@ -36,7 +35,6 @@ Future<void> main() async {
   final ThemeController theme = ThemeController();
   final ProfilesController profiles = ProfilesController();
   final RadarController radar = RadarController();
-  final CloudflareController cloudflare = CloudflareController();
   final SettingsController settings = SettingsController();
   final AppRouting appRouting = AppRouting();
 
@@ -122,7 +120,6 @@ Future<void> main() async {
     connInfo: connInfo,
     profiles: profiles,
     radar: radar,
-    cloudflare: cloudflare,
     settings: settings,
     appRouting: appRouting,
     vps: vps,
@@ -145,7 +142,6 @@ Future<void> main() async {
     theme.attachPrefs(prefs);
     profiles.attachPrefs(prefs);
     radar.attachPrefs(prefs);
-    cloudflare.attachPrefs(prefs);
     settings.attachPrefs(prefs);
     appRouting.attachPrefs(prefs);
     NodeGeoStore.instance.attachPrefs(prefs);

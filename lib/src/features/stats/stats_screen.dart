@@ -154,7 +154,7 @@ class _StatsScreenState extends State<StatsScreen> with WidgetsBindingObserver {
     final scope = NovaScope.of(context);
     final s = NovaStrings.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable>[scope.proxy, scope.cloudflare]),
+      listenable: scope.proxy,
       builder: (context, _) {
         final proxy = scope.proxy;
         final bool active = proxy.state.isActive;

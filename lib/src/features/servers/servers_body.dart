@@ -24,8 +24,6 @@ import '../../core/proxy/subscription.dart';
 import '../../core/proxy/proxy_controller.dart';
 import '../../widgets/nova_scope.dart';
 import '../profiles/profiles_controller.dart';
-import '../cloudflare/cloudflare_screen.dart';
-import '../cloudflare/deploy_screen.dart';
 import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
 import 'node_list_screen.dart';
@@ -679,7 +677,7 @@ class _LatencyReadout extends StatelessWidget {
   }
 }
 
-/// Three-action empty state mirroring the native `ServersEmptyState`.
+/// The empty state: paste a subscription, or bring up a server of your own.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.compact});
   final bool compact;
@@ -715,22 +713,11 @@ class _EmptyState extends StatelessWidget {
             style: text.bodySmall?.copyWith(color: nova.muted)),
         const SizedBox(height: 20),
         _EmptyAction(
-          icon: Icons.cloud_upload_rounded,
-          title: s.serversDeploy,
-          subtitle: s.serversDeploySub,
+          icon: Icons.add_rounded,
+          title: s.serversAddConfig,
+          subtitle: s.serversAddConfigSub,
           highlighted: true,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const DeployScreen()),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _EmptyAction(
-          icon: Icons.login_rounded,
-          title: s.serversSignIn,
-          subtitle: s.serversSignInSub,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const CloudflareScreen()),
-          ),
+          onTap: () => showAddConfigSheet(context),
         ),
         const SizedBox(height: 10),
         _EmptyAction(
@@ -740,13 +727,6 @@ class _EmptyState extends StatelessWidget {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const ConnectVpsScreen()),
           ),
-        ),
-        const SizedBox(height: 10),
-        _EmptyAction(
-          icon: Icons.add_rounded,
-          title: s.serversAddConfig,
-          subtitle: s.serversAddConfigSub,
-          onTap: () => showAddConfigSheet(context),
         ),
       ],
     );

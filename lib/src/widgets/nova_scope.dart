@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../core/proxy/conn_info_controller.dart';
 import '../core/proxy/proxy_controller.dart';
-import '../features/cloudflare/cloudflare_controller.dart';
 import '../features/profiles/profiles_controller.dart';
 import '../features/radar/radar_controller.dart';
 import '../features/relay/relay_controller.dart';
@@ -27,7 +26,6 @@ class NovaScope extends InheritedWidget {
     required this.connInfo,
     required this.profiles,
     required this.radar,
-    required this.cloudflare,
     required this.settings,
     required this.appRouting,
     required this.vps,
@@ -41,7 +39,6 @@ class NovaScope extends InheritedWidget {
   final ConnInfoController connInfo;
   final ProfilesController profiles;
   final RadarController radar;
-  final CloudflareController cloudflare;
   final SettingsController settings;
   final AppRouting appRouting;
   final VpsController vps;
@@ -62,7 +59,6 @@ class NovaScope extends InheritedWidget {
       connInfo != oldWidget.connInfo ||
       profiles != oldWidget.profiles ||
       radar != oldWidget.radar ||
-      cloudflare != oldWidget.cloudflare ||
       settings != oldWidget.settings ||
       appRouting != oldWidget.appRouting ||
       vps != oldWidget.vps ||

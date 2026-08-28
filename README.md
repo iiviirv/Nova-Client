@@ -6,9 +6,9 @@
 
 **A fast, modern VPN client for iPhone, Android, macOS and Windows, built for the networks people actually deal with in Iran.**
 
-Tap the logo to connect. Bring the subscription you already have, or let Nova build and run
-your own private server on Cloudflare, all from inside the app. Full Persian and English,
-with a proper right-to-left interface.
+Tap the logo to connect. Bring the subscription you already have, or turn a VPS of your own
+into a Nova server from inside the app. Full Persian and English, with a proper
+right-to-left interface.
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-8b5cf6?style=for-the-badge)](https://github.com/SagerNet/sing-box/blob/main/LICENSE)
 [![Version](https://img.shields.io/github/v/release/iiviirv/Nova-Client?label=version&color=7c5cff&style=for-the-badge)](https://github.com/iiviirv/Nova-Client/releases/latest)
@@ -45,8 +45,8 @@ Nova is designed for difficult networks. It bundles the anti-censorship tools pe
 ### Highlights
 
 - **One tap to connect.** A big Nova logo on the home screen is the connect button. Tap it and you are online; the status and a live timer sit right beside it.
-- **Run your own server in two minutes.** Connect your Cloudflare account once, and Nova can deploy a private proxy worker for you, set its password, and save it as your panel, with no terminal and no copy-paste.
-- **Find the fastest routes.** Nova Radar scans Cloudflare's network for clean, low-latency IPs and can push them straight to your worker.
+- **Run your own server.** Hand Nova a VPS and it installs and configures the server for you, over SSH, from inside the app. No terminal, no copy-paste.
+- **Find the fastest routes.** Nova Radar scans Cloudflare's network for clean, low-latency IPs and can push them straight to your panel.
 - **Bring your own subscription.** Paste a sing-box, Clash, base64, or vless / vmess / trojan link and Nova handles the rest.
 
 ## Features in detail
@@ -58,17 +58,17 @@ Nova is designed for difficult networks. It bundles the anti-censorship tools pe
 - Mark servers as favorites and filter the list by protocol.
 - Works with any subscription format: sing-box, Clash, base64, and vless / vmess / trojan links.
 
-### Build and manage your own server (Cloudflare)
-- **Connect to Cloudflare** from inside the app using a secure in-app browser sign-in. You sign in once and your login is saved on the device, so you never have to do it again.
-- **See all your workers** in one place and pick one to use as your panel.
-- **Deploy a brand new worker** in a couple of taps. Nova creates the storage, uploads the latest proxy code, and reserves your subdomain for you.
-- **Set the admin password in the app** (no browser needed). Nova remembers it and signs you in to the panel automatically next time.
-- **Manage the panel** from Nova: connection info, security status, network settings, and your custom IP list.
+### Build and manage your own server (VPS)
+- **Connect a VPS** with its address and your SSH key, and Nova installs the Nova server on it for you.
+- **Pick your protocols**, including Hysteria2 for gaming, and Nova writes the configuration.
+- **Add a domain** and Nova arranges the certificate, or run without one.
+- **Manage users and inbounds** from inside the app: add someone, see who is using what, and hand out their subscription link.
+- **Watch the node** live: traffic, connections, and whether each protocol is answering.
 
 ### Nova Radar (clean-IP finder)
 - Scans Cloudflare's published IP ranges and measures real connection latency to each one.
 - Sorts the results so the fastest, cleanest IPs are on top.
-- One button to **send the best IPs straight to your worker**, so your configs use the fastest routes.
+- One button to **send the best IPs straight to your panel**, so your configs use the fastest routes.
 - Copy or export the list whenever you want.
 
 ### Anti-censorship and routing
@@ -104,13 +104,13 @@ Android ships one `arm64` APK, so there is nothing to choose; it runs on essenti
 ## Getting started
 
 1. **Download and install.** Grab the `arm64` APK from the [Releases page](https://github.com/iiviirv/Nova-Client/releases/latest). You may need to allow installing apps from your browser or file manager.
-2. **Add a connection.** Either paste a subscription link you already have, or open the Cloudflare section and deploy your own private worker.
+2. **Add a connection.** Paste a subscription link you already have, or connect a VPS of your own and let Nova set it up.
 3. **Connect.** Tap the Nova logo on the home screen. Android will ask once for VPN permission; allow it.
 4. **Tune it (optional).** Open Radar to find faster IPs, or Settings to turn on TLS fragmenting, WARP, secure DNS, and per-app proxy.
 
 ## Privacy
 
-Nova is a client you control. When you deploy your own Cloudflare worker, the server is yours, on your own account. Your Cloudflare login and panel password are stored only on your device, so you do not have to type them again.
+Nova is a client you control. When you connect a VPS, the server is yours, on your own account. Your SSH key and panel password are stored only on your device, so you do not have to type them again.
 
 ## Community
 

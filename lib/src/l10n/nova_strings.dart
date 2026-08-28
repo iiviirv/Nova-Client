@@ -177,8 +177,6 @@ class NovaStrings {
   String get homeConnectedAuto => t('home.connectedAuto');
   String get cfConnectedTo => t('cf.connectedTo');
   String get cfConnect => t('cf.connect');
-  String get toolDeploy => t('tool.deploy');
-  String get toolPanel => t('tool.panel');
   String nodesCount(int n) =>
       isFarsi ? '$n نود' : '$n nodes';
 
@@ -218,8 +216,6 @@ class NovaStrings {
   String get serversPlanUnlimited => t('servers.planUnlimited');
   String get serversPlanLeft => t('servers.planLeft');
   String get setRadarSub => t('set.radarSub');
-  String get setCloudflare => t('set.cloudflare');
-  String get setCloudflareSub => t('set.cloudflareSub');
   String get setRelay => t('set.relay');
   String get setRelaySub => t('set.relaySub');
   String get modeSystem => t('mode.system');
@@ -474,8 +470,6 @@ class NovaStrings {
   String get serversDelete => t('servers.delete');
   String get serversEmpty => t('servers.empty');
   String get serversEmptySub => t('servers.emptySub');
-  String get serversDeploy => t('servers.deploy');
-  String get serversDeploySub => t('servers.deploySub');
 
   // ---- Deploy via the Telegram bot ----
   String get deployBotTitle => t('deploy.botTitle');
@@ -484,8 +478,6 @@ class NovaStrings {
   String get deployBotStep2 => t('deploy.botStep2');
   String get deployBotStep3 => t('deploy.botStep3');
   String get deployBotOpen => t('deploy.botOpen');
-  String get serversSignIn => t('servers.signIn');
-  String get serversSignInSub => t('servers.signInSub');
   String get serversAddConfig => t('servers.addConfig');
   String get serversAddConfigSub => t('servers.addConfigSub');
   String get serversConnectVps => t('servers.connectVps');
@@ -956,8 +948,6 @@ class NovaStrings {
     'home.singleConfig': 'Single config',
     'cf.connectedTo': 'Connected to Cloudflare',
     'cf.connect': 'Connect Cloudflare',
-    'tool.deploy': 'Deploy',
-    'tool.panel': 'Panel',
     'set.general': 'General',
     'set.appearance': 'Appearance',
     'set.community': 'Community',
@@ -1001,8 +991,6 @@ class NovaStrings {
     'servers.planUnlimited': 'used',
     'servers.planLeft': '{n} left',
     'set.radarSub': 'Scan for clean Cloudflare IPs',
-    'set.cloudflare': 'Cloudflare',
-    'set.cloudflareSub': 'Sign in to manage your panel',
     'set.relay': 'Google relay',
     'set.relaySub': 'Reach your panel and subscription through Google when it is blocked',
     'relay.title': 'Google relay',
@@ -1306,16 +1294,12 @@ class NovaStrings {
     'servers.empty': 'No servers yet',
     'servers.emptySub':
         'Deploy your own panel, sign in to one, or add a config to get started.',
-    'servers.deploy': 'Deploy your own panel',
-    'servers.deploySub': 'Spin up a free Nova worker on Cloudflare',
     'deploy.botTitle': 'Deploy with the Nova bot',
     'deploy.botIntro': 'The Nova Telegram bot sets up a free Nova worker on your own Cloudflare account in a couple of minutes. Nothing to install here.',
     'deploy.botStep1': 'Open the bot and tap Start.',
     'deploy.botStep2': 'Paste a Cloudflare API token when it asks. The bot uses it once to create the worker on your account.',
     'deploy.botStep3': 'It gives you your panel link and password. Come back and use "Import from your panel" to sign in.',
     'deploy.botOpen': 'Open the Nova bot',
-    'servers.signIn': 'Sign in to your panel',
-    'servers.signInSub': 'Import configs from an existing panel',
     'servers.addConfig': 'Add a config',
     'servers.addConfigSub': 'Paste a vless:// link or subscription URL',
     'servers.connectVps': 'Connect your VPS',
@@ -1793,8 +1777,6 @@ class NovaStrings {
     'home.singleConfig': 'پیکربندی تکی',
     'cf.connectedTo': 'متصل به کلودفلر',
     'cf.connect': 'اتصال به کلودفلر',
-    'tool.deploy': 'استقرار',
-    'tool.panel': 'پنل',
     'set.general': 'عمومی',
     'set.appearance': 'ظاهر',
     'set.community': 'انجمن',
@@ -1838,8 +1820,6 @@ class NovaStrings {
     'servers.planUnlimited': 'مصرف شده',
     'servers.planLeft': '\u2066{n}\u2069 باقی‌مانده',
     'set.radarSub': 'اسکن آی‌پی‌های تمیز کلودفلر',
-    'set.cloudflare': 'کلودفلر',
-    'set.cloudflareSub': 'ورود برای مدیریت پنل شما',
     'set.relay': 'رله گوگل',
     'set.relaySub': 'وقتی پنل و اشتراکتان مسدود است، از طریق گوگل به آن‌ها برسید',
     'relay.title': 'رله گوگل',
@@ -2143,16 +2123,12 @@ class NovaStrings {
     'servers.empty': 'هنوز سروری نیست',
     'servers.emptySub':
         'برای شروع، پنل خودتان را مستقر کنید، به یک پنل وارد شوید، یا یک پیکربندی اضافه کنید.',
-    'servers.deploy': 'پنل خودتان را مستقر کنید',
-    'servers.deploySub': 'یک ورکر رایگان نوا روی کلودفلر بسازید',
     'deploy.botTitle': 'استقرار با ربات نوا',
     'deploy.botIntro': 'ربات تلگرام نوا در چند دقیقه یک ورکر رایگان نوا روی حساب \u2066Cloudflare\u2069 خودتان می‌سازد. اینجا چیزی نصب نمی‌شود.',
     'deploy.botStep1': 'ربات را باز کنید و \u2066Start\u2069 را بزنید.',
     'deploy.botStep2': 'وقتی خواست، یک توکن \u2066Cloudflare API\u2069 را بفرستید. ربات یک‌بار از آن برای ساخت ورکر روی حساب شما استفاده می‌کند.',
     'deploy.botStep3': 'لینک پنل و رمز را به شما می‌دهد. برگردید و از «ورود از پنل» وارد شوید.',
     'deploy.botOpen': 'باز کردن ربات نوا',
-    'servers.signIn': 'به پنل خود وارد شوید',
-    'servers.signInSub': 'پیکربندی‌ها را از یک پنل موجود وارد کنید',
     'servers.addConfig': 'افزودن پیکربندی',
     'servers.addConfigSub': 'یک لینک vless:// یا نشانی اشتراک را بچسبانید',
     'servers.connectVps': 'اتصال سرور مجازی شما',

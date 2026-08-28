@@ -16,7 +16,6 @@ import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../logs/log_screen.dart';
 import '../apps/per_app_screen.dart';
-import '../cloudflare/cloudflare_screen.dart';
 import '../panel/open_panel.dart';
 import '../radar/radar_screen.dart';
 import '../routing/routing_screen.dart';
@@ -156,14 +155,6 @@ class SettingsScreen extends StatelessWidget {
                           title: s.navRadar,
                           subtitle: s.setRadarSub,
                           onTap: () => _push(context, const RadarScreen()),
-                        ),
-                        _div(nova.border),
-                        _NavRow(
-                          icon: Icons.cloud_upload_rounded,
-                          color: nova.indigo,
-                          title: s.setCloudflare,
-                          subtitle: s.setCloudflareSub,
-                          onTap: () => _push(context, const CloudflareScreen()),
                         ),
                       ],
                     ),

@@ -4,7 +4,6 @@ import 'package:nova_client/src/core/logging/nova_log.dart';
 import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
-import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
 import 'package:nova_client/src/features/logs/log_screen.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
 import 'package:nova_client/src/features/radar/radar_controller.dart';
@@ -47,7 +46,6 @@ Future<SettingsController> _pumpLogs(
     connInfo: ConnInfoController(proxy),
     profiles: profiles,
     radar: RadarController()..attachPrefs(prefs),
-    cloudflare: CloudflareController()..attachPrefs(prefs),
     settings: settings,
     appRouting: AppRouting(),
     vps: VpsController(profiles, proxy, relay),

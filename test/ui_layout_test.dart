@@ -6,8 +6,6 @@ import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/mock_proxy_controller.dart';
 import 'package:nova_client/src/core/proxy/proxy_controller.dart';
-import 'package:nova_client/src/features/cloudflare/cloudflare_controller.dart';
-import 'package:nova_client/src/features/cloudflare/deploy_screen.dart';
 import 'package:nova_client/src/features/dashboard/dashboard_screen.dart';
 import 'package:nova_client/src/features/onboarding/onboarding_screen.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
@@ -122,7 +120,6 @@ Future<void> _pump(
     connInfo: ConnInfoController(proxyCtl),
     profiles: profileCtl,
     radar: RadarController()..attachPrefs(prefs),
-    cloudflare: CloudflareController()..attachPrefs(prefs),
     settings: SettingsController(prefs: prefs),
     appRouting: AppRouting(),
     vps: VpsController(profileCtl, proxyCtl, relay),
@@ -342,37 +339,6 @@ void main() {
       await tester.tap(find.text('Light'));
       await tester.pump();
       expect(theme.themeMode, ThemeMode.light);
-      await _teardown(tester);
-    });
-  });
-
-  group('Deploy', () {
-    testWidgets('bot hand-off lays out at 320dp and 2x text, English dark',
-        (WidgetTester tester) async {
-      await _pump(tester, const DeployScreen(), textScale: 2.0);
-      expect(tester.takeException(), isNull);
-      expect(find.text('Deploy with the Nova bot'), findsOneWidget);
-      // The steps and the hand-off button are below the fold at 2x on a 320dp
-      // phone; scroll them in and confirm they lay out.
-      await tester.scrollUntilVisible(
-        find.text('Open the Nova bot'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(tester.takeException(), isNull);
-      expect(find.text('Open the bot and tap Start.'), findsOneWidget);
-      expect(find.text('Open the Nova bot'), findsOneWidget);
-      await _teardown(tester);
-    });
-
-    testWidgets('bot hand-off lays out at 320dp and 2x text, Farsi light',
-        (WidgetTester tester) async {
-      await _pump(tester, const DeployScreen(),
-          textScale: 2.0,
-          locale: const Locale('fa'),
-          themeMode: ThemeMode.light);
-      expect(tester.takeException(), isNull);
-      expect(find.text('استقرار با ربات نوا'), findsOneWidget);
       await _teardown(tester);
     });
   });
