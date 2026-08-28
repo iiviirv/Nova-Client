@@ -26,7 +26,7 @@ with a proper right-to-left interface.
 <div align="center">
 
 [![Website](https://img.shields.io/badge/🌐%20Website-novaproxy.online-0ea5e9?style=for-the-badge)](https://novaproxy.online/)
-[![Telegram Channel](https://img.shields.io/badge/✈️%20Telegram%20Channel-@irnova__proxy-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova_proxy)
+[![Telegram Channel](https://img.shields.io/badge/✈️%20Telegram%20Channel-@irnova__proxy-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnova)
 [![Telegram Group](https://img.shields.io/badge/👥%20Telegram%20Group-@irnovaproxy__group-0ea5e9?style=for-the-badge&logo=telegram)](https://t.me/irnovaproxy_group)
 [![YouTube](https://img.shields.io/badge/▶️%20YouTube-@novaproxyir-ff0000?style=for-the-badge&logo=youtube)](https://youtube.com/@novaproxyir)
 [![X (Twitter)](https://img.shields.io/badge/𝕏%20X-@irNovaProxy-000000?style=for-the-badge&logo=x)](https://x.com/irNovaProxy)
@@ -117,7 +117,7 @@ Nova is a client you control. When you deploy your own Cloudflare worker, the se
 Questions, feature requests, and clean-IP tips all live with the wider Nova community.
 
 - Website: https://novaproxy.online/
-- Telegram channel: https://t.me/irnova_proxy
+- Telegram channel: https://t.me/irnova
 - Telegram group: https://t.me/irnovaproxy_group
 - YouTube: https://youtube.com/@novaproxyir
 - X: https://x.com/irNovaProxy

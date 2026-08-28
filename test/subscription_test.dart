@@ -48,7 +48,7 @@ void main() {
       const String tgInfo =
           'vless://e8f57fa7-ecc0-4850-89d1-7814dd585d8c@192.0.2.1:443'
           '?security=tls&type=ws&host=$workerHost&sni=$workerHost'
-          '&path=%2F&encryption=none#t.me%2Firnova_proxy';
+          '&path=%2F&encryption=none#t.me%2Firnova';
       const String usageInfo =
           'vless://e8f57fa7-ecc0-4850-89d1-7814dd585d8c@198.51.100.9:443'
           '?security=tls&type=ws&host=$workerHost&sni=$workerHost'

@@ -1031,7 +1031,7 @@ class _SocialRow extends StatelessWidget {
 
   static const List<(IconData, String, String)> _links =
       <(IconData, String, String)>[
-    (Icons.send_rounded, 'Telegram', 'https://t.me/irnova_proxy'),
+    (Icons.send_rounded, 'Telegram', 'https://t.me/irnova'),
     (Icons.camera_alt_rounded, 'Instagram', 'https://instagram.com/irnova_proxy'),
     (Icons.code_rounded, 'GitHub', 'https://github.com/IRNova'),
     (Icons.language_rounded, 'novaproxy.online', 'https://novaproxy.online/'),

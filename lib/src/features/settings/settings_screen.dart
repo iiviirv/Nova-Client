@@ -269,8 +269,8 @@ class SettingsScreen extends StatelessWidget {
                         _div(nova.border),
                         _LinkTile(
                           icon: Icons.send_rounded,
-                          title: 'Telegram - @irnova_proxy',
-                          url: 'https://t.me/irnova_proxy',
+                          title: 'Telegram - @irnova',
+                          url: 'https://t.me/irnova',
                         ),
                         _div(nova.border),
                         _LinkTile(
