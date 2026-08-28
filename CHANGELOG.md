@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.20.16-beta (2026-08-27)
+
+- Fixed: AmneziaWG 3 could not connect at all. The tunnel was set up and then
+  stopped before any traffic passed, on every platform. Servers on AmneziaWG 2
+  were never affected. If you tried a version 3 server and it would not start,
+  it will now.
+
 ## v1.20.15-beta (2026-08-27)
 
 - Added: support for AmneziaWG 3, the version built to survive the blocking that
