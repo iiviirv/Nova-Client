@@ -8,13 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The GitHub release tag this build shipped as. The daily update check compares
 /// it to the latest release; if they differ, an update is offered. Bump this in
 /// step with the build number every release (see settings_screen's kNovaBuild).
-const String kNovaReleaseTag = 'v1.20.22-beta';
+const String kNovaReleaseTag = 'v1.20.23-beta';
 
 /// The marketing version and build number this build shipped as, shown in
 /// Settings' About footer. They mirror pubspec.yaml's `version:` (a test pins
 /// them to it, because they sat at 0.3.3 (82) through five releases).
-const String kNovaVersion = '0.9.22';
-const String kNovaBuild = '122';
+const String kNovaVersion = '0.9.23';
+const String kNovaBuild = '123';
 
 /// The public repo whose releases the app updates from.
 const String kNovaRepo = 'IRNova/Nova-Client';

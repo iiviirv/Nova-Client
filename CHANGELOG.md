@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.20.23-beta (2026-08-29)
+
+- Fixed: AmneziaWG did not work on Windows at all, in either mode, and a server
+  list containing one could not be tested. Nova opened the tunnel's connection
+  while the app was still starting, and Windows will not always allow that yet.
+  It now opens it when it is first needed.
+
+- The system proxy is a switch on the dashboard instead of a button, and Nova
+  remembers it. It used to have to be pressed again after every connect.
+
+- Fixed: switching between servers with the system proxy on could fail with
+  "Core failed to start (exit -1)". Nova's own cleanup of leftover engines was
+  arriving late and stopping the engine it had just started.
+
+- Removed the Cloudflare panel section. Nova Radar stays, and no longer lists
+  the same address twice.
+
+- AmneziaWG servers show their version everywhere they appear, not only inside a
+  subscription, and a version 2 server is no longer labelled version 1.
+
 ## v1.20.22-beta (2026-08-28)
 
 - Fixed: an AmneziaWG server would connect and then carry nothing, sitting on
