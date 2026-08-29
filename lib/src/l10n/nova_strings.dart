@@ -970,7 +970,7 @@ class NovaStrings {
     'set.serverOwnerSub': 'Your panel address and its shortcut',
     'set.routing': 'Routing & DNS',
     'set.routingSub': 'Mode, GeoIP rules, ad blocking, DNS',
-    'set.tools': 'Cloudflare tools',
+    'set.tools': 'Tools',
     'radar.boostTitle': 'Use these addresses for the free servers',
     'radar.boostSub':
         'Each free server will dial one of the best {n} addresses found here, picked at random, instead of its own domain. Applied on the next refresh of the free list.',
@@ -1799,7 +1799,7 @@ class NovaStrings {
     'set.serverOwnerSub': 'آدرس پنل شما و میان‌بر آن',
     'set.routing': 'مسیریابی و DNS',
     'set.routingSub': 'حالت، قوانین جغرافیایی، مسدودسازی تبلیغات، DNS',
-    'set.tools': 'ابزارهای کلودفلر',
+    'set.tools': 'ابزارها',
     'radar.boostTitle': 'استفاده از این آدرس‌ها برای سرورهای رایگان',
     'radar.boostSub':
         'هر سرور رایگان به‌جای دامنه‌ی خودش، یکی از \u2066{n}\u2069 آدرس برترِ پیداشده در اینجا را به‌صورت تصادفی می‌گیرد. در رفرش بعدیِ لیست رایگان اعمال می‌شود.',

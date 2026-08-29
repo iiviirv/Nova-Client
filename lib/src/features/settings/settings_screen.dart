@@ -138,11 +138,11 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: NovaSpace.xl),
 
-                // Radar and the Cloudflare hub are the two things this app does
-                // that a generic client does not, so they get their own group
-                // rather than sitting in General. They left the dashboard in
-                // the declutter round; Settings is where an owner looks for
-                // them, and the App Store listing describes both.
+                // Radar is the thing this app does that a generic client does
+                // not, so it gets its own group rather than sitting in General.
+                // It left the dashboard in the declutter round; Settings is
+                // where an owner looks for it, and the App Store listing
+                // describes it.
                 _Section(
                   label: s.setTools,
                   child: NovaCard(

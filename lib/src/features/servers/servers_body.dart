@@ -494,7 +494,7 @@ class _ServerRow extends StatelessWidget {
                         runSpacing: NovaSpace.xs,
                         children: <Widget>[
                           NovaProtocolBadge(
-                            label: profile.kind.label,
+                            label: profile.badgeLabel,
                             color: nova.cyan,
                           ),
                           if (profile.isSubscription)

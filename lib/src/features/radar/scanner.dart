@@ -97,8 +97,8 @@ class NovaScanner {
 
     try {
       final CandidatePool pool = await fetchIpsFromSources(sources);
-      final List<String> ips = generateRandomIps(pool.cidrs, sampleSize)
-        ..addAll(pool.directIps);
+      final List<String> ips =
+          mergeCandidates(generateRandomIps(pool.cidrs, sampleSize), pool.directIps);
       if (ips.isEmpty || _stop) return const <ScanResult>[];
       ips.shuffle(_rng);
 
@@ -120,6 +120,17 @@ class NovaScanner {
       _emitStats(force: true);
     }
   }
+
+  /// The addresses to scan: the random sample plus the ones a source named
+  /// outright, each appearing once.
+  ///
+  /// The sampler already returns unique addresses, but the named ones were
+  /// appended to it unchecked, so an address that was both sampled and named
+  /// got scanned twice and reported twice. That is what put the same ip:port in
+  /// the results list two rows apart, with identical latency and jitter.
+  static List<String> mergeCandidates(
+          List<String> sampled, List<String> direct) =>
+      <String>{...sampled, ...direct}.toList();
 
   /// Requests the in-flight scan to stop at the next checkpoint.
   void stop() => _stop = true;

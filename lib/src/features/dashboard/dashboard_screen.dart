@@ -1248,7 +1248,7 @@ class _ConfigCardBody extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: <Widget>[
                         NovaProtocolBadge(
-                          label: active.kind.label,
+                          label: active.badgeLabel,
                           color: nova.cyan,
                         ),
                         Text(

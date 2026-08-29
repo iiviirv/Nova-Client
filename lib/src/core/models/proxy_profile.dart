@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../proxy/singbox/awg_config.dart';
+
 /// The proxy protocols Nova Proxy speaks (mirrors the Nova Worker: VLESS,
 /// Trojan, Shadowsocks over WebSocket/gRPC/XHTTP) plus the subscription and
 /// local-config kinds Karing-style clients import.
@@ -40,6 +42,20 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.vmess => 'VMess',
         ProxyKind.tuic => 'TUIC',
       };
+}
+
+extension ProxyProfileBadge on ProxyProfile {
+  /// What the badge on this profile reads.
+  ///
+  /// For AmneziaWG that is the protocol plus the generation the server offers,
+  /// so a config says "AMNEZIAWG VER 3" wherever it appears, not only inside a
+  /// subscription's node list. A config that identifies no version, and every
+  /// other protocol, is just the protocol name.
+  String get badgeLabel {
+    if (kind != ProxyKind.awg) return kind.label;
+    final String? v = awgVersionLabel(uri.isNotEmpty ? uri : subscriptionUrl);
+    return v == null ? kind.label : '${kind.label} ver $v';
+  }
 }
 
 /// A connection profile — either a single node link or a subscription URL that
