@@ -488,21 +488,38 @@ class _ProxyModeCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: NovaSpace.sm),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: NovaButton(
-                    label: sys ? s.proxyModeClearSys : s.proxyModeSetSys,
-                    variant: NovaButtonVariant.secondary,
-                    onPressed: () async {
-                      final bool ok = await proxy.setSystemProxy(!sys);
-                      if (!context.mounted) return;
-                      if (!ok) {
+                const SizedBox(height: NovaSpace.xs),
+                // A switch, not a button, and the same switch as the one in
+                // Settings.
+                //
+                // It used to be a one-shot "Set system proxy": the system proxy
+                // is cleared on every disconnect, so a Windows tester had to
+                // press it again after every single connect, and pressing it
+                // changed nothing about the next one. What he wanted was the
+                // setting, so this is the setting, on the screen where you
+                // notice you need it.
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(s.routeSysProxy,
+                          style: text.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: NovaSpace.sm),
+                    Switch(
+                      value: scope.settings.autoSystemProxy,
+                      onChanged: (bool v) async {
+                        await scope.settings.setAutoSystemProxy(v);
+                        // Take effect now as well as next time, so the switch
+                        // does what the button did and then keeps doing it.
+                        if (!proxy.state.isActive) return;
+                        final bool ok = await proxy.setSystemProxy(v);
+                        if (!context.mounted || ok) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text(s.proxyModeSetFailed)));
-                      }
-                    },
-                  ),
+                      },
+                    ),
+                  ],
                 ),
                 ],
               ],

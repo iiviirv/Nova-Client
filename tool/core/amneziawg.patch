@@ -606,21 +606,21 @@ index 0000000..ef5f793
 +}
 diff --git a/transport/awg/bind.go b/transport/awg/bind.go
 new file mode 100644
-index 0000000..977c139
+index 0000000..ffc2a6a
 --- /dev/null
 +++ b/transport/awg/bind.go
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,224 @@
 +package awg
 +
 +import (
 +	"context"
-+	"errors"
 +	"net"
 +	"net/netip"
 +	"sync"
-+	"syscall"
++	"time"
 +
 +	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
++	"github.com/sagernet/sing/common"
 +	E "github.com/sagernet/sing/common/exceptions"
 +	M "github.com/sagernet/sing/common/metadata"
 +	N "github.com/sagernet/sing/common/network"
@@ -628,12 +628,33 @@ index 0000000..977c139
 +
 +var _ conn.Bind = (*bind_adapter)(nil)
 +
++// The UDP socket the tunnel rides on.
++//
++// It is opened on first use rather than when the device starts, and there is
++// one of it rather than one per address family. Both of those are how
++// sing-box's own WireGuard bind works, and this port did neither.
++//
++// Binding at start cost a Windows tester every AmneziaWG server he had. The
++// dialer binds a new socket to the default network interface, and at start
++// there is not always one to bind to yet: Windows answers with WSAEINVAL, "An
++// invalid argument was supplied", for both families, and because the bind
++// happened during startup the whole core died with it. In whole-device mode
++// that was "Full-device mode failed to start"; in proxy mode, "Core failed to
++// start (exit 1)"; and testing any server at all reported "Could not start the
++// measuring core". macOS and Linux never showed it, because binding to no
++// particular interface is allowed there.
++//
++// Opened late, a machine that is not ready yet costs one retry a second later
++// instead of the session, which is also what makes a laptop that wakes up
++// without a network reconnect on its own.
 +type bind_adapter struct {
-+	conn4  net.PacketConn
-+	conn6  net.PacketConn
-+	dialer N.Dialer
-+	ctx    context.Context
-+	mutex  sync.Mutex
++	ctx      context.Context
++	dialer   N.Dialer
++	bindCtx  context.Context
++	bindDone context.CancelFunc
++	access   sync.Mutex
++	conn     net.PacketConn
++	done     chan struct{}
 +}
 +
 +// newBind carries the endpoint's context. It was left nil in the original port,
@@ -643,93 +664,106 @@ index 0000000..977c139
 +	return &bind_adapter{
 +		ctx:    ctx,
 +		dialer: dial,
++		done:   make(chan struct{}),
 +	}
 +}
 +
-+func (b *bind_adapter) connect(addr netip.Addr, port uint16) (net.PacketConn, error) {
-+	return b.dialer.ListenPacket(b.ctx, M.Socksaddr{Addr: addr, Port: port})
++// connect returns the socket, opening it the first time it is asked for.
++func (b *bind_adapter) connect() (net.PacketConn, error) {
++	b.access.Lock()
++	defer b.access.Unlock()
++	select {
++	case <-b.done:
++		return nil, net.ErrClosed
++	default:
++	}
++	if b.conn != nil {
++		return b.conn, nil
++	}
++	bindCtx := b.bindCtx
++	if bindCtx == nil {
++		bindCtx = b.ctx
++	}
++	udpConn, err := b.dialer.ListenPacket(bindCtx, M.Socksaddr{Addr: netip.IPv4Unspecified()})
++	if err != nil {
++		return nil, err
++	}
++	b.conn = udpConn
++	return udpConn, nil
 +}
 +
-+func (b *bind_adapter) receive(c net.PacketConn) conn.ReceiveFunc {
-+	return func(packets [][]byte, sizes []int, eps []conn.Endpoint) (n int, err error) {
-+		n, addr, err := c.ReadFrom(packets[0])
-+		if err != nil {
-+			return 0, E.Cause(err, "read data")
-+		}
-+
-+		bindEp, err := b.ParseEndpoint(addr.String())
-+		if err != nil {
-+			return 0, E.Cause(err, "parse endpoint")
-+		}
-+
-+		sizes[0] = n
-+		eps[0] = bindEp
-+		return 1, nil
++// dropConn closes the socket so the next read or write opens a fresh one.
++func (b *bind_adapter) dropConn(closing net.PacketConn) {
++	b.access.Lock()
++	defer b.access.Unlock()
++	if b.conn == closing {
++		b.conn = nil
 +	}
++	common.Close(closing)
++}
++
++func (b *bind_adapter) receive(packets [][]byte, sizes []int, eps []conn.Endpoint) (count int, err error) {
++	udpConn, err := b.connect()
++	if err != nil {
++		select {
++		case <-b.done:
++			return 0, net.ErrClosed
++		default:
++		}
++		// Not fatal. The device stays up and asks again in a second, which is
++		// what lets a machine with no usable interface yet come good on its own.
++		time.Sleep(time.Second)
++		return 0, nil
++	}
++	n, addr, err := udpConn.ReadFrom(packets[0])
++	if err != nil {
++		b.dropConn(udpConn)
++		select {
++		case <-b.done:
++			return 0, net.ErrClosed
++		default:
++		}
++		return 0, nil
++	}
++	bindEp, err := b.ParseEndpoint(addr.String())
++	if err != nil {
++		return 0, E.Cause(err, "parse endpoint")
++	}
++	sizes[0] = n
++	eps[0] = bindEp
++	return 1, nil
 +}
 +
 +func (b *bind_adapter) Open(port uint16) (fns []conn.ReceiveFunc, actualPort uint16, err error) {
-+	b.mutex.Lock()
-+	defer b.mutex.Unlock()
-+
-+	if b.conn4 != nil || b.conn6 != nil {
-+		return nil, 0, conn.ErrBindAlreadyOpen
++	b.access.Lock()
++	select {
++	case <-b.done:
++		b.done = make(chan struct{})
++	default:
 +	}
-+
-+	// One address family failing is not the bind failing.
-+	//
-+	// This used to give up the moment the IPv4 listen returned anything other
-+	// than EAFNOSUPPORT, so the IPv6 attempt never happened. Windows answers a
-+	// failed unspecified-address UDP listen with WSAEINVAL ("An invalid
-+	// argument was supplied"), which is not EAFNOSUPPORT, so one AmneziaWG
-+	// server took the whole core down with it: "Could not start the measuring
-+	// core", and nothing in the list could be tested.
-+	//
-+	// Both are tried now, and it is only an error when neither opened.
-+	conn4, err4 := b.connect(netip.IPv4Unspecified(), port)
-+	if conn4 != nil {
-+		fns = append(fns, b.receive(conn4))
-+	}
-+
-+	conn6, err6 := b.connect(netip.IPv6Unspecified(), port)
-+	if conn6 != nil {
-+		fns = append(fns, b.receive(conn6))
-+	}
-+
-+	if conn4 == nil && conn6 == nil {
-+		err := err4
-+		if err == nil || errors.Is(err, syscall.EAFNOSUPPORT) {
-+			err = err6
-+		}
-+		if err == nil {
-+			err = syscall.EAFNOSUPPORT
-+		}
-+		return nil, 0, E.Cause(err, "create connection")
-+	}
-+
-+	b.conn4 = conn4
-+	b.conn6 = conn6
-+
-+	return fns, port, nil
++	b.access.Unlock()
++	b.bindCtx, b.bindDone = context.WithCancel(b.ctx)
++	// No socket yet, so no port to report and nothing that can fail here. A
++	// client does not listen on a fixed port; sing-box's own WireGuard bind
++	// answers 0 in the same way.
++	return []conn.ReceiveFunc{b.receive}, 0, nil
 +}
 +
 +func (b *bind_adapter) Close() error {
-+	b.mutex.Lock()
-+	defer b.mutex.Unlock()
-+
-+	var err4, err6 error
-+
-+	if b.conn4 != nil {
-+		err4 = b.conn4.Close()
-+		b.conn4 = nil
++	b.access.Lock()
++	select {
++	case <-b.done:
++	default:
++		close(b.done)
 +	}
-+
-+	if b.conn6 != nil {
-+		err6 = b.conn6.Close()
-+		b.conn6 = nil
++	closing := b.conn
++	b.conn = nil
++	b.access.Unlock()
++	if b.bindDone != nil {
++		b.bindDone()
 +	}
-+
-+	return errors.Join(err4, err6)
++	common.Close(closing)
++	return nil
 +}
 +
 +func (b *bind_adapter) SetMark(mark uint32) error {
@@ -737,33 +771,24 @@ index 0000000..977c139
 +}
 +
 +func (b *bind_adapter) Send(bufs [][]byte, ep conn.Endpoint) error {
-+	var conn net.PacketConn
-+	if ep.DstIP().Is6() {
-+		conn = b.conn6
-+	} else {
-+		conn = b.conn4
++	udpConn, err := b.connect()
++	if err != nil {
++		return err
 +	}
-+
-+	if conn == nil {
-+		return errors.ErrUnsupported
-+	}
-+
 +	bindEp, ok := ep.(*bind_endpoint)
 +	if !ok {
-+		return errors.ErrUnsupported
++		return E.New("unexpected endpoint type")
 +	}
-+
 +	udpAddr := &net.UDPAddr{
 +		IP:   bindEp.AddrPort.Addr().AsSlice(),
 +		Port: int(bindEp.AddrPort.Port()),
 +	}
-+
 +	for _, buf := range bufs {
-+		if _, err := conn.WriteTo(buf, udpAddr); err != nil {
++		if _, err = udpConn.WriteTo(buf, udpAddr); err != nil {
++			b.dropConn(udpConn)
 +			return err
 +		}
 +	}
-+
 +	return nil
 +}
 +

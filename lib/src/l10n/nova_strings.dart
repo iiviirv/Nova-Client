@@ -434,8 +434,6 @@ class NovaStrings {
   String get proxyModeHint => t('proxyMode.hint');
   String get proxyModeSysOn => t('proxyMode.sysOn');
   String get proxyModeSysOff => t('proxyMode.sysOff');
-  String get proxyModeSetSys => t('proxyMode.setSys');
-  String get proxyModeClearSys => t('proxyMode.clearSys');
   String get proxyModeCopied => t('proxyMode.copied');
   String get proxyModeSetFailed => t('proxyMode.setFailed');
   String get routeDns => t('route.dns');
@@ -1252,8 +1250,6 @@ class NovaStrings {
         'follow the system proxy can be pointed here directly.',
     'proxyMode.sysOn': 'System proxy is set to Nova',
     'proxyMode.sysOff': 'System proxy is not set',
-    'proxyMode.setSys': 'Set system proxy',
-    'proxyMode.clearSys': 'Clear',
     'proxyMode.copied': 'Copied',
     'proxyMode.setFailed': 'Could not change the system proxy (admin approval '
         'needed).',
@@ -2082,8 +2078,6 @@ class NovaStrings {
         'از پروکسی سیستم پیروی نمی‌کنند را می‌توانید مستقیم به این آدرس وصل کنید.',
     'proxyMode.sysOn': 'پروکسی سیستم روی نوا تنظیم شده',
     'proxyMode.sysOff': 'پروکسی سیستم تنظیم نشده',
-    'proxyMode.setSys': 'تنظیم پروکسی سیستم',
-    'proxyMode.clearSys': 'برداشتن',
     'proxyMode.copied': 'کپی شد',
     'proxyMode.setFailed': 'پروکسی سیستم تغییر نکرد (تایید مدیر لازم است).',
     'route.dns': 'حل‌کنندهٔ DNS',

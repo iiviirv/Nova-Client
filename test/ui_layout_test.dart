@@ -189,7 +189,11 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       expect(find.text('127.0.0.1:2080'), findsOneWidget);
-      expect(find.text('Set system proxy'), findsOneWidget);
+      // The system proxy is a switch bound to the setting, not a one-shot
+      // button: a Windows tester had to press the old button after every
+      // connect, because the proxy is cleared on every disconnect.
+      expect(find.text('Set system proxy automatically'), findsOneWidget);
+      expect(find.byType(Switch), findsWidgets);
       await _teardown(tester);
     });
 

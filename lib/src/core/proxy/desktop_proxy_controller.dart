@@ -2012,6 +2012,18 @@ class DesktopProxyController extends ProxyController {
     _trafficTimer = null;
     _healthTimer?.cancel();
     _healthTimer = null;
+    // Whose processes this teardown owns, taken now.
+    //
+    // There are awaits below (clearing the system proxy is a handful of shell
+    // calls on both desktops), and a connect that starts during one of them
+    // puts a NEW core in [_process]. Killing the field after the await would
+    // then kill the core that just started, which is a "core failed to start"
+    // report for a core that was fine. Only what was running when this teardown
+    // began is torn down.
+    final Process? ownedCore = _process;
+    final Process? ownedElevated = _elevated;
+    _process = null;
+    _elevated = null;
     // Drop the tunnel's selection, keep the measured board. A server switch is
     // a disconnect followed by a connect, and it must not cost the user their
     // lightning test.
@@ -2050,10 +2062,8 @@ class DesktopProxyController extends ProxyController {
       // Give the shell a moment to tear the core down before we return.
       await Future<void>.delayed(const Duration(milliseconds: 600));
     }
-    _elevated?.kill();
-    _elevated = null;
-    _process?.kill();
-    _process = null;
+    ownedElevated?.kill();
+    ownedCore?.kill();
     _stopXray();
     // Flush and close the tee log so the last core output (a FATAL reason) is
     // on disk for the user to send.
@@ -2072,21 +2082,46 @@ class DesktopProxyController extends ProxyController {
   /// Best-effort and fast: any failure here just falls through to the normal
   /// "address already in use" report if the port really is stuck.
   Future<void> _killStaleCores(String cfgPath) async {
+    // Nothing is holding the port, so there is nothing to sweep.
+    //
+    // This is the normal case, including every server switch, because the core
+    // we are replacing is our own child and we already killed it. Skipping the
+    // sweep here is not an optimisation: on Windows the sweep is a PowerShell
+    // command, and a PowerShell that runs slowly is what killed the core this
+    // method exists to make room for. See below.
+    if (await _localPortIsFree(socksPort)) return;
+
     // The config filename is our unique marker; the full path differs by user.
     final String marker = cfgPath.split(Platform.pathSeparator).last;
     try {
       if (Platform.isWindows) {
         // WMIC/PowerShell: stop sing-box.exe instances whose command line ran
         // our config, leaving any unrelated sing-box alone.
-        await Process.run('powershell', <String>[
+        //
+        // Started rather than run, so it can be killed. `Process.run().timeout`
+        // stops waiting but leaves the command running, and this command's
+        // whole job is to force-kill anything matching our config file. A
+        // PowerShell that took longer than the timeout therefore came back
+        // after we had started the NEW core and killed that instead, which
+        // reads as "Core failed to start (exit -1)": -1 is the exit code .NET's
+        // Stop-Process gives what it kills. It showed up when switching servers
+        // with the system proxy on, because clearing and setting the system
+        // proxy is what made the machine slow enough for the sweep to land
+        // late.
+        final Process ps = await Process.start('powershell', <String>[
           '-NoProfile',
           '-Command',
           "Get-CimInstance Win32_Process -Filter \"Name='sing-box.exe'\" | "
               "Where-Object { \$_.CommandLine -like '*$marker*' } | "
               'ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }',
-        ]).timeout(const Duration(seconds: 6));
+        ]);
+        await ps.exitCode.timeout(const Duration(seconds: 8), onTimeout: () {
+          ps.kill();
+          return -1;
+        });
       } else {
         // macOS/Linux: pkill matching the full command line (the config path).
+        // A SIGTERM, and it cannot outlive this call the way PowerShell can.
         await Process.run('pkill', <String>['-f', marker])
             .timeout(const Duration(seconds: 6));
       }
@@ -2095,6 +2130,24 @@ class DesktopProxyController extends ProxyController {
     } catch (_) {
       // No stale core, tool missing, or timed out: proceed and let the real
       // bind attempt surface any genuine conflict.
+    }
+  }
+
+  /// Whether [port] on loopback is free, by trying to take it for a moment.
+  ///
+  /// Answers true when it cannot tell (an unexpected error), because the caller
+  /// uses this to decide whether to go hunting for an orphaned core, and
+  /// hunting when there is nothing to find is the expensive mistake.
+  Future<bool> _localPortIsFree(int port) async {
+    try {
+      final ServerSocket probe =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+      await probe.close();
+      return true;
+    } on SocketException {
+      return false;
+    } catch (_) {
+      return true;
     }
   }
 
