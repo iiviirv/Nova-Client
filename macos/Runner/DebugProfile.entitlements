@@ -15,5 +15,16 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- Nova ships its tunnel as a system extension so the Mac stops asking for
+	     an administrator password on every connect, and so Nova appears in the
+	     Network pane like any other VPN. The app asks macOS to activate it; the
+	     user approves it once. -->
+	<key>com.apple.developer.system-extension.install</key>
+	<true/>
+	<!-- Shared with the extension: the config to run crosses through here. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>A53J987N2C.group.online.novaproxy.novaClient</string>
+	</array>
 </dict>
 </plist>

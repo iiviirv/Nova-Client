@@ -37,3 +37,8 @@ ios/Frameworks/Novacore.xcframework/
 # Xray core AAR (Phase-1 spike), built by tool/core/build-xray.sh
 libxray.aar
 android/app/libs/libxray.aar
+
+# Large macOS core framework for the Network Extension (build artifact, same
+# reason as the iOS one: over GitHub's 100MB limit, rebuilt with
+# tool/core/build-combined-core-ios.sh macos)
+macos/Frameworks/Novacore.xcframework/

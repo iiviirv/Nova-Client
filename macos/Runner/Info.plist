@@ -42,5 +42,11 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Shown by macOS when it asks the user to allow Nova's tunnel extension.
+	     Required: without this key the request is refused outright, with
+	     "extensions belonging to the network_extension category require the
+	     presence of the NSSystemExtensionUsageDescription property". -->
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>Nova uses this to run its VPN tunnel. Allow it once and Nova will never ask for your password again when you connect.</string>
 </dict>
 </plist>

@@ -21,15 +21,22 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		08A2313046E8372D13C8FB74 /* online.novaproxy.novaClient.NovaTunnel.systemextension in Embed System Extensions */ = {isa = PBXBuildFile; fileRef = 6EA5FCE604102375B44BE6FA /* online.novaproxy.novaClient.NovaTunnel.systemextension */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		48431439C8D9FA47E0932DBB /* Novacore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 62CCE61F9A08B361B9FED244 /* Novacore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		64DDAAC71761DB2DFA40F060 /* Novacore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 62CCE61F9A08B361B9FED244 /* Novacore.xcframework */; };
+		6B7B7C7DBBB823EAACCA084C /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F0AF84431BE73372505F30 /* PacketTunnelProvider.swift */; };
 		76037D00208B26E44AE13644 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 742A6021B7AA2E0C047CBB00 /* Pods_RunnerTests.framework */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		8E56BCB03F75D32EA98E952D /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B1133F123B1A1F509836FC7 /* Pods_Runner.framework */; };
+		A40E9C9BF4B25E5D4944D749 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F97EEF688B03BE9ACB645682 /* main.swift */; };
+		CB329ECF082FA3C0C6318167 /* NovaTunnelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EB3984754BA6732014B8FD0 /* NovaTunnelHost.swift */; };
+		CDA1B47A2CB71F57B201FF62 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29F95304886EA0E920300044 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +54,13 @@
 			remoteGlobalIDString = 33CC111A2044C6BA0003C045;
 			remoteInfo = FLX;
 		};
+		8C9CE9728E67AF7F372FEA2E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 33CC10E52044A3C60003C045 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 40538B11608EF03F992E7E45;
+			remoteInfo = NovaTunnel;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -60,11 +74,25 @@
 			name = "Bundle Framework";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		ACFC174D51099F899BE8C24B /* Embed System Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/SystemExtensions;
+			dstSubfolderSpec = 1;
+			files = (
+				08A2313046E8372D13C8FB74 /* online.novaproxy.novaClient.NovaTunnel.systemextension in Embed System Extensions */,
+			);
+			name = "Embed System Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0389FE08DCB22EFBEB0D45AC /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		15F4FBC5C13C5CC046A166C6 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1EB3984754BA6732014B8FD0 /* NovaTunnelHost.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NovaTunnelHost.swift; sourceTree = "<group>"; };
 		236B0441E95719A05CE73F0D /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		29F95304886EA0E920300044 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
@@ -83,16 +111,30 @@
 		33E5194F232828860026EE4D /* AppInfo.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppInfo.xcconfig; sourceTree = "<group>"; };
 		4948E2EC1C5039716345C203 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		4B1133F123B1A1F509836FC7 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		62CCE61F9A08B361B9FED244 /* Novacore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Novacore.xcframework; sourceTree = "<group>"; };
+		6EA5FCE604102375B44BE6FA /* online.novaproxy.novaClient.NovaTunnel.systemextension */ = {isa = PBXFileReference; explicitFileType = "wrapper.system-extension"; includeInIndex = 0; path = online.novaproxy.novaClient.NovaTunnel.systemextension; sourceTree = BUILT_PRODUCTS_DIR; };
+		73F0AF84431BE73372505F30 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		742A6021B7AA2E0C047CBB00 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		74382C45937EA0688BFD6726 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		B51DE490C8485BD5B1A8CDDA /* NovaTunnel.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = NovaTunnel.entitlements; sourceTree = "<group>"; };
 		B6486577D05C079404A845ED /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		D2AB1520552B8AD6D2BB551A /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		F97EEF688B03BE9ACB645682 /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		25A4C1C22FB1A6D1BDC32AD5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CDA1B47A2CB71F57B201FF62 /* Cocoa.framework in Frameworks */,
+				64DDAAC71761DB2DFA40F060 /* Novacore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C80D2294CF70F00263BE5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -155,6 +197,7 @@
 				33CC10EE2044A3C60003C045 /* Products */,
 				D73912EC22F37F3D000D13A0 /* Frameworks */,
 				179DC6DBDE634764E2F3307B /* Pods */,
+				F17CEC46D1D1A4040C7BEB8B /* NovaTunnel */,
 			);
 			sourceTree = "<group>";
 		};
@@ -163,6 +206,7 @@
 			children = (
 				33CC10ED2044A3C60003C045 /* nova_client.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
+				6EA5FCE604102375B44BE6FA /* online.novaproxy.novaClient.NovaTunnel.systemextension */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -199,8 +243,17 @@
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
 				33BA886A226E78AF003329D5 /* Configs */,
+				1EB3984754BA6732014B8FD0 /* NovaTunnelHost.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		8FF0BD41DB3B9B3703261127 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				29F95304886EA0E920300044 /* Cocoa.framework */,
+			);
+			name = "OS X";
 			sourceTree = "<group>";
 		};
 		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
@@ -208,9 +261,24 @@
 			children = (
 				4B1133F123B1A1F509836FC7 /* Pods_Runner.framework */,
 				742A6021B7AA2E0C047CBB00 /* Pods_RunnerTests.framework */,
+				8FF0BD41DB3B9B3703261127 /* OS X */,
+				62CCE61F9A08B361B9FED244 /* Novacore.xcframework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
+			path = Frameworks;
+			sourceTree = SOURCE_ROOT;
+		};
+		F17CEC46D1D1A4040C7BEB8B /* NovaTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				73F0AF84431BE73372505F30 /* PacketTunnelProvider.swift */,
+				15F4FBC5C13C5CC046A166C6 /* Info.plist */,
+				B51DE490C8485BD5B1A8CDDA /* NovaTunnel.entitlements */,
+				F97EEF688B03BE9ACB645682 /* main.swift */,
+			);
+			name = NovaTunnel;
+			path = NovaTunnel;
+			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
 
@@ -245,11 +313,13 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				AF8277F9DF60CBE54C09A565 /* [CP] Embed Pods Frameworks */,
+				ACFC174D51099F899BE8C24B /* Embed System Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				33CC11202044C79F0003C045 /* PBXTargetDependency */,
+				78385FF1BDCB5F9770251783 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -258,6 +328,23 @@
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* nova_client.app */;
 			productType = "com.apple.product-type.application";
+		};
+		40538B11608EF03F992E7E45 /* NovaTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5EFEB7236C13F9453735F2A3 /* Build configuration list for PBXNativeTarget "NovaTunnel" */;
+			buildPhases = (
+				36FE53476FA467D4759D4942 /* Sources */,
+				25A4C1C22FB1A6D1BDC32AD5 /* Frameworks */,
+				FE5216A8699C58EDD0352AB4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NovaTunnel;
+			productName = NovaTunnel;
+			productReference = 6EA5FCE604102375B44BE6FA /* online.novaproxy.novaClient.NovaTunnel.systemextension */;
+			productType = "com.apple.product-type.system-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -309,6 +396,7 @@
 				33CC10EC2044A3C60003C045 /* Runner */,
 				331C80D4294CF70F00263BE5 /* RunnerTests */,
 				33CC111A2044C6BA0003C045 /* Flutter Assemble */,
+				40538B11608EF03F992E7E45 /* NovaTunnel */,
 			);
 		};
 /* End PBXProject section */
@@ -327,6 +415,13 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE5216A8699C58EDD0352AB4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -450,6 +545,16 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+				CB329ECF082FA3C0C6318167 /* NovaTunnelHost.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		36FE53476FA467D4759D4942 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B7B7C7DBBB823EAACCA084C /* PacketTunnelProvider.swift in Sources */,
+				A40E9C9BF4B25E5D4944D749 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -466,6 +571,12 @@
 			target = 33CC111A2044C6BA0003C045 /* Flutter Assemble */;
 			targetProxy = 33CC111F2044C79F0003C045 /* PBXContainerItemProxy */;
 		};
+		78385FF1BDCB5F9770251783 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NovaTunnel;
+			target = 40538B11608EF03F992E7E45 /* NovaTunnel */;
+			targetProxy = 8C9CE9728E67AF7F372FEA2E /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -481,6 +592,123 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		0C2B1F4158173B18E7FF58E9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = NovaTunnel/NovaTunnel.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = A53J987N2C;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/Frameworks";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NovaTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				OTHER_LDFLAGS = (
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
+				PRODUCT_NAME = online.novaproxy.novaClient.NovaTunnel;
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS Tunnel DirectID";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		14520449328B2550273CAB1E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = NovaTunnel/NovaTunnel.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = A53J987N2C;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/Frameworks";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NovaTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				OTHER_LDFLAGS = (
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
+				PRODUCT_NAME = online.novaproxy.novaClient.NovaTunnel;
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS Tunnel DirectID";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		1F778DFA06DBAA4EC036F9D8 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = NovaTunnel/NovaTunnel.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = A53J987N2C;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/Frameworks";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NovaTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				OTHER_LDFLAGS = (
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = online.novaproxy.novaClient.NovaTunnel;
+				PRODUCT_NAME = online.novaproxy.novaClient.NovaTunnel;
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS Tunnel DirectID";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
 		331C80DB294CF71000263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0389FE08DCB22EFBEB0D45AC /* Pods-RunnerTests.debug.xcconfig */;
@@ -582,14 +810,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = A53J987N2C;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PROVISIONING_PROFILE_SPECIFIER = "";
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS App DirectID";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Profile;
@@ -714,14 +944,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = A53J987N2C;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PROVISIONING_PROFILE_SPECIFIER = "";
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS App DirectID";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -734,14 +966,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = A53J987N2C;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PROVISIONING_PROFILE_SPECIFIER = "";
+				PROVISIONING_PROFILE_SPECIFIER = "Nova macOS App DirectID";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -801,6 +1035,16 @@
 				33CC111C2044C6BA0003C045 /* Debug */,
 				33CC111D2044C6BA0003C045 /* Release */,
 				338D0CEB231458BD00FA5F75 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5EFEB7236C13F9453735F2A3 /* Build configuration list for PBXNativeTarget "NovaTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				14520449328B2550273CAB1E /* Release */,
+				0C2B1F4158173B18E7FF58E9 /* Debug */,
+				1F778DFA06DBAA4EC036F9D8 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

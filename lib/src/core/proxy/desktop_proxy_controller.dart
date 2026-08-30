@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'mac_tunnel_extension.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -247,10 +248,21 @@ class DesktopProxyController extends ProxyController {
 
       if (tunMode) {
         // Whole-device TUN: sing-box creates the utun/wintun device and routes
-        // everything, so it must run elevated and no system proxy is set.
-        await _startElevatedTun(binary, cfgFile);
+        // everything, so it must run with privileges and no system proxy is set.
+        //
+        // On macOS that is the Network Extension when this build has one: the
+        // user approves it once and macOS starts it from then on, instead of an
+        // administrator prompt on every connect. Everything after this point is
+        // unchanged, because the extension runs the same config, Clash API and
+        // all, so the wait below and every reading afterwards work the same way.
+        final bool viaExtension = await _startMacExtensionTun(cfgFile);
+        if (!viaExtension) {
+          await _startElevatedTun(binary, cfgFile);
+        }
         if (!await _waitForCore()) {
-          throw await _tunFailureMessage();
+          throw viaExtension
+              ? await _extensionFailureMessage()
+              : await _tunFailureMessage();
         }
       } else {
         _coreTail.clear();
@@ -1717,6 +1729,53 @@ class DesktopProxyController extends ProxyController {
   /// sleep with no process spawn, there is no osascript equivalent holding the
   /// session open, and named pipes there are a bigger change than the evidence
   /// justifies.
+  /// Starts the tunnel through the macOS Network Extension, or answers false
+  /// when this build or this machine cannot use it and the elevated core has to
+  /// stand in.
+  ///
+  /// Answering false is a normal outcome, not a failure: a locally built app is
+  /// not signed with the entitlement, and a machine where the user has not yet
+  /// allowed the extension has to connect somehow while they decide.
+  Future<bool> _startMacExtensionTun(File cfgFile) async {
+    if (!Platform.isMacOS) return false;
+    if (!await MacTunnelExtension.available) return false;
+    final MacExtensionState state = await MacTunnelExtension.activate();
+    if (state != MacExtensionState.active) {
+      if (state == MacExtensionState.needsApproval) {
+        NovaLog.instance.write(
+          'macOS is waiting for the Nova tunnel extension to be allowed in '
+          'System Settings > General > Login Items & Extensions. Connecting '
+          'the old way until then.',
+          level: NovaLogLevel.warn,
+        );
+        notice.value = ProxyNotice.macExtensionNeedsApproval;
+      }
+      return false;
+    }
+    try {
+      await MacTunnelExtension.start(
+        await cfgFile.readAsString(),
+        xrayConfigJson: _pendingXrayConfig,
+      );
+      _usingMacExtension = true;
+      return true;
+    } catch (e) {
+      NovaLog.instance.write('Tunnel extension refused to start: $e',
+          level: NovaLogLevel.error);
+      return false;
+    }
+  }
+
+  /// True while the tunnel is the extension's rather than our own child.
+  bool _usingMacExtension = false;
+
+  Future<String> _extensionFailureMessage() async {
+    final String status = await MacTunnelExtension.status();
+    return 'The Nova tunnel did not come up (macOS says: $status). If macOS '
+        'asked you to allow Nova in System Settings > General > Login Items '
+        'and Extensions, allow it and connect again.';
+  }
+
   Future<void> _startElevatedTun(String binary, File cfgFile) async {
     final Directory dir = await getApplicationSupportDirectory();
     final File flag = File('${dir.path}/nova-tun.run');
@@ -2064,6 +2123,10 @@ class DesktopProxyController extends ProxyController {
     }
     ownedElevated?.kill();
     ownedCore?.kill();
+    if (_usingMacExtension) {
+      _usingMacExtension = false;
+      await MacTunnelExtension.stop();
+    }
     _stopXray();
     // Flush and close the tee log so the last core output (a FATAL reason) is
     // on disk for the user to send.

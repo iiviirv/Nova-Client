@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The packet tunnel itself. "systemextension" rather than the iPhone's
+	     plain "packet-tunnel-provider": an app distributed outside the Mac App
+	     Store has to ship its tunnel as a system extension. -->
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>packet-tunnel-provider-systemextension</string>
+	</array>
+	<!-- Shared with the app: the config to run is handed over through this
+	     container, and the extension's control socket lives in it. macOS
+	     requires the team identifier prefix on an app group when the app is not
+	     sandboxed, which Nova is not. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>A53J987N2C.group.online.novaproxy.novaClient</string>
+	</array>
+</dict>
+</plist>

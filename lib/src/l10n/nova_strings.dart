@@ -148,6 +148,7 @@ class NovaStrings {
   String get dashVerifying => t('dash.verifying');
   String get dashNoTraffic => t('dash.noTraffic');
   String get tunnelNoInternet => t('notice.tunnelNoInternet');
+  String get macExtensionApprove => t('notice.macExtensionApprove');
   String get dashError => t('dash.error');
   String get dashLocation => t('dash.location');
   String get dashIp => t('dash.ip');
@@ -857,6 +858,9 @@ class NovaStrings {
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
             'subscription; connect to try it.',
+    'notice.macExtensionApprove': 'Allow Nova in System Settings > General > '
+        'Login Items and Extensions, and Nova will stop asking for your '
+        'password every time you connect.',
     'notice.tunnelNoInternet':
         'The tunnel is up but no traffic is getting through. Your network may '
             'be blocking this config; scan a clean IP in Radar or try another '
@@ -1686,6 +1690,9 @@ class NovaStrings {
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '
             'روشن شد؛ وصل شوید تا امتحان شود.',
+    'notice.macExtensionApprove': 'در تنظیمات سیستم، بخش \u2066General\u2069 و '
+        'سپس \u2066Login Items and Extensions\u2069، به نوا اجازه بدهید تا '
+        'دیگر هر بار برای اتصال از شما رمز نخواهد.',
     'notice.tunnelNoInternet':
         'تونل وصل شده ولی هیچ ترافیکی عبور نمی‌کند. احتمالا شبکه شما این کانفیگ '
             'را مسدود کرده؛ در رادار یک IP تمیز اسکن کنید یا کانفیگ یا شبکه '

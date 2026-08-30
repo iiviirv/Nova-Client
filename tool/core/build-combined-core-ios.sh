@@ -8,7 +8,13 @@
 # and binds ./experimental/novacore + ./novaxray with the iOS tags/ldflags from
 # build-novacore-ios.sh.
 #
-# Usage: tool/core/build-combined-core-ios.sh [out.xcframework]
+# Usage: tool/core/build-combined-core-ios.sh [ios|macos] [out.xcframework]
+#
+# macOS builds the same two cores for the Mac's own Network Extension, which is
+# what lets the tunnel run without asking for an administrator password on every
+# connect. It is a separate framework rather than another slice of the iOS one
+# so that an iPhone release never waits on it, and so the two can be rebuilt
+# independently.
 set -euo pipefail
 
 SINGBOX_TAG="v1.13.19"
@@ -23,7 +29,15 @@ novafrag_file="$repo_root/tool/core/novafrag.patch"
 novaxray_src="$repo_root/tool/core/xray/novaxray/xray.go"
 mieru_out="$repo_root/tool/core/mieru/outbound.go"
 mieru_opt="$repo_root/tool/core/mieru/option_mieru.go"
-OUT="${1:-$repo_root/ios/Frameworks/Novacore.xcframework}"
+PLATFORM="${1:-ios}"
+case "$PLATFORM" in
+  ios) GOMOBILE_TARGET="ios,iossimulator"
+       DEFAULT_OUT="$repo_root/ios/Frameworks/Novacore.xcframework" ;;
+  macos) GOMOBILE_TARGET="macos"
+         DEFAULT_OUT="$repo_root/macos/Frameworks/Novacore.xcframework" ;;
+  *) echo "usage: $(basename "$0") [ios|macos] [out.xcframework]" >&2; exit 1 ;;
+esac
+OUT="${2:-$DEFAULT_OUT}"
 say() { printf '\n== %s\n' "$1"; }
 
 for f in "$patch_file:$PATCH_SHA256" "$novafrag_file:$NOVAFRAG_PATCH_SHA256"; do
@@ -78,9 +92,9 @@ go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
 TAGS="with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_naive_outbound,with_clash_api,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird,with_dhcp,grpcnotrace"
 CT="$(cat .version)"
 
-say "Binding the combined Novacore.xcframework (novacore + novaxray)"
+say "Binding the combined Novacore.xcframework for $PLATFORM (novacore + novaxray)"
 rm -rf "$OUT"
-gomobile bind -v -target ios,iossimulator -libname=core \
+gomobile bind -v -target "$GOMOBILE_TARGET" -libname=core \
   -tags-not-macos=with_low_memory \
   -trimpath -buildvcs=false \
   -ldflags "-X github.com/sagernet/sing-box/constant.Version=$CT -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid= -checklinkname=0" \

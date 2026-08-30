@@ -73,7 +73,42 @@ for core in "$APP"/Contents/Resources/sing-box-macos-* "$APP"/Contents/Resources
   [[ -f "$core" ]] || continue
   codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$core" 2>&1 | tail -1
 done
+# The tunnel's system extension, signed inside out and with its OWN
+# entitlements: it carries the packet-tunnel entitlement and the app group, and
+# re-signing it with the app's entitlements (or with none) would strip those and
+# leave macOS refusing to activate it. Its embedded provisioning profile is what
+# authorises them, and Xcode put that inside during the build.
+# Named for its bundle identifier, because that is how macOS finds it.
+SYSEX="$APP/Contents/Library/SystemExtensions/online.novaproxy.novaClient.NovaTunnel.systemextension"
+if [[ -d "$SYSEX" ]]; then
+  # A versioned framework is signed at Versions/A, not at the wrapper. Signing
+  # only the wrapper leaves the real binary carrying its build-time signature,
+  # and notarization rejects that: "not signed with a valid Developer ID
+  # certificate" and "the signature does not include a secure timestamp",
+  # pointing at Novacore.framework/Versions/A/Novacore.
+  # A statically-linked extension has no Frameworks directory at all, which is
+  # the normal case here: the core is linked into the extension's binary.
+  for fw in "$SYSEX"/Contents/Frameworks/*.framework(N); do
+    [[ -d "$fw/Versions/A" ]] && codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw/Versions/A" 2>&1 | tail -1
+    codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw" 2>&1 | tail -1
+  done
+  for dylib in "$SYSEX"/Contents/Frameworks/*.dylib(N); do
+    codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$dylib" 2>&1 | tail -1
+  done
+  codesign --force --options runtime --timestamp \
+    --entitlements macos/NovaTunnel/NovaTunnel.entitlements \
+    -s "$ID" "${KCARGS[@]}" "$SYSEX" 2>&1 | tail -1
+  [[ -f "$SYSEX/Contents/embedded.provisionprofile" ]] \
+    || { echo "!! the system extension has no embedded provisioning profile, so macOS will refuse it"; exit 1; }
+  echo "system extension signed: $(du -sh "$SYSEX" | awk '{print $1}')"
+else
+  echo "!! no system extension in the app bundle; the Mac will fall back to the admin prompt"
+fi
 codesign --force --options runtime --timestamp --entitlements macos/Runner/Release.entitlements -s "$ID" "${KCARGS[@]}" "$APP" 2>&1 | tail -1
+# The app's own profile authorises installing that extension. Without it the
+# app launches and every activation request fails with "invalid signature".
+[[ -f "$APP/Contents/embedded.provisionprofile" ]] \
+  || { echo "!! the app has no embedded provisioning profile; system-extension install will be refused"; exit 1; }
 codesign --verify --deep --strict "$APP" 2>&1 | tail -2 && echo "signature valid"
 
 echo "--- notarize app ---"

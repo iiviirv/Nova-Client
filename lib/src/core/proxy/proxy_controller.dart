@@ -173,6 +173,12 @@ enum ProxyNotice {
   /// controller stops trying, so the user learns what to do instead of staring
   /// at an eternal "Verifying connection".
   tunnelHasNoInternet,
+
+  /// macOS is waiting for the user to allow Nova's tunnel extension in System
+  /// Settings. Nova connects the old way (an administrator prompt) meanwhile,
+  /// so this is an invitation, not an error: allow it once and the prompt is
+  /// gone for good.
+  macExtensionNeedsApproval,
 }
 
 abstract class ProxyController extends ChangeNotifier {

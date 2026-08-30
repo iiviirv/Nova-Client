@@ -14,6 +14,10 @@ class MainFlutterWindow: NSWindow {
     self.center()
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    // The Network Extension channel: activating the tunnel extension, and
+    // starting and stopping it. See NovaTunnelHost.
+    NovaTunnelHost.register(
+      with: flutterViewController.registrar(forPlugin: "NovaTunnelHost"))
 
     super.awakeFromNib()
   }

@@ -65,6 +65,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
       ProxyNotice.pinnedExitGone => s.pinnedExitGone,
       ProxyNotice.sniBypassOn => s.sniBypassOn,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,
+      ProxyNotice.macExtensionNeedsApproval => s.macExtensionApprove,
     };
     // Verdicts that carry instructions (Radar, another server, another network)
     // get longer on screen than a purely informational note.
