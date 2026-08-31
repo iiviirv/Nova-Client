@@ -1,5 +1,40 @@
 # Changelog
 
+## v1.21.0 (2026-08-30)
+
+The first stable release. Everything since the beta line, and one large new
+thing on the Mac.
+
+- **Mac: no more password on every connect.** Nova's tunnel now runs as a
+  system extension. macOS asks you to allow it once, in System Settings >
+  General > Login Items and Extensions, and after that it never asks again.
+  Nova also appears in Network settings beside Wi-Fi, like any other VPN.
+
+- Fixed: AmneziaWG did not work on Windows at all, in either mode, and a server
+  list containing one could not be tested.
+
+- Fixed: an AmneziaWG server would connect and then carry nothing unless the
+  full-device tunnel was on. Names were being sent into the tunnel without being
+  looked up first.
+
+- Fixed: Nova would not start on Macs running macOS 12 to 15. The engine was
+  built in a way that told macOS it needed the newest version of the system.
+
+- Windows starts in proxy mode, which asks for no permission at all, and the
+  full-device tunnel is one tap away on the dashboard. The system proxy is a
+  switch Nova remembers instead of a button to press after every connect.
+
+- Fixed: switching servers with the system proxy on could fail with "Core failed
+  to start".
+
+- The free server list refreshes on its own again, about once an hour, including
+  when you come back to Nova.
+
+- AmneziaWG servers show their version wherever they appear: 1, 2 or 3.
+
+- Nova Radar no longer lists the same address twice. The Cloudflare panel
+  section is gone.
+
 ## v1.20.23-beta (2026-08-29)
 
 - Fixed: AmneziaWG did not work on Windows at all, in either mode, and a server
