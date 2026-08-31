@@ -9,8 +9,12 @@
 	<false/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
+	<!-- Deliberately NOT set: com.apple.security.cs.disable-library-validation.
+	     macOS refuses to start an app that holds both that and a restricted
+	     Network Extension entitlement: killed at spawn, no crash report, no log
+	     line anywhere, and the only symptom is "Launchd job spawn failed". Every
+	     library Nova loads is signed by this team, so it does not need the
+	     exemption. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.network.server</key>
@@ -19,6 +23,25 @@
 	     an administrator password on every connect, and so Nova appears in the
 	     Network pane like any other VPN. The app asks macOS to activate it; the
 	     user approves it once. -->
+	<!-- The app manages the tunnel's VPN configuration, which needs the same
+	     Network Extension entitlement the extension itself carries. Without it
+	     the extension installs and is approved, and then saving the
+	     configuration fails with "permission denied", so Nova falls back to the
+	     administrator prompt forever: approved, and still asking. The iPhone app
+	     has carried the equivalent since it shipped. -->
+	<!-- Xcode injects these two from the provisioning profile at build time, and
+	     re-signing with an entitlements file that omits them silently drops
+	     them. Without the app identifier, macOS cannot check the Network
+	     Extension entitlement against the profile that grants it, so it refuses
+	     to start the app at all: killed at spawn, no crash report, no log. -->
+	<key>com.apple.application-identifier</key>
+	<string>A53J987N2C.online.novaproxy.novaClient</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>A53J987N2C</string>
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>packet-tunnel-provider-systemextension</string>
+	</array>
 	<key>com.apple.developer.system-extension.install</key>
 	<true/>
 	<!-- Shared with the extension: the config to run crosses through here. -->

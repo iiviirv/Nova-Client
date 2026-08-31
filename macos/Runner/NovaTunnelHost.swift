@@ -108,8 +108,9 @@ final class NovaTunnelHost: NSObject {
       // The extension reads its config from the shared container rather than
       // from the start options, the same as on iPhone: a provider configuration
       // is size-limited and this one carries rule-set paths and a node list.
-      try config.write(to: container.appendingPathComponent("config.json"),
-                       atomically: true, encoding: .utf8)
+      try Self.rehomeRuleSets(config, into: container)
+        .write(to: container.appendingPathComponent("config.json"),
+               atomically: true, encoding: .utf8)
       let xrayURL = container.appendingPathComponent("xray.json")
       if let xray, !xray.isEmpty {
         try xray.write(to: xrayURL, atomically: true, encoding: .utf8)
@@ -153,6 +154,46 @@ final class NovaTunnelHost: NSObject {
         }
       }
     }
+  }
+
+  /// Copies the config's local rule-set files into the shared container and
+  /// points the config at them there.
+  ///
+  /// The config is built for a core that runs as the user, so its rule-set
+  /// paths are inside the app's own Application Support. The extension is a
+  /// different process with a different container and cannot read them, and a
+  /// rule-set sing-box cannot open is fatal: the tunnel starts and immediately
+  /// stops, which reads as "the tunnel did not come up" with nothing else to go
+  /// on. Anything the extension has to read has to live in the container both
+  /// sides share.
+  static func rehomeRuleSets(_ config: String, into container: URL) throws -> String {
+    guard let data = config.data(using: .utf8),
+          var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          var route = root["route"] as? [String: Any],
+          var sets = route["rule_set"] as? [[String: Any]], !sets.isEmpty
+    else { return config }
+
+    let fm = FileManager.default
+    let dir = container.appendingPathComponent("rule-sets")
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+    for i in sets.indices {
+      guard let path = sets[i]["path"] as? String, !path.isEmpty else { continue }
+      let source = URL(fileURLWithPath: path)
+      let destination = dir.appendingPathComponent(source.lastPathComponent)
+      if fm.fileExists(atPath: source.path) {
+        // Copy every time: a Nova update ships new rule sets, and a stale one
+        // here would outlive it silently.
+        try? fm.removeItem(at: destination)
+        try? fm.copyItem(at: source, to: destination)
+      }
+      guard fm.fileExists(atPath: destination.path) else { continue }
+      sets[i]["path"] = destination.path
+    }
+    route["rule_set"] = sets
+    root["route"] = route
+    let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted])
+    return String(data: out, encoding: .utf8) ?? config
   }
 
   private func stop(_ result: @escaping FlutterResult) {

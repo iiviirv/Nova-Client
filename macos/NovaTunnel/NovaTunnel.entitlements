@@ -5,6 +5,12 @@
 	<!-- The packet tunnel itself. "systemextension" rather than the iPhone's
 	     plain "packet-tunnel-provider": an app distributed outside the Mac App
 	     Store has to ship its tunnel as a system extension. -->
+	<!-- Same reason as the app's: re-signing with this file must not drop the
+	     identifiers the profile is matched against. -->
+	<key>com.apple.application-identifier</key>
+	<string>A53J987N2C.online.novaproxy.novaClient.NovaTunnel</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>A53J987N2C</string>
 	<key>com.apple.developer.networking.networkextension</key>
 	<array>
 		<string>packet-tunnel-provider-systemextension</string>

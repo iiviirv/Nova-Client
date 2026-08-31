@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.21.1 (2026-08-31)
+
+- Fixed: on a Mac, connecting in full-device mode asked macOS to install Nova's
+  tunnel extension, and then asked for your password anyway. Nova no longer asks
+  for the extension until it can actually use it, so full-device mode behaves as
+  it did before: one administrator prompt per connect, and no approval to give
+  in System Settings for nothing.
+
+  If you already allowed Nova in System Settings > General > Login Items and
+  Extensions, you can leave it there. It will be used as soon as the rest of the
+  work lands.
+
 ## v1.21.0 (2026-08-30)
 
 The first stable release. Everything since the beta line, and one large new

@@ -31,7 +31,22 @@ class MacTunnelExtension {
   /// includes every local debug build, and false on every platform but macOS.
   /// The caller falls back to the elevated core, so a developer build still
   /// connects, with the prompt.
+  /// Whether to try the extension at all.
+  ///
+  /// Off, and it stays off until the tunnel has actually come up through the
+  /// extension on a real Mac. Everything up to that point works: the extension
+  /// installs, the user allows it, the VPN configuration appears in Network
+  /// settings as "Nova", and no password is asked. What does not work yet is
+  /// the last step, macOS starting the provider: it reports the tunnel
+  /// disconnected and never calls startTunnel.
+  ///
+  /// Leaving it on would cost every Mac user a System Settings approval for a
+  /// tunnel that then falls back to the administrator prompt anyway, which is
+  /// worse than not offering it. Flip this to true with the fix.
+  static const bool enabled = false;
+
   static Future<bool> get available async {
+    if (!enabled) return false;
     if (!Platform.isMacOS) return false;
     try {
       return await _channel.invokeMethod<bool>('available') ?? false;

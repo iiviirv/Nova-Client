@@ -27,7 +27,26 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private var xrayLogSink: XrayLogSink?
   private var pathMonitor: NWPathMonitor?
 
+  /// Written into the shared container as the tunnel starts, and appended to on
+  /// the way through. A packet tunnel that fails inside a system extension logs
+  /// nowhere the app can see, so this is the difference between a diagnosis and
+  /// a guess.
+  private func trace(_ line: String) {
+    guard let container = FileManager.default
+      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else { return }
+    let url = container.appendingPathComponent("tunnel.log")
+    let stamped = "\(Date()) \(line)\n"
+    if let handle = try? FileHandle(forWritingTo: url) {
+      handle.seekToEndOfFile()
+      handle.write(Data(stamped.utf8))
+      try? handle.close()
+    } else {
+      try? Data(stamped.utf8).write(to: url)
+    }
+  }
+
   override func startTunnel(options _: [String: NSObject]?) async throws {
+    trace("startTunnel")
     guard let container = FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else {
       throw NSError(domain: "Nova", code: 1,
@@ -44,6 +63,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                                              withIntermediateDirectories: true)
     var setupErr: NSError?
     NovacoreSetup(setup, &setupErr)
+    trace("setup done err=\(setupErr?.localizedDescription ?? "none")")
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"),
                             encoding: .utf8)
@@ -69,13 +89,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       throw err ?? NSError(domain: "Nova", code: 2,
                            userInfo: [NSLocalizedDescriptionKey: "Failed to create command server"])
     }
+    trace("command server created")
     try server.start()
     // A real (empty) options object, never nil: libbox 1.13 dereferences it.
-    try server.startOrReloadService(config, options: NovacoreOverrideOptions())
+    do {
+      try server.startOrReloadService(config, options: NovacoreOverrideOptions())
+    } catch {
+      trace("startOrReloadService failed: \(error.localizedDescription)")
+      throw error
+    }
+    trace("service started")
     commandServer = server
   }
 
-  override func stopTunnel(with _: NEProviderStopReason) async {
+  override func stopTunnel(with reason: NEProviderStopReason) async {
+    trace("stopTunnel reason=\(reason.rawValue)")
     pathMonitor?.cancel()
     pathMonitor = nil
     try? commandServer?.closeService()
