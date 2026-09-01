@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.21.2 (2026-09-01)
+
+- **Mac: no more password every time you connect.** Whole-device mode now runs
+  in Nova's own system extension. macOS asks you to allow it once, in System
+  Settings > General > Login Items and Extensions, and after that it never asks
+  again. Nova also appears in System Settings > Network beside Wi-Fi, like any
+  other VPN.
+
+  If you allowed Nova there earlier, nothing more to do. If you have not, the
+  first connect will ask.
+
 ## v1.21.1 (2026-08-31)
 
 - Fixed: on a Mac, connecting in full-device mode asked macOS to install Nova's
