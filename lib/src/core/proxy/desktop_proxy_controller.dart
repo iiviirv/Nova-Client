@@ -1739,7 +1739,18 @@ class DesktopProxyController extends ProxyController {
   Future<bool> _startMacExtensionTun(File cfgFile) async {
     if (!Platform.isMacOS) return false;
     if (!await MacTunnelExtension.available) return false;
-    final MacExtensionState state = await MacTunnelExtension.activate();
+    MacExtensionState state = await MacTunnelExtension.activate();
+    if (state == MacExtensionState.needsReboot) {
+      // macOS has this build's extension but is still running the one it
+      // installed before, and says it will swap them at the next restart. Take
+      // the old one out and put this one in instead, so nobody is asked to
+      // reboot to get a fix.
+      NovaLog.instance.write(
+        'Replacing the installed tunnel extension with this build\'s copy.',
+        level: NovaLogLevel.warn,
+      );
+      state = await MacTunnelExtension.reinstall();
+    }
     if (state != MacExtensionState.active) {
       if (state == MacExtensionState.needsApproval) {
         NovaLog.instance.write(

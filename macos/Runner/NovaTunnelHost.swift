@@ -44,6 +44,24 @@ final class NovaTunnelHost: NSObject {
     case "activate":
       activate(result)
 
+    case "reinstall":
+      // Deactivate first, then install again.
+      //
+      // macOS will not swap a running system extension for a rebuilt one on
+      // its own: it keeps the copy it has and answers "will complete after
+      // reboot", so a fix ships and the machine goes on running the old code.
+      // Taking it out first is the only way to get the new one in without
+      // asking someone to restart their Mac.
+      let delegate = ActivationDelegate(done: { [weak self] _ in
+        self?.activation = nil
+        self?.activate(result)
+      })
+      activation = delegate
+      let request = OSSystemExtensionRequest.deactivationRequest(
+        forExtensionWithIdentifier: Self.extensionBundleId, queue: .main)
+      request.delegate = delegate
+      OSSystemExtensionManager.shared.submitRequest(request)
+
     case "start":
       guard let args = call.arguments as? [String: Any],
             let config = args["configJson"] as? String else {
@@ -76,6 +94,7 @@ final class NovaTunnelHost: NSObject {
       switch outcome {
       case .completed: result("completed")
       case .needsApproval: result("needsApproval")
+      case .needsReboot: result("needsReboot")
       case let .failed(message): result(FlutterError(code: "activate", message: message, details: nil))
       }
     })
@@ -104,13 +123,14 @@ final class NovaTunnelHost: NSObject {
       result(FlutterError(code: "group", message: "App Group container missing", details: nil))
       return
     }
+    let rewritten: String
     do {
-      // The extension reads its config from the shared container rather than
-      // from the start options, the same as on iPhone: a provider configuration
-      // is size-limited and this one carries rule-set paths and a node list.
-      try Self.rehomeRuleSets(config, into: container)
-        .write(to: container.appendingPathComponent("config.json"),
-               atomically: true, encoding: .utf8)
+      // Rule-set files still cross through the shared container: the core reads
+      // them by path, and root can read the user's copy.
+      rewritten = try Self.rehomeRuleSets(config, into: container)
+      // Also written to the container, for a provider old enough to look there.
+      try? rewritten.write(to: container.appendingPathComponent("config.json"),
+                           atomically: true, encoding: .utf8)
       let xrayURL = container.appendingPathComponent("xray.json")
       if let xray, !xray.isEmpty {
         try xray.write(to: xrayURL, atomically: true, encoding: .utf8)
@@ -130,6 +150,18 @@ final class NovaTunnelHost: NSObject {
       let proto = (mgr.protocolConfiguration as? NETunnelProviderProtocol)
         ?? NETunnelProviderProtocol()
       proto.providerBundleIdentifier = Self.extensionBundleId
+      // The config travels in the configuration itself, not through the shared
+      // container.
+      //
+      // A system extension runs as root, and root's App Group container is
+      // /private/var/root/Library/Group Containers/..., a different directory
+      // from the one the app writes to in the user's home. The provider read
+      // its own empty container, threw "no such file", and the tunnel went
+      // straight back to disconnected with the reason buried in the VPN
+      // session's last-disconnect error where nothing surfaces it.
+      var provider: [String: Any] = ["config": rewritten]
+      if let xray, !xray.isEmpty { provider["xray"] = xray }
+      proto.providerConfiguration = provider
       // Shown as the server address in the Network pane. There is no single
       // server (a subscription is a list), so it says what it is.
       proto.serverAddress = "Nova"
@@ -225,15 +257,22 @@ final class NovaTunnelHost: NSObject {
   }
 }
 
-/// One-shot delegate for the activation request.
+/// One-shot delegate for an activation or deactivation request.
 ///
-/// "Needs approval" is the normal first answer: macOS shows the user a prompt in
-/// System Settings and tells us to wait, so it is reported as its own outcome
-/// rather than as a failure, and the app can say what to click.
+/// "Needs approval" is the normal first answer to a first install: macOS shows
+/// the user a prompt in System Settings and tells us to wait, so it is its own
+/// outcome rather than a failure, and the app can say what to click.
+///
+/// Every other answer is reported verbatim rather than flattened. macOS has
+/// several ways of saying "not now" that look identical from the app and mean
+/// completely different things, and guessing between them cost a day: an
+/// extension that is already installed at an older build answers
+/// `willCompleteAfterReboot` and keeps running the copy it has.
 private final class ActivationDelegate: NSObject, OSSystemExtensionRequestDelegate {
   enum Outcome {
     case completed
     case needsApproval
+    case needsReboot
     case failed(String)
   }
 
@@ -265,7 +304,14 @@ private final class ActivationDelegate: NSObject, OSSystemExtensionRequestDelega
   }
 
   func request(_: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
-    answer(result == .completed ? .completed : .needsApproval)
+    switch result {
+    case .completed:
+      answer(.completed)
+    case .willCompleteAfterReboot:
+      answer(.needsReboot)
+    @unknown default:
+      answer(.needsApproval)
+    }
   }
 
   func request(_: OSSystemExtensionRequest, didFailWithError error: Error) {

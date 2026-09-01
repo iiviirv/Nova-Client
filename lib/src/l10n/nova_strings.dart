@@ -1214,8 +1214,9 @@ class NovaStrings {
     'route.bypassLan': 'Bypass LAN',
     'route.bypassLanSub': 'Private/local ranges stay direct',
     'route.tun': 'Full-device tunnel (TUN)',
-    'dash.tunOn': 'Every app on this computer goes through Nova. Asks for '
-        'permission each time you connect.',
+    'dash.tunOn': 'Every app on this computer goes through Nova. On a Mac you '
+        'allow Nova once, in System Settings; Windows asks each time you '
+        'connect.',
     'dash.tunOff': 'Nova runs a local proxy and points your system at it. Apps '
         'that follow the system proxy go through Nova, and nothing asks for '
         'permission.',
@@ -2043,8 +2044,9 @@ class NovaStrings {
     'route.bypassLan': 'عبور از شبکهٔ محلی',
     'route.bypassLanSub': 'محدوده‌های خصوصی و محلی مستقیم می‌مانند',
     'route.tun': 'تونل کل دستگاه (TUN)',
-    'dash.tunOn': 'همه برنامه‌های این کامپیوتر از نوا رد می‌شوند. هر بار که وصل '
-        'می‌شوید یک بار اجازه می‌خواهد.',
+    'dash.tunOn': 'همه برنامه‌های این کامپیوتر از نوا رد می‌شوند. روی مک یک بار '
+        'در تنظیمات سیستم به نوا اجازه می‌دهید؛ در ویندوز هر بار هنگام اتصال '
+        'پرسیده می‌شود.',
     'dash.tunOff': 'نوا یک پروکسی محلی اجرا می‌کند و سیستم را به آن وصل '
         'می‌کند. برنامه‌هایی که از پروکسی سیستم استفاده می‌کنند از نوا رد '
         'می‌شوند و هیچ اجازه‌ای خواسته نمی‌شود.',

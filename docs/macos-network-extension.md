@@ -71,6 +71,54 @@ Both App IDs already had the Network Extensions capability on team A53J987N2C,
 so nothing had to be requested from Apple. Xcode embeds each profile at build
 time; `tool/release_macos.sh` refuses to continue if either is missing.
 
+## What the provider needs that nothing tells you
+
+Getting the extension installed is half of it. Getting macOS to actually start
+the provider took five more, each of which reached the app as the same "the
+tunnel did not come up", and none of which appears in any log:
+
+1. **The app needs the Network Extension entitlement too**, not just the
+   extension. Without it, saving the VPN configuration fails with "permission
+   denied" while the extension sits there installed and approved.
+2. **That entitlement cannot coexist with
+   `com.apple.security.cs.disable-library-validation`.** macOS kills the app at
+   spawn: no crash report, no log, "Launchd job spawn failed".
+3. **Re-signing must carry `com.apple.application-identifier` and
+   `com.apple.developer.team-identifier`.** Xcode injects them from the profile;
+   an entitlements file that omits them drops what the profile is matched
+   against, and the app is killed the same silent way.
+4. **`NEMachServiceName` must begin with one of the extension's app groups**, so
+   it is the app group itself. The extension's own identifier reads more
+   naturally and is rejected outright: "extension category returned error".
+5. **The config cannot be handed over through the App Group container.** The
+   extension runs as root, so its container is
+   `/private/var/root/Library/Group Containers/...`, a different directory from
+   the app's. It travels in `providerConfiguration` instead.
+6. **Rule sets have to live inside the extension bundle.** A network extension is
+   sandboxed out of the user's home, so the copies the app leaves there are
+   unreadable to it ("operation not permitted") and the core refuses to start
+   the router at all.
+
+And macOS will not swap a running system extension for a rebuilt one: it answers
+`willCompleteAfterReboot` and keeps the copy it has. The app deactivates and
+reactivates instead, which it does honour immediately. Every rebuild also has to
+be notarized before macOS will consider it.
+
+## Proof it works
+
+    startTunnel
+    setup done err=none
+    config from providerConfiguration (3374 bytes)
+    command server created
+    service started
+
+    $ scutil --nc status "Nova"        Connected
+    $ curl https://api.ipify.org       164.90.169.98   <- the server, not the Mac
+    $ curl 127.0.0.1:9191/version      sing-box ... -nova
+
+Full-device mode, an AmneziaWG server, traffic on the machine's own interface,
+and no password asked at any point.
+
 ## The user's one interaction
 
 The first connect in whole-device mode asks macOS to install the extension.

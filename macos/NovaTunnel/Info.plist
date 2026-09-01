@@ -20,13 +20,13 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NetworkExtension</key>
 	<dict>
-		<!-- The extension's own identifier, team-prefixed. This is the mach
-		     service macOS connects to in order to start the provider, and it is
-		     NOT the app group: with the app group name here, the tunnel starts,
-		     macOS reports it disconnected, and startTunnel is never called at
-		     all, with nothing logged anywhere. -->
+		<!-- Must begin with one of the app groups in the extension's
+		     entitlements, so it is the app group itself. The extension's own
+		     identifier looks more natural and macOS rejects it outright:
+		     "extension category returned error", with the extension refused
+		     before it is ever installed. -->
 		<key>NEMachServiceName</key>
-		<string>$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<string>$(TeamIdentifierPrefix)group.online.novaproxy.novaClient</string>
 		<key>NEProviderClasses</key>
 		<dict>
 			<key>com.apple.networkextension.packet-tunnel</key>

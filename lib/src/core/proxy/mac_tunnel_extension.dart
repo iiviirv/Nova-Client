@@ -43,7 +43,7 @@ class MacTunnelExtension {
   /// Leaving it on would cost every Mac user a System Settings approval for a
   /// tunnel that then falls back to the administrator prompt anyway, which is
   /// worse than not offering it. Flip this to true with the fix.
-  static const bool enabled = false;
+  static const bool enabled = true;
 
   static Future<bool> get available async {
     if (!enabled) return false;
@@ -70,6 +70,8 @@ class MacTunnelExtension {
           return MacExtensionState.active;
         case 'needsApproval':
           return MacExtensionState.needsApproval;
+        case 'needsReboot':
+          return MacExtensionState.needsReboot;
         default:
           return MacExtensionState.failed;
       }
@@ -87,6 +89,30 @@ class MacTunnelExtension {
       'configJson': configJson,
       if (xrayConfigJson != null) 'xrayConfigJson': xrayConfigJson,
     });
+  }
+
+  /// Removes the installed extension and installs this build's copy.
+  ///
+  /// The way out of "macOS is still running the old one": a deactivation
+  /// followed by an activation, which it does honour immediately.
+  static Future<MacExtensionState> reinstall() async {
+    try {
+      final String? r = await _channel.invokeMethod<String>('reinstall');
+      switch (r) {
+        case 'completed':
+          return MacExtensionState.active;
+        case 'needsApproval':
+          return MacExtensionState.needsApproval;
+        case 'needsReboot':
+          return MacExtensionState.needsReboot;
+        default:
+          return MacExtensionState.failed;
+      }
+    } catch (e) {
+      NovaLog.instance.write('Tunnel extension could not be reinstalled: $e',
+          level: NovaLogLevel.warn);
+      return MacExtensionState.failed;
+    }
   }
 
   static Future<void> stop() async {
@@ -115,6 +141,11 @@ enum MacExtensionState {
 
   /// macOS is waiting for the user to allow it in System Settings.
   needsApproval,
+
+  /// macOS has the new extension but will not swap it in until a restart. The
+  /// caller reinstalls (deactivate, then activate) rather than asking anyone to
+  /// reboot.
+  needsReboot,
 
   /// It could not be installed, so the caller falls back to the elevated core.
   failed,

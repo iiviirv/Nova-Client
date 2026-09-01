@@ -32,9 +32,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   /// nowhere the app can see, so this is the difference between a diagnosis and
   /// a guess.
   private func trace(_ line: String) {
-    guard let container = FileManager.default
-      .containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) else { return }
-    let url = container.appendingPathComponent("tunnel.log")
+    // /tmp, not the App Group container: this process runs as root, so its
+    // container is root's and the user cannot read what it writes there, and a
+    // packet tunnel that fails inside a system extension logs nowhere else that
+    // anyone can reach. Five separate causes were found through this file, each
+    // of which presented to the app as the same "the tunnel did not come up".
+    let url = URL(fileURLWithPath: "/tmp/nova-tunnel.log")
     let stamped = "\(Date()) \(line)\n"
     if let handle = try? FileHandle(forWritingTo: url) {
       handle.seekToEndOfFile()
@@ -65,13 +68,28 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     NovacoreSetup(setup, &setupErr)
     trace("setup done err=\(setupErr?.localizedDescription ?? "none")")
 
-    let config = try String(contentsOf: container.appendingPathComponent("config.json"),
-                            encoding: .utf8)
+    // The app hands the config over in the provider configuration. It cannot
+    // hand it over through the App Group container: this process runs as root,
+    // so its container is root's, not the user's, and the file the app wrote is
+    // in a different directory entirely.
+    let handed = (protocolConfiguration as? NETunnelProviderProtocol)?
+      .providerConfiguration
+    let config: String
+    if let c = handed?["config"] as? String, !c.isEmpty {
+      config = c
+      trace("config from providerConfiguration (\(c.count) bytes)")
+    } else {
+      config = try String(contentsOf: container.appendingPathComponent("config.json"),
+                          encoding: .utf8)
+      trace("config from the container")
+    }
 
     // xhttp node: Xray runs first so its local SOCKS inbound is up before
     // sing-box bridges the tunnel to it. Same two-core arrangement as iPhone.
     let xrayURL = container.appendingPathComponent("xray.json")
-    if let xrayCfg = try? String(contentsOf: xrayURL, encoding: .utf8), !xrayCfg.isEmpty {
+    let handedXray = handed?["xray"] as? String
+    if let xrayCfg = handedXray ?? (try? String(contentsOf: xrayURL, encoding: .utf8)),
+       !xrayCfg.isEmpty {
       let logURL = container.appendingPathComponent("xray.log")
       try? Data().write(to: logURL)
       xrayLogSink = XrayLogSink(url: logURL)
@@ -84,6 +102,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       xrayStarted = true
     }
 
+    // Point every rule set at the copy inside this bundle.
+    //
+    // The app's config names files in the user's home, and a network extension
+    // is sandboxed out of it: the core cannot open them ("operation not
+    // permitted") and refuses to start the router at all. The same files ship
+    // inside the extension, where it can always read them.
+    let ready = Self.useBundledRuleSets(in: config)
+
     var err: NSError?
     guard let server = NovacoreNewCommandServer(commandServerHandler, self, &err), err == nil else {
       throw err ?? NSError(domain: "Nova", code: 2,
@@ -93,7 +119,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     try server.start()
     // A real (empty) options object, never nil: libbox 1.13 dereferences it.
     do {
-      try server.startOrReloadService(config, options: NovacoreOverrideOptions())
+      try server.startOrReloadService(ready, options: NovacoreOverrideOptions())
     } catch {
       trace("startOrReloadService failed: \(error.localizedDescription)")
       throw error
@@ -115,6 +141,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       _ = NovaxrayStop()
     }
     xrayLogSink = nil
+  }
+
+  /// Rewrites the config's rule-set paths to this bundle's own copies.
+  static func useBundledRuleSets(in config: String) -> String {
+    guard let data = config.data(using: .utf8),
+          var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          var route = root["route"] as? [String: Any],
+          var sets = route["rule_set"] as? [[String: Any]], !sets.isEmpty
+    else { return config }
+    let bundle = Bundle.main
+    for i in sets.indices {
+      guard let path = sets[i]["path"] as? String else { continue }
+      let name = URL(fileURLWithPath: path).lastPathComponent
+      let stem = (name as NSString).deletingPathExtension
+      let ext = (name as NSString).pathExtension
+      guard let url = bundle.url(forResource: stem, withExtension: ext) else { continue }
+      sets[i]["path"] = url.path
+    }
+    route["rule_set"] = sets
+    root["route"] = route
+    guard let out = try? JSONSerialization.data(withJSONObject: root),
+          let text = String(data: out, encoding: .utf8) else { return config }
+    return text
   }
 
   private lazy var commandServerHandler = CommandServerHandler(provider: self)

@@ -28,13 +28,14 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
-		48431439C8D9FA47E0932DBB /* Novacore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 62CCE61F9A08B361B9FED244 /* Novacore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		64DDAAC71761DB2DFA40F060 /* Novacore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 62CCE61F9A08B361B9FED244 /* Novacore.xcframework */; };
 		6B7B7C7DBBB823EAACCA084C /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F0AF84431BE73372505F30 /* PacketTunnelProvider.swift */; };
 		76037D00208B26E44AE13644 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 742A6021B7AA2E0C047CBB00 /* Pods_RunnerTests.framework */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		8E56BCB03F75D32EA98E952D /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B1133F123B1A1F509836FC7 /* Pods_Runner.framework */; };
 		A40E9C9BF4B25E5D4944D749 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F97EEF688B03BE9ACB645682 /* main.swift */; };
+		B47E25BE029AC5B38D28E6E5 /* geosite-ads.srs in Resources */ = {isa = PBXBuildFile; fileRef = 309A8A5CD5A7FE9601F226DD /* geosite-ads.srs */; };
+		BC5C91821BD4DFFB0F6814EE /* geosite-ir.srs in Resources */ = {isa = PBXBuildFile; fileRef = DCC3562E58AD5EF38A32825A /* geosite-ir.srs */; };
 		CB329ECF082FA3C0C6318167 /* NovaTunnelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EB3984754BA6732014B8FD0 /* NovaTunnelHost.swift */; };
 		CDA1B47A2CB71F57B201FF62 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29F95304886EA0E920300044 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
@@ -93,6 +94,7 @@
 		1EB3984754BA6732014B8FD0 /* NovaTunnelHost.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NovaTunnelHost.swift; sourceTree = "<group>"; };
 		236B0441E95719A05CE73F0D /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		29F95304886EA0E920300044 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		309A8A5CD5A7FE9601F226DD /* geosite-ads.srs */ = {isa = PBXFileReference; includeInIndex = 1; name = "geosite-ads.srs"; path = "rulesets/geosite-ads.srs"; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 		B51DE490C8485BD5B1A8CDDA /* NovaTunnel.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = NovaTunnel.entitlements; sourceTree = "<group>"; };
 		B6486577D05C079404A845ED /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		D2AB1520552B8AD6D2BB551A /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		DCC3562E58AD5EF38A32825A /* geosite-ir.srs */ = {isa = PBXFileReference; includeInIndex = 1; name = "geosite-ir.srs"; path = "rulesets/geosite-ir.srs"; sourceTree = "<group>"; };
 		F97EEF688B03BE9ACB645682 /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -275,6 +278,8 @@
 				15F4FBC5C13C5CC046A166C6 /* Info.plist */,
 				B51DE490C8485BD5B1A8CDDA /* NovaTunnel.entitlements */,
 				F97EEF688B03BE9ACB645682 /* main.swift */,
+				309A8A5CD5A7FE9601F226DD /* geosite-ads.srs */,
+				DCC3562E58AD5EF38A32825A /* geosite-ir.srs */,
 			);
 			name = NovaTunnel;
 			path = NovaTunnel;
@@ -422,6 +427,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B47E25BE029AC5B38D28E6E5 /* geosite-ads.srs in Resources */,
+				BC5C91821BD4DFFB0F6814EE /* geosite-ir.srs in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
