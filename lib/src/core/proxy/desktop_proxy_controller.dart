@@ -1077,17 +1077,25 @@ class DesktopProxyController extends ProxyController {
   /// to a node that is already addressed by IP. Nodes that do not actually
   /// resolve onto Cloudflare are left exactly as their provider wrote them.
   ///
-  /// Never blocks on a search. The first connect may go out unfronted; the scan
-  /// it starts is what makes the next one work.
+  /// Prefers the pool a scan kept over the single stored address, so servers are
+  /// spread across the best few rather than all dialling one. Re-addressing runs
+  /// here, on every connect, and not only when someone taps refresh on the free
+  /// list: that button was the only caller of the screen's own re-addressing, so
+  /// a user who never tapped it carried published addresses into every session.
+  ///
+  /// Never blocks on a search, and never starts a probe of its own. The first
+  /// connect may go out unfronted; the scan it starts is what makes the next one
+  /// work.
   Future<List<ProxyNode>> _frontWithCleanIp(List<ProxyNode> nodes) async {
     if (!(_active?.hardenTls ?? false)) return nodes;
     if (!nodes.any(CleanIpFronting.couldBeFronted)) return nodes;
+    final List<CleanIp> pool = CleanIpStore.instance.freshPool;
     final CleanIp? ip = CleanIpFinder.current();
-    if (ip == null) {
+    if (pool.isEmpty && ip == null) {
       CleanIpFinder.ensure();
       return nodes;
     }
-    return CleanIpFronting.apply(nodes, ip);
+    return CleanIpFronting.applyAvailable(nodes, pool: pool, single: ip);
   }
 
   Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {

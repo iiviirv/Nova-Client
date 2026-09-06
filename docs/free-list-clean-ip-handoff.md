@@ -47,28 +47,74 @@ Do not redo these.
 5. **`test/free_list_protection_test.dart`**, 5 tests, mutation-verified: they fail
    when the default is reverted and when the early return is restored.
 
-State: 521 tests pass. Three failures (`nova_panel_test`, `subscription_connect_test`)
+6. **The connect path now reads the pool** (`applyAvailable` in
+   `clean_ip_fronting.dart`, called from `_frontWithCleanIp` in both
+   `singbox_proxy_controller.dart` and `desktop_proxy_controller.dart`). See
+   "Item 1, done" below for what this did and did not turn out to be.
+
+State: 525 tests pass. Three failures (`nova_panel_test`, `subscription_connect_test`)
 are pre-existing and network-dependent; they fail on a clean tree too. Not released,
 given the standing release hold.
 
 ## What remains
 
-### 1. The re-addressing only runs on manual refresh (the big one)
+### Item 1, done. Read this before trusting the old description of it.
 
-`_boostFreeListAddresses()` has exactly one caller: `_manualRefresh()` at
-`lib/src/features/servers/node_list_screen.dart:351`, behind `if (profile.isBuiltIn)`.
+**The premise was half right, and the half that was wrong matters.**
 
-So a user who never taps the refresh button never gets re-addressed configs, no
-matter what the default says. **This is the change that actually delivers the
-protection.** The others are prerequisites.
+The original note said a user who never taps refresh "never gets re-addressed
+configs". That is not what the code did. `buildFreeProfile()` sets
+`hardenTls: true`, and the connect path already called `_frontWithCleanIp` on
+every connect for any profile with that flag. So those users *were* getting
+re-addressed, from the moment a scan had run.
 
-Needs re-addressing to run wherever the free list is loaded for use, not only when
-the user asks. Note the deliberate design constraint recorded at
-`node_list_screen.dart:325`: automatic testing was removed on purpose and "nothing
-starts until this button". Re-addressing is not the same thing as latency testing,
-but respect the intent, do not reintroduce background probing of every node.
+What they were getting was the weak version. `_frontWithCleanIp` read
+`CleanIpFinder.current()`, a *single* stored address, and called
+`CleanIpFronting.apply`, which gives that one address to every node. The pool
+that the finder was taught to fill was read by nothing but the free-list screen.
+So the fix in "already done" item 2 was, on the path that carries traffic, dead
+code: written, stored, never read.
 
-### 2. First connect goes out unprotected
+That single address is exactly what `applySpread`'s own comment warns about, "a
+single point of failure and a single thing for a filter to notice: every device
+that ran a scan ends up dialling the same IP for every server it has."
+
+**The change:** `CleanIpFronting.applyAvailable(nodes, pool:, single:)` picks the
+pool when there is one and falls back to the single address when there is not,
+and both controllers call it. Spreading now happens on every connect, for every
+`hardenTls` profile, not only when someone taps refresh.
+
+**The `node_list_screen.dart:325` constraint is untouched.** No probing was
+added. This reads addresses a scan already recorded; it starts nothing. The
+screen's `_boostFreeListAddresses()` still has its one caller and can stay that
+way, since it now only affects what the list *displays*.
+
+Tests are in `test/free_list_protection_test.dart`. Three are mutation-verified
+(ignore the pool, break the single-address fallback, revert a controller to
+`apply`, each fails the matching test). The fourth, "leaves the list alone when
+no scan has found anything", is a boundary assertion that no honest one-line
+mutation can break; it is documentation, not a guard.
+
+One of those tests reads the two controller source files and asserts the call is
+present. That is deliberate. The bug this branch exists to fix was never a wrong
+function, it was a right function nobody called, and every behavioural test here
+passes just as happily with the connect path reverted. Wiring is the thing that
+broke, so wiring is what is asserted.
+
+### Open question this raised: the toggle does not reach the connect path
+
+`boostFreeList` gates `_boostFreeListAddresses()` on the free-list screen.
+`_frontWithCleanIp` is gated on `hardenTls` and has never consulted the toggle.
+So a user who turns re-addressing OFF in Radar still gets fronted on connect,
+before and after this change.
+
+This was left alone on purpose: honouring the toggle there would *remove*
+protection from anyone who has it off, which is a product decision, not a
+cleanup. But the store's own doc comment says "The user can still turn it off in
+Radar", and on the path that matters that is currently not true. Decide which of
+the two should move, the comment or the gate.
+
+### 1. First connect goes out unprotected
 
 `CleanIpFinder.ensure()` (`clean_ip_finder.dart:104`) is fire-and-forget by design:
 "the first connect goes out unfronted and the next one benefits". Called from
@@ -81,12 +127,12 @@ for a scan? A scan is `kSampleSize = 128` addresses over ports 443/2053/8443 wit
 45s budget, so measure the realistic time-to-first-address on a phone before
 choosing. Do not block the connect path on a slow network.
 
-### 3. Verify the Radar toggle reflects the new default
+### 2. Verify the Radar toggle reflects the new default
 
 `radar_screen.dart:458` binds to `store.boostFreeList`. Confirm the switch shows ON
 for a fresh install and that turning it off still sticks across a restart.
 
-### 4. On-device verification
+### 3. On-device verification
 
 Emulator is not sufficient here: the whole point is which addresses are reachable
 from a real network. Test on a real device, ideally on an Iranian connection through
