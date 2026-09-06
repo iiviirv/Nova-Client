@@ -1,0 +1,27 @@
+#!/bin/sh
+# Strip AI-attribution trailers from every commit message on this repo.
+# Enforces the project rule: the author's git identity is the sole author;
+# no assistant co-author, session, generator, or vendor attribution lines.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# $1 is the path to the pending commit message file.
+msg="$1"
+
+# Remove the attribution lines (BSD/GNU sed compatible via -i.bak).
+sed -i.bak -E \
+  -e '/^[Cc]o-[Aa]uthored-[Bb]y:.*([Cc]laude|[Cc]odex|[Oo]penAI|[Aa]nthropic)/d' \
+  -e '/^Claude-Session:/d' \
+  -e '/^Codex-Session:/d' \
+  -e '/claude\.ai\/code/d' \
+  -e '/noreply@anthropic\.com/d' \
+  -e '/noreply@openai\.com/d' \
+  -e '/^🤖 Generated with/d' \
+  -e '/Generated with \[?(Claude|Codex)/d' \
+  "$msg"
+rm -f "$msg.bak"
+
+# Drop any blank lines left dangling at the end.
+awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' "$msg" > "$msg.tmp" && mv "$msg.tmp" "$msg"
+
+exit 0
