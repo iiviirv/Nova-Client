@@ -400,7 +400,11 @@ class DesktopProxyController extends ProxyController {
     // The log is readable, copyable, and routinely pasted into support chats,
     // and a ProcessException carries the full path of the core, which contains
     // the account name. Keep the detail, drop the identity.
-    final String home = Platform.environment['HOME'] ?? '';
+    // HOME on macOS and Linux, USERPROFILE on Windows, where the path is
+    // C:\Users\<name> and HOME is usually unset.
+    final String home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
     final String safe = home.isEmpty ? raw : raw.replaceAll(home, '~');
     NovaLog.instance.write('Connect failed: $safe', level: NovaLogLevel.warn);
     if (e is ProcessException || raw.startsWith('ProcessException')) {
@@ -2197,7 +2201,13 @@ class DesktopProxyController extends ProxyController {
       if (owned == null) return;
       // The port we set it to, not whatever this instance happens to be
       // configured with now.
-      if (!await _pointsAtOurDeadPort(owned)) return;
+      if (!shouldClear(
+        ownedPort: owned,
+        namesOurPort: await _osProxyNames(owned),
+        nothingListening: await nothingIsListening(owned),
+      )) {
+        return;
+      }
       NovaLog.instance.write(
           'Clearing a system proxy Nova left pointing at 127.0.0.1:$owned '
           'with nothing listening');
@@ -2208,8 +2218,31 @@ class DesktopProxyController extends ProxyController {
     }
   }
 
+  /// Whether a stale setting should be cleared, given the three facts that
+  /// decide it.
+  ///
+  /// Separated from the code that gathers those facts so the rule can be tested
+  /// without a real system proxy. The gathering half needs SharedPreferences,
+  /// `networksetup` and a socket, and when it was inlined the tests around it
+  /// asserted nothing at all: `getInstance()` threw, the catch swallowed it,
+  /// and three tests passed against a sweep that could have cleared
+  /// unconditionally.
+  @visibleForTesting
+  static bool shouldClear({
+    required int? ownedPort,
+    required bool namesOurPort,
+    required bool nothingListening,
+  }) {
+    // No marker means Nova never set it, so it belongs to someone else: another
+    // proxy client on the same port, or a user who points the OS at loopback by
+    // hand because they turned the automatic setting off.
+    if (ownedPort == null) return false;
+    if (!namesOurPort) return false;
+    return nothingListening;
+  }
+
   /// True when the OS proxy names our loopback port and no one answers it.
-  Future<bool> _pointsAtOurDeadPort(int port) async {
+  Future<bool> _osProxyNames(int port) async {
     bool namesUs = false;
     if (Platform.isMacOS) {
       for (final String svc in await _macServices()) {
@@ -2234,8 +2267,7 @@ class DesktopProxyController extends ProxyController {
       final String v = (sv.stdout as String);
       namesUs = e.contains('0x1') && v.contains('127.0.0.1:$port');
     }
-    if (!namesUs) return false;
-    return nothingIsListening(port);
+    return namesUs;
   }
 
   /// Whether nothing answers on [port] of loopback.

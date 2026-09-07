@@ -317,6 +317,30 @@ class MeasureRunner {
       concurrency: concurrency,
       cancelled: cancelled,
     );
+    // If NOTHING could be reached, distrust the probe rather than the servers.
+    //
+    // The probe runs from the app, and the dial runs from the core. Those are
+    // normally the same path, but they are not guaranteed to be: another VPN, a
+    // captive portal, a per-app rule, or simply no network at all makes every
+    // TCP connect fail while the core can still dial. Writing the whole list
+    // off in that case would hide working servers from someone who may have
+    // nothing else, which is the one outcome worth being slow to avoid.
+    //
+    // A partial result is the trustworthy one: if some servers answered TCP and
+    // others refused, the refusals are about those servers.
+    //
+    // This has to come BEFORE the second opinion below. On a fully blocked
+    // network every node fails, so re-probing them all would spend another full
+    // pass (about fifteen seconds on a 200-node pool) to reach a verdict that is
+    // then thrown away here anyway, and it would spend it on the user whose
+    // network is already the worst.
+    if (tcpProbes.isNotEmpty && unreachable.length == tcpProbes.length) {
+      NovaLog.instance.write(
+          'Every server refused a TCP connection, so the quick check is being '
+          'ignored and all of them will be dialled',
+          level: NovaLogLevel.warn);
+      unreachable = <String>{};
+    }
     // Ask the failures a second time before believing them.
     //
     // A lost SYN is not a dead server. Linux and Android retransmit the first
@@ -340,24 +364,6 @@ class MeasureRunner {
         concurrency: concurrency,
         cancelled: cancelled,
       );
-    }
-    // If NOTHING could be reached, distrust the probe rather than the servers.
-    //
-    // The probe runs from the app, and the dial runs from the core. Those are
-    // normally the same path, but they are not guaranteed to be: another VPN, a
-    // captive portal, a per-app rule, or simply no network at all makes every
-    // TCP connect fail while the core can still dial. Writing the whole list
-    // off in that case would hide working servers from someone who may have
-    // nothing else, which is the one outcome worth being slow to avoid.
-    //
-    // A partial result is the trustworthy one: if some servers answered TCP and
-    // others refused, the refusals are about those servers.
-    if (tcpProbes.isNotEmpty && unreachable.length == tcpProbes.length) {
-      NovaLog.instance.write(
-          'Every server refused a TCP connection, so the quick check is being '
-          'ignored and all of them will be dialled',
-          level: NovaLogLevel.warn);
-      unreachable = <String>{};
     }
     if (unreachable.isNotEmpty) {
       for (final String tag in unreachable) {

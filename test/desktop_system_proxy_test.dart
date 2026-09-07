@@ -84,44 +84,51 @@ void main() {
     });
   });
 
-  group('the startup sweep is narrow enough to be safe', () {
+  group('the startup sweep only touches a setting Nova owns', () {
+    // These assert the RULE, not the plumbing. When the rule was inlined, the
+    // tests here reached SharedPreferences, which throws in a plain test
+    // context, and the catch swallowed it: three tests passed while asserting
+    // nothing about the sweep at all. They would have passed against a sweep
+    // that cleared unconditionally.
+
+    test('no ownership marker means it is not ours, so it is left alone', () {
+      // The dangerous case: another proxy client configured on the same port
+      // and not running right now looks exactly like our own leftovers.
+      expect(
+          DesktopProxyController.shouldClear(
+              ownedPort: null, namesOurPort: true, nothingListening: true),
+          isFalse,
+          reason: "a port number is not ownership, and clearing someone else's "
+              'setting breaks a working setup Nova has nothing to do with');
+    });
+
+    test('a marker for a port the OS is not using is left alone', () {
+      expect(
+          DesktopProxyController.shouldClear(
+              ownedPort: 2080, namesOurPort: false, nothingListening: true),
+          isFalse);
+    });
+
+    test('something still listening means the setting is in use', () {
+      expect(
+          DesktopProxyController.shouldClear(
+              ownedPort: 2080, namesOurPort: true, nothingListening: false),
+          isFalse,
+          reason: 'a live listener may be another proxy app or a second Nova');
+    });
+
+    test('ours, in use by the OS, and dead: clear it', () {
+      // The machine-breaking case the sweep exists for: Nova set it, then died
+      // without cleaning up, and every app on the computer now has no network.
+      expect(
+          DesktopProxyController.shouldClear(
+              ownedPort: 2080, namesOurPort: true, nothingListening: true),
+          isTrue);
+    });
+
     test('does nothing when told not to manage the system proxy', () async {
       final DesktopProxyController c =
           DesktopProxyController(manageSystemProxy: false);
-      // Must return without touching anything, whatever the machine looks like.
-      await c.clearStaleSystemProxy();
-      expect(c.systemProxyOn, isFalse);
-      c.dispose();
-    });
-
-    test('leaves a port alone while something is still serving it', () async {
-      // The case that must never be "cleaned up": another proxy app, or a
-      // second Nova, listening on the same port. Clearing then would break a
-      // working setup that has nothing to do with us.
-      final ServerSocket live =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() async => live.close());
-      live.listen((Socket s) => s.destroy());
-
-      final DesktopProxyController c =
-          DesktopProxyController(socksPort: live.port);
-      await c.clearStaleSystemProxy();
-      expect(c.systemProxyOn, isFalse,
-          reason: 'a live listener means the setting is in use, not stale');
-      c.dispose();
-    });
-
-    test('a closed port does not by itself cause a change', () async {
-      // Reaching "nothing is listening" is necessary but not sufficient: the
-      // OS proxy must also actually name our port. On a machine with no Nova
-      // proxy set, this must be a no-op even though the port is dead.
-      final ServerSocket s =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final int deadPort = s.port;
-      await s.close();
-
-      final DesktopProxyController c =
-          DesktopProxyController(socksPort: deadPort);
       await c.clearStaleSystemProxy();
       expect(c.systemProxyOn, isFalse);
       c.dispose();

@@ -58,6 +58,41 @@ void main() {
     });
   });
 
+  group('a failure is asked twice before it is believed', () {
+    test('a port that answers on the second ask is not written off', () async {
+      // A lost SYN is not a dead server. SYN retransmission is about a second,
+      // so on a lossy path out of Iran one dropped packet used to delete a
+      // working server from the run AND from the late retry pass.
+      //
+      // Simulated by closing the port for the first ask and binding it for the
+      // second, which is what a retransmitted handshake looks like from here.
+      final ServerSocket first =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int port = first.port;
+      await first.close();
+
+      final Map<String, ({String host, int port})> probes =
+          <String, ({String host, int port})>{
+        'node-0': (host: '127.0.0.1', port: port),
+      };
+      final Set<String> pass1 = await MeasureRunner.unreachableTags(probes,
+          timeout: const Duration(seconds: 1));
+      expect(pass1, contains('node-0'), reason: 'the first ask finds nothing');
+
+      // Now the server is there, as a retransmit would have found it.
+      final ServerSocket second = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4, port);
+      addTearDown(() async => second.close());
+      second.listen((Socket c) => c.destroy());
+
+      final Set<String> pass2 = await MeasureRunner.unreachableTags(probes,
+          timeout: const Duration(seconds: 1));
+      expect(pass2, isEmpty,
+          reason: 'the second ask is what saves a live server from one lost '
+              'packet');
+    });
+  });
+
   group('only the protocols that need it get the long first dial', () {
     ProxyNode n(NodeProtocol p, {String? method, String? reality}) => ProxyNode(
           protocol: p,
