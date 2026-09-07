@@ -59,6 +59,13 @@ Future<void> main() async {
       : isDesktop
           ? DesktopProxyController()
           : MockProxyController();
+  // A crash or a force quit cannot run any teardown, so a system proxy Nova set
+  // can outlive the app and leave every app on the machine pointing at a dead
+  // local port. Clear that at startup, but only when it is certainly ours and
+  // certainly dead. Not awaited: nothing else needs to wait on it.
+  if (proxy is DesktopProxyController) {
+    unawaited(proxy.clearStaleSystemProxy());
+  }
 
   final ConnInfoController connInfo = ConnInfoController(proxy);
 

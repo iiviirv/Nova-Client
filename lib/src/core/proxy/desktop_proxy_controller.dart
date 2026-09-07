@@ -146,6 +146,18 @@ class DesktopProxyController extends ProxyController {
   int _lastDown = 0;
   bool _systemProxyOn = false;
 
+  /// We asked the OS to point at us, whether or not that has landed yet.
+  ///
+  /// Separate from [_systemProxyOn], which only becomes true once the change is
+  /// confirmed. Teardown has to act on the intent: the set is slow (an admin
+  /// prompt on macOS) and runs in the background, so a connect that fails, or a
+  /// user who disconnects, arrives while the flag is still false and clears
+  /// nothing at all.
+  bool _systemProxyAttempted = false;
+
+  /// The in-flight set/clear, so teardown can tell one is still running.
+  Future<void>? _systemProxyPending;
+
   /// One-shot guard for the auto (subscription) self-heal, matching the mobile
   /// core: if a subscription tunnel comes up but no traffic flows (urltest landed
   /// on a dead exit), rebuild the core once so it re-picks. [_healing] keeps the
@@ -340,7 +352,24 @@ class DesktopProxyController extends ProxyController {
         // is up as soon as the core answers; point the OS at it in the
         // background and let the dashboard's Proxy mode card report the
         // result.
-        unawaited(_setSystemProxy(true).then((_) => notifyListeners()));
+        _systemProxyAttempted = true;
+        _systemProxyPending = _setSystemProxy(true).then((_) async {
+          notifyListeners();
+          // The set can take as long as the user takes to answer a password
+          // prompt. If the tunnel went away in that time, the OS has just been
+          // pointed at a local port with nothing behind it, and every app that
+          // follows the system proxy loses the network until someone works out
+          // why. Undo it immediately rather than leaving the machine broken.
+          if (_state != ProxyConnectionState.connected && _systemProxyOn) {
+            NovaLog.instance.write(
+                'The tunnel went away while the system proxy was being set; '
+                'clearing it again');
+            await _setSystemProxy(false);
+            _systemProxyAttempted = false;
+            notifyListeners();
+          }
+        });
+        unawaited(_systemProxyPending!);
       }
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
@@ -351,8 +380,39 @@ class DesktopProxyController extends ProxyController {
       }
     } catch (e) {
       await _cleanup();
-      _fail(e.toString());
+      _fail(_humanError(e));
     }
+  }
+
+  /// Turns a thrown object into something the user can act on, keeping the raw
+  /// text in the log where it is worth something.
+  ///
+  /// A real one, seen on a Mac under load: the connection error read
+  /// `ProcessException: Too many open files, Command: chmod +x
+  /// /Users/.../Application Support/online.novaproxy.novaClient/sing-box`.
+  /// That is a true and complete description of the fault and there is nothing
+  /// a user can do with it. Most thrown values here are already written for a
+  /// person ('Core failed to start: ...'), so those pass through untouched;
+  /// this only rewrites the ones that arrive as machine text.
+  String _humanError(Object e) {
+    final String raw = e.toString();
+    NovaLog.instance.write('Connect failed: $raw', level: NovaLogLevel.warn);
+    if (e is ProcessException || raw.startsWith('ProcessException')) {
+      if (raw.contains('Too many open files')) {
+        return 'This computer has run out of file handles, so Nova could not '
+            'start its core. Closing some apps, or restarting, clears it.';
+      }
+      if (raw.contains('Permission denied')) {
+        return 'Nova is not allowed to run its core from where it is '
+            'installed. Moving Nova to Applications usually fixes this.';
+      }
+      if (raw.contains('No such file')) {
+        return 'Part of Nova is missing, so its core could not start. '
+            'Reinstalling replaces it.';
+      }
+      return 'Nova could not start its core on this computer.';
+    }
+    return raw;
   }
 
   /// After a subscription tunnel comes up in proxy mode, confirm traffic really
@@ -2047,6 +2107,87 @@ class DesktopProxyController extends ProxyController {
     }
   }
 
+  /// Clears a system proxy Nova left pointing at itself when it is certainly
+  /// dead, at startup.
+  ///
+  /// Nothing in-process can cover a crash, a force quit, or a kill: the proxy
+  /// is set, the app disappears, and every application that follows the system
+  /// proxy loses the network with no clue why. That is a broken machine, not a
+  /// broken app, and the user has no reason to connect it to Nova at all.
+  ///
+  /// Deliberately narrow, because this edits a system setting the user may have
+  /// configured themselves. It acts only when the proxy points at loopback on
+  /// the exact port this build uses AND nothing is listening there. A proxy
+  /// pointing anywhere else, or one with a live server behind it (another proxy
+  /// app, or a second Nova), is left strictly alone.
+  Future<void> clearStaleSystemProxy() async {
+    if (!manageSystemProxy) return;
+    if (!Platform.isMacOS && !Platform.isWindows) return;
+    try {
+      if (!await _pointsAtOurDeadPort()) return;
+      NovaLog.instance.write(
+          'Clearing a system proxy left pointing at 127.0.0.1:$socksPort with '
+          'nothing listening');
+      await _setSystemProxy(false);
+    } catch (e) {
+      NovaLog.instance.write('Could not check the system proxy: $e',
+          level: NovaLogLevel.warn);
+    }
+  }
+
+  /// True when the OS proxy names our loopback port and no one answers it.
+  Future<bool> _pointsAtOurDeadPort() async {
+    bool namesUs = false;
+    if (Platform.isMacOS) {
+      for (final String svc in await _macServices()) {
+        final ProcessResult r = await Process.run(
+            'networksetup', <String>['-getwebproxy', svc]);
+        final String out = (r.stdout as String);
+        if (out.contains('Enabled: Yes') &&
+            out.contains('127.0.0.1') &&
+            out.contains('Port: $socksPort')) {
+          namesUs = true;
+          break;
+        }
+      }
+    } else {
+      const String key =
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
+      final ProcessResult en = await Process.run(
+          'reg', <String>['query', key, '/v', 'ProxyEnable']);
+      final ProcessResult sv = await Process.run(
+          'reg', <String>['query', key, '/v', 'ProxyServer']);
+      final String e = (en.stdout as String);
+      final String v = (sv.stdout as String);
+      namesUs = e.contains('0x1') && v.contains('127.0.0.1:$socksPort');
+    }
+    if (!namesUs) return false;
+    return nothingIsListening(socksPort);
+  }
+
+  /// Whether nothing answers on [port] of loopback.
+  ///
+  /// The second half of the staleness question, and the half that keeps the
+  /// sweep safe. Something may legitimately be serving the port the OS proxy
+  /// names: another proxy app, or a second copy of Nova. Only silence proves
+  /// the setting is left over, so anything that accepts a connection is treated
+  /// as in use and the setting is not touched.
+  @visibleForTesting
+  static Future<bool> nothingIsListening(int port,
+      {Duration timeout = const Duration(milliseconds: 400)}) async {
+    Socket? probe;
+    try {
+      probe = await Socket.connect('127.0.0.1', port, timeout: timeout);
+      return false;
+    } catch (_) {
+      return true;
+    } finally {
+      try {
+        probe?.destroy();
+      } catch (_) {}
+    }
+  }
+
   Future<List<String>> _macServices() async {
     try {
       final r = await Process.run('networksetup', <String>['-listallnetworkservices']);
@@ -2099,7 +2240,12 @@ class DesktopProxyController extends ProxyController {
     // lightning test.
     coreHealth.value = coreHealth.value.withoutSelection;
     _coreTagKeys = const <String, String>{};
-    if (_systemProxyOn) {
+    // Clear on intent. Gating this on the confirmed flag alone is what left a
+    // Mac with all four network services pointing at a dead port: the set was
+    // still in flight, so the flag was false, so this skipped, and the set then
+    // landed on a core that was already being torn down.
+    if (_systemProxyOn || _systemProxyAttempted) {
+      _systemProxyAttempted = false;
       await _setSystemProxy(false);
     }
     // Releasing the elevated shell lets it kill the core and exit, so no second
