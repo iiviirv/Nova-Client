@@ -60,6 +60,12 @@ class CleanIpStore extends ChangeNotifier {
   static const String _kPoolKey = 'nova.cleanip.pool';
   static const String _kBoostKey = 'nova.cleanip.boost';
 
+  /// One switch for the new default, so it can be measured before it is trusted
+  /// and turned off in one place if re-addressing turns out to cost more than
+  /// the filtering does. An explicit choice already saved by the user always
+  /// wins over this, in either direction.
+  static const bool kBoostFreeListByDefault = true;
+
   /// How many of a scan's best addresses are kept to spread across the free
   /// list. Five is enough that losing one does not empty the list, and few
   /// enough that they are all genuinely fast.
@@ -93,11 +99,26 @@ class CleanIpStore extends ChangeNotifier {
     ];
   }
 
-  bool _boost = false;
+  bool _boost = kBoostFreeListByDefault;
 
   /// Whether a free-list refresh should re-address its servers through
-  /// [freshPool]. Off by default: it changes what every server in the list
-  /// dials, which is not something to do to someone without asking.
+  /// [freshPool].
+  ///
+  /// This was off by default, on the reasoning that changing what every server
+  /// dials is not something to do to someone without asking. That was right
+  /// while it was an expert option and wrong once we knew what the free list
+  /// costs people: it is published at a world-readable URL, so a censor fetches
+  /// it in one request and blocks every address in it, and the servers stop
+  /// working within about two days. Leaving the addresses as published is not
+  /// the neutral choice, it is the one that breaks.
+  ///
+  /// Re-addressing is also better than what it replaces: each server gets one of
+  /// the best few addresses found on THIS network, chosen at random per user, so
+  /// there is no single address that everyone shares and that dies for everyone
+  /// at once. The published domain moves to the TLS name, so the server still
+  /// sees the handshake it expects.
+  ///
+  /// The user can still turn it off in Radar; the default is what changed.
   bool get boostFreeList => _boost;
 
   Future<void> setBoostFreeList(bool on) async {
@@ -131,16 +152,40 @@ class CleanIpStore extends ChangeNotifier {
     return age >= 0 && age < maxAge.inMilliseconds ? b : null;
   }
 
+  /// Test seam: drop the cached preferences handle and the in-memory state so
+  /// one test's saved settings cannot leak into the next. Without it the
+  /// singleton keeps the first test's SharedPreferences instance and every later
+  /// setMockInitialValues is ignored, which reads as a bug in the code under
+  /// test rather than in the test.
+  @visibleForTesting
+  void resetForTests() {
+    _prefs = null;
+    _best = null;
+    _pool = const <CleanIp>[];
+    _boost = kBoostFreeListByDefault;
+  }
+
   Future<void> load() async {
     _prefs ??= await SharedPreferences.getInstance();
+    // Read the best address if there is one, but do NOT stop here when there is
+    // not. This used to `return` on a missing address, which silently skipped
+    // the two reads below it. That was invisible while the boost field defaulted
+    // to the same value the early return left it at, and became a real bug the
+    // moment the default changed: a user who had deliberately turned the
+    // re-addressing OFF, but had no saved address, would have had it turned back
+    // on for them. Settings must not depend on whether an unrelated key exists.
     final String? raw = _prefs!.getString(_kKey);
-    if (raw == null) return;
-    try {
-      _best = CleanIp.fromJson(
-          (jsonDecode(raw) as Map).cast<String, dynamic>());
-      notifyListeners();
-    } catch (_) {}
-    _boost = _prefs!.getBool(_kBoostKey) ?? false;
+    if (raw != null) {
+      try {
+        _best = CleanIp.fromJson(
+            (jsonDecode(raw) as Map).cast<String, dynamic>());
+        notifyListeners();
+      } catch (_) {}
+    }
+    // A saved choice wins in BOTH directions: someone who turned this off keeps
+    // it off across the default change, and someone who turned it on keeps it on
+    // if the default is ever pulled back. Only an absent key takes the default.
+    _boost = _prefs!.getBool(_kBoostKey) ?? kBoostFreeListByDefault;
     final String? poolRaw = _prefs!.getString(_kPoolKey);
     if (poolRaw != null) {
       try {

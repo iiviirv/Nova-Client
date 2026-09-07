@@ -977,7 +977,7 @@ class NovaStrings {
     'set.tools': 'Tools',
     'radar.boostTitle': 'Use these addresses for the free servers',
     'radar.boostSub':
-        'Each free server will dial one of the best {n} addresses found here, picked at random, instead of its own domain. Applied on the next refresh of the free list.',
+        'Each free server dials one of the best {n} addresses found here, picked at random, instead of its own domain. Turned off, they go out on the addresses the list was published with.',
     'radar.boostEmpty': 'Run a scan first, then this can use what it finds.',
     'perApp.title': 'Per-app proxy',
     'perApp.sub': 'Choose which apps go through Nova',
@@ -1810,7 +1810,7 @@ class NovaStrings {
     'set.tools': 'ابزارها',
     'radar.boostTitle': 'استفاده از این آدرس‌ها برای سرورهای رایگان',
     'radar.boostSub':
-        'هر سرور رایگان به‌جای دامنه‌ی خودش، یکی از \u2066{n}\u2069 آدرس برترِ پیداشده در اینجا را به‌صورت تصادفی می‌گیرد. در رفرش بعدیِ لیست رایگان اعمال می‌شود.',
+        'هر سرور رایگان به‌جای دامنه‌ی خودش، یکی از \u2066{n}\u2069 آدرس برترِ پیداشده در اینجا را به‌صورت تصادفی می‌گیرد. اگر خاموش باشد، با همان آدرس‌هایی که لیست با آن‌ها منتشر شده وصل می‌شوند.',
     'radar.boostEmpty': 'اول یک اسکن بگیرید تا این گزینه بتواند از نتیجه‌اش استفاده کند.',
     'perApp.title': 'پروکسی برای هر برنامه',
     'perApp.sub': 'انتخاب کنید کدام برنامه‌ها از نوا عبور کنند',

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../logging/nova_log.dart';
 import '../proxy/singbox/proxy_node.dart';
 import 'clean_ip_store.dart';
@@ -121,6 +123,69 @@ class CleanIpFronting {
     }
     return out;
   }
+
+  /// Whether a profile's servers may be re-addressed through scanned addresses.
+  ///
+  /// Two gates, and they answer to different people. [hardenTls] is the
+  /// profile's own setting, so a subscription the user added is fronted or not
+  /// on its own terms. [boostFreeList] is the Radar switch, and it governs the
+  /// free list alone: that list is Nova's, published world-readable, and
+  /// re-addressing it is the one case where the app changes what someone's
+  /// servers dial without their provider saying so.
+  ///
+  /// Off means off. The free list then goes out on the addresses it was
+  /// published with, and no scan is started on its behalf. An opt-out that
+  /// still re-addresses is not an opt-out: someone who suspects this of
+  /// breaking their connection has no way to find out while the switch only
+  /// changes what a list displays.
+  static bool mayReAddress({
+    required bool hardenTls,
+    required bool isFreeList,
+    required bool boostFreeList,
+  }) {
+    if (!hardenTls) return false;
+    if (isFreeList && !boostFreeList) return false;
+    return true;
+  }
+
+  /// Fronts [nodes] with the best this device has: the scanned [pool] when a
+  /// scan has kept one, otherwise the [single] stored address.
+  ///
+  /// The pool is preferred wherever it exists, for the reason [applySpread]
+  /// gives: one address for a whole list is a single point of failure and a
+  /// single thing for a filter to notice. The connect path used to take that
+  /// road for everyone, because it read only the single stored address and the
+  /// pool a scan keeps was read by nothing but the free-list screen. A scan's
+  /// work now reaches the traffic and not just the list.
+  ///
+  /// Returns [nodes] untouched when no scan has produced anything yet. Never
+  /// starts a scan: picking between what already exists is the whole job, and
+  /// the caller decides whether an empty-handed device is worth one.
+  static Future<List<ProxyNode>> applyAvailable(
+    List<ProxyNode> nodes, {
+    required List<CleanIp> pool,
+    required CleanIp? single,
+    Duration lookupTimeout = const Duration(seconds: 4),
+    int? seed,
+  }) async {
+    if (pool.isNotEmpty) {
+      return applySpread(nodes, pool, lookupTimeout: lookupTimeout, seed: seed);
+    }
+    if (single != null) {
+      return apply(nodes, single, lookupTimeout: lookupTimeout);
+    }
+    return nodes;
+  }
+
+  /// Seeds the resolve cache, so a test can exercise the rewriting without a DNS
+  /// lookup and without a network.
+  ///
+  /// [apply] and [applySpread] consult this same cache before resolving, so a
+  /// host named here is treated as settled fact. Production code never calls
+  /// this.
+  @visibleForTesting
+  static void rememberLookupsForTests(Map<String, bool> hosts) =>
+      _isCloudflare.addAll(hosts);
 
   static Future<bool> _behindCloudflare(String host, Duration timeout) async {
     final bool? known = _isCloudflare[host];

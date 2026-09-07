@@ -61,12 +61,43 @@ class CleanIpFinder {
       }
       // start() returns them sorted, best first.
       final ScanResult best = results.first;
+      final int foundAtMs = DateTime.now().millisecondsSinceEpoch;
       final CleanIp found = CleanIp(
         ip: best.ip,
         port: best.port,
         latencyMs: best.latencyMs,
-        foundAtMs: DateTime.now().millisecondsSinceEpoch,
+        foundAtMs: foundAtMs,
       );
+      // Keep the runners-up too, not just the winner.
+      //
+      // The free list is published at a world-readable URL, so a censor fetches
+      // it in one request and blocks every address in it; the servers stop
+      // working within days. The defence already in the app is to re-address
+      // that list through addresses found on THIS network, spreading the best
+      // few at random so no single address is shared by everyone and dies for
+      // everyone at once. That defence reads freshPool.
+      //
+      // Until now only the Radar screen ever filled freshPool, so a user who
+      // never opened it had an empty pool and the re-addressing silently did
+      // nothing. This scan already has the results in hand; storing them costs
+      // one write and is what makes the protection apply to people who never go
+      // looking for it.
+      try {
+        await store.recordPool(<CleanIp>[
+          for (final ScanResult r in results)
+            CleanIp(
+              ip: r.ip,
+              port: r.port,
+              latencyMs: r.latencyMs,
+              foundAtMs: foundAtMs,
+            ),
+        ]);
+      } catch (e) {
+        // Same reasoning as the single address below: a storage failure must not
+        // turn a successful scan into "nothing was found".
+        NovaLog.instance.write('Could not save the clean address pool: $e',
+            level: NovaLogLevel.warn);
+      }
       // Persisting is a convenience, not the result. A storage failure once
       // threw the address away and reported that nothing was found, which read
       // as "this network has no clean addresses" when the scan had in fact
