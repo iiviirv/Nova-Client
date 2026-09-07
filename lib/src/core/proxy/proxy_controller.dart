@@ -381,9 +381,25 @@ abstract class ProxyController extends ChangeNotifier {
     }
     _reconnecting = true;
     try {
+      // A queued lap is an explicit request, not a guess about the state.
+      //
+      // Field report: tapping a different config sometimes only disconnected
+      // and never connected to the new one. This is how. The lap that runs for
+      // a queued request re-asks "was the tunnel up?", and by then it may not
+      // be: the previous lap's own connect can have failed, or simply not have
+      // reached an active state yet, leaving `disconnected` or `error`. The lap
+      // then returned without connecting at all, and the user was left offline
+      // on a config they had just chosen.
+      //
+      // The guard is right for the first lap, where reconnect() must be a no-op
+      // if nothing was running. It is wrong afterwards: a queued lap exists
+      // only because the user asked for a different server while connected, so
+      // its job is to reach that server.
+      bool requested = false;
       do {
         _reconnectAgain = false;
-        await _reconnectOnce();
+        await _reconnectOnce(requested: requested);
+        requested = _reconnectAgain;
       } while (_reconnectAgain);
     } finally {
       _reconnecting = false;
@@ -393,17 +409,22 @@ abstract class ProxyController extends ChangeNotifier {
   bool _reconnecting = false;
   bool _reconnectAgain = false;
 
-  Future<void> _reconnectOnce() async {
+  Future<void> _reconnectOnce({bool requested = false}) async {
     final bool wasActive =
         state.isActive || state == ProxyConnectionState.connecting;
-    if (!wasActive) return;
-    await disconnect();
-    await _awaitState(
-      (ProxyConnectionState s) =>
-          s == ProxyConnectionState.disconnected ||
-          s == ProxyConnectionState.error,
-      timeout: const Duration(seconds: 8),
-    );
+    if (!wasActive && !requested) return;
+    // Only stop what is actually running. A queued lap that finds the tunnel
+    // already down goes straight to connect rather than sending a stop nothing
+    // will answer and then waiting out its timeout.
+    if (wasActive) {
+      await disconnect();
+      await _awaitState(
+        (ProxyConnectionState s) =>
+            s == ProxyConnectionState.disconnected ||
+            s == ProxyConnectionState.error,
+        timeout: const Duration(seconds: 8),
+      );
+    }
     await connect();
   }
 
