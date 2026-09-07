@@ -145,7 +145,7 @@ a bare `hardenTls` check each fail the matching test. The over-reach direction i
 the one worth having, since unfronting a paid subscription by accident would be
 quiet and would look like the provider's fault.
 
-### 1. First connect goes out unprotected
+### 2. First connect goes out unprotected
 
 `CleanIpFinder.ensure()` (`clean_ip_finder.dart:104`) is fire-and-forget by design:
 "the first connect goes out unfronted and the next one benefits". Called from
@@ -158,19 +158,61 @@ for a scan? A scan is `kSampleSize = 128` addresses over ports 443/2053/8443 wit
 45s budget, so measure the realistic time-to-first-address on a phone before
 choosing. Do not block the connect path on a slow network.
 
-### 2. Verify the Radar switch on a device, in both positions
+### Done: verified on a real iPhone, 2026-09-07
 
-`radar_screen.dart:458` binds to `store.boostFreeList`. Confirm the switch shows ON
-for a fresh install and that turning it off still sticks across a restart.
+Built from this branch and installed to a physical iPhone (iOS 27), fresh install,
+so app data and the stored setting started empty.
 
-Now that the switch reaches the connect path, off has to be checked as a
-behaviour and not just as a stored bool. With it off, connect to the free list
-and confirm the log line about dialling scanned addresses does **not** appear and
-that no scan starts; with it on, confirm it does. A switch that persists
-correctly and changes nothing is exactly the bug that was just fixed, and it
-looked fine from the settings screen the whole time.
+**A note on how this was confirmed, because the obvious check was useless.**
+`pubspec.yaml` was never bumped, so the dev build and the TestFlight build both
+report `1.21.2 (133)`. Version metadata could not tell them apart. What could was
+the changed switch subtitle, which only this branch has. Do not trust the version
+string to identify a build on device.
 
-### 3. On-device verification
+Verified:
+
+- **The switch is ON for a fresh install**, with no user action.
+- **The pool is filled on device**: log line `Kept 5 scanned addresses for the
+  free list`, and the subtitle renders `{n}` as 5. The scanner found 313 alive
+  out of 2535 scanned.
+- **The connect path spreads across the pool.** With the switch on:
+  `Dialling 14 Cloudflare servers through 5 scanned addresses`. That wording is
+  `applySpread`; the old single-address `apply` logs `through <ip>:<port>`, so
+  this line alone distinguishes the two. 14 of the 85 free nodes were rewritten.
+- **Off means off.** Same profile, back to back, only the switch changed:
+
+      11:51:48  Connecting with "Nova free servers" (auto-select, SNI-block bypass on)
+      11:51:48  Dialling 14 Cloudflare servers through 5 scanned addresses
+      11:51:48  Carrier profile: default -> fingerprint chrome, fragmentation on
+
+      11:52:25  Connecting with "Nova free servers" (auto-select, SNI-block bypass on)
+      11:52:27  Carrier profile: default -> fingerprint chrome, fragmentation on
+      11:52:27  State: connected
+
+  The `Dialling` line is absent entirely, and the connection still succeeded on
+  the published addresses. This is the behaviour test the switch needed: a stored
+  bool that persists correctly and changes nothing is the bug that was just fixed.
+
+Practical notes for repeating this: the install needs the phone **unlocked** and
+iPhone Mirroring needs it **locked**, so they cannot be done in the same moment.
+The log view clips long lines, so the tail of the `Dialling` line, which is the
+whole answer, is only readable through the Copy button. Adding a VPN
+configuration is a system grant and needs a human tap.
+
+**One observation, not attributed to this change.** A
+`No traffic after ~18s on auto-select; rebuilding the tunnel once` warning
+appeared once while re-addressing was on. Free servers die constantly and this
+was a Canadian network, so it proves nothing either way, but if it recurs during
+field testing it is worth a look.
+
+### Still open: does it actually defeat filtering
+
+The mechanism is confirmed. The protection is not. On a network where the
+published addresses are not blocked, a successful connection says nothing about
+whether re-addressing beats the filter. That answer exists only on an Iranian
+connection, through a tester, and the `sub.txt` sanitising stays gated behind it.
+
+### 1. On-device verification in Iran
 
 Emulator is not sufficient here: the whole point is which addresses are reachable
 from a real network. Test on a real device, ideally on an Iranian connection through
