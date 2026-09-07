@@ -52,7 +52,7 @@ Do not redo these.
    `singbox_proxy_controller.dart` and `desktop_proxy_controller.dart`). See
    "Item 1, done" below for what this did and did not turn out to be.
 
-State: 525 tests pass. Three failures (`nova_panel_test`, `subscription_connect_test`)
+State: 529 tests pass. Three failures (`nova_panel_test`, `subscription_connect_test`)
 are pre-existing and network-dependent; they fail on a clean tree too. Not released,
 given the standing release hold.
 
@@ -101,18 +101,49 @@ function, it was a right function nobody called, and every behavioural test here
 passes just as happily with the connect path reverted. Wiring is the thing that
 broke, so wiring is what is asserted.
 
-### Open question this raised: the toggle does not reach the connect path
+### Settled: the Radar switch now decides what the free servers dial
 
-`boostFreeList` gates `_boostFreeListAddresses()` on the free-list screen.
-`_frontWithCleanIp` is gated on `hardenTls` and has never consulted the toggle.
-So a user who turns re-addressing OFF in Radar still gets fronted on connect,
-before and after this change.
+`boostFreeList` used to gate only `_boostFreeListAddresses()` on the free-list
+screen, while `_frontWithCleanIp` answered to `hardenTls` alone. So turning the
+switch off changed what a list displayed and nothing about what the servers
+dialled, and after the pool change above it did not even do that much.
 
-This was left alone on purpose: honouring the toggle there would *remove*
-protection from anyone who has it off, which is a product decision, not a
-cleanup. But the store's own doc comment says "The user can still turn it off in
-Radar", and on the path that matters that is currently not true. Decide which of
-the two should move, the comment or the gate.
+**Decision: off means off.** `CleanIpFronting.mayReAddress` is now the single
+gate, and both controllers call it:
+
+    hardenTls == false                        -> never re-addressed
+    free list, switch off                     -> not re-addressed, no scan started
+    free list, switch on                      -> re-addressed
+    a subscription the user added, switch off -> still re-addressed
+
+The last row is the one to keep in mind. The switch governs Nova's own list and
+nothing else: a subscription the user added is fronted on its own `hardenTls`
+setting, because that is their provider's list, not ours. Re-addressing the free
+list is the single case where the app changes what someone's servers dial
+without their provider saying so, which is what earns it a switch at all.
+
+The cost was taken deliberately: a user who turns this off will probably see the
+free list die within a couple of days, because the published addresses are what
+a censor blocks. That is the right trade. An opt-out that still re-addresses is
+not an opt-out, and someone who suspects re-addressing of breaking their
+connection needs a way to prove it. The default is on, so this only affects a
+deliberate choice.
+
+Copy was wrong either way and is fixed. The subtitle said "Applied on the next
+refresh of the free list", which stopped being true the moment re-addressing
+moved to the connect path; it now says what happens when the switch is off. The
+comment above the switch in `radar_screen.dart` still claimed the feature was
+off by default, two changes after that stopped being true.
+
+Note for anyone reaching for the translation checklist: this app ships **en and
+fa only**. `supportedLocales` is those two and `nova_strings.dart` has exactly
+two maps. The en/fa/ru rule belongs to the panel, not the client.
+
+Four more tests, three of them mutation-verified: dropping the gate, applying it
+to every profile rather than the free list alone, and a controller going back to
+a bare `hardenTls` check each fail the matching test. The over-reach direction is
+the one worth having, since unfronting a paid subscription by accident would be
+quiet and would look like the provider's fault.
 
 ### 1. First connect goes out unprotected
 
@@ -127,10 +158,17 @@ for a scan? A scan is `kSampleSize = 128` addresses over ports 443/2053/8443 wit
 45s budget, so measure the realistic time-to-first-address on a phone before
 choosing. Do not block the connect path on a slow network.
 
-### 2. Verify the Radar toggle reflects the new default
+### 2. Verify the Radar switch on a device, in both positions
 
 `radar_screen.dart:458` binds to `store.boostFreeList`. Confirm the switch shows ON
 for a fresh install and that turning it off still sticks across a restart.
+
+Now that the switch reaches the connect path, off has to be checked as a
+behaviour and not just as a stored bool. With it off, connect to the free list
+and confirm the log line about dialling scanned addresses does **not** appear and
+that no scan starts; with it on, confirm it does. A switch that persists
+correctly and changes nothing is exactly the bug that was just fixed, and it
+looked fine from the settings screen the whole time.
 
 ### 3. On-device verification
 

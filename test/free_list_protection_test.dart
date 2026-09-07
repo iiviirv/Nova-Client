@@ -157,6 +157,47 @@ void main() {
           reason: 'guessing an address is how a working config gets broken');
     });
 
+    /// The Radar switch is the user's refusal, and it has to reach the path
+    /// that carries traffic. It governed only what the free-list screen
+    /// displayed, so turning it off changed nothing about what the servers
+    /// dialled.
+    group('the Radar switch decides what the free servers dial', () {
+      test('off means the free list is not re-addressed at all', () {
+        expect(
+            CleanIpFronting.mayReAddress(
+                hardenTls: true, isFreeList: true, boostFreeList: false),
+            isFalse,
+            reason: 'an opt-out that still re-addresses is not an opt-out');
+      });
+
+      test('on re-addresses the free list', () {
+        expect(
+            CleanIpFronting.mayReAddress(
+                hardenTls: true, isFreeList: true, boostFreeList: true),
+            isTrue);
+      });
+
+      test("the switch is not a user subscription's business", () {
+        // Their provider's servers are fronted on the profile's own setting.
+        // The free list is Nova's, and is the only list this switch governs.
+        expect(
+            CleanIpFronting.mayReAddress(
+                hardenTls: true, isFreeList: false, boostFreeList: false),
+            isTrue,
+            reason: 'turning the free-list switch off must not unfront a '
+                'subscription the user added');
+      });
+
+      test('a profile without hardenTls is never re-addressed', () {
+        for (final bool boost in <bool>[true, false]) {
+          expect(
+              CleanIpFronting.mayReAddress(
+                  hardenTls: false, isFreeList: true, boostFreeList: boost),
+              isFalse);
+        }
+      });
+    });
+
     /// Wiring, not logic, and deliberately so.
     ///
     /// The bug this whole branch exists to fix was not a wrong function, it was
@@ -173,6 +214,8 @@ void main() {
         final String src = File(path).readAsStringSync();
         expect(src.contains('CleanIpFronting.applyAvailable('), isTrue,
             reason: '$path must front through the pool, not one address');
+        expect(src.contains('CleanIpFronting.mayReAddress('), isTrue,
+            reason: '$path must honour the Radar switch, not just hardenTls');
         expect(src.contains('return CleanIpFronting.apply(nodes, ip);'), isFalse,
             reason: '$path still takes the single-address road');
       }

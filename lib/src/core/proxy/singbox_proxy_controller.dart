@@ -1486,7 +1486,13 @@ class SingboxProxyController extends ProxyController {
   /// connect may go out unfronted; the scan it starts is what makes the next one
   /// work.
   Future<List<ProxyNode>> _frontWithCleanIp(List<ProxyNode> nodes) async {
-    if (!(_active?.hardenTls ?? false)) return nodes;
+    if (!CleanIpFronting.mayReAddress(
+      hardenTls: _active?.hardenTls ?? false,
+      isFreeList: _active?.isBuiltIn ?? false,
+      boostFreeList: CleanIpStore.instance.boostFreeList,
+    )) {
+      return nodes;
+    }
     if (!nodes.any(CleanIpFronting.couldBeFronted)) return nodes;
     final List<CleanIp> pool = CleanIpStore.instance.freshPool;
     final CleanIp? ip = CleanIpFinder.current();

@@ -444,8 +444,12 @@ class _ResultsSection extends StatelessWidget {
               onPressed: radar.isTestingDelays ? null : radar.testRealDelays,
             ),
           ],
-          // Off by default: it changes the address every server in the free
-          // list dials, which is not something to do to someone quietly.
+          // On by default. Leaving the published addresses in place is not the
+          // neutral choice, it is the one that stops working: the free list is
+          // world-readable, so a censor blocks every address in it in one
+          // request. Off is a real opt-out and the connect path honours it, so
+          // this switch decides what the free servers dial, not just what this
+          // screen shows.
           const SizedBox(height: NovaSpace.sm),
           const Divider(height: 1),
           ListenableBuilder(

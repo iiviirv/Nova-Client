@@ -124,6 +124,30 @@ class CleanIpFronting {
     return out;
   }
 
+  /// Whether a profile's servers may be re-addressed through scanned addresses.
+  ///
+  /// Two gates, and they answer to different people. [hardenTls] is the
+  /// profile's own setting, so a subscription the user added is fronted or not
+  /// on its own terms. [boostFreeList] is the Radar switch, and it governs the
+  /// free list alone: that list is Nova's, published world-readable, and
+  /// re-addressing it is the one case where the app changes what someone's
+  /// servers dial without their provider saying so.
+  ///
+  /// Off means off. The free list then goes out on the addresses it was
+  /// published with, and no scan is started on its behalf. An opt-out that
+  /// still re-addresses is not an opt-out: someone who suspects this of
+  /// breaking their connection has no way to find out while the switch only
+  /// changes what a list displays.
+  static bool mayReAddress({
+    required bool hardenTls,
+    required bool isFreeList,
+    required bool boostFreeList,
+  }) {
+    if (!hardenTls) return false;
+    if (isFreeList && !boostFreeList) return false;
+    return true;
+  }
+
   /// Fronts [nodes] with the best this device has: the scanned [pool] when a
   /// scan has kept one, otherwise the [single] stored address.
   ///
