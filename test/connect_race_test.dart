@@ -112,6 +112,38 @@ void main() {
         reason: 'only the newest request may reach the core');
   });
 
+  test('a switch queued behind a failed reconnect still connects', () async {
+    // Field report: tapping a different config sometimes only disconnected and
+    // never connected to the new one.
+    //
+    // The shape: the user taps B while connected to A, then taps C before that
+    // finishes. The second tap is queued. The queued lap re-asked whether the
+    // tunnel was up, and if the lap for B had meanwhile failed, the answer was
+    // no, so it returned without connecting and left the user offline on C.
+    final SingboxProxyController c = controller();
+    int fetches = 0;
+    c.subFetcherProvider = () => (Uri u) async {
+      fetches++;
+      // The first connect works. The reconnect's own connect fails, which is
+      // what puts the state at `error` before the queued lap runs.
+      if (fetches == 2) throw const FormatException('server list unavailable');
+      return base64.encode(utf8.encode(link(u.host, 'X')));
+    };
+    c.selectProfile(sub('a', 'https://a.example/sub'));
+    await c.connect();
+    final int startsBefore = calls.where((String m) => m == 'start').length;
+
+    final Future<void> first = c.reconnect();
+    // The user taps another config while that is still in flight.
+    final Future<void> queued = c.reconnect();
+    await Future.wait<void>(<Future<void>>[first, queued]);
+
+    expect(calls.where((String m) => m == 'start').length,
+        greaterThan(startsBefore),
+        reason: 'a config the user chose must be connected to, not just '
+            'disconnected from');
+  }, timeout: const Timeout(Duration(seconds: 90)));
+
   test('overlapping reconnects coalesce into one stop/start chain', () async {
     final SingboxProxyController c = controller();
     c.subFetcherProvider =

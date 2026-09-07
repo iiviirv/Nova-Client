@@ -81,11 +81,20 @@ class ProxyProfile {
     this.telegramProxy,
     this.telegramProxyWeb,
     this.hardenTlsUserSet = false,
+    this.pinned = false,
   });
 
   final String id;
   final String name;
   final ProxyKind kind;
+
+  /// Kept at the top of the Servers list.
+  ///
+  /// A user with several subscriptions almost always lives in one of them, and
+  /// the list is ordered by when a profile was added, so the one they reach for
+  /// every day drifts down as they try others. This is presentation only: it
+  /// changes nothing about how the profile connects.
+  final bool pinned;
 
   /// The share link (e.g. `vless://…`) or, for subscriptions, the active node.
   final String uri;
@@ -183,6 +192,7 @@ class ProxyProfile {
     Object? bypassFingerprint = _unset,
     Object? bypassCipherSuites = _unset,
     Object? bypassFragmentMask = _unset,
+    bool? pinned,
   }) {
     return ProxyProfile(
       id: id,
@@ -199,6 +209,7 @@ class ProxyProfile {
       pinnedName:
           pinnedName == _unset ? this.pinnedName : pinnedName as String?,
       fastNodes: fastNodes ?? this.fastNodes,
+      pinned: pinned ?? this.pinned,
       hardenTls: hardenTls ?? this.hardenTls,
       encryptedOnly: encryptedOnly ?? this.encryptedOnly,
       bypassFingerprint: bypassFingerprint == _unset
@@ -236,12 +247,14 @@ class ProxyProfile {
         'bypassFingerprint': bypassFingerprint,
         'bypassCipherSuites': bypassCipherSuites,
         'bypassFragmentMask': bypassFragmentMask,
+        'pinned': pinned,
       };
 
   factory ProxyProfile.fromJson(Map<String, dynamic> json) => ProxyProfile(
         telegramProxy: json['telegramProxy'] as String?,
         telegramProxyWeb: json['telegramProxyWeb'] as String?,
         hardenTlsUserSet: json['hardenTlsUserSet'] as bool? ?? false,
+        pinned: json['pinned'] as bool? ?? false,
         id: json['id'] as String,
         name: json['name'] as String,
         kind: ProxyKind.values.firstWhere(

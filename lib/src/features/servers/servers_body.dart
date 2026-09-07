@@ -133,6 +133,13 @@ class _ServersBodyState extends State<ServersBody> {
           if (_query.isEmpty) return true;
           return p.name.toLowerCase().contains(_query.toLowerCase());
         }).toList();
+        // Pinned first, and otherwise the order the user already knows. A
+        // stable sort, so unpinned profiles keep the order they were added in
+        // rather than being reshuffled every rebuild.
+        shown.sort((ProxyProfile a, ProxyProfile b) {
+          if (a.pinned == b.pinned) return 0;
+          return a.pinned ? -1 : 1;
+        });
 
         if (all.isEmpty) {
           return _EmptyState(compact: widget.compact);
@@ -168,6 +175,8 @@ class _ServersBodyState extends State<ServersBody> {
                 onExtract: () => _openNodes(context, p),
                 onEdit: () => _editProfile(context, profiles, p),
                 onDelete: () => _confirmDelete(context, profiles, p),
+                onTogglePin: () =>
+                    profiles.update(p.copyWith(pinned: !p.pinned)),
                 onManage: _panelFor(p) == null
                     ? null
                     : () => _vps!.openAdminFor(context, _panelFor(p)!),
@@ -416,6 +425,7 @@ class _ServerRow extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onExtract,
+    required this.onTogglePin,
     this.onManage,
   });
 
@@ -426,6 +436,7 @@ class _ServerRow extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onExtract;
+  final VoidCallback onTogglePin;
 
   /// Non-null when this row is backed by a connected VPS, opens its panel.
   final VoidCallback? onManage;
@@ -568,9 +579,24 @@ class _ServerRow extends StatelessWidget {
                         onEdit();
                       case 'delete':
                         onDelete();
+                      case 'pin':
+                        onTogglePin();
                     }
                   },
                   itemBuilder: (_) => <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'pin',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(profile.pinned
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined),
+                        title: Text(profile.pinned
+                            ? s.serversUnpin
+                            : s.serversPin),
+                      ),
+                    ),
                     PopupMenuItem<String>(
                       value: 'select',
                       child: ListTile(

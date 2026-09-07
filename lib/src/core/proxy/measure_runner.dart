@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../logging/nova_log.dart';
+
 /// Drives a measuring core's Clash API, one node at a time.
 ///
 /// The old path asked sing-box's `urltest` group to sweep the whole pool and
@@ -171,6 +173,60 @@ class MeasureRunner {
     }
   }
 
+  /// The tags a plain TCP connect could not reach.
+  ///
+  /// A filtered address is the case this exists for. It cannot complete a TCP
+  /// handshake, yet without this it still spends a first dial, a retry of that
+  /// first dial, and a place in the late retry pass proving it: about thirty
+  /// seconds and one of only [kDefaultConcurrency] slots, per dead server, to
+  /// learn what one refused SYN says in under a second.
+  ///
+  /// **Only failure is trusted.** A server that accepts TCP has proved nothing
+  /// about whether the proxy on top of it works, so it is not in the returned
+  /// set and goes on to the real dial exactly as before. This is a fast way to
+  /// be certain something is dead, never a way to decide it is alive.
+  ///
+  /// Callers must pass only protocols where TCP silence means dead: see
+  /// [NodeProtocolName.tcpLivenessMeaningful], which excludes UDP-native
+  /// protocols and mieru.
+  @visibleForTesting
+  static Future<Set<String>> unreachableTags(
+    Map<String, ({String host, int port})> probes, {
+    Duration timeout = const Duration(milliseconds: 1200),
+    int concurrency = kDefaultConcurrency,
+    bool Function()? cancelled,
+  }) async {
+    if (probes.isEmpty) return <String>{};
+    final Set<String> dead = <String>{};
+    final List<String> tags = probes.keys.toList();
+    int at = 0;
+    Future<void> worker() async {
+      while (true) {
+        if (cancelled?.call() ?? false) return;
+        final int i = at++;
+        if (i >= tags.length) return;
+        final String tag = tags[i];
+        final ({String host, int port})? a = probes[tag];
+        if (a == null) continue;
+        Socket? sock;
+        try {
+          sock = await Socket.connect(a.host, a.port, timeout: timeout);
+        } catch (_) {
+          dead.add(tag);
+        } finally {
+          try {
+            sock?.destroy();
+          } catch (_) {}
+        }
+      }
+    }
+
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < concurrency.clamp(1, 32) * 2; i++) worker(),
+    ]);
+    return dead;
+  }
+
   /// Measures every node in [tagKeys] (tag -> stable node key) and returns the
   /// node keys that answered, with their latency.
   ///
@@ -185,6 +241,18 @@ class MeasureRunner {
     /// Node tag to the local port pinned to it, for endpoint nodes that the
     /// Clash API cannot dial. Empty for a pool with no WireGuard/AmneziaWG.
     Map<String, int> endpointPorts = const <String, int>{},
+    /// Tag -> the address a plain TCP connect can reach the server on, for the
+    /// protocols where TCP silence means the node is dead (see
+    /// [NodeProtocolName.tcpLivenessMeaningful]). Empty disables the pre-pass.
+    Map<String, ({String host, int port})> tcpProbes =
+        const <String, ({String host, int port})>{},
+    /// Tags that need the long first dial. When this is empty every tag gets
+    /// it, which is the old behaviour.
+    Set<String> slowFirstDial = const <String>{},
+    /// How long the reachability pre-pass waits for a TCP handshake. Short on
+    /// purpose: this is not measuring quality, only asking whether anything is
+    /// there at all.
+    Duration reachTimeout = const Duration(milliseconds: 1200),
     int concurrency = kDefaultConcurrency,
     /// The budget for the first (cold) dial, which is a different question from
     /// the budget for the number the user sees.
@@ -227,6 +295,58 @@ class MeasureRunner {
     final List<String> queue = tagKeys.keys.toList();
     int next = 0;
 
+    /// The first dial's budget for one node.
+    ///
+    /// The long budget exists for servers that set up a session before they can
+    /// answer, and giving it to the rest is most of the wait on a list with
+    /// dead entries: a CDN-fronted server answers in a couple of hundred
+    /// milliseconds or not at all, so seconds two through fifteen buy nothing.
+    /// An empty [slowFirstDial] means nobody was classified, so everyone keeps
+    /// the old budget rather than being quietly sped up on a guess.
+    int firstDialSecFor(String tag) {
+      if (slowFirstDial.isEmpty) return warmSec;
+      return slowFirstDial.contains(tag) ? warmSec : timeoutSec;
+    }
+
+    // Run it before anything expensive, and fold the verdicts in as final: a
+    // node that could not be reached at all is reported as tested with no
+    // delay, which is what the old path would have concluded far more slowly.
+    Set<String> unreachable = await unreachableTags(
+      tcpProbes,
+      timeout: reachTimeout,
+      concurrency: concurrency,
+      cancelled: cancelled,
+    );
+    // If NOTHING could be reached, distrust the probe rather than the servers.
+    //
+    // The probe runs from the app, and the dial runs from the core. Those are
+    // normally the same path, but they are not guaranteed to be: another VPN, a
+    // captive portal, a per-app rule, or simply no network at all makes every
+    // TCP connect fail while the core can still dial. Writing the whole list
+    // off in that case would hide working servers from someone who may have
+    // nothing else, which is the one outcome worth being slow to avoid.
+    //
+    // A partial result is the trustworthy one: if some servers answered TCP and
+    // others refused, the refusals are about those servers.
+    if (tcpProbes.isNotEmpty && unreachable.length == tcpProbes.length) {
+      NovaLog.instance.write(
+          'Every server refused a TCP connection, so the quick check is being '
+          'ignored and all of them will be dialled',
+          level: NovaLogLevel.warn);
+      unreachable = <String>{};
+    }
+    if (unreachable.isNotEmpty) {
+      for (final String tag in unreachable) {
+        final String? key = tagKeys[tag];
+        if (key != null) tested.add(key);
+      }
+      queue.removeWhere(unreachable.contains);
+      NovaLog.instance.write(
+          'Skipped ${unreachable.length} servers that refused a TCP connection');
+      onProgress?.call(
+          Map<String, int>.from(delays), Set<String>.from(tested));
+    }
+
     /// One measurement of one node, by whichever route can actually reach it.
     ///
     /// Endpoint nodes (AmneziaWG / WireGuard) go through the local inbound that
@@ -255,7 +375,8 @@ class MeasureRunner {
         // First dial: builds whatever the protocol needs to build (a mieru
         // session, a NaiveProxy TLS + HTTP/2 connection, a TLS session ticket).
         // Its number is thrown away; it is the setup cost, not the latency.
-        int? warm = await dial(tag, seconds: warmSec,
+        final int firstSec = firstDialSecFor(tag);
+        int? warm = await dial(tag, seconds: firstSec,
             onFailure: (String why) {
           if (failures != null && failures.length < 12) failures.add(why);
         });
@@ -266,7 +387,7 @@ class MeasureRunner {
           // 229 to 1516ms. Calling those dead would have hidden working servers
           // from the people who have nothing else. Only a node that is already
           // failing pays for this.
-          warm = await dial(tag, seconds: warmSec);
+          warm = await dial(tag, seconds: firstSec);
         }
         int? best = warm;
         if (warm != null) {
@@ -299,7 +420,11 @@ class MeasureRunner {
     Future<void> retryFailures() async {
       final List<String> again = <String>[
         for (final MapEntry<String, String> e in tagKeys.entries)
-          if (!delays.containsKey(e.value)) e.key,
+          // A server that refused a TCP connection is not a server that
+          // answered late, so it does not get a second pass either. Retrying it
+          // would put the whole cost back that the pre-pass just removed.
+          if (!delays.containsKey(e.value) && !unreachable.contains(e.key))
+            e.key,
       ];
       // No late retry when the run stopped early on purpose: the servers that
       // said nothing were never the reason it ended, and the user is waiting on
@@ -316,7 +441,7 @@ class MeasureRunner {
           final String tag = again[i];
           final String? key = tagKeys[tag];
           if (key == null) continue;
-          final int? ms = await dial(tag, seconds: warmSec,
+          final int? ms = await dial(tag, seconds: firstDialSecFor(tag),
               onFailure: (String why) {
             if (failures != null && failures.length < 12) failures.add(why);
           });

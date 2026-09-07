@@ -60,11 +60,7 @@ AllowedIPs = 0.0.0.0/0
       );
 
   test('every endpoint gets its own inbound, pinned by a route rule', () {
-    final ({
-      Map<String, dynamic> config,
-      Map<String, String> tagKeys,
-      Map<String, int> endpointPorts
-    }) built = SingboxConfig.buildMeasureMap(
+    final built = SingboxConfig.buildMeasureMap(
       <ProxyNode>[awg('a', '203.0.113.10', 32418), ws('b'), awg('c', '203.0.113.11', 45874)],
       mixedPort: 19090,
       clashPort: 19091,

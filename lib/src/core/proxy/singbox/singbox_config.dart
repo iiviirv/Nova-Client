@@ -645,6 +645,12 @@ class SingboxConfig {
     Map<String, dynamic> config,
     Map<String, String> tagKeys,
     Map<String, int> endpointPorts,
+    /// Tag -> the address a plain TCP connect can use to write the node off
+    /// fast. Only for protocols where TCP silence actually means dead.
+    Map<String, ({String host, int port})> tcpProbes,
+    /// Tags that pay a real handshake before they answer, and so earn the long
+    /// first-dial budget. Everything else gets the ordinary one.
+    Set<String> slowFirstDial,
   }) buildMeasureMap(
     List<ProxyNode> inputNodes, {
     SingboxRouteOptions options = const SingboxRouteOptions(),
@@ -693,6 +699,28 @@ class SingboxConfig {
     final Map<String, String> tagKeys = <String, String>{
       for (int i = 0; i < keys.length; i++) 'node-$i': keys[i],
     };
+    // What the runner needs in order to spend its seconds well: which nodes can
+    // be written off by a one-second TCP connect, and which genuinely need the
+    // long first-dial budget.
+    //
+    // Both are looked up through the stable node key rather than the list
+    // index. The index alignment between `keys` and `picked` holds today, but a
+    // silent drift there would attach one server's address to another server's
+    // verdict, which is the kind of wrong that looks like a flaky network.
+    final Map<String, ProxyNode> byKey = <String, ProxyNode>{
+      for (final ProxyNode n in picked) proxyNodeKey(n): n,
+    };
+    final Map<String, ({String host, int port})> tcpProbes =
+        <String, ({String host, int port})>{};
+    final Set<String> slowFirstDial = <String>{};
+    for (final MapEntry<String, String> e in tagKeys.entries) {
+      final ProxyNode? n = byKey[e.value];
+      if (n == null) continue;
+      if (n.needsSlowFirstDial) slowFirstDial.add(e.key);
+      if (n.protocol.tcpLivenessMeaningful && !n.protocol.isEndpoint) {
+        tcpProbes[e.key] = (host: n.server, port: n.port);
+      }
+    }
     cfg['inbounds'] = <Map<String, dynamic>>[
       <String, dynamic>{
         'type': 'mixed',
@@ -783,7 +811,13 @@ class SingboxConfig {
       'external_controller': '127.0.0.1:$clashPort',
     };
     cfg['experimental'] = experimental;
-    return (config: cfg, tagKeys: tagKeys, endpointPorts: endpointPorts);
+    return (
+      config: cfg,
+      tagKeys: tagKeys,
+      endpointPorts: endpointPorts,
+      tcpProbes: tcpProbes,
+      slowFirstDial: slowFirstDial,
+    );
   }
 
   /// The xhttp nodes that will sit in the auto pool, in the same order they take
