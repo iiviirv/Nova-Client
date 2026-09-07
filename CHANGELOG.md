@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.22.0 (2026-09-07)
+
+- **The free servers now dial addresses found on your own network.** Nova's free
+  list is published at a public address, so it can be fetched once and every
+  server in it blocked, which is why the free servers used to stop working after
+  a couple of days. Each free server now connects through one of the best few
+  Cloudflare addresses Radar found on your connection, picked at random, instead
+  of the address it was published with. It is on from a fresh install and needs
+  nothing from you.
+
+  You can turn it off in Settings > Radar, and off now really means off: your
+  free servers go out on their published addresses again.
+
+- **Testing your servers is much faster.** A server whose address has been
+  filtered cannot answer, but Nova still spent about thirty seconds on each one
+  proving it. Those are now written off in about a second, and the long wait
+  some protocols genuinely need is given only to the protocols that need it. On
+  a list with a few dead servers that is the difference between most of a minute
+  and a few seconds.
+
+- **Switching config actually switches.** Tapping a different config while
+  connected sometimes only disconnected you and never connected to the new one,
+  usually when you tapped a second one before the first had finished. It now
+  connects to the config you chose.
+
+- **Keep a subscription at the top.** If you use one subscription every day and
+  it keeps sliding down the list, pin it: the menu on any row has "Keep at the
+  top".
+
+- **Mac and Windows: Nova no longer leaves your computer without internet.** In
+  proxy mode Nova points your system at itself, and if a connection failed at
+  the wrong moment that setting could be left behind, pointing at nothing. Every
+  app on the machine then lost the network with nothing to explain why. Nova now
+  clears it when a connection fails, and clears a leftover one at startup after
+  a crash. Connection errors also read as something you can act on instead of
+  raw system text.
+
 ## v1.21.2 (2026-09-01)
 
 - **Mac: no more password every time you connect.** Whole-device mode now runs
