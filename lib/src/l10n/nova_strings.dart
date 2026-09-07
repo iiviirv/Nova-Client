@@ -464,6 +464,8 @@ class NovaStrings {
   String get serversFilterAll => t('servers.filterAll');
   String get serversActions => t('servers.actions');
   String get serversSelect => t('servers.select');
+  String get serversPin => t('servers.pin');
+  String get serversUnpin => t('servers.unpin');
   String get serversExtract => t('servers.extract');
   String get serversEdit => t('servers.edit');
   String get serversDelete => t('servers.delete');
@@ -1287,6 +1289,8 @@ class NovaStrings {
     'servers.filterAll': 'All',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
+    'servers.pin': 'Keep at the top',
+    'servers.unpin': 'Stop keeping at the top',
     'servers.extract': 'Extract configs',
     'servers.edit': 'Edit',
     'servers.delete': 'Delete',
@@ -2118,6 +2122,8 @@ class NovaStrings {
     'servers.filterAll': 'همه',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',
+    'servers.pin': 'همیشه بالای فهرست',
+    'servers.unpin': 'برداشتن از بالای فهرست',
     'servers.extract': 'استخراج پیکربندی‌ها',
     'servers.edit': 'ویرایش',
     'servers.delete': 'حذف',

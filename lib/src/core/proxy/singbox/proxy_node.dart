@@ -62,6 +62,22 @@ extension NodeProtocolName on NodeProtocol {
   /// AmneziaWG / WireGuard is a sing-box `endpoint`, not an `outbound`.
   bool get isEndpoint => this == NodeProtocol.awg;
 
+  /// Whether a plain TCP connect to this node's address is a valid liveness
+  /// signal, so a server test can write the node off in a second instead of
+  /// paying a full handshake budget to learn the same thing.
+  ///
+  /// One direction only. TCP refusing or timing out means this protocol cannot
+  /// work either, since it is carried over that same TCP. TCP succeeding proves
+  /// nothing about the proxy, so it is never treated as a pass: the real dial
+  /// still decides.
+  ///
+  /// [isUdpNative] is excluded because a QUIC or WireGuard server owes nothing
+  /// to a TCP SYN and would be called dead while working. mieru is excluded
+  /// because its transport can be either, and the wrong answer here is the
+  /// expensive kind.
+  bool get tcpLivenessMeaningful =>
+      !isUdpNative && this != NodeProtocol.mieru;
+
   /// Whether this protocol carries its own encryption, so a node using it is
   /// still private with no TLS layer configured on top.
   ///
@@ -240,6 +256,35 @@ class ProxyNode {
   }
 
   bool get hasTls => tls;
+
+  /// Whether this node pays a real handshake before it can answer at all, and
+  /// so needs the long first-dial budget rather than the ordinary one.
+  ///
+  /// The split is the one the measuring code already documents: Reality,
+  /// Hysteria2, TUIC, SS2022 and mieru dial a bare VPS and set up a session
+  /// (QUIC plus congestion control, a TLS handshake against the borrowed SNI, a
+  /// mieru session), while VLESS-ws, xhttp and NaiveProxy ride a CDN edge and
+  /// are up in a couple of hundred milliseconds.
+  ///
+  /// That budget used to go to every node, so a CDN-fronted server that would
+  /// answer in 200ms, or never, was given the same seconds as a Reality server
+  /// that genuinely needs them. On a list with dead entries that is most of the
+  /// wait.
+  bool get needsSlowFirstDial {
+    if (protocol == NodeProtocol.hysteria2 ||
+        protocol == NodeProtocol.tuic ||
+        protocol == NodeProtocol.mieru) {
+      return true;
+    }
+    // Reality is a VLESS node carrying an x25519 public key.
+    if ((realityPublicKey ?? '').isNotEmpty) return true;
+    // SS2022 ("2022-blake3-*") derives a session key before it will talk.
+    if (protocol == NodeProtocol.shadowsocks &&
+        (method ?? '').startsWith('2022-')) {
+      return true;
+    }
+    return false;
+  }
 
   /// Returns a copy with selected fields overridden. Used to stamp a Radar
   /// clean IP into a subscription template node: keep every protocol/transport
