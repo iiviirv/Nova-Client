@@ -119,7 +119,14 @@ class CleanIpStore extends ChangeNotifier {
   /// sees the handshake it expects.
   ///
   /// The user can still turn it off in Radar; the default is what changed.
-  bool get boostFreeList => _boost;
+  bool get boostFreeList => _loaded && _boost;
+
+  /// Until [load] has run, the saved answer is unknown, and for an opt-out the
+  /// safe direction for "unknown" is off. Returning the compiled-in default
+  /// instead meant a user who had turned this off could, in the window before
+  /// SharedPreferences came back, have a Cloudflare range scan started on their
+  /// behalf: precisely what turning it off promises will not happen.
+  bool _loaded = false;
 
   Future<void> setBoostFreeList(bool on) async {
     if (_boost == on) return;
@@ -159,6 +166,7 @@ class CleanIpStore extends ChangeNotifier {
   /// test rather than in the test.
   @visibleForTesting
   void resetForTests() {
+    _loaded = false;
     _prefs = null;
     _best = null;
     _pool = const <CleanIp>[];
@@ -200,6 +208,7 @@ class CleanIpStore extends ChangeNotifier {
         _pool = const <CleanIp>[];
       }
     }
+    _loaded = true;
     notifyListeners();
   }
 

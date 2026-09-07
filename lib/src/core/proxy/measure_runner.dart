@@ -317,6 +317,30 @@ class MeasureRunner {
       concurrency: concurrency,
       cancelled: cancelled,
     );
+    // Ask the failures a second time before believing them.
+    //
+    // A lost SYN is not a dead server. Linux and Android retransmit the first
+    // SYN after about a second, so on a lossy international path out of Iran,
+    // one dropped packet pushes the handshake past the budget and a working
+    // server is deleted from the run: it is skipped here AND excluded from the
+    // late retry pass, where before this change it had three chances. At even
+    // ten percent loss that quietly removes about a tenth of a user's live
+    // servers, and the all-failed guard below never fires because most of them
+    // succeeded.
+    //
+    // Only the nodes already believed dead pay for this, so it costs one more
+    // short round and keeps essentially all of the speedup.
+    if (unreachable.isNotEmpty && !(cancelled?.call() ?? false)) {
+      unreachable = await unreachableTags(
+        <String, ({String host, int port})>{
+          for (final String t in unreachable)
+            if (tcpProbes[t] != null) t: tcpProbes[t]!,
+        },
+        timeout: reachTimeout,
+        concurrency: concurrency,
+        cancelled: cancelled,
+      );
+    }
     // If NOTHING could be reached, distrust the probe rather than the servers.
     //
     // The probe runs from the app, and the dial runs from the core. Those are

@@ -16,6 +16,52 @@ import 'package:nova_client/src/core/proxy/desktop_proxy_controller.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('a network service name cannot become a root command', () {
+    // The service names come from `networksetup -listallnetworkservices` and are
+    // interpolated into a string run as root through
+    // `osascript ... with administrator privileges`. Quoting them in double
+    // quotes and escaping only `"` is not enough: the shell expands $(...) and
+    // backticks INSIDE double quotes, and a name ending in a backslash closes
+    // the AppleScript literal early and turns the rest into AppleScript.
+    //
+    // Renaming a network service needs admin or an approved VPN configuration,
+    // so this is privilege persistence rather than a remote hole. What made it
+    // urgent is that the startup sweep now reaches this code with no user
+    // action at all.
+    test('command substitution in a service name is inert', () {
+      final String q = DesktopProxyController.debugShellArg(r'Wi-Fi$(id -un)');
+      expect(q.startsWith("'"), isTrue);
+      expect(q.endsWith("'"), isTrue);
+      // Inside single quotes the shell expands nothing.
+      expect(q, equals(r"'Wi-Fi$(id -un)'"));
+    });
+
+    test('backticks are inert', () {
+      expect(DesktopProxyController.debugShellArg('Wi-Fi`id`'),
+          equals("'Wi-Fi`id`'"));
+    });
+
+    test('a trailing backslash cannot escape the quoting', () {
+      expect(DesktopProxyController.debugShellArg(r'Wi-Fi\\'),
+          equals(r"'Wi-Fi\\'"),
+          reason: 'a backslash has no special meaning inside single quotes');
+    });
+
+    test('an embedded single quote is closed and reopened, not escaped away',
+        () {
+      // The one character single quoting cannot contain, so it has to be
+      // spliced: 'a'\''b' is the shell's way of writing a'b.
+      expect(DesktopProxyController.debugShellArg("Vahid's Wi-Fi"),
+          equals(r"'Vahid'\''s Wi-Fi'"));
+    });
+
+    test('an ordinary name is unchanged apart from the quotes', () {
+      expect(DesktopProxyController.debugShellArg('Wi-Fi'), equals("'Wi-Fi'"));
+      expect(DesktopProxyController.debugShellArg('Thunderbolt Bridge'),
+          equals("'Thunderbolt Bridge'"));
+    });
+  });
+
   group('what counts as a stale setting', () {
     test('a port with a listener is in use, so the setting is not stale',
         () async {

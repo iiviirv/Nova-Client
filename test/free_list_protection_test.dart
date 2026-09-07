@@ -39,6 +39,22 @@ void main() {
         reason: 'a fresh install must be protected without being asked');
   });
 
+  test('before the saved answer is read, the switch reads OFF', () async {
+    // An opt-out whose stored value is not known yet must not report ON.
+    //
+    // SharedPreferences is loaded without being awaited at startup, so there is
+    // a window where the compiled-in default was returned instead of the user's
+    // saved choice. For someone who had turned this off that meant a Cloudflare
+    // range scan could be started on their behalf in that window: exactly what
+    // turning it off promises will not happen. Unknown has to mean off.
+    withSaved(<String, Object>{'nova.cleanip.boost': true});
+    final CleanIpStore store = CleanIpStore.instance;
+    expect(store.boostFreeList, isFalse,
+        reason: 'nothing has been read from disk yet, so nothing is known');
+    await store.load();
+    expect(store.boostFreeList, isTrue, reason: 'and then the truth arrives');
+  });
+
   test('a user who turned it OFF keeps it off across the default change', () async {
     withSaved(<String, Object>{'nova.cleanip.boost': false});
     final CleanIpStore store = CleanIpStore.instance;

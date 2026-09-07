@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleSta
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/cloudflare/doh_resolver.dart';
 import '../cleanip/clean_ip_finder.dart';
@@ -396,7 +397,12 @@ class DesktopProxyController extends ProxyController {
   /// this only rewrites the ones that arrive as machine text.
   String _humanError(Object e) {
     final String raw = e.toString();
-    NovaLog.instance.write('Connect failed: $raw', level: NovaLogLevel.warn);
+    // The log is readable, copyable, and routinely pasted into support chats,
+    // and a ProcessException carries the full path of the core, which contains
+    // the account name. Keep the detail, drop the identity.
+    final String home = Platform.environment['HOME'] ?? '';
+    final String safe = home.isEmpty ? raw : raw.replaceAll(home, '~');
+    NovaLog.instance.write('Connect failed: $safe', level: NovaLogLevel.warn);
     if (e is ProcessException || raw.startsWith('ProcessException')) {
       if (raw.contains('Too many open files')) {
         return 'This computer has run out of file handles, so Nova could not '
@@ -2033,6 +2039,22 @@ class DesktopProxyController extends ProxyController {
   String _asEsc(String s) =>
       s.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 
+  /// A single shell argument, safe inside `do shell script`.
+  ///
+  /// Network service names come from `networksetup -listallnetworkservices` and
+  /// are interpolated into a command that runs as root. Wrapping them in double
+  /// quotes and escaping only `"` is not enough on either layer: the shell
+  /// expands `$(...)` and backticks INSIDE double quotes, and a name ending in a
+  /// backslash closes the AppleScript string early and turns the rest into
+  /// AppleScript. Single quotes stop all of that, and the only character that
+  /// needs handling inside them is the single quote itself.
+  /// Test seam for [_shArg]: the quoting is a security control, so it is
+  /// asserted directly rather than inferred from behaviour.
+  @visibleForTesting
+  static String debugShellArg(String s) => _shArg(s);
+
+  static String _shArg(String s) => "'${s.replaceAll("'", r"'\''")}'";
+
   /// Point the OS at our local proxy (or clear it). macOS/Windows for now.
   /// [force] bypasses the auto-set preference (the dashboard's button).
   Future<void> _setSystemProxy(bool on, {bool force = false}) async {
@@ -2045,21 +2067,23 @@ class DesktopProxyController extends ProxyController {
           // SOCKS for apps that speak it, plus HTTP/HTTPS web proxy (the
           // mixed inbound answers both), so apps that only honour the web
           // proxy settings (many Electron and CLI tools) are covered too.
-          cmds.add('networksetup -setsocksfirewallproxy "$s" 127.0.0.1 $socksPort');
-          cmds.add('networksetup -setsocksfirewallproxystate "$s" on');
-          cmds.add('networksetup -setwebproxy "$s" 127.0.0.1 $socksPort');
-          cmds.add('networksetup -setwebproxystate "$s" on');
-          cmds.add('networksetup -setsecurewebproxy "$s" 127.0.0.1 $socksPort');
-          cmds.add('networksetup -setsecurewebproxystate "$s" on');
+          final String q = _shArg(s);
+          cmds.add('networksetup -setsocksfirewallproxy $q 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setsocksfirewallproxystate $q on');
+          cmds.add('networksetup -setwebproxy $q 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setwebproxystate $q on');
+          cmds.add('networksetup -setsecurewebproxy $q 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setsecurewebproxystate $q on');
         } else {
-          cmds.add('networksetup -setsocksfirewallproxystate "$s" off');
-          cmds.add('networksetup -setwebproxystate "$s" off');
-          cmds.add('networksetup -setsecurewebproxystate "$s" off');
+          final String q = _shArg(s);
+          cmds.add('networksetup -setsocksfirewallproxystate $q off');
+          cmds.add('networksetup -setwebproxystate $q off');
+          cmds.add('networksetup -setsecurewebproxystate $q off');
         }
       }
       if (cmds.isEmpty) return;
       // One authorization prompt covers the whole batch.
-      final String script = cmds.join(' && ').replaceAll('"', '\\"');
+      final String script = _asEsc(cmds.join(' && '));
       final ProcessResult r = await Process.run('osascript', <String>[
         '-e',
         'do shell script "$script" with administrator privileges',
@@ -2068,6 +2092,7 @@ class DesktopProxyController extends ProxyController {
       // so the dashboard had nothing honest to show. Only a clean exit counts.
       if (r.exitCode == 0) {
         _systemProxyOn = on;
+        await _rememberOwnership(on);
       } else {
         NovaLog.instance.write(
             'System proxy not ${on ? 'set' : 'cleared'}: ${(r.stderr as String).trim()}',
@@ -2093,6 +2118,30 @@ class DesktopProxyController extends ProxyController {
       // so running browsers keep going direct until told to reload. Notify it.
       await _refreshWinInet();
       _systemProxyOn = on;
+      await _rememberOwnership(on);
+    }
+  }
+
+  /// Persisted marker: "Nova set the system proxy, to this port".
+  ///
+  /// The startup sweep needs to tell a setting Nova orphaned in a crash from
+  /// one that belongs to somebody else. A port number cannot do that. 2080 is a
+  /// popular default (it is why [socksPort] is settable at all), so another
+  /// proxy client configured on it and not currently running looks exactly like
+  /// our own leftovers, and clearing it would break a working setup Nova has
+  /// nothing to do with.
+  static const String _kProxyOwnedPort = 'nova.desktop.systemProxyPort';
+
+  Future<void> _rememberOwnership(bool on) async {
+    try {
+      final SharedPreferences p = await SharedPreferences.getInstance();
+      if (on) {
+        await p.setInt(_kProxyOwnedPort, socksPort);
+      } else {
+        await p.remove(_kProxyOwnedPort);
+      }
+    } catch (_) {
+      // Losing the marker only costs the sweep, never the connection.
     }
   }
 
@@ -2139,10 +2188,19 @@ class DesktopProxyController extends ProxyController {
     if (!manageSystemProxy) return;
     if (!Platform.isMacOS && !Platform.isWindows) return;
     try {
-      if (!await _pointsAtOurDeadPort()) return;
+      // Ownership first, and from disk rather than from a port number. Without
+      // a marker saying Nova set it, the setting is somebody else's business:
+      // another proxy client on the same port, or a user who points the OS at
+      // 127.0.0.1 by hand because they turned the automatic setting off.
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final int? owned = prefs.getInt(_kProxyOwnedPort);
+      if (owned == null) return;
+      // The port we set it to, not whatever this instance happens to be
+      // configured with now.
+      if (!await _pointsAtOurDeadPort(owned)) return;
       NovaLog.instance.write(
-          'Clearing a system proxy left pointing at 127.0.0.1:$socksPort with '
-          'nothing listening');
+          'Clearing a system proxy Nova left pointing at 127.0.0.1:$owned '
+          'with nothing listening');
       await _setSystemProxy(false);
     } catch (e) {
       NovaLog.instance.write('Could not check the system proxy: $e',
@@ -2151,7 +2209,7 @@ class DesktopProxyController extends ProxyController {
   }
 
   /// True when the OS proxy names our loopback port and no one answers it.
-  Future<bool> _pointsAtOurDeadPort() async {
+  Future<bool> _pointsAtOurDeadPort(int port) async {
     bool namesUs = false;
     if (Platform.isMacOS) {
       for (final String svc in await _macServices()) {
@@ -2160,7 +2218,7 @@ class DesktopProxyController extends ProxyController {
         final String out = (r.stdout as String);
         if (out.contains('Enabled: Yes') &&
             out.contains('127.0.0.1') &&
-            out.contains('Port: $socksPort')) {
+            out.contains('Port: $port')) {
           namesUs = true;
           break;
         }
@@ -2174,10 +2232,10 @@ class DesktopProxyController extends ProxyController {
           'reg', <String>['query', key, '/v', 'ProxyServer']);
       final String e = (en.stdout as String);
       final String v = (sv.stdout as String);
-      namesUs = e.contains('0x1') && v.contains('127.0.0.1:$socksPort');
+      namesUs = e.contains('0x1') && v.contains('127.0.0.1:$port');
     }
     if (!namesUs) return false;
-    return nothingIsListening(socksPort);
+    return nothingIsListening(port);
   }
 
   /// Whether nothing answers on [port] of loopback.
