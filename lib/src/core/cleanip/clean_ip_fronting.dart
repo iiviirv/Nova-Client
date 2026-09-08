@@ -38,9 +38,37 @@ class CleanIpFronting {
   static bool couldBeFronted(ProxyNode n) =>
       n.tls &&
       !n.protocol.isEndpoint &&
-      InternetAddress.tryParse(n.server) == null &&
-      n.server.contains('.') &&
+      (needsAddress(n) || InternetAddress.tryParse(n.server) == null) &&
+      (needsAddress(n) || n.server.contains('.')) &&
       kCloudflareTlsPorts.contains(n.port);
+
+  /// Addresses that mean "this node has no address yet, fill one in".
+  static const Set<String> kPlaceholderAddresses = <String>{
+    '127.0.0.1',
+    '0.0.0.0',
+    '::',
+    '::1',
+  };
+
+  /// Whether this node was published WITHOUT a usable address, expecting the
+  /// device to supply one from its own scan.
+  ///
+  /// This is the strongest form of the defence. A published list that contains
+  /// real addresses can be fetched once and blocked wholesale, which is what
+  /// kills the free servers every couple of days. A list published with
+  /// placeholders gives a censor nothing to block: every user's copy is
+  /// addressed from their own Radar scan, so the traffic is spread across as
+  /// many addresses as there are users rather than concentrated on a handful
+  /// that everyone shares.
+  ///
+  /// A TLS name is REQUIRED for one of these, and is what tells a placeholder
+  /// apart from someone's genuine local proxy on 127.0.0.1. Without it there is
+  /// nothing to put in the handshake (the address is not a name), so such a
+  /// node is not treated as a placeholder and is left alone rather than being
+  /// rewritten into something that cannot work.
+  static bool needsAddress(ProxyNode n) =>
+      kPlaceholderAddresses.contains(n.server.trim()) &&
+      ((n.sni ?? '').trim().isNotEmpty || (n.wsHost ?? '').trim().isNotEmpty);
 
   /// Applies [ip] to every node in [nodes] that is genuinely behind Cloudflare.
   ///
@@ -56,7 +84,11 @@ class CleanIpFronting {
     final List<ProxyNode> out = <ProxyNode>[];
     int rewritten = 0;
     for (final ProxyNode n in nodes) {
-      if (!couldBeFronted(n) || !await _behindCloudflare(n.server, lookupTimeout)) {
+      // A placeholder has nothing to resolve, and needs no proof: it was
+      // published with no address precisely so this device would supply one.
+      if (!couldBeFronted(n) ||
+          (!needsAddress(n) &&
+              !await _behindCloudflare(n.server, lookupTimeout))) {
         out.add(n);
         continue;
       }
@@ -64,8 +96,10 @@ class CleanIpFronting {
         server: ip.ip,
         port: ip.port,
         // Whatever the config already said wins; only fill in what is missing.
-        sni: n.sni ?? n.server,
-        wsHost: n.wsHost ?? n.server,
+        // A placeholder is not a name, so it must never become the TLS name:
+        // needsAddress() guarantees one of these two was published.
+        sni: n.sni ?? (needsAddress(n) ? n.wsHost : n.server),
+        wsHost: n.wsHost ?? (needsAddress(n) ? n.sni : n.server),
       ));
       rewritten++;
     }
@@ -103,7 +137,8 @@ class CleanIpFronting {
     int rewritten = 0;
     for (final ProxyNode n in nodes) {
       if (!couldBeFronted(n) ||
-          !await _behindCloudflare(n.server, lookupTimeout)) {
+          (!needsAddress(n) &&
+              !await _behindCloudflare(n.server, lookupTimeout))) {
         out.add(n);
         continue;
       }
@@ -112,8 +147,10 @@ class CleanIpFronting {
         server: ip.ip,
         port: ip.port,
         // Whatever the config already said wins; only fill in what is missing.
-        sni: n.sni ?? n.server,
-        wsHost: n.wsHost ?? n.server,
+        // A placeholder is not a name, so it must never become the TLS name:
+        // needsAddress() guarantees one of these two was published.
+        sni: n.sni ?? (needsAddress(n) ? n.wsHost : n.server),
+        wsHost: n.wsHost ?? (needsAddress(n) ? n.sni : n.server),
       ));
       rewritten++;
     }
@@ -146,6 +183,24 @@ class CleanIpFronting {
     if (!hardenTls) return false;
     if (isFreeList && !boostFreeList) return false;
     return true;
+  }
+
+  /// Drops nodes that are still placeholders, i.e. published with no address
+  /// and not given one by a scan.
+  ///
+  /// Dialling 127.0.0.1 reaches this device, not a server, so an unaddressed
+  /// node cannot work and must not sit in the pool pretending it might. When
+  /// this empties the list the honest outcome is "run a scan", which the free
+  /// list screen offers, not a connection attempt that fails in a way nobody
+  /// can read.
+  static List<ProxyNode> dropUnaddressed(List<ProxyNode> nodes) {
+    if (!nodes.any(needsAddress)) return nodes;
+    final List<ProxyNode> out =
+        nodes.where((ProxyNode n) => !needsAddress(n)).toList();
+    NovaLog.instance.write(
+        'Left out ${nodes.length - out.length} servers that have no address '
+        'yet; run a Radar scan to use them');
+    return out;
   }
 
   /// Fronts [nodes] with the best this device has: the scanned [pool] when a
