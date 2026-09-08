@@ -303,6 +303,16 @@ class ProxyProfile {
 /// SNI-block bypass, because the people who most need a free list are on the
 /// networks that block the ordinary handshake.
 const String kFreeSubUrl =
+    'https://raw.githubusercontent.com/IRNova/Tools/refs/heads/main/sub-v2.txt';
+
+/// Where the free list was published before clients understood a list with no
+/// addresses in it.
+///
+/// It still carries real addresses and must keep doing so: every client older
+/// than the one that reads placeholders is still fetching it, and would dial
+/// 127.0.0.1 if it changed. It is retired when traffic to it stops, not on a
+/// date.
+const String kFreeSubUrlLegacy =
     'https://raw.githubusercontent.com/IRNova/Tools/refs/heads/main/sub.txt';
 
 /// Fixed id, so the free list is recognisable across launches: it is only ever

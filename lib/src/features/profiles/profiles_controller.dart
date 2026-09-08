@@ -42,6 +42,7 @@ class ProfilesController extends ChangeNotifier {
   void attachPrefs(SharedPreferences prefs) {
     _prefs = prefs;
     _load();
+    _repointFreeList();
     bool replayed = false;
     if (_removedBeforePrefs.isNotEmpty) {
       _profiles.removeWhere((p) => _removedBeforePrefs.contains(p.id));
@@ -121,6 +122,29 @@ class ProfilesController extends ChangeNotifier {
     prefs.setBool(kFreeSeededKey, true);
     _profiles.insert(0, buildFreeProfile());
     prefs.setString(_kProfilesKey, ProxyProfile.encodeList(_profiles));
+  }
+
+  /// Moves an existing install's free list to the current published URL.
+  ///
+  /// The free profile is seeded ONCE and then persisted, and nothing rewrote a
+  /// seeded profile afterwards. So changing the URL in code reached new
+  /// installs only: everyone who already had Nova would have gone on fetching
+  /// the old list forever, and would never have seen a change we believed we
+  /// had shipped to them. That is the kind of no-op that looks like success.
+  ///
+  /// Only the URL Nova itself published is rewritten. A user who edited the
+  /// profile to point somewhere else chose that, and it is not ours to move.
+  void _repointFreeList() {
+    final int i =
+        _profiles.indexWhere((ProxyProfile p) => p.id == kFreeProfileId);
+    if (i < 0) return;
+    final ProxyProfile free = _profiles[i];
+    if (free.subscriptionUrl != kFreeSubUrlLegacy) return;
+    _profiles[i] = free.copyWith(
+      uri: kFreeSubUrl,
+      subscriptionUrl: kFreeSubUrl,
+    );
+    _prefs?.setString(_kProfilesKey, ProxyProfile.encodeList(_profiles));
   }
 
   /// Selects Nova's free servers, adding them first in the one case where they
