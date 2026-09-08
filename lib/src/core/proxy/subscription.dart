@@ -456,6 +456,18 @@ Future<ProxyNode?> resolveProfileNode(
 /// The text a profile actually carries, preferring the subscription field but
 /// falling back to [ProxyProfile.uri]. Either one may legitimately hold the URL
 /// or the share link depending on how the profile was added.
+/// The other address Nova's own free list is published at, or null for any
+/// other subscription.
+///
+/// Only Nova's two published URLs map to each other. A user's own subscription
+/// has no alternate and must never be silently fetched from somewhere else.
+String? _freeListAlternate(String url) {
+  final String u = url.trim();
+  if (u == kFreeSubUrl) return kFreeSubUrlLegacy;
+  if (u == kFreeSubUrlLegacy) return kFreeSubUrl;
+  return null;
+}
+
 String _profilePayload(ProxyProfile profile) {
   final String sub = (profile.subscriptionUrl ?? '').trim();
   if (sub.isNotEmpty) return sub;
@@ -643,7 +655,33 @@ Future<List<ProxyNode>> _resolveProfileNodes(
     String body;
     try {
       body = await fetchSubscriptionBody(raw, fetch: fetch);
-    } catch (e) {
+    } catch (_) {
+      // Nova's own free list has a second address, and this is the only place
+      // that knows it.
+      //
+      // The list moved to a new URL so that it can one day be published with no
+      // addresses in it, which older clients cannot read. Falling back means the
+      // move needs no coordination at all: the new file can be created whenever
+      // it is ready, and until it exists this client behaves exactly like the
+      // last one. Without this, shipping a client that points at a file nobody
+      // has created yet would 404 the free list for every user at once.
+      //
+      // It also survives the reverse: if the new file is ever removed or
+      // broken, the free list keeps working instead of disappearing.
+      final String? alt = _freeListAlternate(raw);
+      if (alt != null) {
+        try {
+          final String body2 = await fetchSubscriptionBody(alt, fetch: fetch);
+          final List<ProxyNode> out2 = _expandSubscriptionBody(body2);
+          if (out2.isNotEmpty) {
+            if (fetch == null) _nodeCache[raw] = out2;
+            await _saveBody(raw, body2);
+            return out2;
+          }
+        } catch (_) {
+          // Both addresses failed; fall through to the saved copy below.
+        }
+      }
       // The live refresh failed. This is the workers.dev-blocked case: the panel
       // URL is unreachable, but the servers it last handed out still work (they
       // connect to clean IPs, not the blocked domain). Serve the saved body so
