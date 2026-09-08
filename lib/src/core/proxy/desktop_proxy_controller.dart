@@ -1294,6 +1294,19 @@ class DesktopProxyController extends ProxyController {
             reason = lines
                 .sublist(at, (at + 2).clamp(0, lines.length))
                 .join(' | ');
+          } else if (lines.any((String l) =>
+              l.contains('inbound/tun') || l.contains('outbound/'))) {
+            // The core is not failing at all. It logged real traffic and the
+            // only thing that did not happen is its control API answering us.
+            //
+            // The tail was quoted verbatim before, so a user switching servers
+            // was shown "Full-device mode failed to start" followed by INFO
+            // lines proving their tunnel was up and carrying packets. That
+            // reads as the app being confused about its own state, which is
+            // precisely what it was.
+            reason = 'the tunnel started and carried traffic, but Nova could '
+                'not reach its control port, usually because the previous '
+                'core had not finished shutting down';
           } else {
             reason =
                 lines.sublist(lines.length > 3 ? lines.length - 3 : 0).join(' | ');
@@ -2270,6 +2283,27 @@ class DesktopProxyController extends ProxyController {
     return namesUs;
   }
 
+  /// Waits until [port] stops accepting connections, or [budget] runs out.
+  ///
+  /// Used between tearing a core down and starting the next one. Starting
+  /// anyway after the budget is deliberate: a stuck port should cost the user a
+  /// clear failure from the next start, not a connect button that never
+  /// returns.
+  Future<void> _awaitPortFree(int port, Duration budget) async {
+    final Stopwatch clock = Stopwatch()..start();
+    while (clock.elapsed < budget) {
+      if (await nothingIsListening(port,
+          timeout: const Duration(milliseconds: 200))) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    NovaLog.instance.write(
+        'The previous core still holds 127.0.0.1:$port after '
+        '${budget.inSeconds}s; starting the next one anyway',
+        level: NovaLogLevel.warn);
+  }
+
   /// Whether nothing answers on [port] of loopback.
   ///
   /// The second half of the staleness question, and the half that keeps the
@@ -2380,8 +2414,17 @@ class DesktopProxyController extends ProxyController {
         if (_runFlag?.existsSync() ?? false) _runFlag!.deleteSync();
       } catch (_) {}
       _runFlag = null;
-      // Give the shell a moment to tear the core down before we return.
-      await Future<void>.delayed(const Duration(milliseconds: 600));
+      // Wait for the core to actually be gone, rather than hoping it is.
+      //
+      // This was a flat 600ms. A root sing-box with a live TUN and open
+      // connections regularly takes longer than that to exit, and when it does
+      // the next connect cannot bind the control API the old one still holds.
+      // _waitForCore then polls for about twenty seconds, gives up, and tells
+      // the user full-device mode "failed to start" while the OLD core is still
+      // up and carrying their traffic, so the error even quotes a working
+      // tunnel. That is exactly what switching servers does: the first connect
+      // works and every switch after it fails.
+      await _awaitPortFree(clashPort, const Duration(seconds: 10));
     }
     ownedElevated?.kill();
     ownedCore?.kill();

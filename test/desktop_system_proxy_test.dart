@@ -62,6 +62,37 @@ void main() {
     });
   });
 
+  group('waiting for a core to release its control port', () {
+    // Field report from Iran, macOS: switching servers asked for the password
+    // and then failed with "Full-device mode failed to start", and the error
+    // quoted INFO lines showing the TUN accepting connections and VLESS
+    // carrying them. The tunnel was working; only the control API was
+    // unreachable, because teardown slept a flat 600ms and hoped the previous
+    // root core had exited. It often had not, so the new core could not bind
+    // the port, and _waitForCore gave up about twenty seconds later.
+    test('a held port is reported as still in use', () async {
+      final ServerSocket held =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => held.close());
+      held.listen((Socket c) => c.destroy());
+      expect(await DesktopProxyController.nothingIsListening(held.port), isFalse,
+          reason: 'starting a second core against this port is what produced '
+              'the false "failed to start"');
+    });
+
+    test('the port reads free as soon as the holder goes away', () async {
+      final ServerSocket held =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int port = held.port;
+      held.listen((Socket c) => c.destroy());
+      expect(await DesktopProxyController.nothingIsListening(port), isFalse);
+      await held.close();
+      expect(await DesktopProxyController.nothingIsListening(port), isTrue,
+          reason: 'this is the transition the teardown now waits for instead '
+              'of sleeping a fixed 600ms');
+    });
+  });
+
   group('what counts as a stale setting', () {
     test('a port with a listener is in use, so the setting is not stale',
         () async {
