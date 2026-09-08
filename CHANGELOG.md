@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.23.0 (2026-09-07)
+
+- **Mac: switching servers works again.** Picking a different server asked for
+  your password and then failed with "Full-device mode failed to start", even
+  though the tunnel had come up and was carrying traffic. Nova was not waiting
+  for the previous connection to finish shutting down, so the new one could not
+  reach its own control port and gave up about twenty seconds later. The first
+  connection after opening Nova worked and every switch after it failed.
+
+- **Servers that connect but load nothing are now marked.** A ping only proves a
+  server answered once; it does not prove anything gets through it. When a
+  server connects and then carries no traffic, Nova remembers that and shows it
+  in the list instead of a healthy-looking number, so you are not invited to
+  pick it again. Connecting through it successfully clears the mark.
+
+- **The free servers no longer show addresses.** The address is whichever one
+  your own Radar scan supplied, so it differs between people and between scans
+  and tells you nothing. The server's name and its speed are what you choose by.
+
+- **Radar runs once by itself when a list needs it**, instead of leaving you to
+  discover that scanning was a prerequisite. One scan lasts for days, so
+  refreshing the list afterwards reuses what it found.
+
+- Groundwork for free servers that are published with no addresses at all, so
+  there is nothing in the published list for anyone to block. Nothing changes
+  for you yet.
+
 ## v1.22.0 (2026-09-07)
 
 - **The free servers now dial addresses found on your own network.** Nova's free
