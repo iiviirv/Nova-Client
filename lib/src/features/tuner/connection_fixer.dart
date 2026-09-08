@@ -103,13 +103,31 @@ class ConnectionFixer {
   /// fingerprint is restored and [FixOutcome.success] is false.
   Future<FixOutcome> run({void Function(FixProgress)? onProgress}) async {
     _cancelled = false;
+    _tunRestored = false;
     final String original = _settings.fingerprint;
+    // Full-device mode needs root to create the network adapter, so every
+    // connect() raises an administrator prompt. This runs one connect per
+    // candidate plus a final one, so on macOS and Linux, where full-device mode
+    // is the DEFAULT, a user asking for help getting past the DPI was answered
+    // with six password dialogs in a row, each branded `osascript` rather than
+    // Nova. Cancelling one did not stop the run: the next candidate simply
+    // prompted again.
+    //
+    // The measurement does not need full-device mode. The fingerprint being
+    // tested shapes the TLS handshake to the server; full-device mode only
+    // changes how local traffic is captured on this machine. The two are
+    // independent, so measuring through the local proxy answers exactly the
+    // same question with no elevation at all. Full-device mode is restored
+    // before the winner is applied, so the user ends up where they started with
+    // one prompt instead of six.
+    final bool originalTun = _settings.tunMode;
     final List<FixResult> results = <FixResult>[];
     try {
       if (_proxy.state.isActive) {
         await _proxy.disconnect();
         await _settle();
       }
+      if (originalTun) await _settings.setTunMode(false);
       for (int i = 0; i < candidates.length; i++) {
         if (_cancelled) return _cancelledOutcome(results);
         final String fp = candidates[i];
@@ -150,6 +168,11 @@ class ConnectionFixer {
           fingerprint: winner.fingerprint,
           phase: 'applying'));
       await _settings.setFingerprint(winner.fingerprint);
+      // Back into full-device mode BEFORE the final connect, so the one prompt
+      // the user does see is the one that leaves them connected the way they
+      // asked to be. Restoring after would connect in the wrong mode and need a
+      // second cycle to correct.
+      await _restoreTun(originalTun);
       await _proxy.connect();
       await _waitConnected(const Duration(seconds: 22));
       return FixOutcome(
@@ -158,7 +181,22 @@ class ConnectionFixer {
       await _settings.setFingerprint(original);
       await _safeDisconnect();
       return FixOutcome(success: false, results: results);
+    } finally {
+      // Every other way out of this method: cancelled, nothing reachable, or a
+      // throw. Leaving a user silently switched out of full-device mode would be
+      // a worse bug than the prompts, because nothing on screen would say their
+      // traffic had stopped being captured device-wide.
+      await _restoreTun(originalTun);
     }
+  }
+
+  bool _tunRestored = false;
+
+  /// Puts full-device mode back, once. Safe to call on every exit path.
+  Future<void> _restoreTun(bool originalTun) async {
+    if (_tunRestored || !originalTun) return;
+    _tunRestored = true;
+    await _settings.setTunMode(true);
   }
 
   FixOutcome _cancelledOutcome(List<FixResult> results) {
