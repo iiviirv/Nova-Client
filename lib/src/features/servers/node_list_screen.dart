@@ -910,6 +910,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
           // null/false unless connected.
           coreDelayMs: health.delayFor(n),
           coreTested: health.wasTested(n),
+          noTraffic: health.carriedNoTraffic(n),
           active: health.isSelected(n),
           showDivider: r < visible.length - 1,
           onTap: () => _pin(_key(n), name: n.tag),
@@ -1373,6 +1374,7 @@ class _NodeRow extends StatelessWidget {
     required this.node,
     required this.geo,
     this.hideAddress = false,
+    this.noTraffic = false,
     required this.selected,
     required this.onTap,
     this.onRetest,
@@ -1409,6 +1411,9 @@ class _NodeRow extends StatelessWidget {
   /// True when the core measured this node this round (it may still have failed).
   /// Lets the row say "no response" instead of "not testable" for a dead exit.
   final bool coreTested;
+
+  /// This node connected and carried nothing; see [_Verdict.noTraffic].
+  final bool noTraffic;
 
   /// True when the auto-selector is currently routing through this node, so the
   /// row can show which server is really carrying traffic right now.
@@ -1586,7 +1591,8 @@ class _NodeRow extends StatelessWidget {
                               horizontal: NovaSpace.xs, vertical: NovaSpace.xs),
                           child: _Verdict(
                               coreDelayMs: coreDelayMs,
-                              coreTested: coreTested),
+                              coreTested: coreTested,
+                              noTraffic: noTraffic),
                         ),
                       ),
                     ),
@@ -1755,7 +1761,8 @@ class _MiddleEllipsis extends StatelessWidget {
 /// that cannot be judged from outside a tunnel says so instead of borrowing a
 /// number it did not earn. Blocked is a word on a red tint, never colour alone.
 class _Verdict extends StatelessWidget {
-  const _Verdict({this.coreDelayMs, this.coreTested = false});
+  const _Verdict(
+      {this.coreDelayMs, this.coreTested = false, this.noTraffic = false});
 
   /// The core's latency for this node. Nova measures one way only: through the
   /// core, when the user asks for it. The outside TCP/TLS probe that used to
@@ -1767,11 +1774,26 @@ class _Verdict extends StatelessWidget {
   /// "no response", as opposed to a node nobody has tested yet.
   final bool coreTested;
 
+  /// This server connected and then carried nothing.
+  ///
+  /// It takes priority over the latency, because it contradicts it. A ping only
+  /// proves the server answered one small probe; two of a tester's twenty-one
+  /// free servers answered with a healthy number and then loaded no pages. A
+  /// good number beside a server known not to work is worse than no number, so
+  /// the number is not shown at all.
+  final bool noTraffic;
+
   @override
   Widget build(BuildContext context) {
     final NovaStrings s = NovaStrings.of(context);
     final nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
+    if (noTraffic) {
+      return _VerdictPill(
+        label: s.nodeNoTraffic,
+        color: NovaSemantics.red,
+      );
+    }
     final int? live = coreDelayMs;
     if (live != null) {
       return _LatencyBadge(ms: live, icon: Icons.bolt_rounded);

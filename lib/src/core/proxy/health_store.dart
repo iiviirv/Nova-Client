@@ -36,6 +36,7 @@ class HealthStore {
           'at': DateTime.now().millisecondsSinceEpoch,
           'delays': h.delayMsByKey,
           'tested': h.testedKeys.toList(),
+          'noTraffic': h.noTrafficKeys.toList(),
         }),
       );
     } catch (_) {
@@ -64,8 +65,15 @@ class HealthStore {
         for (final Object? k in (j['tested'] as List? ?? <Object?>[]))
           if (k is String) k,
       };
-      if (delays.isEmpty && tested.isEmpty) return null;
-      return CoreNodeHealth(delayMsByKey: delays, testedKeys: tested);
+      final Set<String> noTraffic = <String>{
+        for (final Object? k in (j['noTraffic'] as List? ?? <Object?>[]))
+          if (k is String) k,
+      };
+      if (delays.isEmpty && tested.isEmpty && noTraffic.isEmpty) return null;
+      return CoreNodeHealth(
+          delayMsByKey: delays,
+          testedKeys: tested,
+          noTrafficKeys: noTraffic);
     } catch (_) {
       return null;
     }

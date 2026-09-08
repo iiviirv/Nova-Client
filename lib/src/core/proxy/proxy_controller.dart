@@ -69,6 +69,7 @@ class CoreNodeHealth {
     required this.delayMsByKey,
     this.testedKeys = const <String>{},
     this.selectedKey,
+    this.noTrafficKeys = const <String>{},
   });
 
   static const CoreNodeHealth empty =
@@ -85,8 +86,25 @@ class CoreNodeHealth {
 
   final String? selectedKey;
 
+  /// Nodes that connected and then carried no traffic.
+  ///
+  /// A latency proves a server answered one small probe. It does not prove the
+  /// server routes anything, and some do not: a tester in Iran found two of
+  /// twenty-one free servers that connected, showed a healthy ping, and then
+  /// loaded nothing. Nova already noticed at the time and said so, but the
+  /// knowledge died with the session, so the list went on showing a good number
+  /// beside a server known not to work and the user picked it again.
+  final Set<String> noTrafficKeys;
+
   bool get isEmpty =>
-      delayMsByKey.isEmpty && testedKeys.isEmpty && selectedKey == null;
+      delayMsByKey.isEmpty &&
+      testedKeys.isEmpty &&
+      selectedKey == null &&
+      noTrafficKeys.isEmpty;
+
+  /// This node connected but nothing got through it.
+  bool carriedNoTraffic(ProxyNode node) =>
+      noTrafficKeys.contains(proxyNodeKey(node));
 
   /// The core's latency for [node], or null if the core has no live figure.
   int? delayFor(ProxyNode node) => delayMsByKey[proxyNodeKey(node)];
@@ -127,7 +145,32 @@ class CoreNodeHealth {
   /// goes away. Measured readings survive; the selection does not.
   CoreNodeHealth get withoutSelection => selectedKey == null
       ? this
-      : CoreNodeHealth(delayMsByKey: delayMsByKey, testedKeys: testedKeys);
+      : CoreNodeHealth(
+          delayMsByKey: delayMsByKey,
+          testedKeys: testedKeys,
+          // A server that carried nothing is still a server that carried
+          // nothing after the tunnel goes away. Forgetting it here is what let
+          // the same dead exit be picked again on the next connect.
+          noTrafficKeys: noTrafficKeys,
+        );
+
+  /// This board plus the knowledge that [key] connected and carried nothing.
+  CoreNodeHealth withNoTraffic(String key) => CoreNodeHealth(
+        delayMsByKey: delayMsByKey,
+        testedKeys: testedKeys,
+        selectedKey: selectedKey,
+        noTrafficKeys: <String>{...noTrafficKeys, key},
+      );
+
+  /// Forgets a no-traffic verdict, for when the same node later works.
+  CoreNodeHealth withTrafficRestored(String key) => noTrafficKeys.contains(key)
+      ? CoreNodeHealth(
+          delayMsByKey: delayMsByKey,
+          testedKeys: testedKeys,
+          selectedKey: selectedKey,
+          noTrafficKeys: <String>{...noTrafficKeys}..remove(key),
+        )
+      : this;
 
   bool isSelected(ProxyNode node) =>
       selectedKey != null && proxyNodeKey(node) == selectedKey;

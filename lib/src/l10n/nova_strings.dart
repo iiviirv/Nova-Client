@@ -802,6 +802,7 @@ class NovaStrings {
   /// Verdict on a pool node the core tested through the live tunnel but that
   /// never answered: a dead or unusable exit, not one that "can't be tested".
   String get nodeNoResponse => t('node.noResponse');
+  String get nodeNoTraffic => t('node.noTraffic');
 
   /// Shown when a subscription contained servers Nova cannot run, so the user
   /// learns why the count is short instead of assuming configs went missing.
@@ -1635,6 +1636,7 @@ class NovaStrings {
     'node.untested': 'not testable',
     'node.notTested': 'not tested',
     'node.noResponse': 'no response',
+    'node.noTraffic': 'No traffic',
     'node.staleList':
         'Could not refresh from the panel, so these are your saved servers. '
             'They still work; connect and they will update on their own.',
@@ -2465,6 +2467,7 @@ class NovaStrings {
     'node.untested': 'قابل تست نیست',
     'node.notTested': 'تست نشده',
     'node.noResponse': 'بدون پاسخ',
+    'node.noTraffic': 'ترافیک عبور نکرد',
     'node.staleList':
         'به‌روزرسانی از پنل ممکن نشد، پس این‌ها سرورهای ذخیره‌شده‌ی شما هستند. '
             'هنوز کار می‌کنند؛ وصل شوید تا خودشان به‌روز شوند.',

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/cleanip/clean_ip_fronting.dart';
 import 'package:nova_client/src/core/cleanip/clean_ip_store.dart';
+import 'package:nova_client/src/core/proxy/proxy_controller.dart';
 import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
 
 /// Publishing the free list with NO addresses at all.
@@ -19,6 +20,7 @@ import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
 /// The whole idea rests on one thing being true: a node that has NOT been given
 /// an address must never be dialled. 127.0.0.1 is the user's own phone.
 void main() {
+  _noTrafficMemory();
   ProxyNode placeholder({
     String server = '127.0.0.1',
     String? sni = 'free.example.com',
@@ -151,6 +153,56 @@ void main() {
       );
       expect(out.single.sni, isNot(anyOf('127.0.0.1', '0.0.0.0')));
       expect(out.single.sni, 'free.example.com');
+    });
+  });
+}
+
+/// A latency proves a server answered one probe. It does not prove the server
+/// routes anything, and some do not: a tester in Iran found two of twenty-one
+/// free servers that connected, showed a healthy ping, and loaded nothing.
+///
+/// Nova already noticed at the time and said so, but the knowledge died with
+/// the session, so the list went on showing a good number beside a server known
+/// not to work and the same node was picked again.
+void _noTrafficMemory() {
+  group('a server that carries nothing is remembered', () {
+    const String key = 'node-key-1';
+
+    test('the verdict is recorded', () {
+      const CoreNodeHealth before = CoreNodeHealth(delayMsByKey: <String, int>{key: 120});
+      final CoreNodeHealth after = before.withNoTraffic(key);
+      expect(after.noTrafficKeys, contains(key));
+    });
+
+    test('it survives the tunnel going away', () {
+      final CoreNodeHealth h = const CoreNodeHealth(
+        delayMsByKey: <String, int>{key: 120},
+        selectedKey: key,
+      ).withNoTraffic(key);
+      expect(h.withoutSelection.noTrafficKeys, contains(key),
+          reason: 'forgetting on disconnect is what let the same dead exit be '
+              'chosen again on the next connect');
+      expect(h.withoutSelection.selectedKey, isNull);
+    });
+
+    test('a fresh latency does NOT clear it', () {
+      // The trap: re-testing produces a number, and a number is exactly what
+      // this server always had. Only real traffic clears the verdict.
+      final CoreNodeHealth h =
+          const CoreNodeHealth(delayMsByKey: <String, int>{}).withNoTraffic(key);
+      expect(h.noTrafficKeys, contains(key));
+    });
+
+    test('traffic actually flowing does clear it', () {
+      final CoreNodeHealth h =
+          const CoreNodeHealth(delayMsByKey: <String, int>{}).withNoTraffic(key);
+      expect(h.withTrafficRestored(key).noTrafficKeys, isEmpty,
+          reason: 'a server unreachable on one network can be fine on the next');
+    });
+
+    test('clearing one that was never marked changes nothing', () {
+      const CoreNodeHealth h = CoreNodeHealth(delayMsByKey: <String, int>{});
+      expect(h.withTrafficRestored(key), same(h));
     });
   });
 }

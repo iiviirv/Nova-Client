@@ -13,6 +13,7 @@ import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../models/proxy_profile.dart';
 import 'core_features.dart';
+import 'health_store.dart';
 import 'measure_runner.dart';
 import 'isp_optimizer.dart';
 import 'proxy_controller.dart';
@@ -658,7 +659,15 @@ class SingboxProxyController extends ProxyController {
     required bool merge,
   }) {
     if (!merge) {
-      return CoreNodeHealth(delayMsByKey: delays, testedKeys: tested);
+      // The no-traffic verdicts survive a re-test on purpose. A fresh latency
+      // says the server answered a probe, which is exactly the thing that was
+      // already true of a server that then routed nothing. Only a real traffic
+      // check clears it.
+      return CoreNodeHealth(
+        delayMsByKey: delays,
+        testedKeys: tested,
+        noTrafficKeys: before.noTrafficKeys,
+      );
     }
     final Map<String, int> d = Map<String, int>.from(before.delayMsByKey);
     for (final String k in tested) {
@@ -669,6 +678,7 @@ class SingboxProxyController extends ProxyController {
       delayMsByKey: d,
       testedKeys: <String>{...before.testedKeys, ...tested},
       selectedKey: before.selectedKey,
+      noTrafficKeys: before.noTrafficKeys,
     );
   }
 
@@ -1262,6 +1272,14 @@ class SingboxProxyController extends ProxyController {
     // is not evidence the exit is dead.
     for (int attempt = 0; attempt < 4; attempt++) {
       if (await _probeInternet()) {
+        // It works now, so the old verdict must go: a server that was
+        // unreachable on one network can be fine on the next.
+        final String? pinned = profile.pinnedNode;
+        if (pinned != null &&
+            coreHealth.value.noTrafficKeys.contains(pinned)) {
+          coreHealth.value = coreHealth.value.withTrafficRestored(pinned);
+          unawaited(HealthStore.save(profile.id, coreHealth.value));
+        }
         if (exitUnreachable) {
           exitUnreachable = false;
           notifyListeners();
@@ -1297,6 +1315,14 @@ class SingboxProxyController extends ProxyController {
       'choice; switch server or use Auto to change it.',
       level: NovaLogLevel.warn,
     );
+    // Remember it, so the list can stop showing a healthy latency beside a
+    // server that is known not to route. The notice alone died with the
+    // session and the user picked the same node again next time.
+    final String? pinned = profile.pinnedNode;
+    if (pinned != null) {
+      coreHealth.value = coreHealth.value.withNoTraffic(pinned);
+      unawaited(HealthStore.save(profile.id, coreHealth.value));
+    }
     exitUnreachable = true;
     notice.value = ProxyNotice.pinnedExitNoTraffic;
     notifyListeners();
