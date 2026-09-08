@@ -1492,16 +1492,25 @@ class SingboxProxyController extends ProxyController {
       isFreeList: _active?.isBuiltIn ?? false,
       boostFreeList: CleanIpStore.instance.boostFreeList,
     )) {
-      return nodes;
+      // Refusing to re-address is the user's right, but a node published with
+      // no address still cannot be dialled: 127.0.0.1 is this device. Turning
+      // the switch off on a placeholder list means that list is unusable, and
+      // saying so by leaving it empty is better than dialling loopback.
+      return CleanIpFronting.dropUnaddressed(nodes);
     }
-    if (!nodes.any(CleanIpFronting.couldBeFronted)) return nodes;
+    if (!nodes.any(CleanIpFronting.couldBeFronted)) {
+      return CleanIpFronting.dropUnaddressed(nodes);
+    }
     final List<CleanIp> pool = CleanIpStore.instance.freshPool;
     final CleanIp? ip = CleanIpFinder.current();
     if (pool.isEmpty && ip == null) {
       CleanIpFinder.ensure();
-      return nodes;
+      // Nothing to address them with yet, so anything published without an
+      // address has to be held back rather than dialled at this device.
+      return CleanIpFronting.dropUnaddressed(nodes);
     }
-    return CleanIpFronting.applyAvailable(nodes, pool: pool, single: ip);
+    return CleanIpFronting.dropUnaddressed(
+        await CleanIpFronting.applyAvailable(nodes, pool: pool, single: ip));
   }
 
   Future<List<ProxyNode>> _resolveEndpointHosts(List<ProxyNode> nodes) async {

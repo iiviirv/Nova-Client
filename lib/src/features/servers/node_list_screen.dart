@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/cleanip/clean_ip_finder.dart';
 import '../../core/cleanip/clean_ip_fronting.dart';
 import '../../core/cleanip/clean_ip_store.dart';
 import '../../core/geo/node_geo_store.dart';
@@ -377,8 +378,22 @@ class _NodeListScreenState extends State<NodeListScreen> {
   Future<void> _boostFreeListAddresses() async {
     final CleanIpStore store = CleanIpStore.instance;
     if (!store.boostFreeList) return;
+    if (_nodes.isEmpty) return;
+    // A list published WITHOUT addresses cannot work until a scan supplies
+    // them, so the scan is not optional there and the user should not have to
+    // know that. Run one, once, when the list needs it and nothing usable is
+    // stored. Any later refresh reuses what is already there, which is the
+    // point: one scan lasts for days, and re-scanning on every refresh would
+    // spend a minute to replace addresses that are still good.
+    if (store.freshPool.isEmpty &&
+        _nodes.any(CleanIpFronting.needsAddress)) {
+      NovaLog.instance.write(
+          'This server list was published without addresses, so Radar is '
+          'finding some for it');
+      await CleanIpFinder.find();
+    }
     final List<CleanIp> pool = store.freshPool;
-    if (pool.isEmpty || _nodes.isEmpty) return;
+    if (pool.isEmpty) return;
     final List<ProxyNode> rewritten =
         await CleanIpFronting.applySpread(_nodes, pool);
     if (!mounted) return;
@@ -885,6 +900,7 @@ class _NodeListScreenState extends State<NodeListScreen> {
         // it opens. Cheap, cached by host, and nothing to do with testing.
         unawaited(_geoOne(n));
         return _NodeRow(
+          hideAddress: _profile?.isBuiltIn ?? false,
           node: n,
           geo: _geoStore[_key(n)],
           selected: pinned == _key(n),
@@ -1356,6 +1372,7 @@ class _NodeRow extends StatelessWidget {
   const _NodeRow({
     required this.node,
     required this.geo,
+    this.hideAddress = false,
     required this.selected,
     required this.onTap,
     this.onRetest,
@@ -1366,6 +1383,15 @@ class _NodeRow extends StatelessWidget {
   });
 
   final ProxyNode node;
+
+  /// Hide the address on this row.
+  ///
+  /// For Nova's own free list the address is not information the user can act
+  /// on: it is whichever Cloudflare address this device's own scan supplied, it
+  /// differs between users and between scans, and showing it invites people to
+  /// read a number that means nothing to them and share it with each other.
+  /// The server's name and its latency are what they choose by.
+  final bool hideAddress;
 
   /// Tapping the verdict re-tests just this server through the measuring core,
   /// leaving every other row's reading alone. Null while a run is in flight.
@@ -1405,7 +1431,8 @@ class _NodeRow extends StatelessWidget {
     // flag (and a small detail below); the owner's labels are what users
     // recognise, and a guessed city used to replace them.
     final String location = geo?.place ?? '';
-    final String primary = clean.isNotEmpty ? clean : addr;
+    final String primary =
+        clean.isNotEmpty ? clean : (hideAddress ? node.tag : addr);
     final List<String> transport = <String>[
       ..._transportTags(node),
       if (geo?.frontedBy != null) geo!.frontedBy!,
@@ -1494,7 +1521,7 @@ class _NodeRow extends StatelessWidget {
                             child: Directionality(
                               textDirection: TextDirection.ltr,
                               child: _MiddleEllipsis(
-                                text: addr,
+                                text: hideAddress ? '' : addr,
                                 style: text.bodySmall?.copyWith(
                                   color: nova.muted,
                                   fontWeight: FontWeight.w500,
