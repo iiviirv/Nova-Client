@@ -81,14 +81,19 @@ class RoutingScreen extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   child: Column(
                     children: <Widget>[
-                      _RuleSwitch(
-                        icon: Icons.block,
-                        title: s.routeBlockAds,
-                        subtitle: s.routeBlockAdsSub,
-                        value: settings.blockAds,
-                        onChanged: settings.setBlockAds,
-                      ),
-                      Divider(height: 1, color: nova.border),
+                      // Ad blocking is not offered on iOS: App Review rejected
+                      // it under 2.5.1 as using a VPN to block content in other
+                      // apps. Every other platform keeps it.
+                      if (SettingsController.adBlockSupported) ...<Widget>[
+                        _RuleSwitch(
+                          icon: Icons.block,
+                          title: s.routeBlockAds,
+                          subtitle: s.routeBlockAdsSub,
+                          value: settings.blockAds,
+                          onChanged: settings.setBlockAds,
+                        ),
+                        Divider(height: 1, color: nova.border),
+                      ],
                       _RuleSwitch(
                         icon: Icons.flag_outlined,
                         title: s.routeDirectIran,

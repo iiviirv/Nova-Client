@@ -78,7 +78,34 @@ class SettingsController extends ChangeNotifier {
   SingboxMode get mode => _mode;
 
   bool _blockAds = true;
-  bool get blockAds => _blockAds;
+
+  /// Whether this platform offers ad blocking at all.
+  ///
+  /// Not on iOS. App Review rejected the app under guideline 2.5.1: "the app
+  /// uses a VPN profile or root certificate to block ads or other content in a
+  /// third-party app, which is not appropriate", with the instruction to remove
+  /// the feature. That is Apple's rule for their store and it is not arguable.
+  ///
+  /// iOS only, deliberately. Android, macOS, Windows and Linux are not
+  /// distributed through the App Store and keep the feature. The App Store
+  /// binary and the TestFlight binary are the same build, so this cannot be
+  /// narrower than the platform without shipping two different iOS apps.
+  static bool get adBlockSupported =>
+      debugAdBlockSupportedOverride ?? !Platform.isIOS;
+
+  /// Lets a test stand in for iOS from any machine.
+  ///
+  /// Without this the guard is only exercised on the one platform where it does
+  /// nothing. A test running on macOS sees the gate open, so it passes whether
+  /// or not iOS is actually protected, which is how the routing options came to
+  /// read the raw field with tests that looked green.
+  @visibleForTesting
+  static bool? debugAdBlockSupportedOverride;
+
+  /// Off on any platform that does not offer it, whatever is stored. Reading
+  /// the saved value would let a setting made on another platform, or before an
+  /// upgrade, quietly switch the feature back on for a reviewer.
+  bool get blockAds => adBlockSupported && _blockAds;
 
   bool _bypassIran = true;
   bool get bypassIran => _bypassIran;
@@ -218,7 +245,10 @@ class SettingsController extends ChangeNotifier {
   /// The options the proxy controllers build the next config with.
   SingboxRouteOptions get routeOptions => SingboxRouteOptions(
         mode: _mode,
-        blockAds: _blockAds,
+        // The getter, never the raw field: the field holds whatever was
+        // saved, and on iOS the feature must be off regardless of what a
+        // previous version or another platform stored.
+        blockAds: blockAds,
         bypassIran: _bypassIran,
         bypassLan: _bypassLan,
         dns: _dns,
