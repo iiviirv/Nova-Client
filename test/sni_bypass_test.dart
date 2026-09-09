@@ -132,7 +132,19 @@ void main() {
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse);
     });
 
-    test('hardenTls leaves a domain-addressed node alone', () {
+    test('hardenTls now covers a domain-addressed node too', () {
+      // This used to assert the opposite: the bypass applied only to a node
+      // already addressed by IP, and a domain-addressed one was left untouched.
+      //
+      // That was backwards, and a tester in Iran found it after a DPI update
+      // changed the working finalmask values. A domain-addressed node puts the
+      // real name in its ClientHello, which is exactly what the SNI filter
+      // matches, so it is the case the record split helps most. Worse, editing
+      // the mask on such a profile appeared to do nothing at all: the node got
+      // no mask rather than a different one, with nothing on screen to say so.
+      //
+      // Turning the bypass on is an explicit per-profile choice, so it now means
+      // what it says.
       final ProxyNode domain = parseShareLink(
         'vless://00000000-0000-4000-8000-000000000000@node.example.com:443'
         '?security=tls&type=ws&sni=node.example.com#D',
@@ -141,6 +153,18 @@ void main() {
         domain,
         options: const SingboxRouteOptions(hardenTls: true),
       ));
+      expect((tls['utls'] as Map<String, dynamic>)['enabled'], isFalse,
+          reason: 'the bypass replaces the browser fingerprint with Go TLS');
+      expect(tls.containsKey('cipher_suites'), isTrue);
+      expect(tls.containsKey('nova_fragment'), isTrue);
+    });
+
+    test('a domain-addressed node is still left alone with the bypass off', () {
+      final ProxyNode domain = parseShareLink(
+        'vless://00000000-0000-4000-8000-000000000000@node.example.com:443'
+        '?security=tls&type=ws&sni=node.example.com#D',
+      )!;
+      final Map<String, dynamic> tls = _tlsOf(SingboxConfig.buildMap(domain));
       expect((tls['utls'] as Map<String, dynamic>)['enabled'], isTrue);
       expect(tls.containsKey('cipher_suites'), isFalse);
     });

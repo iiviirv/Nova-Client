@@ -84,9 +84,12 @@ void main() {
     expect(out.single.port, 443);
   });
 
-  test('fronting is what turns the SNI-block bypass on', () {
-    // The bypass applies only to a clean-IP fronted node, so this is the whole
-    // reason the rewrite exists, not a side effect of it.
+  test('fronting is still what makes a node clean-IP addressed', () {
+    // This once also asserted that the bypass applied ONLY to a fronted node.
+    // It no longer does: the bypass now covers every TLS node in a profile that
+    // has it turned on, because a domain-addressed node is the one whose
+    // ClientHello carries the real name. What fronting still decides is the
+    // ADDRESS a node dials, which is what this test is about.
     final ProxyNode byName = node(
         'vless://00000000-0000-0000-0000-000000000001@sub.example.com:443'
         '?type=ws&security=tls&sni=sub.example.com&path=%2Fws#a');
@@ -100,8 +103,11 @@ void main() {
     String tlsOf(ProxyNode n) => SingboxConfig.buildMap(n,
             options: const SingboxRouteOptions(hardenTls: true))
         .toString();
+    // Both are hardened now; fronting changed the address, not the bypass.
     expect(tlsOf(fronted), contains('cipher_suites'));
-    expect(tlsOf(byName), isNot(contains('cipher_suites')));
+    expect(tlsOf(byName), contains('cipher_suites'));
+    expect(tlsOf(fronted), contains(clean.ip));
+    expect(tlsOf(byName), isNot(contains(clean.ip)));
   });
 
   group('the stored address', () {

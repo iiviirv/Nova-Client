@@ -1414,14 +1414,33 @@ class SingboxConfig {
     },
   ];
 
-  static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) =>
-      (o.hardenTls && n.isCleanIpFronted)
-          ? n.hardened(
-              fingerprint: o.bypassFingerprint,
-              cipherSuites: o.bypassCipherSuites,
-              fragmentMask: o.bypassFragmentMask,
-            )
-          : n;
+  static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) {
+    if (!o.hardenTls) return n;
+    // Was gated on isCleanIpFronted, i.e. only a node already addressed by IP
+    // with a separate TLS name. That silently excluded every domain-addressed
+    // server, which is the case that needs it MOST: such a node sends the real
+    // name in its ClientHello, which is exactly what the SNI filter matches.
+    //
+    // The visible cost was that editing the fragment mask appeared to do
+    // nothing. A user pasting a new finalmask onto a domain-addressed profile
+    // got no mask at all, not a different one, and no way to tell. Reported
+    // from Iran after a DPI update changed the working values.
+    //
+    // Turning the bypass on is an explicit choice, per profile, so it now means
+    // what it says: apply it to the TLS nodes in this profile.
+    //
+    // Three exclusions, each for a reason the bypass cannot help with:
+    // a node with no TLS has no ClientHello to fragment; Reality's handshake
+    // already imitates a real session, so replacing it with Go's TLS would undo
+    // the thing that makes it work; and the UDP-native protocols (QUIC) are not
+    // carried over TCP at all, so record and segment splitting do not apply.
+    if (!n.tls || n.isReality || n.protocol.isUdpNative) return n;
+    return n.hardened(
+      fingerprint: o.bypassFingerprint,
+      cipherSuites: o.bypassCipherSuites,
+      fragmentMask: o.bypassFragmentMask,
+    );
+  }
 
   /// The cipher suite names the sing-box core accepts, measured against the
   /// 1.13.13 binary: it looks names up in Go's secure list only, so anything in
