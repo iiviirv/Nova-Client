@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.23.1 (2026-09-09)
+
+- **The SNI-block bypass now reaches servers addressed by name.** If your server
+  is a domain rather than an IP, turning the bypass on did nothing to it, and
+  editing the fragment values by hand did nothing either. The setting was only
+  ever applied to servers already addressed by IP with a separate TLS name, so
+  a domain server got no fragmentation at all rather than different
+  fragmentation, and there was nothing on screen to tell you so. This was
+  backwards: a server addressed by name is the one that sends the real name in
+  its handshake, which is exactly what the filtering looks for, so it is the
+  case the bypass helps most. It now applies to every TLS server in a profile
+  you turned it on for.
+
+  Reality servers, servers without TLS, and Hysteria2 and TUIC are still left
+  alone. Reality builds its own disguised handshake and overriding it would
+  replace the one its link asked for; the other two have no TLS handshake to
+  split, or do not run over TCP.
+
+  If you pasted new fragment values recently and they seemed to be ignored, they
+  were. Set them again on this version.
+
 ## v1.23.0 (2026-09-07)
 
 - **Mac: switching servers works again.** Picking a different server asked for
