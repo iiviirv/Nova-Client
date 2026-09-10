@@ -374,13 +374,25 @@ const List<String> kBypassCipherSuites = <String>[
 
 /// The Xray finalmask the field-tested recipe uses, kept verbatim so a hardened
 /// node re-shares as a link PattNG accepts. Two stages: the ClientHello split
-/// into TLS records of 5, 94, then 1 byte each (one TCP write), then that first
-/// write split into TCP segments of 109 and then 1 byte with 1 ms between them.
+/// into TLS records of 0, 104, then 1 byte each (one TCP write), then that first
+/// write split into TCP segments of 114 and then 1 byte with 1 ms between them,
+/// capped at 11 segments.
+///
+/// Updated 2026-09-09, when Iran's DPI was changed and the previous 5/94/1 plus
+/// 109/1 recipe stopped getting through. These are the values PattNG's author
+/// published the same day and connects with.
+///
+/// Two things to know before editing these numbers. They are duplicated as
+/// parsed stages in singbox_config's _defaultNovaFragment, and a test pins the
+/// two together, so change both. And the leading 0 is deliberate: it emits an
+/// empty TLS record ahead of the split, which Xray's own implementation does
+/// too (verified against XTLS/Xray-core
+/// transport/internet/finalmask/fragment/conn.go).
 const String kBypassFragmentMask =
     '{"tcp":[{"type":"fragment","settings":{"packets":"tlshello",'
-    '"lengths":["5","94","1"],"delays":["0"],"maxSplit":"0"}},'
-    '{"type":"fragment","settings":{"packets":"1-1","lengths":["109","1"],'
-    '"delays":["1"],"maxSplit":"355"}}]}';
+    '"lengths":["0","104","1"],"delays":["0"],"maxSplit":"0"}},'
+    '{"type":"fragment","settings":{"packets":"1-1","lengths":["114","1"],'
+    '"delays":["1"],"maxSplit":"11"}}]}';
 
 /// Stable identity for selecting and latency-ranking a node.
 ///

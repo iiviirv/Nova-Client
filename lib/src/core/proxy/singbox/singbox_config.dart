@@ -1430,22 +1430,25 @@ class SingboxConfig {
     };
   }
 
-  /// The field-tested finalmask: ClientHello into TLS records of 5, 94, then 1
-  /// byte, merged into one write; that write split into TCP segments of 109 then
-  /// 1 byte, 1 ms apart, capped at 355.
+  /// The field-tested finalmask: ClientHello into TLS records of 0, 104, then 1
+  /// byte, merged into one write; that write split into TCP segments of 114 then
+  /// 1 byte, 1 ms apart, capped at 11.
+  ///
+  /// Must stay identical to [kBypassFragmentMask], which is the same recipe as
+  /// a JSON string; a test parses one and compares it to the other.
   static const List<Map<String, dynamic>> _defaultNovaFragment =
       <Map<String, dynamic>>[
     <String, dynamic>{
       'packets': 'tlshello',
-      'lengths': <String>['5', '94', '1'],
+      'lengths': <String>['0', '104', '1'],
       'delays': <String>['0'],
       'maxSplit': '0',
     },
     <String, dynamic>{
       'packets': '1-1',
-      'lengths': <String>['109', '1'],
+      'lengths': <String>['114', '1'],
       'delays': <String>['1'],
-      'maxSplit': '355',
+      'maxSplit': '11',
     },
   ];
 

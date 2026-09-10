@@ -81,6 +81,9 @@ void main() {
       final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
       expect(nf.length, 2);
       expect((nf[0] as Map)['packets'], 'tlshello');
+      // Deliberately still the superseded 5/94/1: this link carries its own fm
+      // and the point of the test is that it is sent verbatim, whatever the
+      // app's current default happens to be.
       expect((nf[0] as Map)['lengths'], <String>['5', '94', '1']);
       expect((nf[1] as Map)['packets'], '1-1');
       expect((nf[1] as Map)['lengths'], <String>['109', '1']);
@@ -114,7 +117,8 @@ void main() {
       // No fm on the standard link, so the field-tested default mask is used.
       final List<dynamic> nf = tls['nova_fragment'] as List<dynamic>;
       expect(nf.length, 2);
-      expect((nf[0] as Map)['lengths'], <String>['5', '94', '1']);
+      // Updated 2026-09-09 with the recipe change; see kBypassFragmentMask.
+      expect((nf[0] as Map)['lengths'], <String>['0', '104', '1']);
       expect((tls['cipher_suites'] as List<dynamic>).length, 11);
     });
 
