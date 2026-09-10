@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.23.4 (2026-09-10)
+
+- **Nova's TLS handshake now looks like PattNG's.** The fragment values were
+  never the problem. Both were checked side by side against a listener that logs
+  the raw bytes, and Nova was splitting the handshake exactly as the values say.
+  What differed was the handshake itself: Nova offered 11 encryption options
+  where Xray offers 13. That list is part of what the filtering fingerprints, so
+  Nova stood out from PattNG no matter how the fragmenting was set. The two
+  missing entries are back, and the two handshakes now carry an identical list
+  in an identical order.
+
+  One small difference is left, four bytes in the list of key-exchange groups,
+  and closing it needs a change to the network core rather than the app.
+
 ## v1.23.3 (2026-09-09)
 
 - **New fragment values, shipped as the default.** Iran's filtering changed on
