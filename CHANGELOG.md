@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.23.5 (2026-09-10)
+
+- Wording only. A log line named a third-party tool, so that name appeared in
+  the app's own log. It is gone. Nothing about how Nova connects has changed
+  from 1.23.4.
+
 ## v1.23.4 (2026-09-10)
 
 - **A new way past the September filtering change.** The fragment values were
