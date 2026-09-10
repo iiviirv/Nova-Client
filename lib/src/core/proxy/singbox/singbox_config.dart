@@ -1289,6 +1289,33 @@ class SingboxConfig {
     // segment sizes are not expressible here, which is the known gap against the
     // field-tested PattNG configuration. Reality keeps its own handshake.
     if (n.isHardenedTls && !n.isReality) {
+      // Which handshake the bypass sends. `unsafe` (the bypass default, and
+      // Xray's own spelling) means no forged hello at all: Go's TLS with the
+      // cipher list below. Anything else names a real browser profile, and the
+      // bypass editor offers all of them.
+      //
+      // That chooser used to do nothing. uTLS was switched off here
+      // unconditionally, so picking Firefox changed the stored setting, showed
+      // Firefox on screen, and still sent Go's ClientHello. Fragmentation is
+      // what defeats the SNI match and it is independent of the hello, so the
+      // two combine: the patched core wraps the uTLS path with nova_fragment
+      // exactly as it wraps the plain one.
+      //
+      // The raw value matters here. _singboxFingerprint maps anything it does
+      // not recognise onto chrome, `unsafe` included, so asking it first would
+      // erase the distinction this branch turns on.
+      //
+      // The node decides WHETHER a hello is forged; a per-ISP carrier override
+      // only decides WHICH browser. An explicit `unsafe` is a strategy (Go TLS
+      // plus a cipher list), not a browser preference, so a carrier profile must
+      // not quietly convert it into a forged handshake.
+      final String nodeFingerprint = (n.fingerprint ?? '').trim().toLowerCase();
+      final bool browserHello =
+          nodeFingerprint.isNotEmpty && nodeFingerprint != 'unsafe';
+      final String rawFingerprint =
+          (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
+              ? fingerprintOverride.trim().toLowerCase()
+              : nodeFingerprint;
       final List<String> suites =
           (n.cipherSuites.isEmpty ? kBypassCipherSuites : n.cipherSuites)
               .where(_coreCipherSuites.contains)
@@ -1298,7 +1325,10 @@ class SingboxConfig {
         'server_name': n.sni ?? n.server,
         if (n.allowInsecure) 'insecure': true,
         if (n.alpn.isNotEmpty) 'alpn': n.alpn,
-        if (suites.isNotEmpty) 'cipher_suites': suites,
+        // uTLS builds the ClientHello from the browser profile, cipher list
+        // included, so a separate list cannot apply. Emitting one anyway would
+        // suggest it does.
+        if (!browserHello && suites.isNotEmpty) 'cipher_suites': suites,
         // Exact, byte-for-byte fragmentation via the patched core's
         // `nova_fragment` (a port of Xray's finalmask). The stages come from the
         // node's own `fm` mask when the link carried one, else the field-tested
@@ -1308,7 +1338,12 @@ class SingboxConfig {
         // ACK-wait an unelevated Windows core cannot drive; the TLS-record
         // stage, which defeats the SNI match, stays.
         'nova_fragment': _novaFragmentStages(n, hardenPacketFragment),
-        'utls': <String, dynamic>{'enabled': false},
+        'utls': browserHello
+            ? <String, dynamic>{
+                'enabled': true,
+                'fingerprint': _singboxFingerprint(rawFingerprint),
+              }
+            : <String, dynamic>{'enabled': false},
       };
     }
     return <String, dynamic>{
@@ -1451,15 +1486,21 @@ class SingboxConfig {
     // value here is a deliberate choice and outranks whatever the link shipped
     // with. Null leaves the link's own value alone, which is what someone who
     // never opened the editor expects.
-    final ProxyNode chosen = n.copyWith(
-      fragmentMask: o.bypassFragmentMask,
+    //
+    // Order matters here, and getting it backwards cost a round: applying the
+    // overrides first gives the node a fragmentMask, which makes it count as
+    // already hardened, and hardened() then declines to stamp its own defaults,
+    // so a node that named no fingerprint never got the 'unsafe' the bypass
+    // means. Harden first so those defaults land, then let an explicit edit win.
+    final ProxyNode base = n.hardened(
       fingerprint: o.bypassFingerprint,
       cipherSuites: o.bypassCipherSuites,
+      fragmentMask: o.bypassFragmentMask,
     );
-    return chosen.hardened(
+    return base.copyWith(
+      fragmentMask: o.bypassFragmentMask,
       fingerprint: o.bypassFingerprint,
       cipherSuites: o.bypassCipherSuites,
-      fragmentMask: o.bypassFragmentMask,
     );
   }
 
