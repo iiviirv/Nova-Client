@@ -151,7 +151,7 @@ index 0000000..14457e6
 +// (e.g. Iran's MCI) that is not enough, while Xray's byte-exact split gets
 +// through. The Write logic below is a faithful port of Xray-core's
 +// transport/internet/finalmask/fragment/conn.go so a Nova config carrying the
-+// same `fm=` mask produces the same bytes on the wire as PattNG.
++// same `fm=` mask produces the same bytes on the wire as the reference client.
 +package novafrag
 +
 +import (

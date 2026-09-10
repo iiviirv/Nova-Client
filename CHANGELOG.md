@@ -2,14 +2,13 @@
 
 ## v1.23.4 (2026-09-10)
 
-- **Nova's TLS handshake now looks like PattNG's.** The fragment values were
-  never the problem. Both were checked side by side against a listener that logs
-  the raw bytes, and Nova was splitting the handshake exactly as the values say.
-  What differed was the handshake itself: Nova offered 11 encryption options
-  where Xray offers 13. That list is part of what the filtering fingerprints, so
-  Nova stood out from PattNG no matter how the fragmenting was set. The two
-  missing entries are back, and the two handshakes now carry an identical list
-  in an identical order.
+- **A new way past the September filtering change.** The fragment values were
+  never the problem: measured against a listener that logs the raw bytes, Nova
+  was splitting the handshake exactly as the values say. What gave it away was
+  the handshake itself. Nova offered 11 encryption options where the tools that
+  still get through offer 13, and that list is part of what the filtering
+  fingerprints, so Nova stood out however the fragmenting was set. The two
+  missing entries are back and the list now matches, in the same order.
 
   One small difference is left, four bytes in the list of key-exchange groups,
   and closing it needs a change to the network core rather than the app.
@@ -27,7 +26,7 @@
 ## v1.23.2 (2026-09-09)
 
 - **The fragment values you type are now the ones that get sent.** If your
-  config came from PattNG or a similar tool, its link carries its own fragment
+  config came from another bypass tool, its link may carry its own fragment
   settings, and those were quietly winning over anything you entered in the
   bypass editor. The screen showed your new values while the old ones went out
   on the wire, with nothing to tell you so. This is a second cause of the
@@ -674,7 +673,8 @@ thing on the Mac.
   at all.
 
   Two settings were involved, both copied straight from the server link into the
-  core: an Xray-only encryption flow, and a browser fingerprint of "unsafe" that
+  core: an encryption flow only one core supports, and a browser fingerprint of
+  "unsafe" that
   the SNI-block bypass sets. Nova now translates what it can and drops what it
   cannot, so a server Nova does not understand fails on its own instead of
   taking the list down with it.
@@ -863,7 +863,7 @@ team.
   seconds ("isn't responding"). Network callbacks no longer block the main
   thread while the core is starting or stopping.
 - Test all servers through the core now includes xhttp servers, run on the
-  Xray core for the test, so they get a real number instead of "not
+  core that supports them, so they get a real number instead of "not
   testable".
 
 ## v1.13.0-beta (2026-08-19)
@@ -1021,11 +1021,11 @@ Two fixes for restricted networks, by the Nova team.
 
 Exact-match the anti-censorship fragmentation, by the Nova team.
 
-- The SNI-block bypass now splits the connection handshake into the exact same
-  packet sizes as PattNG, byte for byte, instead of an approximation. On the
-  strictest networks the approximation was not enough; this should behave the
-  same as PattNG there. It is still off by default and only on the clean-IP
-  servers, and turns itself on when nothing else connects.
+- The SNI-block bypass now splits the connection handshake into exactly the
+  packet sizes that are known to get through, byte for byte, instead of an
+  approximation. On the strictest networks the approximation was not enough.
+  It is still off by default and only on the clean-IP servers, and turns itself
+  on when nothing else connects.
 
 ## v1.5.1-beta (2026-08-15)
 
@@ -1045,13 +1045,13 @@ For the networks that block the worker domain itself, by the Nova team.
 
 - SNI-block bypass, for networks that have started blocking the workers.dev
   and pages.dev domains themselves. Nova can now run the profile that testers
-  found gets through in PattNG: plain TLS with a fixed cipher list instead of a
+  found gets through: plain TLS with a fixed cipher list instead of a
   browser fingerprint, and a fragmented handshake, on the clean-IP servers only.
   It stays off by default. If every server in a subscription fails to carry
   traffic, Nova turns it on for that subscription by itself, reconnects, and
-  tells you; there is also a switch at the top of the server list. Links from
-  cf-optimizor (fp=unsafe, cs, fm) import as-is, and a hardened Nova server
-  re-shares in that same format so it pastes into PattNG.
+  tells you; there is also a switch at the top of the server list. Links that
+  carry these settings (fp=unsafe, cs, fm) import as-is, and a hardened Nova
+  server re-shares in that same format so it pastes back into other clients.
 
 ## v1.4.0-beta (2026-08-15)
 

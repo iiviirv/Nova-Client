@@ -217,7 +217,7 @@ class ProxyNode {
   /// mieru multiplexing level, e.g. 'MULTIPLEXING_LOW'.
   final String mieruMultiplexing;
 
-  // The SNI-block bypass profile, as PattNG-style links carry it (`cs=` and
+  // The SNI-block bypass profile, as hardened links carry it (`cs=` and
   // `fm=`, with `fp=unsafe`). See [isHardenedTls]. [cipherSuites] is the TLS 1.2
   // cipher list in preference order; [fragmentMask] is the raw Xray finalmask
   // JSON, kept verbatim so a link can be re-shared unchanged. The sing-box core
@@ -233,7 +233,7 @@ class ProxyNode {
   /// True when the link asked for the SNI-block bypass profile: `fp=unsafe` in
   /// Xray terms means "no browser fingerprint, Go's own TLS with my cipher
   /// list", and it travels with a fragment mask. Nova treats either signal as
-  /// the request, since a link from cf-optimizor carries all three.
+  /// the request, since a hardened link carries all three.
   bool get isHardenedTls =>
       fingerprint == 'unsafe' ||
       cipherSuites.isNotEmpty ||
@@ -335,7 +335,7 @@ class ProxyNode {
   }
 
   /// This node with the SNI-block bypass profile applied: Go's own TLS instead
-  /// of a browser fingerprint (`unsafe`), the cipher list PattNG uses, and a
+  /// of a browser fingerprint (`unsafe`), the bypass cipher list, and a
   /// fragment mask. Idempotent, and it never touches a node that already
   /// carries its own hardening from the link.
   ProxyNode hardened({
@@ -362,7 +362,8 @@ class ProxyNode {
 /// That measurement is why the two AES_128_CBC_SHA entries are here. Nova sent
 /// 11 suites where Xray sent 13, and the missing pair changes the cipher list a
 /// JA3/JA4 fingerprint is computed from, which makes Nova distinguishable from
-/// PattNG on the wire no matter how correct the fragmentation is. An older
+/// the reference client on the wire no matter how correct the fragmentation
+/// is. An older
 /// comment here blamed the AES_128_CBC_SHA256 pair; that was wrong, those are
 /// in Go's insecure set and neither core offers them.
 ///
@@ -387,13 +388,14 @@ const List<String> kBypassCipherSuites = <String>[
 ];
 
 /// The Xray finalmask the field-tested recipe uses, kept verbatim so a hardened
-/// node re-shares as a link PattNG accepts. Two stages: the ClientHello split
+/// node re-shares as a link other clients accept. Two stages: the ClientHello
+/// split
 /// into TLS records of 0, 104, then 1 byte each (one TCP write), then that first
 /// write split into TCP segments of 114 and then 1 byte with 1 ms between them,
 /// capped at 11 segments.
 ///
 /// Updated 2026-09-09, when Iran's DPI was changed and the previous 5/94/1 plus
-/// 109/1 recipe stopped getting through. These are the values PattNG's author
+/// 109/1 recipe stopped getting through. These are the values its author
 /// published the same day and connects with.
 ///
 /// Two things to know before editing these numbers. They are duplicated as

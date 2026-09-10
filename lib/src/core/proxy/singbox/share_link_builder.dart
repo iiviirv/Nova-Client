@@ -86,9 +86,9 @@ String _buildUserInfoLink(ProxyNode node, String scheme, String credential) {
   if (node.allowInsecure) {
     params.add('allowInsecure=1');
   }
-  // The SNI-block bypass profile travels as PattNG writes it (`cs=` and `fm=`,
+  // The SNI-block bypass profile travels in that same shape (`cs=` and `fm=`,
   // with fp=unsafe already emitted above), so a hardened Nova node pastes
-  // straight into PattNG or v2rayNG with the same profile.
+  // straight into other clients with the same profile.
   if (node.cipherSuites.isNotEmpty) {
     params.add('cs=${Uri.encodeComponent(node.cipherSuites.join(':'))}');
   }

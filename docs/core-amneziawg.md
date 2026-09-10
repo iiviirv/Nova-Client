@@ -306,8 +306,8 @@ of Xray-core's `finalmask` fragment, and a new outbound TLS option
 maxSplit). This exists because sing-box's own `record_fragment` splits the
 ClientHello at random points near the SNI and cannot take explicit byte lengths;
 on strict DPI (Iran MCI) that was not enough, while Xray's byte-exact split (as
-PattNG sends it) got through. With this, a Nova config carrying the same `fm=`
-mask produces the same bytes on the wire as PattNG.
+the working recipe sends it) got through. With this, a Nova config carrying the same `fm=`
+mask produces the same bytes on the wire as the reference client.
 
 - The patch touches 4 files (novafrag.go new, plus option/tls.go and the std /
   utls TLS clients) and is verified by a unit test that the ClientHello splits

@@ -7,7 +7,7 @@ import 'package:nova_client/src/core/proxy/singbox/share_link_builder.dart';
 import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
 
 /// The exact pair a tester reported from a restricted network: the standard
-/// Nova link that did not connect, and the cf-optimizor (PattNG) rewrite of it
+/// Nova link that did not connect, and the hardened rewrite of it
 /// that did. Only the credential differs from what they sent.
 const String kNovaLink =
     'vless://00000000-0000-4000-8000-000000000000@172.67.70.215:2053'
@@ -37,7 +37,7 @@ Map<String, dynamic> _tlsOf(Map<String, dynamic> cfg) {
 }
 
 void main() {
-  group('reading the PattNG profile from a link', () {
+  group('reading the bypass profile from a link', () {
     test('the standard Nova link is a clean-IP fronted node, not hardened', () {
       final ProxyNode n = parseShareLink(kNovaLink)!;
       expect(n.isCleanIpFronted, isTrue,
@@ -46,7 +46,7 @@ void main() {
       expect(n.fingerprint, 'chrome');
     });
 
-    test('the cf-optimizor link carries all three signals', () {
+    test('the hardened link carries all three signals', () {
       final ProxyNode n = parseShareLink(kPattLink)!;
       expect(n.isHardenedTls, isTrue);
       expect(n.fingerprint, 'unsafe');
@@ -225,7 +225,7 @@ void main() {
   });
 
   group('sharing', () {
-    test('a hardened node re-shares in the PattNG shape and parses back equal',
+    test('a hardened node re-shares in that shape and parses back equal',
         () {
       final ProxyNode hardened = parseShareLink(kNovaLink)!.hardened();
       final String link = buildShareLink(hardened);

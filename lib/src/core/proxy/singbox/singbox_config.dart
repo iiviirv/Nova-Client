@@ -168,9 +168,10 @@ class SingboxRouteOptions {
   ///
   /// This exists for the day the censor blocks the SNI of `workers.dev` and
   /// `pages.dev` outright, which field reports say has started. The profile
-  /// (Go's own TLS with the PattNG cipher list, TLS-record and TCP-segment
+  /// (Go's own TLS with the bypass cipher list, TLS-record and TCP-segment
   /// fragmentation of the ClientHello) is what got through on those networks in
-  /// PattNG. It is not the default because it costs speed and because a browser
+  /// the reference client. It is not the default because it costs speed and
+  /// because a browser
   /// fingerprint is the better disguise where the SNI itself is not the trigger,
   /// so the controller turns it on for a subscription only after every node in
   /// it failed to carry traffic, and the user can force it either way.
@@ -1287,7 +1288,7 @@ class SingboxConfig {
     // gated on [hardenPacketFragment] because its ACK-wait breaks on an
     // unelevated Windows core. The exact 5/94/1-byte record and 109/1-byte
     // segment sizes are not expressible here, which is the known gap against the
-    // field-tested PattNG configuration. Reality keeps its own handshake.
+    // field-tested configuration. Reality keeps its own handshake.
     if (n.isHardenedTls && !n.isReality) {
       // Which handshake the bypass sends. `unsafe` (the bypass default, and
       // Xray's own spelling) means no forged hello at all: Go's TLS with the
@@ -1332,7 +1333,8 @@ class SingboxConfig {
         // Exact, byte-for-byte fragmentation via the patched core's
         // `nova_fragment` (a port of Xray's finalmask). The stages come from the
         // node's own `fm` mask when the link carried one, else the field-tested
-        // default. This is what matches PattNG on strict DPI, where sing-box's
+        // default. This is what matches the working recipe on strict DPI,
+        // where sing-box's
         // own random-point `record_fragment` was not enough. On Windows the
         // TCP-segment stage is dropped, since only that stage needs the
         // ACK-wait an unelevated Windows core cannot drive; the TLS-record
@@ -1379,7 +1381,7 @@ class SingboxConfig {
   /// link pass through unchanged.
   /// The `nova_fragment` stages for a hardened node.
   ///
-  /// If the node carries an `fm` mask (a PattNG / cf-optimizor link), its stages
+  /// If the node carries an `fm` mask (a other bypass clients link), its stages
   /// are used verbatim, so the bytes match what that tool produces. Otherwise
   /// the field-tested default is used. When [packetStage] is false (Windows) the
   /// TCP-segment stage (packets other than the tlshello record split) is
@@ -1417,7 +1419,7 @@ class SingboxConfig {
   }
 
   /// One Xray finalmask fragment stage, normalised to string fields (lengths,
-  /// delays and maxSplit are strings in the links PattNG writes).
+  /// delays and maxSplit are strings in the links that carry it).
   static Map<String, dynamic> _fmStage(Map<String, dynamic> settings) {
     List<String> strs(Object? v) => v is List
         ? v.map((Object? e) => '$e').toList()
@@ -1473,7 +1475,7 @@ class SingboxConfig {
     // the thing that makes it work; and the UDP-native protocols (QUIC) are not
     // carried over TCP at all, so record and segment splitting do not apply.
     if (!n.tls || n.isReality || n.protocol.isUdpNative) return n;
-    // A link can ship its own values: PattNG and cf-optimizor write `fm=` into
+    // A link can ship its own values: other bypass clients write `fm=` into
     // the share link, and such a node already counts as hardened. hardened()
     // returns an already-hardened node untouched, so an explicit edit in the
     // bypass editor was silently discarded and the stale mask baked into the
@@ -1482,7 +1484,8 @@ class SingboxConfig {
     // That is the other half of "changing the finalmask does nothing", and the
     // half the domain-addressing fix does not reach: here the node gets a mask,
     // just never the one the user typed. It is the likelier half for anyone
-    // whose configs came from PattNG, because those links always carry an fm.
+    // whose configs came from another bypass client, because those links
+    // always carry an fm.
     //
     // These profile fields are null unless the user changed them away from the
     // built-in default (bypass_editor_screen stores null when they match), so a
@@ -1510,7 +1513,7 @@ class SingboxConfig {
   /// The cipher suite names the sing-box core accepts, measured against the
   /// 1.13.13 binary: it looks names up in Go's secure list only, so anything in
   /// Go's insecure list ("unknown cipher_suite: TLS_ECDHE_ECDSA_WITH_AES_128_
-  /// CBC_SHA256", which the PattNG recipe includes) is dropped here rather than
+  /// CBC_SHA256", which the recipe includes) is dropped here rather than
   /// handed to a core that refuses the whole outbound over it.
   static const Set<String> _coreCipherSuites = <String>{
     'TLS_AES_128_GCM_SHA256',

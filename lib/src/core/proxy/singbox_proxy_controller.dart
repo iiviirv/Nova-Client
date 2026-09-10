@@ -1422,7 +1422,7 @@ class SingboxProxyController extends ProxyController {
     await persistProfile?.call(hardened);
     NovaLog.instance.write(
       'Turning on the SNI-block bypass for "${profile.name}" ($because): '
-      'Go TLS with the PattNG cipher list, TLS-record and TCP fragmentation, '
+      'Go TLS with the bypass cipher list, TLS-record and TCP fragmentation, '
       'on its clean-IP servers.',
       level: NovaLogLevel.warn,
     );

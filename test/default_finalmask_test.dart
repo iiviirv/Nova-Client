@@ -8,7 +8,7 @@ import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
 /// The shipped default finalmask.
 ///
 /// Iran's DPI was changed on 2026-09-09 and the previous 5/94/1 plus 109/1
-/// recipe stopped getting through. These are the values PattNG's author
+/// recipe stopped getting through. These are the values its author
 /// published the same day. A tester in Iran confirmed they connect there and
 /// that the old ones do not, so what ships as the default is the whole point:
 /// most people never open the bypass editor.

@@ -3,9 +3,9 @@
 Answers one question: does Nova put the same bytes on the wire as Xray does?
 
 Iran's DPI now fingerprints the ClientHello, so "we send the same finalmask as
-PattNG" is not enough. On 2026-09-10 this rig found that Nova's ClientHello was
+the reference client" is not enough. On 2026-09-10 this rig found that Nova's ClientHello was
 short two cipher suites, which changes the JA3/JA4 fingerprint and makes Nova
-distinguishable from PattNG no matter how correct the fragmentation is.
+distinguishable from another bypass client no matter how correct the fragmentation is.
 
 ## Run it
 

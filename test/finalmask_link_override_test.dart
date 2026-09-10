@@ -8,13 +8,14 @@ import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
 /// The mask the user typed is the mask that gets sent.
 ///
 /// Iran's DPI was updated on 2026-09-09 and the previously working finalmask
-/// values stopped getting through. PattNG shipped new ones the same day, and
+/// values stopped getting through. new ones were published the same day, and
 /// its author's advice was simply "change the finalMask values". In Nova that
 /// did nothing, and there were two separate reasons.
 ///
 /// The first was that a domain-addressed node was never hardened at all (fixed
 /// in v1.23.1). This is the second, and the likelier one for anyone whose
-/// configs came from PattNG: those share links carry their own `fm=`, which
+/// configs came from another bypass client: those share links carry their own
+/// `fm=`, which
 /// made the node count as already hardened, so hardened() returned it untouched
 /// and the stale mask from the link was sent instead of the typed one.
 ///

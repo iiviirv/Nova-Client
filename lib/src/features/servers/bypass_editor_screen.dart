@@ -17,7 +17,7 @@ import '../../widgets/nova_scope.dart';
 /// knobs the anti-DPI method actually turns, prefilled with what this profile
 /// uses today (the field-tested default unless the user has already edited it):
 ///
-///  - finalmask: the fragmentation, as the same JSON PattNG uses.
+///  - finalmask: the fragmentation, as the same JSON the other clients use.
 ///  - fingerprint: the TLS fingerprint, including `unsafe` (Go TLS, no uTLS).
 ///  - cipher suites: the TLS cipher list, one per line.
 ///
