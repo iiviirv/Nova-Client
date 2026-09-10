@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.23.2 (2026-09-09)
+
+- **The fragment values you type are now the ones that get sent.** If your
+  config came from PattNG or a similar tool, its link carries its own fragment
+  settings, and those were quietly winning over anything you entered in the
+  bypass editor. The screen showed your new values while the old ones went out
+  on the wire, with nothing to tell you so. This is a second cause of the
+  problem v1.23.1 fixed, and the more common one: v1.23.1 covered servers that
+  were getting no fragmentation at all, and this covers servers that were
+  getting the wrong fragmentation.
+
+  What you type now wins. If you have never opened the bypass editor, nothing
+  changes for you and your config's own settings are left alone.
+
+  This matters this week because Iran's filtering was updated on 9 September
+  and the previously working values stopped getting through. New values are
+  circulating; on this version, entering them works.
+
 ## v1.23.1 (2026-09-09)
 
 - **The SNI-block bypass now reaches servers addressed by name.** If your server
