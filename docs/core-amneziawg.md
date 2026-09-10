@@ -245,10 +245,18 @@ Three independent gates, because the failure mode is silence:
    up and carries nothing. `test/core_features_test.dart` pins all of it.
 
 A host that has no probe (iOS, macOS, Windows, Linux) answers nothing, which is
-recorded as unknown and never blocks a connection. That is not a claim those
-cores support AmneziaWG: **the Windows core is still the stock
-`assets/bin/sing-box-windows-amd64.exe` and the Apple cores are still stock**,
-so AmneziaWG on those platforms remains unbuilt, not merely unmeasured.
+recorded as unknown and never blocks a connection.
+
+That used to come with a warning that those cores did not support AmneziaWG at
+all. **That is no longer true and the warning was wrong to leave standing**: the
+shipped `assets/bin/sing-box-windows-amd64.exe` links amneziawg-go v3 (626
+matching symbols, checked 2026-09-10), as do the desktop cores generally since
+`tool/core/build-desktop.sh` started building them from the same pinned tag and
+patch as the mobile core.
+
+So on Windows, "no probe" means unmeasured, not unbuilt. When AmneziaWG fails on
+one Windows machine while the same build works on another, the core is not the
+place to look.
 
 ## The desktop cores
 
