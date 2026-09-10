@@ -18,6 +18,13 @@
   and the previously working values stopped getting through. New values are
   circulating; on this version, entering them works.
 
+- **The fingerprint chooser in the bypass editor now does something.** It lists
+  every browser the core can imitate, but the setting was ignored: picking
+  Firefox saved Firefox, showed Firefox, and still sent the plain handshake.
+  Choosing a browser now actually imitates it, and you keep the fragmentation
+  either way, since the two are independent. The default is unchanged, so this
+  only affects you if you go and pick one.
+
 ## v1.23.1 (2026-09-09)
 
 - **The SNI-block bypass now reaches servers addressed by name.** If your server
