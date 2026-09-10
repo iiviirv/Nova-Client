@@ -18,7 +18,7 @@
 [![Stars](https://img.shields.io/github/stars/iiviirv/Nova-Client?style=for-the-badge&color=0ea5e9&label=%D8%B3%D8%AA%D8%A7%D8%B1%D9%87)](https://github.com/iiviirv/Nova-Client/stargazers)
 
 [![Download](https://img.shields.io/badge/⬇%20دانلود%20آخرین%20نسخه-22c55e?style=for-the-badge)](https://github.com/iiviirv/Nova-Client/releases/latest)
-[![iOS TestFlight](https://img.shields.io/badge/iOS%20TestFlight-0d96f6?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/bxfK3MyF)
+[![iOS TestFlight](https://img.shields.io/badge/iOS%20TestFlight-0d96f6?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/DuvVZd7K)
 
 </div>
 
@@ -98,7 +98,7 @@
 | پلتفرم | روش دریافت |
 | --- | --- |
 | **اندروید** | فایل ⁦arm64⁩ ⁦APK⁩ را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) بگیرید. حالا یک نسخه‌ی امضاشده‌ی درست است و یک بسته‌ی ⁦arm64⁩ تقریباً همه‌ی گوشی‌های چند سال اخیر را پوشش می‌دهد. یک فهرست ⁦IzzyOnDroid / F-Droid⁩ هم در راه است. |
-| **آیفون / آیپد** | از طریق **⁦TestFlight⁩**: [لینک عضویت](https://testflight.apple.com/join/bxfK3MyF). در ایران، اپ ⁦TestFlight⁩ را نصب کرده و دعوت را با ⁦Apple ID⁩ غیرایرانی بپذیرید، چون اپل سرویس‌هایش را داخل ایران مسدود می‌کند. |
+| **آیفون / آیپد** | از طریق **⁦TestFlight⁩**: [لینک عضویت](https://testflight.apple.com/join/DuvVZd7K). در ایران، اپ ⁦TestFlight⁩ را نصب کرده و دعوت را با ⁦Apple ID⁩ غیرایرانی بپذیرید، چون اپل سرویس‌هایش را داخل ایران مسدود می‌کند. |
 | **مک** (⁦Apple Silicon⁩) | فایل زیپ مک را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) دانلود و باز کنید و ⁦nova_client.app⁩ را اجرا کنید (بار اول راست‌کلیک و سپس ⁦Open⁩). |
 | **ویندوز** (۶۴ بیتی) | فایل ⁦Nova-Windows.zip⁩ را از [آخرین انتشار](https://github.com/iiviirv/Nova-Client/releases/latest) دانلود کنید، از حالت فشرده خارج کرده و ⁦nova_client.exe⁩ را اجرا کنید. بدون نیاز به دسترسی مدیر. |
 

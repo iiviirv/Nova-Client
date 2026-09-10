@@ -15,7 +15,7 @@ right-to-left interface.
 [![Stars](https://img.shields.io/github/stars/iiviirv/Nova-Client?style=for-the-badge&color=0ea5e9)](https://github.com/iiviirv/Nova-Client/stargazers)
 
 [![Download latest](https://img.shields.io/badge/⬇%20Download%20latest-22c55e?style=for-the-badge)](https://github.com/iiviirv/Nova-Client/releases/latest)
-[![iOS TestFlight](https://img.shields.io/badge/iOS%20TestFlight-0d96f6?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/bxfK3MyF)
+[![iOS TestFlight](https://img.shields.io/badge/iOS%20TestFlight-0d96f6?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/DuvVZd7K)
 
 </div>
 
@@ -95,7 +95,7 @@ Nova is designed for difficult networks. It bundles the anti-censorship tools pe
 | Platform | How to get it |
 | --- | --- |
 | **Android** | Download the single `arm64` APK from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest). It is a properly signed build now, and one `arm64` package covers essentially every phone from the last several years. An IzzyOnDroid / F-Droid listing is on the way. |
-| **iPhone / iPad** | Via **TestFlight**: [join link](https://testflight.apple.com/join/bxfK3MyF). In Iran, install the TestFlight app and accept the invite with a non-Iranian Apple ID, since Apple blocks its services inside Iran. |
+| **iPhone / iPad** | Via **TestFlight**: [join link](https://testflight.apple.com/join/DuvVZd7K). In Iran, install the TestFlight app and accept the invite with a non-Iranian Apple ID, since Apple blocks its services inside Iran. |
 | **macOS** (Apple Silicon) | Download the macOS zip from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest), unzip, and open `nova_client.app` (right-click, then Open, the first time). |
 | **Windows** (64-bit) | Download `Nova-Windows.zip` from the [latest release](https://github.com/iiviirv/Nova-Client/releases/latest), unzip anywhere, and run `nova_client.exe`. No admin needed. |
 
