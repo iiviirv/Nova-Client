@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.23.3 (2026-09-09)
+
+- **New fragment values, shipped as the default.** Iran's filtering changed on
+  9 September and the values Nova had been using stopped getting through. The
+  new ones are now what the app uses out of the box, so you do not have to enter
+  anything by hand. If you already pasted them in yourself, that still wins.
+
+  A config that carries its own fragment settings keeps using them, exactly as
+  before.
+
 ## v1.23.2 (2026-09-09)
 
 - **The fragment values you type are now the ones that get sent.** If your
