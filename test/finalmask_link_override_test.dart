@@ -33,7 +33,7 @@ void main() {
   // built-in default is 94. All three differ on purpose: when the link's mask
   // matched the default, "the default silently replaced it" looked identical to
   // "the link kept its own" and the regression was invisible.
-  ProxyNode pattNgLink({String? fm}) => parseShareLink(
+  ProxyNode hardenedLink({String? fm}) => parseShareLink(
         'vless://00000000-0000-4000-8000-000000000000@node.example.com:443'
         '?security=tls&type=ws&sni=node.example.com'
         '${fm == null ? '' : '&fm=${Uri.encodeComponent(fm)}'}#P',
@@ -50,7 +50,7 @@ void main() {
       ));
 
   test('a typed mask replaces the one baked into the link', () {
-    final String s = cfg(pattNgLink(fm: linkFm), typed: typedFm);
+    final String s = cfg(hardenedLink(fm: linkFm), typed: typedFm);
     expect(s.contains('"104"'), isTrue,
         reason: 'the user typed this one into the bypass editor');
     expect(s.contains('"77"'), isFalse,
@@ -60,7 +60,7 @@ void main() {
   test('with nothing typed, the link keeps its own mask', () {
     // Someone who never opened the editor should not have a config provider's
     // tuned values quietly replaced by Nova's generic default.
-    final String s = cfg(pattNgLink(fm: linkFm));
+    final String s = cfg(hardenedLink(fm: linkFm));
     expect(s.contains('"77"'), isTrue,
         reason: "the config provider's own tuned value must survive");
     expect(s.contains('"104"'), isFalse);
@@ -69,7 +69,7 @@ void main() {
   });
 
   test('a link with no mask still gets the typed one', () {
-    final String s = cfg(pattNgLink(), typed: typedFm);
+    final String s = cfg(hardenedLink(), typed: typedFm);
     expect(s.contains('"104"'), isTrue);
   });
 
@@ -77,7 +77,7 @@ void main() {
     // Same early return, same silent discard: the cipher list is handed to
     // hardened() on the call the link short-circuited.
     final String s = jsonEncode(SingboxConfig.buildMap(
-      pattNgLink(fm: linkFm),
+      hardenedLink(fm: linkFm),
       options: const SingboxRouteOptions(
         hardenTls: true,
         bypassCipherSuites: <String>['TLS_AES_128_GCM_SHA256'],
@@ -93,7 +93,7 @@ void main() {
     // whose value cannot reach this branch: `fp=unsafe` means Go's own TLS with
     // the given cipher list, so uTLS is off whenever the bypass is on. If that
     // ever changes, it should be a decision, not a surprise.
-    final String s = cfg(pattNgLink(fm: linkFm), typed: typedFm);
+    final String s = cfg(hardenedLink(fm: linkFm), typed: typedFm);
     expect(s.contains('"utls":{"enabled":false}'), isTrue);
   });
 }
