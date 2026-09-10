@@ -119,7 +119,9 @@ void main() {
       expect(nf.length, 2);
       // Updated 2026-09-09 with the recipe change; see kBypassFragmentMask.
       expect((nf[0] as Map)['lengths'], <String>['0', '104', '1']);
-      expect((tls['cipher_suites'] as List<dynamic>).length, 11);
+      // 13 since 2026-09-10: measured against Xray's own ClientHello, Nova
+      // was short the two AES_128_CBC_SHA suites (see kBypassCipherSuites).
+      expect((tls['cipher_suites'] as List<dynamic>).length, 13);
     });
 
     test('Windows keeps only the TLS-record stage of the mask', () {

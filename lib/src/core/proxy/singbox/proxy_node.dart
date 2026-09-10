@@ -352,12 +352,24 @@ class ProxyNode {
   }
 }
 
-/// The cipher list the field-tested PattNG recipe sends, in its order. TLS 1.3
-/// suites first (Go fixes their order regardless), then ECDHE GCM and ChaCha,
-/// then the two CBC-SHA suites Go still ships as secure. The recipe also lists
-/// TLS_ECDHE_ECDSA/RSA_WITH_AES_128_CBC_SHA256; the sing-box core refuses those
-/// two ("unknown cipher_suite", they are in Go's insecure set), so they are not
-/// here. That is the one place this ClientHello differs from PattNG's.
+/// The cipher list the ClientHello offers under the bypass.
+///
+/// Go decides the on-wire order regardless of how this list is written, so what
+/// matters is the SET. It is now the set Xray sends with fp=unsafe, measured
+/// rather than assumed: both cores were pointed at a byte-logging listener on
+/// 2026-09-10 and their ClientHellos compared field by field.
+///
+/// That measurement is why the two AES_128_CBC_SHA entries are here. Nova sent
+/// 11 suites where Xray sent 13, and the missing pair changes the cipher list a
+/// JA3/JA4 fingerprint is computed from, which makes Nova distinguishable from
+/// PattNG on the wire no matter how correct the fragmentation is. An older
+/// comment here blamed the AES_128_CBC_SHA256 pair; that was wrong, those are
+/// in Go's insecure set and neither core offers them.
+///
+/// One measured difference remains and cannot be closed from here: Xray offers
+/// seven supported_groups (including the 0x11eb and 0x11ed ML-KEM hybrids) and
+/// this core offers five. That is Go's CurvePreferences, which sing-box does not
+/// expose, so closing it needs a core patch.
 const List<String> kBypassCipherSuites = <String>[
   'TLS_AES_256_GCM_SHA384',
   'TLS_CHACHA20_POLY1305_SHA256',
@@ -368,6 +380,8 @@ const List<String> kBypassCipherSuites = <String>[
   'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256',
   'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256',
   'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256',
+  'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA',
+  'TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA',
   'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA',
   'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA',
 ];
