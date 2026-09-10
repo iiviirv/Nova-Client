@@ -1435,7 +1435,28 @@ class SingboxConfig {
     // the thing that makes it work; and the UDP-native protocols (QUIC) are not
     // carried over TCP at all, so record and segment splitting do not apply.
     if (!n.tls || n.isReality || n.protocol.isUdpNative) return n;
-    return n.hardened(
+    // A link can ship its own values: PattNG and cf-optimizor write `fm=` into
+    // the share link, and such a node already counts as hardened. hardened()
+    // returns an already-hardened node untouched, so an explicit edit in the
+    // bypass editor was silently discarded and the stale mask baked into the
+    // link kept being sent.
+    //
+    // That is the other half of "changing the finalmask does nothing", and the
+    // half the domain-addressing fix does not reach: here the node gets a mask,
+    // just never the one the user typed. It is the likelier half for anyone
+    // whose configs came from PattNG, because those links always carry an fm.
+    //
+    // These profile fields are null unless the user changed them away from the
+    // built-in default (bypass_editor_screen stores null when they match), so a
+    // value here is a deliberate choice and outranks whatever the link shipped
+    // with. Null leaves the link's own value alone, which is what someone who
+    // never opened the editor expects.
+    final ProxyNode chosen = n.copyWith(
+      fragmentMask: o.bypassFragmentMask,
+      fingerprint: o.bypassFingerprint,
+      cipherSuites: o.bypassCipherSuites,
+    );
+    return chosen.hardened(
       fingerprint: o.bypassFingerprint,
       cipherSuites: o.bypassCipherSuites,
       fragmentMask: o.bypassFragmentMask,
