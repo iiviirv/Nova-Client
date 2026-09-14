@@ -1,0 +1,116 @@
+# Builds the Aether WARP core as a native library for Android.
+#
+# Aether is a second core, like Xray: it opens a MASQUE or WireGuard tunnel and
+# serves it as a local SOCKS5 proxy that sing-box forwards into. Nova links its
+# C API rather than spawning it, so what this produces is libaether.so per ABI.
+#
+# Built from source at a pinned commit, not downloaded from their releases.
+# Nova ships circumvention software into Iran and already holds sing-box to
+# build-from-source with a pinned patch hash; a prebuilt binary nobody here
+# compiled is the wrong exception to make. The pin also means an upstream force
+# push cannot silently change what we ship.
+#
+# Deliberately manual. A full Rust + NDK build is slow and the core changes on
+# its own schedule, so it runs when someone asks for it and the artifacts are
+# committed, the same way libbox.aar is.
+name: Build Aether core
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Aether commit or tag to build (defaults to the pinned one)"
+        required: false
+        default: ""
+
+env:
+  # v1.9.0, 2026-09-04. Bump deliberately: read what changed in the FFI first,
+  # because the Dart binding names these symbols and a rename fails at runtime
+  # with nothing more useful than "symbol not found".
+  AETHER_COMMIT: 311b573352bb67e494895ff67d20b002d075116a
+  NDK_VERSION: r26d
+
+jobs:
+  build:
+    name: ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+          - abi: armeabi-v7a
+            target: armv7-linux-androideabi
+          - abi: x86_64
+            target: x86_64-linux-android
+    steps:
+      - name: Check out Aether at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: CluvexStudio/Aether
+          ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
+          persist-credentials: false
+
+      - name: Say what was actually checked out
+        run: |
+          set -euxo pipefail
+          git log -1 --format='%H %ci %s'
+          # quiche is vendored in the tree rather than a submodule, and the
+          # crate depends on it by relative path. A checkout without it builds
+          # nothing, so fail here rather than 20 minutes into cargo.
+          test -d quiche || { echo "quiche is missing from the checkout"; exit 1; }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Install Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build the shared library
+        working-directory: aether
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+        # No --features tor: the pluggable transports pull in a Go toolchain and
+        # a large dependency tree for bridges Nova does not offer.
+        run: cargo ndk -t ${{ matrix.abi }} --platform 24 build --release
+
+      - name: Prove the library exports what the Dart binding calls
+        working-directory: aether
+        run: |
+          set -euo pipefail
+          SO="target/${{ matrix.target }}/release/libaether.so"
+          test -f "$SO" || { echo "no libaether.so was produced"; exit 1; }
+          ls -l "$SO"
+          # The binding resolves these by name at runtime. A missing one is a
+          # crash on first use with no useful message, so it is checked here
+          # where the failure is cheap and obvious.
+          NM="$(find "$ANDROID_NDK_HOME" -name 'llvm-nm' | head -1)"
+          for sym in aether_version aether_identity_open aether_scan_start \
+                     aether_verify_start aether_tunnel_start aether_job_poll \
+                     aether_job_cancel aether_string_free; do
+            "$NM" --defined-only "$SO" | grep -q " T $sym\$" \
+              || { echo "missing export: $sym"; exit 1; }
+          done
+          echo "all expected symbols are exported"
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libaether-${{ matrix.abi }}
+          path: aether/target/${{ matrix.target }}/release/libaether.so
+          if-no-files-found: error
