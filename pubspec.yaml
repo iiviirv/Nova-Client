@@ -41,6 +41,10 @@ dependencies:
   # Lets AmneziaWG users import a .conf file directly in the Add dialog.
   file_selector: ^1.0.3
 
+  # C-string helpers for the Aether core's FFI (Utf8 conversion, calloc). The
+  # core is a native library Nova links rather than a process it spawns.
+  ffi: ^2.1.0
+
   # Handles nova:// deep links (e.g. the panel's install-config import link).
   app_links: ^6.3.2
 
