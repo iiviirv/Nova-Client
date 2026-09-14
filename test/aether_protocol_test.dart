@@ -12,6 +12,7 @@ import 'package:nova_client/src/core/proxy/aether/aether_protocol.dart';
 /// successful poll, and code that reads only the outer flag calls it a success
 /// and then has no endpoint to show for it.
 void main() {
+  _endpoints();
   _identityField();
   group('replies', () {
     test('a success carries its fields', () {
@@ -186,5 +187,55 @@ void _identityField() {
   test('the handle key is the one the core returns', () {
     // From a real first run: {identity: 2, summary: {...}, path: ..., ok: true}
     expect(kAetherIdentityField, 'identity');
+  });
+}
+
+/// Turning what the core returns into what it accepts.
+void _endpoints() {
+  group('gateway addresses', () {
+    test('a scan result object becomes ip:port', () {
+      // The real shape, from a device run:
+      // {ip: 162.159.198.1, port: 443, rtt_ms: 617}
+      expect(
+          AetherEndpoint.parse(<String, dynamic>{
+            'ip': '162.159.198.1',
+            'port': 443,
+            'rtt_ms': 617,
+          }),
+          '162.159.198.1:443');
+    });
+
+    test('the stringified map is never produced', () {
+      // What the bug looked like. The core refused this as "not an
+      // address:port", and the same value went into the excluded list where it
+      // matched nothing, so the retry kept finding the address it had just
+      // rejected.
+      final String? out = AetherEndpoint.parse(<String, dynamic>{
+        'ip': '162.159.198.1',
+        'port': 443,
+        'rtt_ms': 617,
+      });
+      expect(out!.contains('{'), isFalse);
+      expect(out.contains('rtt'), isFalse);
+    });
+
+    test('a string passes through unchanged', () {
+      expect(AetherEndpoint.parse('1.2.3.4:443'), '1.2.3.4:443');
+    });
+
+    test('an IPv6 address is bracketed so the port is readable', () {
+      expect(AetherEndpoint.parse(<String, dynamic>{
+        'ip': '2606:4700:d0::a29f:c001',
+        'port': 443,
+      }), '[2606:4700:d0::a29f:c001]:443');
+    });
+
+    test('anything that is not an endpoint is null, not a broken string', () {
+      expect(AetherEndpoint.parse(null), isNull);
+      expect(AetherEndpoint.parse(''), isNull);
+      expect(AetherEndpoint.parse(<String, dynamic>{'rtt_ms': 5}), isNull);
+      expect(AetherEndpoint.parse(<String, dynamic>{'ip': '1.2.3.4'}), isNull);
+      expect(AetherEndpoint.parse(42), isNull);
+    });
   });
 }

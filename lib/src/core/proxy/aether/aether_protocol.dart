@@ -165,3 +165,41 @@ class AetherPayloads {
     return o.transport == AetherTransport.h2 ? 'h2' : 'h3';
   }
 }
+
+/// A gateway address, in the one shape everything else expects.
+///
+/// The core does not hand endpoints back as strings. A scan returns
+/// `{ip: 162.159.198.1, port: 443, rtt_ms: 617}`, while the tunnel payload's
+/// `peer` and the scan payload's `excluded` both want "ip:port". Calling
+/// toString on the map produces "{ip: ..., port: ..., rtt_ms: ...}", which the
+/// core refuses with "is not an address:port".
+///
+/// That refusal was the visible half. The quiet half was worse: the same
+/// stringified maps went into `excluded`, where they matched nothing, so the
+/// retry kept rediscovering the address it had just rejected. The automatic
+/// retry looked like it was working and was not.
+class AetherEndpoint {
+  /// Normalises whatever the core returned into "ip:port", or null when it is
+  /// not an endpoint at all.
+  static String? parse(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final String v = raw.trim();
+      return v.isEmpty ? null : v;
+    }
+    if (raw is Map) {
+      final Object? ip = raw['ip'] ?? raw['address'] ?? raw['host'];
+      final Object? port = raw['port'];
+      if (ip == null || port == null) return null;
+      final String host = ip.toString().trim();
+      if (host.isEmpty) return null;
+      // An IPv6 literal needs brackets before a port can be appended, or the
+      // colons of the address run into the colon of the port.
+      final String shown = host.contains(':') && !host.startsWith('[')
+          ? '[$host]'
+          : host;
+      return '$shown:$port';
+    }
+    return null;
+  }
+}

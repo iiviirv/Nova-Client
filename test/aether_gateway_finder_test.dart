@@ -12,6 +12,18 @@ import 'package:nova_client/src/core/proxy/aether/aether_protocol.dart';
 void main() {
   AetherJobStatus done(Map<String, dynamic> r) =>
       AetherJobStatus(AetherJobState.done, result: r);
+
+  /// A scan result in the shape the core actually returns.
+  ///
+  /// This used to be written as a plain string, and that is how a real bug got
+  /// through every test here: the core returns
+  /// {ip: ..., port: ..., rtt_ms: ...}, the finder called toString on it, and
+  /// the result went to the core as a peer it refused and into the excluded
+  /// list where it matched nothing. The fakes now use the real shape, so a test
+  /// that passes here means something on a device.
+  Map<String, dynamic> scanResult(String ip, int port) => <String, dynamic>{
+        'endpoint': <String, dynamic>{'ip': ip, 'port': port, 'rtt_ms': 431},
+      };
   AetherJobStatus failed(String e) =>
       AetherJobStatus(AetherJobState.failed, error: e);
 
@@ -20,7 +32,7 @@ void main() {
     final AetherGatewayFinder f = AetherGatewayFinder(
       scan: (_, __) async {
         scans++;
-        return done(<String, dynamic>{'endpoint': '162.159.198.1:443'});
+        return done(scanResult('162.159.198.1', 443));
       },
       verify: (_, __) async {
         verifies++;
@@ -40,12 +52,16 @@ void main() {
     // The whole point. Without the exclusion the second scan returns the same
     // dead address and the loop achieves nothing.
     final List<List<String>> excludedSeen = <List<String>>[];
-    final List<String> found = <String>['1.1.1.1:443', '2.2.2.2:443'];
+    final List<List<Object>> found = <List<Object>>[
+      <Object>['1.1.1.1', 443],
+      <Object>['2.2.2.2', 443],
+    ];
     int i = 0;
     final AetherGatewayFinder f = AetherGatewayFinder(
       scan: (_, List<String> excluded) async {
         excludedSeen.add(List<String>.of(excluded));
-        return done(<String, dynamic>{'endpoint': found[i++]});
+        final List<Object> f = found[i++];
+        return done(scanResult(f[0] as String, f[1] as int));
       },
       verify: (_, String e) async =>
           e == '2.2.2.2:443' ? done(<String, dynamic>{}) : failed('no traffic'),
@@ -67,7 +83,7 @@ void main() {
       attempts: 3,
       scan: (_, __) async {
         scans++;
-        return done(<String, dynamic>{'endpoint': '9.9.9.$scans:443'});
+        return done(scanResult('9.9.9.$scans', 443));
       },
       verify: (_, __) async => failed('no traffic'),
     );
@@ -112,7 +128,7 @@ void main() {
     // Keeping them is what lets a later connection fall back instead of
     // starting the whole search again.
     final AetherGatewayFinder f = AetherGatewayFinder(
-      scan: (_, __) async => done(<String, dynamic>{'endpoint': '5.5.5.5:443'}),
+      scan: (_, __) async => done(scanResult('5.5.5.5', 443)),
       verify: (_, __) async => done(<String, dynamic>{}),
     );
     await f.find(const AetherOptions());

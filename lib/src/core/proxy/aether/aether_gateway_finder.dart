@@ -57,7 +57,10 @@ class AetherGatewayFinder {
             attempts: i + 1,
             rejected: List<String>.of(rejected));
       }
-      final String? endpoint = found.result?['endpoint']?.toString();
+      // Normalised, not stringified. The core returns an object here, and
+      // toString on it yields something no later call accepts.
+      final String? endpoint =
+          AetherEndpoint.parse(found.result?['endpoint']);
       if (endpoint == null || endpoint.isEmpty) {
         return AetherFindResult(
             endpoint: null,
