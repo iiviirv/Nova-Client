@@ -10,6 +10,7 @@ import 'package:nova_client/src/features/profiles/profiles_controller.dart';
 import 'package:nova_client/src/features/radar/radar_controller.dart';
 import 'package:nova_client/src/features/relay/relay_controller.dart';
 import 'package:nova_client/src/features/relay/tunnel_controller.dart';
+import 'package:nova_client/src/features/servers/aether_editor_screen.dart';
 import 'package:nova_client/src/features/servers/servers_screen.dart';
 import 'package:nova_client/src/features/settings/settings_controller.dart';
 import 'package:nova_client/src/features/vps/vps_controller.dart';
@@ -32,6 +33,14 @@ ProxyProfile _sub(String id, String name) => ProxyProfile(
       kind: ProxyKind.subscription,
       uri: '',
       subscriptionUrl: 'https://example.invalid/$id',
+      updatedAt: DateTime(2026, 1, 1),
+    );
+
+ProxyProfile _aether(String id, String name) => ProxyProfile(
+      id: id,
+      name: name,
+      kind: ProxyKind.aether,
+      uri: 'aether://188.114.97.3:2408?protocol=wg&scan=balanced&ip=v4#$name',
       updatedAt: DateTime(2026, 1, 1),
     );
 
@@ -151,6 +160,23 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(profiles.profiles.length, 2);
+      await _teardown(tester);
+    });
+
+    testWidgets('Edit on an Aether row reopens the editor that built it',
+        (WidgetTester tester) async {
+      // The generic edit dialog shows a name and a link. An Aether config is
+      // neither: it is a set of choices about how a tunnel gets built, and
+      // there was no way back to the screen that makes them.
+      await _pumpServers(tester, <ProxyProfile>[_aether('a1', 'Home WARP')]);
+
+      await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AetherEditorScreen), findsOneWidget);
+      expect(find.text('Edit Aether config'), findsOneWidget);
       await _teardown(tester);
     });
 

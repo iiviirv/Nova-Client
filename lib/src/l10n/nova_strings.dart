@@ -125,9 +125,6 @@ class NovaStrings {
   String get aetherGatewayHint => t('aether.gatewayHint');
   String get aetherGatewayScanned => t('aether.gatewayScanned');
   String get aetherGatewayManual => t('aether.gatewayManual');
-  String get aetherHopOuter => t('aether.hopOuter');
-  String get aetherHopInner => t('aether.hopInner');
-  String get aetherHopsSub => t('aether.hopsSub');
   String get aetherFindNow => t('aether.findNow');
   String get aetherFindAgain => t('aether.findAgain');
   String get aetherCancel => t('aether.cancel');
@@ -154,6 +151,29 @@ class NovaStrings {
   /// Why the search ended with nothing, in the core's own words.
   String aetherFindFailed(String reason) =>
       t('aether.findFailed').replaceFirst('{why}', reason);
+
+  // ---- Aether: the two editor depths, the save gate, and the shortcut ----
+  String get aetherModeSimple => t('aether.modeSimple');
+  String get aetherModeAdvanced => t('aether.modeAdvanced');
+  String get aetherSimpleSub => t('aether.simpleSub');
+
+  /// Said next to the search button in both depths. Three minutes of silence
+  /// reads as a broken feature, so the wait is promised before it starts.
+  String get aetherSlowHint => t('aether.slowHint');
+
+  /// Why Save is disabled. Shown instead of leaving a dead button unexplained.
+  String get aetherSaveNeedsGateway => t('aether.saveNeedsGateway');
+
+  /// The title when an existing config was opened from the servers list.
+  String get aetherEditTitle => t('aether.editTitle');
+
+  // The dashboard shortcut: one tap that builds a config, finds a gateway,
+  // saves it and connects.
+  String get aetherQuickTitle => t('aether.quickTitle');
+  String get aetherQuickBody => t('aether.quickBody');
+  String get aetherQuickCta => t('aether.quickCta');
+  String get aetherQuickRetry => t('aether.quickRetry');
+  String get aetherQuickConnecting => t('aether.quickConnecting');
 
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
@@ -1022,25 +1042,40 @@ class NovaStrings {
         'Left empty, Nova scans for a gateway and checks it carries traffic '
             'before saving it here.',
     'aether.gatewayManual':
-        'Nova will dial this address and will not scan. Clear it to scan '
-            'instead.',
-    'aether.hopOuter': 'Outer hop',
-    'aether.hopInner': 'Inner hop',
-    'aether.hopsSub':
-        'gool runs one tunnel inside another, so it takes two addresses. Leave '
-            'them empty and Nova finds both.',
+        'Nova has not checked this address. Run a search, so the config saves '
+            'with a gateway that has carried traffic.',
     'aether.findNow': 'Find a gateway now',
     'aether.findAgain': 'Find another gateway',
     'aether.cancel': 'Cancel',
     'aether.coreMissing':
-        'This build ships no Aether core, so it cannot scan here. The config '
-            'still saves and shares.',
+        'This build ships no Aether core, so it cannot find a gateway here. '
+            'Paste an aether:// link on the add screen instead.',
     'aether.scanCancelled': 'Search stopped.',
     'aether.scanningAt': 'Address {n}: looking for one',
     'aether.verifyingAt': 'Address {n}: checking that it carries traffic',
     'aether.ruledOut': '{n} ruled out so far',
     'aether.found': '{ep} carried traffic.',
     'aether.findFailed': 'No gateway carried traffic: {why}',
+    'aether.modeSimple': 'Simple',
+    'aether.modeAdvanced': 'Advanced',
+    'aether.simpleSub':
+        'Pick a protocol and let Nova find a gateway for it. Every other '
+            'setting takes its default.',
+    'aether.slowHint':
+        'Finding a gateway usually takes a few minutes. Keep this screen open '
+            'until it finishes.',
+    'aether.saveNeedsGateway':
+        'Save waits for a gateway. A config saved without one connects to '
+            'nothing.',
+    'aether.editTitle': 'Edit Aether config',
+    'aether.quickTitle': 'Build a WARP tunnel',
+    'aether.quickBody':
+        'Nova can build a Cloudflare WARP tunnel over WireGuard with no link '
+            'to paste. It looks for a gateway, proves the gateway carries '
+            'traffic, and connects.',
+    'aether.quickCta': 'Build it and connect',
+    'aether.quickRetry': 'Try again',
+    'aether.quickConnecting': 'Gateway found. Connecting.',
     'node.bypassAllBlocked':
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
@@ -1959,24 +1994,41 @@ class NovaStrings {
         'اگر خالی بماند، نوا دنبال دروازه می‌گردد و قبل از ذخیره‌اش اینجا '
             'بررسی می‌کند که ترافیک را عبور می‌دهد.',
     'aether.gatewayManual':
-        'نوا همین آدرس را می‌گیرد و اسکن نمی‌کند. برای اسکن، خالی‌اش کنید.',
-    'aether.hopOuter': 'پرش بیرونی',
-    'aether.hopInner': 'پرش درونی',
-    'aether.hopsSub':
-        '\u2066gool\u2069 یک تونل را داخل تونل دیگر می‌برد، پس دو آدرس '
-            'می‌خواهد. خالی بگذارید تا نوا هر دو را پیدا کند.',
+        'نوا این آدرس را بررسی نکرده است. یک جست‌وجو اجرا کنید تا کانفیگ با '
+            'دروازه‌ای ذخیره شود که ترافیک را عبور داده است.',
     'aether.findNow': 'همین حالا دروازه پیدا کن',
     'aether.findAgain': 'یک دروازه‌ی دیگر پیدا کن',
     'aether.cancel': 'لغو',
     'aether.coreMissing':
         'این نسخه هسته‌ی \u2066Aether\u2069 را همراه ندارد، پس اینجا نمی‌تواند '
-            'اسکن کند. کانفیگ همچنان ذخیره و به‌اشتراک گذاشته می‌شود.',
+            'دروازه پیدا کند. به‌جایش یک لینک \u2066aether://\u2069 را در صفحه‌ی '
+            'افزودن بچسبانید.',
     'aether.scanCancelled': 'جست‌وجو متوقف شد.',
     'aether.scanningAt': 'آدرس \u2066{n}\u2069: در حال گشتن',
     'aether.verifyingAt': 'آدرس \u2066{n}\u2069: بررسی عبور ترافیک',
     'aether.ruledOut': 'تا اینجا \u2066{n}\u2069 آدرس کنار گذاشته شد',
     'aether.found': '\u2066{ep}\u2069 ترافیک را عبور داد.',
     'aether.findFailed': 'هیچ دروازه‌ای ترافیک را عبور نداد: \u2066{why}\u2069',
+    'aether.modeSimple': 'ساده',
+    'aether.modeAdvanced': 'پیشرفته',
+    'aether.simpleSub':
+        'یک پروتکل انتخاب کنید تا نوا برایش دروازه پیدا کند. بقیه‌ی تنظیم‌ها '
+            'روی مقدار پیش‌فرض می‌مانند.',
+    'aether.slowHint':
+        'پیدا کردن دروازه معمولاً چند دقیقه طول می‌کشد. تا پایان کار این صفحه '
+            'را باز نگه دارید.',
+    'aether.saveNeedsGateway':
+        'تا یک دروازه پیدا نشود، ذخیره فعال نمی‌شود. کانفیگی که بدون دروازه '
+            'ذخیره شود به جایی وصل نمی‌شود.',
+    'aether.editTitle': 'ویرایش کانفیگ \u2066Aether\u2069',
+    'aether.quickTitle': 'ساخت تونل \u2066WARP\u2069',
+    'aether.quickBody':
+        'نوا می‌تواند بدون هیچ لینکی یک تونل \u2066Cloudflare WARP\u2069 روی '
+            '\u2066WireGuard\u2069 بسازد. دنبال دروازه می‌گردد، ثابت می‌کند که '
+            'دروازه ترافیک را عبور می‌دهد و بعد وصل می‌شود.',
+    'aether.quickCta': 'بساز و وصل شو',
+    'aether.quickRetry': 'دوباره تلاش کن',
+    'aether.quickConnecting': 'دروازه پیدا شد. در حال اتصال.',
     'node.bypassAllBlocked':
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '

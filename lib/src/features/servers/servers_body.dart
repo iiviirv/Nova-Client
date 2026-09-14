@@ -277,6 +277,14 @@ class _ServersBodyState extends State<ServersBody> {
   /// Edit a profile's name and URL/link in place.
   Future<void> _editProfile(
       BuildContext context, ProfilesController profiles, ProxyProfile p) async {
+    // An Aether config is a set of choices about how a tunnel is built, not a
+    // link anyone edits by hand, so Edit reopens the screen that built it with
+    // those choices already in place.
+    if (p.kind == ProxyKind.aether) {
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+          builder: (_) => AetherEditorScreen(existing: p)));
+      return;
+    }
     final bool isSub = p.isSubscription;
     final s = NovaStrings.of(context);
     final _ConfigDialogResult? res = await showDialog<_ConfigDialogResult>(

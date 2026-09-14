@@ -11,9 +11,13 @@ import '../../widgets/nova_button.dart';
 import '../../widgets/nova_card.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
+import '../../widgets/nova_segmented_tabs.dart';
+import '../profiles/profiles_controller.dart';
 import 'aether_gateway_search.dart';
+import 'aether_naming.dart';
+import 'aether_search_widgets.dart';
 
-/// Builds an Aether config by hand.
+/// Builds an Aether config by hand, or edits one that already exists.
 ///
 /// An `aether://` link pasted into the add sheet already imports, so this
 /// screen exists for the case with nothing to paste: choosing how the WARP
@@ -26,12 +30,19 @@ import 'aether_gateway_search.dart';
 /// address with a real tunnel and re-scans excluding the dead ones, and this
 /// screen says which attempt it is on so a long wait is explained rather than
 /// silent.
+///
+/// Two depths, because the settings below the protocol are for the person whose
+/// tunnel will not open and noise for everyone else. Simple offers the protocol
+/// and the search; Advanced offers the rest.
 class AetherEditorScreen extends StatefulWidget {
-  const AetherEditorScreen({super.key, this.search});
+  const AetherEditorScreen({super.key, this.search, this.existing});
 
   /// Injected by tests. The native core cannot be loaded on a test host, so
   /// without this the scan states would have no way to be exercised at all.
   final AetherGatewaySearch? search;
+
+  /// The profile being edited, or null when building a new one.
+  final ProxyProfile? existing;
 
   @override
   State<AetherEditorScreen> createState() => _AetherEditorScreenState();
@@ -40,8 +51,6 @@ class AetherEditorScreen extends StatefulWidget {
 class _AetherEditorScreenState extends State<AetherEditorScreen> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _address = TextEditingController();
-  final TextEditingController _outer = TextEditingController();
-  final TextEditingController _inner = TextEditingController();
 
   AetherMode _mode = AetherMode.masque;
   AetherTransport _transport = AetherTransport.h3;
@@ -54,6 +63,22 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
 
   bool _fragment = false;
 
+  /// Resolvers from an imported link. Nothing on this screen edits them, so
+  /// they are carried rather than dropped on the way back out.
+  String? _dns;
+
+  bool _advanced = false;
+
+  /// True while the name is still Nova's to write. The first keystroke in the
+  /// name field hands it to the user for good.
+  bool _nameAuto = true;
+  bool _seeded = false;
+
+  /// The gateway that has been proven to carry traffic, and the single reason
+  /// Save is allowed. Null means this config would save as an address nobody
+  /// has checked, which is the config the tester could not connect with.
+  String? _verified;
+
   late final AetherGatewaySearch _search = widget.search ?? AetherCoreSearch();
 
   AetherSearchProgress? _progress;
@@ -62,25 +87,101 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
 
   bool get _searching => _progress != null;
 
+  bool get _canSave => !_searching && _verified != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final ProxyProfile? p = widget.existing;
+    if (p == null) return;
+    _name.text = p.name;
+    // An existing name is the user's, whatever it says.
+    _nameAuto = false;
+    final AetherConfig? c = AetherConfig.parse(p.uri);
+    if (c == null) return;
+    final AetherOptions o = c.options;
+    _mode = o.mode;
+    _transport = o.transport;
+    _ip = o.ip;
+    _scan = o.scan;
+    _noize = o.noize;
+    _fragment = o.fragment;
+    _dns = o.dns;
+    _address.text = o.peer ?? '';
+    // A saved gateway was verified when it was saved, so editing the name does
+    // not cost the user another three-minute search.
+    _verified = (o.peer ?? '').isEmpty ? null : o.peer;
+    // Opening a config with a setting Simple does not show would hide what the
+    // config is actually made of, so it opens at the depth that shows it.
+    _advanced = !_isSimple(o);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The duplicate check reads the profile list, which needs the scope, so the
+    // first name is written here rather than in initState.
+    if (_seeded) return;
+    _seeded = true;
+    if (_nameAuto) _name.text = _autoName(_mode);
+  }
+
   @override
   void dispose() {
     _search.cancel();
     _name.dispose();
     _address.dispose();
-    _outer.dispose();
-    _inner.dispose();
     super.dispose();
   }
 
-  /// Applies an option change, dropping any search in flight.
+  /// Whether these options are entirely what Simple would have produced.
+  static bool _isSimple(AetherOptions o) =>
+      o.transport == AetherTransport.h3 &&
+      o.ip == AetherIpMode.v4 &&
+      o.scan == AetherScan.balanced &&
+      o.noize == null &&
+      !o.fragment;
+
+  /// Applies an option change, dropping any search in flight and the gateway
+  /// it was for.
   ///
   /// A result found for HTTP/3 says nothing about the HTTP/2 config the user
   /// has just switched to, so keeping it on screen would be a stale answer to a
-  /// question nobody asked.
+  /// question nobody asked, and saving it would be worse: an address proven
+  /// against different settings is not a proven address.
   void _set(VoidCallback change) {
-    if (_searching) _stop();
-    setState(change);
+    if (_searching) _search.cancel();
+    setState(() {
+      _progress = null;
+      _result = null;
+      _verified = null;
+      change();
+    });
   }
+
+  /// Switches depth. Simple says every other setting takes its default, so
+  /// entering it puts them back rather than leaving choices in effect that the
+  /// screen no longer shows.
+  void _setDepth(bool advanced) => _set(() {
+        _advanced = advanced;
+        if (advanced) return;
+        _transport = AetherTransport.h3;
+        _ip = AetherIpMode.v4;
+        _scan = AetherScan.balanced;
+        _noize = null;
+        _fragment = false;
+      });
+
+  void _pickMode(AetherMode m) => _set(() {
+        _mode = m;
+        if (_nameAuto) _name.text = _autoName(m);
+      });
+
+  String _autoName(AetherMode m) => aetherAutoName(
+        m,
+        NovaScope.of(context).profiles.profiles,
+        excludeId: widget.existing?.id,
+      );
 
   void _stop() {
     _search.cancel();
@@ -94,11 +195,11 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     });
   }
 
-  AetherOptions _options() {
+  /// [withPeer] is false for the options a search runs under: forcing the
+  /// address that is already in the field would hand the scan its own answer
+  /// back instead of looking for a gateway.
+  AetherOptions _options({bool withPeer = true}) {
     final String peer = _address.text.trim();
-    final String outer = _outer.text.trim();
-    final String inner = _inner.text.trim();
-    final bool gool = _mode == AetherMode.gool;
     // Built rather than copied: copyWith cannot put a field back to null, and
     // null is what "let the core choose" and "no forced gateway" both are.
     return AetherOptions(
@@ -107,28 +208,39 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       ip: _ip,
       scan: _scan,
       noize: _noize,
-      peer: gool || peer.isEmpty ? null : peer,
-      wiwOuter: gool && outer.isNotEmpty ? outer : null,
-      wiwInner: gool && inner.isNotEmpty ? inner : null,
+      peer: withPeer && peer.isNotEmpty ? peer : null,
       // The core refuses --fragment outside HTTP/2, so it is only carried where
       // it means something rather than saved and silently dropped later.
-      fragment: _fragment && _mode == AetherMode.masque &&
+      fragment: _fragment &&
+          _mode == AetherMode.masque &&
           _transport == AetherTransport.h2,
+      dns: _dns,
     );
   }
 
   Future<void> _find() async {
+    // Whatever is in the field now is what a replacement search should skip.
+    // gool included: the core's scan returns one endpoint for it in the same
+    // shape as the other two, and verifying with that address alone succeeds
+    // because the core finds the inner hop itself.
+    final String previous = _address.text.trim();
     setState(() {
       _stopped = false;
       _result = null;
-      _progress = const AetherSearchProgress(
-          attempt: 1, verifying: false, ruledOut: 0);
+      _verified = null;
+      _progress =
+          const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0);
     });
     AetherFindResult found;
     try {
-      found = await _search.run(_options(), (AetherSearchProgress p) {
-        if (mounted && _searching) setState(() => _progress = p);
-      });
+      found = await _search.run(
+        _options(withPeer: false),
+        (AetherSearchProgress p) {
+          if (mounted && _searching) setState(() => _progress = p);
+        },
+        excludedFirst:
+            previous.isEmpty ? const <String>[] : <String>[previous],
+      );
     } catch (e) {
       // A search runs across an FFI boundary in a UI path, so a throw here is
       // otherwise a blank screen with a spinner on it forever.
@@ -151,7 +263,10 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       _result = found;
       // A verified gateway is kept, so the config saves with an address that
       // has been proven rather than one that merely answered a probe.
-      if (found.endpoint != null) _address.text = found.endpoint!;
+      if (found.endpoint != null) {
+        _address.text = found.endpoint!;
+        _verified = found.endpoint;
+      }
     });
   }
 
@@ -161,15 +276,25 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       options: _options(),
       name: name.isEmpty ? 'Aether' : name,
     );
-    NovaScope.of(context).profiles.add(ProxyProfile(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      name: config.name,
-      kind: ProxyKind.aether,
-      // The link is the storage format: it is what shares, what re-imports, and
-      // what the node parser already reads, so nothing is held twice.
-      uri: config.toLink(),
-      updatedAt: DateTime.now(),
-    ));
+    final ProfilesController profiles = NovaScope.of(context).profiles;
+    final ProxyProfile? existing = widget.existing;
+    // The link is the storage format: it is what shares, what re-imports, and
+    // what the node parser already reads, so nothing is held twice.
+    if (existing == null) {
+      profiles.add(ProxyProfile(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: config.name,
+        kind: ProxyKind.aether,
+        uri: config.toLink(),
+        updatedAt: DateTime.now(),
+      ));
+    } else {
+      profiles.update(existing.copyWith(
+        name: config.name,
+        uri: config.toLink(),
+        updatedAt: DateTime.now(),
+      ));
+    }
     Navigator.of(context).pop();
   }
 
@@ -180,7 +305,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     final TextTheme text = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text(s.aetherTitle)),
+      appBar: AppBar(
+          title:
+              Text(widget.existing == null ? s.aetherTitle : s.aetherEditTitle)),
       body: Center(
         child: ConstrainedBox(
           constraints:
@@ -190,11 +317,29 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
             children: <Widget>[
               Text(s.aetherIntro,
                   style: text.bodySmall?.copyWith(color: nova.muted)),
+              const SizedBox(height: NovaSpace.md),
+
+              NovaSegmentedTabs(
+                segments: <NovaSegment>[
+                  NovaSegment(label: s.aetherModeSimple),
+                  NovaSegment(label: s.aetherModeAdvanced),
+                ],
+                selected: _advanced ? 1 : 0,
+                onChanged: (int i) => _setDepth(i == 1),
+              ),
+              if (!_advanced) ...<Widget>[
+                const SizedBox(height: NovaSpace.sm),
+                Text(s.aetherSimpleSub,
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+              ],
               const SizedBox(height: NovaSpace.lg),
 
               TextField(
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
+                // Nova names a config after its protocol until the user takes
+                // the field over, which is the moment they type in it.
+                onChanged: (_) => _nameAuto = false,
                 decoration: InputDecoration(
                   labelText: s.aetherName,
                   hintText: s.aetherNameHint,
@@ -214,13 +359,13 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                 },
                 pills: <Widget>[
                   _pill(s.aetherProtoMasque, _mode == AetherMode.masque,
-                      () => _set(() => _mode = AetherMode.masque)),
+                      () => _pickMode(AetherMode.masque)),
                   _pill(s.aetherProtoWg, _mode == AetherMode.wg,
-                      () => _set(() => _mode = AetherMode.wg)),
+                      () => _pickMode(AetherMode.wg)),
                   _pill(s.aetherProtoGool, _mode == AetherMode.gool,
-                      () => _set(() => _mode = AetherMode.gool)),
+                      () => _pickMode(AetherMode.gool)),
                 ],
-                extra: _mode != AetherMode.masque
+                extra: !_advanced || _mode != AetherMode.masque
                     ? null
                     : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -248,8 +393,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                             _transport == AetherTransport.h3
                                 ? s.aetherTransportH3Sub
                                 : s.aetherTransportH2Sub,
-                            style:
-                                text.bodySmall?.copyWith(color: nova.muted),
+                            style: text.bodySmall?.copyWith(color: nova.muted),
                           ),
                           if (_transport == AetherTransport.h2) ...<Widget>[
                             const SizedBox(height: NovaSpace.sm),
@@ -257,41 +401,41 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                               title: s.aetherFragment,
                               subtitle: s.aetherFragmentSub,
                               value: _fragment,
-                              onChanged: (bool v) =>
-                                  _set(() => _fragment = v),
+                              onChanged: (bool v) => _set(() => _fragment = v),
                             ),
                           ],
                         ],
                       ),
               ),
-              const SizedBox(height: NovaSpace.md),
 
-              _Group(
-                title: s.aetherNoize,
-                description:
-                    _noize == null ? s.aetherNoizeAutoSub : s.aetherNoizeSub,
-                pills: <Widget>[
-                  _pill(s.aetherNoizeAuto, _noize == null,
-                      () => _set(() => _noize = null)),
-                  for (final AetherNoize n in AetherNoize.values)
-                    _pill(_noizeLabel(n), _noize == n,
-                        () => _set(() => _noize = n)),
-                ],
-              ),
-              const SizedBox(height: NovaSpace.md),
-
-              _Group(
-                title: s.aetherIp,
-                description: s.aetherIpSub,
-                pills: <Widget>[
-                  _pill(s.aetherIpV4, _ip == AetherIpMode.v4,
-                      () => _set(() => _ip = AetherIpMode.v4)),
-                  _pill(s.aetherIpV6, _ip == AetherIpMode.v6,
-                      () => _set(() => _ip = AetherIpMode.v6)),
-                  _pill(s.aetherIpBoth, _ip == AetherIpMode.both,
-                      () => _set(() => _ip = AetherIpMode.both)),
-                ],
-              ),
+              if (_advanced) ...<Widget>[
+                const SizedBox(height: NovaSpace.md),
+                _Group(
+                  title: s.aetherNoize,
+                  description:
+                      _noize == null ? s.aetherNoizeAutoSub : s.aetherNoizeSub,
+                  pills: <Widget>[
+                    _pill(s.aetherNoizeAuto, _noize == null,
+                        () => _set(() => _noize = null)),
+                    for (final AetherNoize n in AetherNoize.values)
+                      _pill(_noizeLabel(n), _noize == n,
+                          () => _set(() => _noize = n)),
+                  ],
+                ),
+                const SizedBox(height: NovaSpace.md),
+                _Group(
+                  title: s.aetherIp,
+                  description: s.aetherIpSub,
+                  pills: <Widget>[
+                    _pill(s.aetherIpV4, _ip == AetherIpMode.v4,
+                        () => _set(() => _ip = AetherIpMode.v4)),
+                    _pill(s.aetherIpV6, _ip == AetherIpMode.v6,
+                        () => _set(() => _ip = AetherIpMode.v6)),
+                    _pill(s.aetherIpBoth, _ip == AetherIpMode.both,
+                        () => _set(() => _ip = AetherIpMode.both)),
+                  ],
+                ),
+              ],
               const SizedBox(height: NovaSpace.md),
 
               _gatewayCard(s, nova, text),
@@ -300,10 +444,18 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
               NovaButton(
                 label: s.save,
                 icon: Icons.save_rounded,
-                // Saving mid-search would store a config the running search is
-                // no longer about. Cancel is the action on offer until it ends.
-                onPressed: _searching ? null : _save,
+                // A config with no verified gateway saves and then connects to
+                // nothing, which is exactly what shipped last time. Saving
+                // mid-search is refused for the same reason: the running search
+                // is no longer about what would be stored.
+                onPressed: _canSave ? _save : null,
               ),
+              if (!_canSave && !_searching) ...<Widget>[
+                const SizedBox(height: NovaSpace.sm),
+                Text(s.aetherSaveNeedsGateway,
+                    textAlign: TextAlign.center,
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+              ],
             ],
           ),
         ),
@@ -316,61 +468,47 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// This is the only card that changes while the screen is open, which is why
   /// it sits last, directly above Save.
   Widget _gatewayCard(NovaStrings s, NovaColors nova, TextTheme text) {
-    final bool gool = _mode == AetherMode.gool;
     return NovaCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           NovaEyebrow(s.aetherGateway),
           const SizedBox(height: NovaSpace.md),
-          if (gool) ...<Widget>[
-            _AddressField(
-              controller: _outer,
-              label: s.aetherHopOuter,
-              hint: s.aetherGatewayHint,
-            ),
-            const SizedBox(height: NovaSpace.sm),
-            _AddressField(
-              controller: _inner,
-              label: s.aetherHopInner,
-              hint: s.aetherGatewayHint,
-            ),
-            const SizedBox(height: NovaSpace.sm),
-            Text(s.aetherHopsSub,
-                style: text.bodySmall?.copyWith(color: nova.muted)),
-          ] else ...<Widget>[
+          if (_advanced) ...<Widget>[
             _AddressField(
               controller: _address,
               label: s.aetherGatewayAddress,
               hint: s.aetherGatewayHint,
-              // The status line below depends on whether this is empty, so it
-              // has to repaint as the field is typed into.
+              // Typing here replaces a proven address with an unproven one, so
+              // it goes through the same path as any other option change.
               onChanged: (_) => _set(() {}),
             ),
             const SizedBox(height: NovaSpace.sm),
-            _status(s, nova, text),
+          ],
+          _status(s, nova, text),
+          if (_advanced) ...<Widget>[
+            const SizedBox(height: NovaSpace.md),
+            _subLabel(s.aetherScanMode, text, nova),
+            const SizedBox(height: NovaSpace.sm),
+            Wrap(
+              spacing: NovaSpace.sm,
+              runSpacing: NovaSpace.sm,
+              children: <Widget>[
+                for (final AetherScan m in AetherScan.values)
+                  _pill(_scanLabel(s, m), _scan == m,
+                      () => _set(() => _scan = m)),
+              ],
+            ),
+            const SizedBox(height: NovaSpace.sm),
+            Text(_scanSub(s, _scan),
+                style: text.bodySmall?.copyWith(color: nova.muted)),
           ],
           const SizedBox(height: NovaSpace.md),
-          _subLabel(s.aetherScanMode, text, nova),
-          const SizedBox(height: NovaSpace.sm),
-          Wrap(
-            spacing: NovaSpace.sm,
-            runSpacing: NovaSpace.sm,
-            children: <Widget>[
-              for (final AetherScan m in AetherScan.values)
-                _pill(_scanLabel(s, m), _scan == m,
-                    () => _set(() => _scan = m)),
-            ],
-          ),
-          const SizedBox(height: NovaSpace.sm),
-          Text(_scanSub(s, _scan),
-              style: text.bodySmall?.copyWith(color: nova.muted)),
-          if (!gool) ...<Widget>[
-            const SizedBox(height: NovaSpace.md),
-            if (!_search.available)
-              _line(Icons.info_outline_rounded, nova.warning,
-                  s.aetherCoreMissing, text)
-            else if (_searching)
+          if (!_search.available)
+            _line(Icons.info_outline_rounded, nova.warning, s.aetherCoreMissing,
+                text)
+          else ...<Widget>[
+            if (_searching)
               NovaButton(
                 label: s.aetherCancel,
                 icon: Icons.close_rounded,
@@ -379,13 +517,13 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
               )
             else
               NovaButton(
-                label: _result?.endpoint != null
-                    ? s.aetherFindAgain
-                    : s.aetherFindNow,
+                label: _verified != null ? s.aetherFindAgain : s.aetherFindNow,
                 icon: Icons.radar_rounded,
                 variant: NovaButtonVariant.secondary,
                 onPressed: _find,
               ),
+            const SizedBox(height: NovaSpace.sm),
+            const AetherWaitHint(),
           ],
         ],
       ),
@@ -400,31 +538,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// different things.
   Widget _status(NovaStrings s, NovaColors nova, TextTheme text) {
     final AetherSearchProgress? p = _progress;
-    if (p != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: NovaRadii.pillR,
-            child: LinearProgressIndicator(
-              minHeight: 3,
-              backgroundColor: nova.border,
-              valueColor: AlwaysStoppedAnimation<Color>(nova.cyan),
-            ),
-          ),
-          const SizedBox(height: NovaSpace.sm),
-          Text(
-            p.verifying
-                ? s.aetherVerifyingAt(p.attempt)
-                : s.aetherScanningAt(p.attempt),
-            style: text.bodySmall?.copyWith(color: nova.text),
-          ),
-          if (p.ruledOut > 0)
-            Text(s.aetherRuledOut(p.ruledOut),
-                style: text.bodySmall?.copyWith(color: nova.muted)),
-        ],
-      );
-    }
+    if (p != null) return AetherProgressLines(progress: p);
 
     final AetherFindResult? r = _result;
     if (r != null && r.endpoint != null) {
@@ -445,6 +559,14 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
             ),
         ],
       );
+    }
+    // Ahead of the cancelled line on purpose: a gateway proven before the
+    // search that was just stopped is still the gateway this config would save
+    // with, and that is the fact Save is reading.
+    final String? v = _verified;
+    if (v != null) {
+      return _line(
+          Icons.check_circle_rounded, nova.success, s.aetherFound(v), text);
     }
     if (_stopped) {
       return Text(s.aetherScanCancelled,

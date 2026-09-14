@@ -8,6 +8,7 @@ import '../../core/proxy/aether/aether_core.dart';
 import '../../core/proxy/aether/aether_gateway_finder.dart';
 import '../../core/proxy/aether/aether_options.dart';
 import '../../core/proxy/aether/aether_protocol.dart';
+import '../../core/proxy/aether/aether_tunnel.dart';
 
 /// Where a gateway search has got to, so the editor can say it out loud.
 ///
@@ -53,6 +54,15 @@ abstract class AetherGatewaySearch {
     ValueChanged<AetherSearchProgress> onProgress, {
     List<String> excludedFirst,
   });
+
+  /// Checks one address the user typed, without searching for others.
+  ///
+  /// Requiring a search before Save would otherwise take away hand-entered
+  /// gateways entirely: someone handed a working address has no way to use it,
+  /// because the only route to a saved config is a sweep that may not pick
+  /// theirs. This gives the same proof for an address they already have, and
+  /// is far quicker than a scan since there is only one candidate.
+  Future<bool> verifyAddress(AetherOptions options, String endpoint);
 
   /// Stops the search. The in-flight [run] still completes, with [cancelled]
   /// set, because the core's job has to be told before anything can be
@@ -169,6 +179,29 @@ class AetherCoreSearch implements AetherGatewaySearch {
       }
     }
     return finder.find(options);
+  }
+
+  @override
+  Future<bool> verifyAddress(AetherOptions options, String endpoint) async {
+    if (endpoint.trim().isEmpty) return false;
+    final AetherCore core = AetherCore.open();
+    final Directory dir = await getApplicationSupportDirectory();
+    final AetherJobStatus opened = await _await(
+        core, core.identityOpen(options, base: '${dir.path}/aether'));
+    if (opened.state != AetherJobState.done) return false;
+    final Object? handle = opened.result?[kAetherIdentityField];
+    if (handle is! num) return false;
+
+    final int port = await AetherTunnel.freeLoopbackPort();
+    final AetherJobStatus proof = await _await(
+        core,
+        core.verifyStart(handle.toInt(), options,
+            endpoint: endpoint.trim(), socks: '127.0.0.1:$port'));
+    // The same two-part answer the finder reads: the state says the check ran,
+    // `reachable` says what it concluded. Only an explicit false is a refusal,
+    // so a core that does not report the field is still trusted.
+    return proof.state == AetherJobState.done &&
+        proof.result?['reachable'] != false;
   }
 
   /// Polls a started job to completion. A start reply that is not ok never had

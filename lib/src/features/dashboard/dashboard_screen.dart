@@ -29,6 +29,7 @@ import '../panel/open_panel.dart';
 import '../servers/node_list_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
+import 'aether_quick_setup_card.dart';
 
 /// The home screen: a Summary/Configs segmented header, the connect orb with a
 /// live uptime timer, one connection panel (exit country, IP, ping and live
@@ -289,6 +290,10 @@ class _SummaryView extends StatelessWidget {
         // everything else when the hero folds into its connected shape.
         const _ConnectHero(),
         const _ConnectionPanel(),
+        // Directly under the hero, because someone with nothing that connects
+        // has one job on this screen and this is it. It removes itself once
+        // they have an Aether config with a gateway.
+        const AetherQuickSetupCard(),
         const _ProxyModeCard(),
         const _ConfigCard(),
         const _TunModeCard(),
