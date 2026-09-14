@@ -35,6 +35,11 @@ class NovaStrings {
   /// Nova keeps their choice and tells them, rather than switching behind them.
   String get pinnedExitNoTraffic => t('notice.pinnedExitNoTraffic');
 
+  /// Shown when an Aether tunnel comes up but carries nothing, which usually
+  /// means its gateway has stopped answering since it was verified. Phrased as
+  /// an offer because finding another takes minutes.
+  String get aetherGatewayStale => t('notice.aetherGatewayStale');
+
   /// Shown when the pinned server has disappeared from the subscription, so
   /// this session had to auto-select.
   String get pinnedExitGone => t('notice.pinnedExitGone');
@@ -913,6 +918,10 @@ class NovaStrings {
         'The server you picked is connected but no traffic is getting through. '
             'Nova is staying on your choice: pick another server, or switch to '
             'Auto, in the server list.',
+    'notice.aetherGatewayStale':
+        'This connection came up but nothing is getting through. Its Cloudflare '
+            'gateway may have stopped answering since it was checked. Look for '
+            'another one?',
     'notice.pinnedExitGone':
         'The server you had picked is no longer in this subscription, so Nova '
             'auto-selected one. Open the server list to choose again.',
@@ -1847,6 +1856,10 @@ class NovaStrings {
         'سروری که انتخاب کرده‌اید وصل شده ولی هیچ ترافیکی عبور نمی‌کند. '
             '\u2066Nova\u2069 روی انتخاب شما می‌ماند: از فهرست سرورها سرور '
             'دیگری را انتخاب کنید یا حالت خودکار را بزنید.',
+    'notice.aetherGatewayStale':
+        'اتصال برقرار شد ولی چیزی رد نمی‌شود. احتمالاً دروازه‌ی '
+            '\u2066Cloudflare\u2069 آن بعد از بررسی از کار افتاده. دنبال یکی '
+            'دیگر بگردیم؟',
     'notice.pinnedExitGone':
         'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
             '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '

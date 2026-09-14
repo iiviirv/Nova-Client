@@ -217,6 +217,18 @@ enum ProxyNotice {
   /// at an eternal "Verifying connection".
   tunnelHasNoInternet,
 
+  /// An Aether config's tunnel came up but carried nothing, and its gateway is
+  /// the likely reason. Offered as a question rather than done silently: finding
+  /// another takes minutes, so it is not something to start behind the user's
+  /// back.
+  ///
+  /// The gateway was verified before it was saved, and that is not a
+  /// contradiction: verification proves an address carried traffic at that
+  /// moment, and a WARP edge can stop answering later. A tester in Iran hit
+  /// exactly this and worked around it by rebuilding the config by hand, which
+  /// is the work this notice exists to take over.
+  aetherGatewayStale,
+
   /// macOS is waiting for the user to allow Nova's tunnel extension in System
   /// Settings. Nova connects the old way (an administrator prompt) meanwhile,
   /// so this is an invitation, not an error: allow it once and the prompt is

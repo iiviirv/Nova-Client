@@ -62,6 +62,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
     final String message = switch (code) {
       ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
       ProxyNotice.pinnedExitNoTraffic => s.pinnedExitNoTraffic,
+      ProxyNotice.aetherGatewayStale => s.aetherGatewayStale,
       ProxyNotice.pinnedExitGone => s.pinnedExitGone,
       ProxyNotice.sniBypassOn => s.sniBypassOn,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,

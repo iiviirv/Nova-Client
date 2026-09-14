@@ -45,10 +45,14 @@ abstract class AetherGatewaySearch {
   bool get available;
 
   /// Finds a gateway that carries traffic, reporting progress as it goes.
+  /// [excludedFirst] seeds the ruled-out list. A replacement search starts
+  /// with the address that just failed already excluded, because a search that
+  /// does not exclude it tends to return it again.
   Future<AetherFindResult> run(
     AetherOptions options,
-    ValueChanged<AetherSearchProgress> onProgress,
-  );
+    ValueChanged<AetherSearchProgress> onProgress, {
+    List<String> excludedFirst,
+  });
 
   /// Stops the search. The in-flight [run] still completes, with [cancelled]
   /// set, because the core's job has to be told before anything can be
@@ -97,8 +101,9 @@ class AetherCoreSearch implements AetherGatewaySearch {
   @override
   Future<AetherFindResult> run(
     AetherOptions options,
-    ValueChanged<AetherSearchProgress> onProgress,
-  ) async {
+    ValueChanged<AetherSearchProgress> onProgress, {
+    List<String> excludedFirst = const <String>[],
+  }) async {
     _cancelled = false;
     final AetherCore core = AetherCore.open();
     _core = core;
@@ -156,6 +161,13 @@ class AetherCoreSearch implements AetherGatewaySearch {
                 endpoint: endpoint, socks: '127.0.0.1:$port'));
       },
     );
+    // Seed what is already known dead, so a replacement search does not offer
+    // the address that just failed back again.
+    for (final String dead in excludedFirst) {
+      if (dead.isNotEmpty && !finder.rejected.contains(dead)) {
+        finder.rejected.add(dead);
+      }
+    }
     return finder.find(options);
   }
 
