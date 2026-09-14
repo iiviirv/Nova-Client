@@ -66,12 +66,18 @@ class _FakeSearch implements AetherGatewaySearch {
     }
   }
 
+  /// What a replacement search was told to skip, so a test can check that the
+  /// address which just failed is not offered back.
+  List<String> excluded = const <String>[];
+
   @override
   Future<AetherFindResult> run(
     AetherOptions options,
-    ValueChanged<AetherSearchProgress> onProgress,
-  ) {
+    ValueChanged<AetherSearchProgress> onProgress, {
+    List<String> excludedFirst = const <String>[],
+  }) {
     asked = options;
+    excluded = excludedFirst;
     _report = onProgress;
     return _done.future;
   }

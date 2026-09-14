@@ -10,6 +10,7 @@ import 'package:nova_client/src/core/proxy/aether/aether_protocol.dart';
 /// is running the scan again. A re-scan that does not exclude the dead address
 /// tends to return it again, so the retry is a coin flip.
 void main() {
+  _replacement();
   AetherJobStatus done(Map<String, dynamic> r) =>
       AetherJobStatus(AetherJobState.done, result: r);
 
@@ -179,5 +180,31 @@ void main() {
       );
       expect((await f.find(const AetherOptions())).ok, isTrue);
     });
+  });
+}
+
+/// Seeding the ruled-out list, which is what makes a replacement search
+/// different from the first one.
+void _replacement() {
+  test('a replacement search does not offer the dead address back', () async {
+    // The finder is given what already failed. Without this the core tends to
+    // return the same address, and replacing a stale gateway becomes the same
+    // coin flip as rebuilding the config by hand.
+    final List<List<String>> seen = <List<String>>[];
+    final AetherGatewayFinder f = AetherGatewayFinder(
+      scan: (_, List<String> excluded) async {
+        seen.add(List<String>.of(excluded));
+        return AetherJobStatus(AetherJobState.done, result: <String, dynamic>{
+          'endpoint': <String, dynamic>{'ip': '7.7.7.7', 'port': 443},
+        });
+      },
+      verify: (_, __) async => AetherJobStatus(AetherJobState.done,
+          result: <String, dynamic>{'reachable': true}),
+    );
+    f.rejected.add('1.2.3.4:443');
+    final AetherFindResult r = await f.find(const AetherOptions());
+    expect(r.ok, isTrue);
+    expect(seen.first, contains('1.2.3.4:443'),
+        reason: 'the address that just failed must be excluded from the start');
   });
 }
