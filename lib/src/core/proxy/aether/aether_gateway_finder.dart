@@ -69,14 +69,27 @@ class AetherGatewayFinder {
             rejected: List<String>.of(rejected));
       }
       final AetherJobStatus proof = await verify(options, endpoint);
-      if (proof.state == AetherJobState.done) {
+      // A finished verification is not a passed one. The core returns
+      // {"reachable": <bool>}, and the job succeeds either way: `ok` says the
+      // check ran, `reachable` says what it found. Reading only the state
+      // accepts an endpoint the core has just reported as unreachable, which
+      // is a gateway that saves, connects, and then sits on "verifying"
+      // forever. Reported from Iran as configs that had to be rebuilt.
+      //
+      // Same mistake as the nested job envelope, one level up: the outer
+      // success is about whether the question was answered, not what the
+      // answer was.
+      if (proof.state == AetherJobState.done && proof.result?['reachable'] != false) {
         if (!verified.contains(endpoint)) verified.add(endpoint);
         return AetherFindResult(
             endpoint: endpoint,
             attempts: i + 1,
             rejected: List<String>.of(rejected));
       }
-      lastError = proof.error ?? 'the tunnel did not carry traffic';
+      lastError = proof.error ??
+          (proof.result?['reachable'] == false
+              ? 'the gateway answered but carried no traffic'
+              : 'the tunnel did not carry traffic');
       if (!rejected.contains(endpoint)) rejected.add(endpoint);
     }
     return AetherFindResult(

@@ -136,4 +136,48 @@ void main() {
     expect(f.verified, <String>['5.5.5.5:443'],
         reason: 'the same address should be remembered once, not twice');
   });
+
+  group('verification reports what it found, not just that it ran', () {
+    // The core answers {"reachable": <bool>} and the job succeeds either way.
+    // The state says the check completed; the field says what it concluded.
+    test('an unreachable gateway is rejected, not accepted', () async {
+      // The bug a tester in Iran hit: a config that saved and then sat on
+      // "verifying" until it was rebuilt by hand.
+      int attempts = 0;
+      final AetherGatewayFinder f = AetherGatewayFinder(
+        attempts: 2,
+        scan: (_, __) async {
+          attempts++;
+          return done(scanResult('9.9.9.$attempts', 443));
+        },
+        verify: (_, __) async =>
+            done(<String, dynamic>{'reachable': false}),
+      );
+      final AetherFindResult r = await f.find(const AetherOptions());
+      expect(r.ok, isFalse,
+          reason: 'the core said the gateway was unreachable');
+      expect(r.rejected.length, 2,
+          reason: 'both should have been ruled out and excluded');
+      expect(r.error, contains('carried no traffic'));
+    });
+
+    test('a reachable gateway is accepted', () async {
+      final AetherGatewayFinder f = AetherGatewayFinder(
+        scan: (_, __) async => done(scanResult('1.1.1.1', 443)),
+        verify: (_, __) async => done(<String, dynamic>{'reachable': true}),
+      );
+      expect((await f.find(const AetherOptions())).ok, isTrue);
+    });
+
+    test('a verification with no verdict is still accepted', () async {
+      // Older cores, or a call that returns nothing useful. Treating silence
+      // as failure would reject every gateway on such a build; only an
+      // explicit false is a rejection.
+      final AetherGatewayFinder f = AetherGatewayFinder(
+        scan: (_, __) async => done(scanResult('2.2.2.2', 443)),
+        verify: (_, __) async => done(<String, dynamic>{}),
+      );
+      expect((await f.find(const AetherOptions())).ok, isTrue);
+    });
+  });
 }
