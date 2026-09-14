@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.24.0 (2026-09-14)
+
+- **A new free way out, with no server to find.** Nova can now build its own
+  connection over Cloudflare's network, so there is no address to paste and
+  nobody to get a config from. Pick how it should be carried, press search, and
+  Nova finds a working route and checks it actually carries traffic before
+  saving it.
+
+  If the first route it finds turns out not to work, Nova tries the next one by
+  itself rather than making you start again. Three ways to carry it are
+  offered, and the app tells you what each costs: the fastest one uses more
+  battery and is blocked outright on networks that drop that kind of traffic.
+
+  Configs made this way can be shared like any other, and they work in other
+  apps that support the same method.
+
 ## v1.23.5 (2026-09-10)
 
 - Wording only. A log line named a third-party tool, so that name appeared in
