@@ -23,6 +23,8 @@ import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
+import 'aether/aether_options.dart';
+import 'aether/aether_tunnel.dart';
 import 'xray/xray_config.dart';
 
 /// Phase-3 xhttp/Xray path, ON: the Android libbox.aar is the combined
@@ -877,6 +879,11 @@ class SingboxProxyController extends ProxyController {
     exitUnreachable = false;
     _state = ProxyConnectionState.disconnecting;
     notifyListeners();
+    // Stop the Aether tunnel too, if one is up. It runs in this process rather
+    // than under the platform layer, so stopping the core does not stop it:
+    // without this it keeps a WARP tunnel and a listening port alive after the
+    // user has disconnected, and the next connect starts a second one.
+    await AetherTunnel.stop();
     try {
       await _control.invokeMethod<void>('stop');
       // The host answers a stop with a `disconnected` state event (Android
@@ -1166,6 +1173,20 @@ class SingboxProxyController extends ProxyController {
       }
     }
 
+    // An Aether exit is not dialled by the core at all: the Aether library
+    // opens a WARP tunnel in this process and serves it as local SOCKS5, and
+    // sing-box forwards into that. Same two-core shape as xhttp, except the
+    // second core is linked rather than handed a config, so it is started here
+    // and the config that comes back points at its port.
+    if (nodes.length == 1 && nodes.first.protocol == NodeProtocol.aether) {
+      final String aether = await _buildAetherConfig(nodes.first, tuned);
+      if (Platform.isAndroid) {
+        final String base = await _extractRuleSets();
+        return aether.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      }
+      return aether;
+    }
+
     final String config = nodes.length == 1
         ? SingboxConfig.build(nodes.first, options: tuned)
         : SingboxConfig.buildMulti(nodes, options: tuned);
@@ -1174,6 +1195,35 @@ class SingboxProxyController extends ProxyController {
       return config.replaceAll(SingboxConfig.ruleSetBaseToken, base);
     }
     return config;
+  }
+
+  /// Brings the Aether tunnel up and returns the config that forwards into it.
+  ///
+  /// The gateway comes from the node: a saved Aether config carries the address
+  /// its search proved, in the same place any other node carries its server.
+  /// A config that has never been searched has none, and rather than quietly
+  /// scanning on the connect button (a wait with nothing to look at, which is
+  /// the experience this feature exists to improve on) it says so.
+  Future<String> _buildAetherConfig(
+      ProxyNode node, SingboxRouteOptions options) async {
+    final String endpoint =
+        node.server.isEmpty ? '' : '${node.server}:${node.port}';
+    if (endpoint.isEmpty) {
+      throw StateError(
+          'This Aether config has no gateway yet. Open it and search for one.');
+    }
+    final Directory support = await getApplicationSupportDirectory();
+    final AetherTunnel tunnel = await AetherTunnel.start(
+      AetherOptions.fromQuery(node.aetherOpts),
+      endpoint: endpoint,
+      identityBase: '${support.path}/aether',
+    );
+    NovaLog.instance.write(
+        'Aether tunnel up on 127.0.0.1:${tunnel.socksPort} via $endpoint; '
+        'sing-box forwards into it.');
+    return const JsonEncoder.withIndent('  ').convert(
+        SingboxConfig.buildAetherSocksBridgeMap(tunnel.socksPort,
+            options: options));
   }
 
   /// Writes the bundled `.srs` rule-sets into the app-support dir (once) and
