@@ -176,12 +176,6 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/setup-nasm@v1
 
-      # dumpbin is an MSVC tool and is not on PATH in a plain bash shell, so
-      # the export check below found no tool and reported a missing symbol on a
-      # library that was fine. This puts the developer environment on PATH.
-      - name: Put the MSVC tools on PATH
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build
         shell: bash
@@ -205,25 +199,76 @@ jobs:
           fi
           ls -l "../dist/${{ matrix.out }}"
 
+      - name: Write the PE export reader
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/pe_exports.py" <<'PYEOF'
+          # Prints the exported names of a PE/DLL. Standard library only: the
+          # point is to depend on nothing the build might disagree with.
+          import struct, sys
+
+          def exports(path):
+              d = open(path, 'rb').read()
+              pe = struct.unpack_from('<I', d, 0x3C)[0]
+              if d[pe:pe + 4] != b'PE\0\0':
+                  raise SystemExit('not a PE file')
+              nsec, = struct.unpack_from('<H', d, pe + 6)
+              opt, = struct.unpack_from('<H', d, pe + 20)
+              magic, = struct.unpack_from('<H', d, pe + 24)
+              # The export directory is the first data directory; where it sits
+              # depends on whether this is PE32 or PE32+.
+              dd = pe + 24 + (112 if magic == 0x20b else 96)
+              rva, _size = struct.unpack_from('<II', d, dd)
+              if rva == 0:
+                  return []
+              secs = pe + 24 + opt
+              def to_off(r):
+                  for i in range(nsec):
+                      s = secs + 40 * i
+                      va, vsz = struct.unpack_from('<II', d, s + 12)[0], struct.unpack_from('<I', d, s + 8)[0]
+                      raw = struct.unpack_from('<I', d, s + 20)[0]
+                      if va <= r < va + max(vsz, 1):
+                          return raw + (r - va)
+                  raise SystemExit('rva %#x is outside every section' % r)
+              e = to_off(rva)
+              n_names, = struct.unpack_from('<I', d, e + 24)
+              names_rva, = struct.unpack_from('<I', d, e + 32)
+              out = []
+              base = to_off(names_rva)
+              for i in range(n_names):
+                  nr, = struct.unpack_from('<I', d, base + 4 * i)
+                  o = to_off(nr)
+                  out.append(d[o:d.index(b'\0', o)].decode('ascii', 'replace'))
+              return out
+
+          for name in exports(sys.argv[1]):
+              print(name)
+          PYEOF
+          sed -i 's/^          //' "$GITHUB_WORKSPACE/pe_exports.py"
+          python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$GITHUB_WORKSPACE/pe_exports.py"
+          echo "parser written and parses"
+
       - name: Prove the exports are there
         shell: bash
         working-directory: dist
         run: |
           set -euo pipefail
           OUT="${{ matrix.out }}"
-          # Same reasoning as the Android leg: a missing export is a crash on
-          # first use whose only message is that a symbol was not found. The
-          # tool differs per platform, the check does not.
+          # A missing export is a crash on first use whose only message is that
+          # a symbol was not found, so it is worth catching here.
+          #
+          # Windows reads the PE export table in Python rather than shelling out
+          # to dumpbin. dumpbin is an MSVC tool absent from a plain bash PATH,
+          # and the obvious fix, loading the developer environment, reconfigured
+          # the toolchain cargo had already set up correctly and broke the build
+          # itself. A parser with no toolchain dependency cannot do that.
           case "${{ runner.os }}" in
-            macOS)   LIST="nm -gU $OUT" ;;
-            Linux)   LIST="nm --dynamic --defined-only $OUT" ;;
-            Windows) LIST="dumpbin //exports $OUT" ;;
+            macOS)   nm -gU "$OUT" > syms.txt ;;
+            Linux)   nm --dynamic --defined-only "$OUT" > syms.txt ;;
+            Windows) python3 "$GITHUB_WORKSPACE/pe_exports.py" "$OUT" > syms.txt ;;
           esac
-          # Fail loudly when the tool itself is missing. Letting this fall
-          # through produced "missing export: aether_version" against a library
-          # whose exports were all present, which points at exactly the wrong
-          # thing.
-          $LIST > syms.txt || { echo "could not list symbols with: $LIST"; exit 1; }
+          test -s syms.txt || { echo "no symbols could be listed at all"; exit 1; }
           for sym in aether_version aether_identity_open aether_scan_start \
                      aether_verify_start aether_tunnel_start aether_job_poll \
                      aether_job_cancel aether_string_free; do
