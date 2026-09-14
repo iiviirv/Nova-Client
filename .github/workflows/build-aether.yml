@@ -199,55 +199,16 @@ jobs:
           fi
           ls -l "../dist/${{ matrix.out }}"
 
-      - name: Write the PE export reader
+      # The job checks out Aether, not this repo, so the reader has to be
+      # fetched deliberately. Sparse: one file, not the whole client.
+      - name: Fetch the PE export reader
         if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          cat > "$GITHUB_WORKSPACE/pe_exports.py" <<'PYEOF'
-          # Prints the exported names of a PE/DLL. Standard library only: the
-          # point is to depend on nothing the build might disagree with.
-          import struct, sys
-
-          def exports(path):
-              d = open(path, 'rb').read()
-              pe = struct.unpack_from('<I', d, 0x3C)[0]
-              if d[pe:pe + 4] != b'PE\0\0':
-                  raise SystemExit('not a PE file')
-              nsec, = struct.unpack_from('<H', d, pe + 6)
-              opt, = struct.unpack_from('<H', d, pe + 20)
-              magic, = struct.unpack_from('<H', d, pe + 24)
-              # The export directory is the first data directory; where it sits
-              # depends on whether this is PE32 or PE32+.
-              dd = pe + 24 + (112 if magic == 0x20b else 96)
-              rva, _size = struct.unpack_from('<II', d, dd)
-              if rva == 0:
-                  return []
-              secs = pe + 24 + opt
-              def to_off(r):
-                  for i in range(nsec):
-                      s = secs + 40 * i
-                      va, vsz = struct.unpack_from('<II', d, s + 12)[0], struct.unpack_from('<I', d, s + 8)[0]
-                      raw = struct.unpack_from('<I', d, s + 20)[0]
-                      if va <= r < va + max(vsz, 1):
-                          return raw + (r - va)
-                  raise SystemExit('rva %#x is outside every section' % r)
-              e = to_off(rva)
-              n_names, = struct.unpack_from('<I', d, e + 24)
-              names_rva, = struct.unpack_from('<I', d, e + 32)
-              out = []
-              base = to_off(names_rva)
-              for i in range(n_names):
-                  nr, = struct.unpack_from('<I', d, base + 4 * i)
-                  o = to_off(nr)
-                  out.append(d[o:d.index(b'\0', o)].decode('ascii', 'replace'))
-              return out
-
-          for name in exports(sys.argv[1]):
-              print(name)
-          PYEOF
-          sed -i 's/^          //' "$GITHUB_WORKSPACE/pe_exports.py"
-          python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$GITHUB_WORKSPACE/pe_exports.py"
-          echo "parser written and parses"
+        uses: actions/checkout@v4
+        with:
+          path: nova-tools
+          sparse-checkout: tool/pe_exports.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Prove the exports are there
         shell: bash
@@ -266,7 +227,7 @@ jobs:
           case "${{ runner.os }}" in
             macOS)   nm -gU "$OUT" > syms.txt ;;
             Linux)   nm --dynamic --defined-only "$OUT" > syms.txt ;;
-            Windows) python3 "$GITHUB_WORKSPACE/pe_exports.py" "$OUT" > syms.txt ;;
+            Windows) python "$GITHUB_WORKSPACE/nova-tools/tool/pe_exports.py" "$OUT" > syms.txt ;;
           esac
           test -s syms.txt || { echo "no symbols could be listed at all"; exit 1; }
           for sym in aether_version aether_identity_open aether_scan_start \

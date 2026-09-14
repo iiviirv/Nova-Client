@@ -87,6 +87,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     setState(() {
       _progress = null;
       _result = null;
+      // Set here as well as where the cancelled run lands, because a real
+      // search only notices the cancel on its next poll. Without this the
+      // button would sit there doing nothing visible for half a second.
       _stopped = true;
     });
   }

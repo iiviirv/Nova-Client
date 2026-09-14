@@ -12,6 +12,7 @@ import 'package:nova_client/src/features/profiles/profiles_controller.dart';
 import 'package:nova_client/src/features/radar/radar_controller.dart';
 import 'package:nova_client/src/features/relay/relay_controller.dart';
 import 'package:nova_client/src/features/relay/tunnel_controller.dart';
+import 'package:nova_client/src/features/servers/aether_editor_screen.dart';
 import 'package:nova_client/src/features/servers/servers_screen.dart';
 import 'package:nova_client/src/features/settings/settings_controller.dart';
 import 'package:nova_client/src/core/update/update_checker.dart';
@@ -343,6 +344,39 @@ void main() {
       await tester.tap(find.text('Light'));
       await tester.pump();
       expect(theme.themeMode, ThemeMode.light);
+      await _teardown(tester);
+    });
+  });
+
+  group('Aether editor', () {
+    // The editor is the densest screen in the app: five choice groups, a field
+    // and a live status line. At 320dp with doubled text the pill rows are what
+    // break first, and a Wrap that cannot wrap throws rather than looking bad.
+    testWidgets('lays out at 320dp and 2x text', (WidgetTester tester) async {
+      await _pump(tester, const AetherEditorScreen(), textScale: 2.0);
+      expect(tester.takeException(), isNull);
+      await _teardown(tester);
+    });
+
+    testWidgets('lays out in Farsi, light, at 2x text',
+        (WidgetTester tester) async {
+      await _pump(tester, const AetherEditorScreen(),
+          textScale: 2.0,
+          locale: const Locale('fa'),
+          themeMode: ThemeMode.light);
+      expect(tester.takeException(), isNull);
+      await _teardown(tester);
+    });
+
+    testWidgets('the gool hop fields lay out too', (WidgetTester tester) async {
+      await _pump(tester, const AetherEditorScreen(), textScale: 2.0);
+      await tester.scrollUntilVisible(find.text('gool'), 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(find.text('gool'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('gool'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
       await _teardown(tester);
     });
   });
