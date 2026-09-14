@@ -54,54 +54,82 @@ void main() {
     });
   });
 
-  group('a config survives being shared', () {
-    test('every field round-trips', () {
-      const AetherOptions o = AetherOptions(
-        mode: AetherMode.gool,
-        transport: AetherTransport.h2,
-        ip: AetherIpMode.both,
-        scan: AetherScan.ironclad,
-        noize: AetherNoize.aggressive,
-        peer: '1.2.3.4:443',
-        wiwOuter: '5.6.7.8:2408',
-        wiwInner: '9.10.11.12:2408',
-        fragment: true,
-        dns: '9.9.9.9',
-      );
-      final AetherOptions back = AetherOptions.decode(o.encode());
-      expect(back.mode, o.mode);
-      expect(back.ip, o.ip);
-      expect(back.scan, o.scan);
-      expect(back.noize, o.noize);
-      expect(back.peer, o.peer);
-      expect(back.wiwOuter, o.wiwOuter);
-      expect(back.wiwInner, o.wiwInner);
-      expect(back.fragment, o.fragment);
-      expect(back.dns, o.dns);
+  group('the share format matches the other clients byte for byte', () {
+    // Captured from real links exported by another client on 2026-09-14. These
+    // are the contract: a config shared out of Nova must import there, and
+    // theirs here. Guessing this format wrong would have been invisible until
+    // someone tried to move a config between the two apps.
+    const String masque =
+        'aether://162.159.198.1:443?protocol=masque&scan=balanced'
+        '&noize=balanced&ip=v4&transport=h3#masque%20add%20test';
+    const String wg =
+        'aether://162.159.195.150:908?protocol=wg&scan=balanced'
+        '&noize=balanced&ip=v4#wire%20add%20test';
+    const String gool =
+        'aether://?protocol=gool&scan=balanced&noize=balanced&ip=v4'
+        '&outer=162.159.195.16%3A864&inner=162.159.192.1%3A2408'
+        '#gool%20add%20test';
+
+    test('a MASQUE link parses', () {
+      final AetherConfig c = AetherConfig.parse(masque)!;
+      expect(c.options.mode, AetherMode.masque);
+      expect(c.options.transport, AetherTransport.h3);
+      expect(c.options.scan, AetherScan.balanced);
+      expect(c.options.noize, AetherNoize.balanced);
+      expect(c.options.ip, AetherIpMode.v4);
+      expect(c.gateway, '162.159.198.1:443');
+      expect(c.name, 'masque add test');
     });
 
-    test('an IPv6 endpoint survives', () {
-      const AetherOptions o = AetherOptions(peer: '2606:4700:d0::a29f:c001:443');
-      expect(AetherOptions.decode(o.encode()).peer, o.peer);
+    test('a WireGuard link parses and carries no transport', () {
+      final AetherConfig c = AetherConfig.parse(wg)!;
+      expect(c.options.mode, AetherMode.wg);
+      expect(c.gateway, '162.159.195.150:908');
+      expect(c.toLink().contains('transport='), isFalse,
+          reason: 'transport is a MASQUE-only key and they do not write it');
     });
 
-    test('a value carrying the separators survives', () {
-      // This is what the percent-encoding is actually for. Colons are safe on
-      // their own, because decoding splits on the first '=' only, so an IPv6
-      // address proves nothing about the encoding. A value containing '&' or
-      // '=' is what would silently truncate the field and every field after it.
-      const AetherOptions o = AetherOptions(dns: '1.1.1.1&x=2', peer: 'a=b&c');
-      final AetherOptions back = AetherOptions.decode(o.encode());
-      expect(back.dns, '1.1.1.1&x=2');
-      expect(back.peer, 'a=b&c');
-      expect(back.scan, AetherScan.balanced,
-          reason: 'a raw & would end the field early and swallow what follows');
+    test('a gool link has no authority and names both hops', () {
+      final AetherConfig c = AetherConfig.parse(gool)!;
+      expect(c.options.mode, AetherMode.gool);
+      expect(c.gateway, isNull, reason: 'gool scans, the hops are in the query');
+      expect(c.options.wiwOuter, '162.159.195.16:864');
+      expect(c.options.wiwInner, '162.159.192.1:2408');
+    });
+
+    test('all three re-serialise to the exact original string', () {
+      for (final String link in <String>[masque, wg, gool]) {
+        expect(AetherConfig.parse(link)!.toLink(), link,
+            reason: 'a config that changes when shared is a config that stops '
+                'importing into the client it came from');
+      }
+    });
+
+    test('a link Nova wrote itself round-trips', () {
+      const AetherConfig c = AetherConfig(
+          name: 'my exit',
+          options: AetherOptions(
+              mode: AetherMode.masque,
+              transport: AetherTransport.h2,
+              scan: AetherScan.thorough,
+              noize: AetherNoize.gfw,
+              peer: '1.2.3.4:443'));
+      final AetherConfig back = AetherConfig.parse(c.toLink())!;
+      expect(back.options.transport, AetherTransport.h2);
+      expect(back.options.noize, AetherNoize.gfw);
+      expect(back.gateway, '1.2.3.4:443');
+      expect(back.name, 'my exit');
+    });
+
+    test('a non-aether link is declined so other parsers get a turn', () {
+      expect(AetherConfig.parse('vless://x@1.2.3.4:443'), isNull);
+      expect(AetherConfig.parse('not a link'), isNull);
     });
   });
 
   group('a bad value never reaches the binary', () {
     test('an unknown mode falls back instead of being passed through', () {
-      final AetherOptions o = AetherOptions.decode('mode=wormhole&scan=turbo');
+      final AetherOptions o = AetherOptions.fromQuery('protocol=wormhole&scan=turbo');
       expect(o.mode, AetherMode.masque);
       expect(o.toCliArgs().contains('wormhole'), isFalse,
           reason: 'the binary exits on an unknown flag value, and the user '
@@ -109,7 +137,7 @@ void main() {
     });
 
     test('an unknown scan or obfuscation value falls back', () {
-      final AetherOptions o = AetherOptions.decode('scan=ludicrous&noize=plaid');
+      final AetherOptions o = AetherOptions.fromQuery('scan=ludicrous&noize=plaid');
       expect(o.scan, AetherScan.balanced);
       expect(o.noize, AetherNoize.firewall);
       expect(o.toCliArgs().join(' ').contains('ludicrous'), isFalse);

@@ -119,14 +119,20 @@ class AetherOptions {
     return a;
   }
 
-  /// The compact form stored on a node and carried in a share link.
-  String encode() {
-    final List<String> p = <String>['mode=${mode.name}'];
-    if (mode == AetherMode.masque) p.add('transport=${transport.name}');
-    p.add('ip=${ip.name}');
+  /// The query half of an `aether://` link, in the shape other clients already
+  /// write. Kept byte-compatible on purpose: a config shared out of Nova has to
+  /// import into them, and theirs into Nova, or sharing is only half a feature.
+  ///
+  /// The forced gateway is NOT here. It travels as the link's authority
+  /// (`aether://ip:port?...`), which is where the other implementation puts it.
+  /// Nova-only extras are emitted only when set, so a default config produces
+  /// exactly the same string they would write.
+  String toQuery() {
+    final List<String> p = <String>['protocol=${mode.name}'];
     p.add('scan=${scan.name}');
     if (noize != null) p.add('noize=${noize!.name}');
-    if (peer != null && peer!.isNotEmpty) p.add('peer=${Uri.encodeComponent(peer!)}');
+    p.add('ip=${ip.name}');
+    if (mode == AetherMode.masque) p.add('transport=${transport.name}');
     if (wiwOuter != null && wiwOuter!.isNotEmpty) {
       p.add('outer=${Uri.encodeComponent(wiwOuter!)}');
     }
@@ -138,9 +144,11 @@ class AetherOptions {
     return p.join('&');
   }
 
-  /// Reads [encode]'s form back. Unknown or misspelled values fall back to the
+  /// Reads the query half back. Unknown or misspelled values fall back to the
   /// default instead of reaching the binary, which would refuse to start.
-  static AetherOptions decode(String? s) {
+  ///
+  /// [peer] comes from the link's authority, not the query.
+  static AetherOptions fromQuery(String? s, {String? peer}) {
     final Map<String, String> q = <String, String>{};
     for (final String pair in (s ?? '').split('&')) {
       final int i = pair.indexOf('=');
@@ -158,7 +166,9 @@ class AetherOptions {
     }
     String? nonEmpty(String? v) => (v == null || v.isEmpty) ? null : v;
     return AetherOptions(
-      mode: pick(AetherMode.values, q['mode'], AetherMode.masque),
+      // 'protocol' is the key the other clients write; 'mode' is accepted too
+      // because Nova's own first cut used it before the real format was known.
+      mode: pick(AetherMode.values, q['protocol'] ?? q['mode'], AetherMode.masque),
       transport:
           pick(AetherTransport.values, q['transport'], AetherTransport.h3),
       ip: pick(AetherIpMode.values, q['ip'], AetherIpMode.v4),
@@ -166,7 +176,7 @@ class AetherOptions {
       noize: q['noize'] == null
           ? null
           : pick(AetherNoize.values, q['noize'], AetherNoize.firewall),
-      peer: nonEmpty(q['peer']),
+      peer: nonEmpty(peer) ?? nonEmpty(q['peer']),
       wiwOuter: nonEmpty(q['outer']),
       wiwInner: nonEmpty(q['inner']),
       fragment: q['fragment'] == '1' || q['fragment'] == 'true',
@@ -198,4 +208,50 @@ class AetherOptions {
         fragment: fragment ?? this.fragment,
         dns: dns ?? this.dns,
       );
+}
+
+/// One Aether config: its settings, its optional forced gateway, and its name.
+class AetherConfig {
+  const AetherConfig({required this.options, this.name = 'Aether'});
+
+  final AetherOptions options;
+  final String name;
+
+  /// The forced gateway, or null when the scan should find one.
+  String? get gateway => options.peer;
+
+  /// Writes the `aether://` link other clients read.
+  String toLink() {
+    final String auth = (options.peer ?? '');
+    final String frag = name.isEmpty ? '' : '#${Uri.encodeComponent(name)}';
+    return 'aether://$auth?${options.toQuery()}$frag';
+  }
+
+  /// Reads an `aether://` link. Returns null for anything else, so callers can
+  /// try the other parsers in turn.
+  static AetherConfig? parse(String input) {
+    final String s = input.trim();
+    if (!s.toLowerCase().startsWith('aether://')) return null;
+    String rest = s.substring('aether://'.length);
+
+    String name = '';
+    final int hash = rest.indexOf('#');
+    if (hash >= 0) {
+      name = Uri.decodeComponent(rest.substring(hash + 1));
+      rest = rest.substring(0, hash);
+    }
+    String query = '';
+    final int q = rest.indexOf('?');
+    if (q >= 0) {
+      query = rest.substring(q + 1);
+      rest = rest.substring(0, q);
+    }
+    // What is left is the authority: the forced gateway, empty for a config
+    // that scans (gool links are written `aether://?...` with nothing here).
+    final String peer = rest.trim();
+    return AetherConfig(
+      options: AetherOptions.fromQuery(query, peer: peer.isEmpty ? null : peer),
+      name: name.isEmpty ? 'Aether' : name,
+    );
+  }
 }
