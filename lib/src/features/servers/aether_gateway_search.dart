@@ -103,9 +103,11 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final AetherCore core = AetherCore.open();
     _core = core;
 
+    // A path prefix, not a directory: the core appends the transport, so this
+    // becomes aether-masque (and aether-masque-lastconn) beside it.
     final Directory dir = await getApplicationSupportDirectory();
-    final AetherJobStatus opened =
-        await _await(core, core.identityOpen(options, dir: dir.path));
+    final AetherJobStatus opened = await _await(
+        core, core.identityOpen(options, base: '${dir.path}/aether'));
     if (opened.state != AetherJobState.done) {
       return AetherFindResult(
           endpoint: null,
@@ -186,24 +188,16 @@ class AetherCoreSearch implements AetherGatewaySearch {
 
   /// The identity handle out of the job's result.
   ///
-  /// The core's own name for this field is not recorded anywhere in this repo,
-  /// so the known spellings are tried and anything else falls back to the one
-  /// integer in the result. When a device run confirms the real key, this is
-  /// the single place to pin it: the alternative was to guess one spelling and
-  /// have every later call fail with "there is no identity".
-  static int? _handleOf(Map<String, dynamic>? result) {
-    if (result == null) return null;
-    for (final String key in <String>['identity', 'handle', 'id']) {
-      final int? v = _asInt(result[key]);
-      if (v != null) return v;
-    }
-    for (final MapEntry<String, dynamic> e in result.entries) {
-      if (e.key == 'ok') continue;
-      final int? v = _asInt(e.value);
-      if (v != null) return v;
-    }
-    return null;
-  }
+  /// Confirmed on a device: an opened identity returns
+  /// `{identity: 2, summary: {...}, path: ..., ok: true}`.
+  ///
+  /// This used to try three likely spellings and then fall back to any lone
+  /// integer in the result. That was the right thing while the key was unknown,
+  /// and the wrong thing to keep: a fallback that always finds something cannot
+  /// report that the shape changed, it just returns a number that no longer
+  /// means what it did. Now it reads the field, and says so when it is missing.
+  static int? _handleOf(Map<String, dynamic>? result) =>
+      _asInt(result?[kAetherIdentityField]);
 
   static int? _asInt(Object? v) {
     if (v is int) return v;

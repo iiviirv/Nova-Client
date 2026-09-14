@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_options.dart';
+import 'package:nova_client/src/core/proxy/aether/aether_core.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_protocol.dart';
 
 /// Reading the Aether core's replies, and building what it is asked with.
@@ -11,6 +12,7 @@ import 'package:nova_client/src/core/proxy/aether/aether_protocol.dart';
 /// successful poll, and code that reads only the outer flag calls it a success
 /// and then has no endpoint to show for it.
 void main() {
+  _identityField();
   group('replies', () {
     test('a success carries its fields', () {
       final AetherReply r = AetherReply.parse('{"ok":true,"job":7}');
@@ -118,13 +120,14 @@ void main() {
           .containsKey('excluded'), isFalse);
     });
 
-    test('an identity payload names a directory and the transport', () {
+    test('an identity payload names a path prefix and the transport', () {
       // The core replied "missing field `path`" when this was omitted, which
-      // is how the field was learned rather than guessed. It is a directory:
-      // the core derives the filename per transport, so MASQUE and WireGuard
-      // keep separate identities side by side.
+      // is how the field was learned rather than guessed. It is a path PREFIX:
+      // a device run returned path ".../aether-masque" for a base of
+      // ".../aether", so the core appends the transport rather than treating
+      // this as a directory.
       final Map<String, dynamic> p = dec(AetherPayloads.identity(
-          const AetherOptions(), dir: '/data/user/0/app/files/aether'));
+          const AetherOptions(), base: '/data/user/0/app/files/aether'));
       expect(p['path'], '/data/user/0/app/files/aether');
       expect(p['transport'], 'h3');
       expect(p.containsKey('socks'), isFalse,
@@ -135,11 +138,11 @@ void main() {
       expect(
           dec(AetherPayloads.identity(
               const AetherOptions(transport: AetherTransport.h2),
-              dir: '/x'))['transport'],
+              base: '/x'))['transport'],
           'h2');
       expect(
           dec(AetherPayloads.identity(
-              const AetherOptions(mode: AetherMode.wg), dir: '/x'))['transport'],
+              const AetherOptions(mode: AetherMode.wg), base: '/x'))['transport'],
           'wg');
     });
 
@@ -175,5 +178,13 @@ void main() {
               const AetherOptions(noize: AetherNoize.gfw)))['profile'],
           'gfw');
     });
+  });
+}
+
+/// The identity handle key, pinned from a device run.
+void _identityField() {
+  test('the handle key is the one the core returns', () {
+    // From a real first run: {identity: 2, summary: {...}, path: ..., ok: true}
+    expect(kAetherIdentityField, 'identity');
   });
 }

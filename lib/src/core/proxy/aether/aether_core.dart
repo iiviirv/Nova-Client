@@ -41,6 +41,15 @@ class AetherUnavailable implements Exception {
   String toString() => 'The Aether core is unavailable: $reason';
 }
 
+/// The key the identity handle arrives under in an opened identity's job
+/// result. Confirmed on a device: the result is
+/// `{identity: 2, summary: {...}, path: ..., ok: true}`.
+///
+/// Named here rather than probed for. The search used to try several likely
+/// keys and then any lone integer, which worked but would have kept working
+/// while quietly meaning something else if the shape ever changed.
+const String kAetherIdentityField = 'identity';
+
 class AetherCore {
   AetherCore._(this._lib);
 
@@ -115,10 +124,10 @@ class AetherCore {
   /// Opens (or creates) the WARP identity. Everything else needs its handle.
   ///
   /// Asynchronous: the reply carries a job id, and the identity handle arrives
-  /// in that job's result. [dir] is a directory; the core names the file itself
-  /// per transport.
-  AetherReply identityOpen(AetherOptions o, {required String dir}) =>
-      identityOpenRaw(AetherPayloads.identity(o, dir: dir));
+  /// in that job's result under [kAetherIdentityField]. [base] is a path prefix
+  /// the core appends the transport to.
+  AetherReply identityOpen(AetherOptions o, {required String base}) =>
+      identityOpenRaw(AetherPayloads.identity(o, base: base));
 
   /// The same call with a payload built elsewhere, for tests that want to send
   /// something deliberately wrong.

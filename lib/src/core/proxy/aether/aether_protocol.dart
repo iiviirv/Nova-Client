@@ -100,17 +100,22 @@ class AetherJobStatus {
 class AetherPayloads {
   /// For `aether_identity_open`.
   ///
-  /// [dir] is a DIRECTORY, not a file. The core derives the filename from the
-  /// transport, so MASQUE and WireGuard keep separate identities in the same
-  /// place. Learned from the core itself: calling it without this field returns
-  /// "missing field `path`", which is a better contract than a guess.
+  /// [base] is a path PREFIX, not a directory and not a file. The core appends
+  /// the transport to it, so passing `.../aether` produces `.../aether-masque`
+  /// alongside `.../aether-masque-lastconn`, and the WireGuard modes keep their
+  /// own files beside those.
+  ///
+  /// Both halves of that were learned from the core rather than guessed. Its
+  /// refusal named the field ("missing field `path`"), and a device run showed
+  /// what it does with the value: an earlier version of this comment called it
+  /// a directory, which would have had callers creating one for no reason.
   ///
   /// The call is asynchronous like the others: it returns a job id to poll, not
   /// a handle. Treating it as immediate gets a job number where an identity was
   /// expected, and every later call then fails with "there is no identity".
-  static String identity(AetherOptions o, {required String dir}) =>
+  static String identity(AetherOptions o, {required String base}) =>
       jsonEncode(<String, dynamic>{
-        'path': dir,
+        'path': base,
         'transport': _transport(o),
       });
 
