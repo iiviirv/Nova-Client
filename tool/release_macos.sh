@@ -49,6 +49,21 @@ for a in arm64 amd64; do
   cp "$src" "$APP/Contents/Resources/sing-box-macos-$a"
   echo "core bundled ($a): $(ls -lh "$APP/Contents/Resources/sing-box-macos-$a" | awk '{print $5}')"
 done
+# Third core, Aether, for WARP exits. One universal dylib rather than a file per
+# architecture: it is built with lipo, so the same file loads on both kinds of
+# Mac. Required, not best-effort, because an Aether config in a build without it
+# fails at connect with a dlopen error, which tells the user nothing.
+AETHER="$PROJ/assets/bin/libaether.dylib"
+if [[ ! -f "$AETHER" ]]; then
+  echo "!! missing $AETHER (build it: the Build Aether core workflow)"; exit 1
+fi
+if ! lipo -info "$AETHER" | grep -q arm64 || ! lipo -info "$AETHER" | grep -q x86_64; then
+  echo "!! $AETHER is not universal; it would fail on half the Macs it ships to"
+  lipo -info "$AETHER"; exit 1
+fi
+cp "$AETHER" "$APP/Contents/Resources/libaether.dylib"
+echo "aether core bundled: $(ls -lh "$APP/Contents/Resources/libaether.dylib" | awk '{print $5}')"
+
 # Second core, Xray, for xhttp exits. Best-effort: an older tree without it just
 # ships without xhttp support (the app says so at connect time).
 for a in arm64 amd64; do

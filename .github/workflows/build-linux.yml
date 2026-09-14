@@ -69,6 +69,11 @@ jobs:
       - name: Bundle libcronet.so next to the app
         run: cp assets/bin/libcronet.so build/linux/x64/release/bundle/
 
+      # The Aether core, for WARP exits. Beside the app like the others, which
+      # is the first place the loader looks.
+      - name: Bundle libaether.so next to the app
+        run: cp assets/bin/libaether.so build/linux/x64/release/bundle/
+
       - name: Make the cores executable
         run: chmod +x build/linux/x64/release/bundle/sing-box-linux-amd64 build/linux/x64/release/bundle/xray-linux-amd64
 

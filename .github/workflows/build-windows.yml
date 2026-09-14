@@ -51,6 +51,10 @@ jobs:
       - name: Bundle Xray core next to the app
         run: Copy-Item assets/bin/xray-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
 
+      # The Aether core, for WARP exits.
+      - name: Bundle aether.dll next to the exe
+        run: Copy-Item assets/bin/aether.dll -Destination build/windows/x64/runner/Release/ -Force
+
       # wintun.dll is required for TUN (full-device) mode; sing-box loads it from
       # beside the core. Proxy mode (the default) doesn't need it.
       - name: Bundle wintun.dll next to the app

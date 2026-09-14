@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// on one phone model and fine on another, which is a miserable bug report to
 /// receive. Cheaper to fail here.
 void main() {
+  _desktop();
   const Map<String, int> minBytes = <String, int>{
     // Floors, not exact sizes: the build moves with the core. Well under the
     // real figures (5.8, 8.9 and 10.1 MB when built) but far above a truncated
@@ -43,5 +44,39 @@ void main() {
         .toSet();
     expect(found.containsAll(minBytes.keys), isTrue,
         reason: 'found $found');
+  });
+}
+
+/// The desktop builds ship the core too.
+void _desktop() {
+  test('each desktop platform has a library to ship', () {
+    // Committed like the sing-box cores. Without these an Aether config on
+    // desktop fails at connect with a dlopen error, which says nothing useful.
+    const Map<String, int> minBytes = <String, int>{
+      'libaether.dylib': 8000000,
+      'libaether.so': 5000000,
+      'aether.dll': 5000000,
+    };
+    for (final MapEntry<String, int> e in minBytes.entries) {
+      final File f = File('assets/bin/${e.key}');
+      expect(f.existsSync(), isTrue, reason: 'assets/bin/${e.key} is missing');
+      expect(f.lengthSync() >= e.value, isTrue,
+          reason: '${e.key} is ${f.lengthSync()} bytes, too small to be real');
+    }
+  });
+
+  test('the macOS library covers both architectures', () {
+    // A single-slice dylib loads on the machine that built it and fails on the
+    // other kind of Mac, which is the failure you do not see until someone
+    // else reports it.
+    final ProcessResult r = Process.runSync(
+        'lipo', <String>['-info', 'assets/bin/libaether.dylib']);
+    if (r.exitCode != 0) {
+      markTestSkipped('lipo is not available here');
+      return;
+    }
+    final String out = r.stdout.toString();
+    expect(out.contains('arm64'), isTrue, reason: out);
+    expect(out.contains('x86_64'), isTrue, reason: out);
   });
 }

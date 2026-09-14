@@ -64,18 +64,50 @@ class AetherCore {
     final AetherCore? existing = _instance;
     if (existing != null) return existing;
     try {
-      final DynamicLibrary lib = switch (Platform.operatingSystem) {
-        'android' => DynamicLibrary.open('libaether.so'),
-        'linux' => DynamicLibrary.open('libaether.so'),
-        'macos' => DynamicLibrary.open('libaether.dylib'),
-        'windows' => DynamicLibrary.open('aether.dll'),
+      final String name = switch (Platform.operatingSystem) {
+        'android' || 'linux' => 'libaether.so',
+        'macos' => 'libaether.dylib',
+        'windows' => 'aether.dll',
         _ => throw AetherUnavailable(
             'no build for ${Platform.operatingSystem}'),
       };
-      return _instance = AetherCore._(lib);
+      // Android resolves by name from the APK's extracted lib directory. On
+      // desktop the library sits beside the app the same way the sing-box core
+      // does, and the plain name only works if that directory happens to be on
+      // the loader's path, which it is not when running from source. So the
+      // known locations are tried first and the bare name is the fallback.
+      for (final String path in _candidatePaths(name)) {
+        try {
+          return _instance = AetherCore._(DynamicLibrary.open(path));
+        } catch (_) {
+          // Try the next location.
+        }
+      }
+      throw AetherUnavailable('$name was not found beside the app');
     } on ArgumentError catch (e) {
       throw AetherUnavailable('the library could not be loaded ($e)');
     }
+  }
+
+  /// Where the library might be, best first. Mirrors how the desktop core
+  /// binary is located, including the assets/bin fallback that makes
+  /// `flutter run` from a checkout work.
+  static Iterable<String> _candidatePaths(String name) sync* {
+    if (Platform.isAndroid) {
+      yield name;
+      return;
+    }
+    final Directory exeDir = File(Platform.resolvedExecutable).parent;
+    if (Platform.isMacOS) {
+      yield '${exeDir.parent.path}/Resources/$name';
+    } else if (Platform.isWindows) {
+      yield '${exeDir.path}\\$name';
+    } else if (Platform.isLinux) {
+      yield '${exeDir.path}/$name';
+      yield '${exeDir.path}/lib/$name';
+    }
+    yield 'assets/bin/$name';
+    yield name;
   }
 
   /// True when the core can be loaded at all, so a caller can hide the feature
