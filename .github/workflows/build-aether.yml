@@ -97,12 +97,20 @@ jobs:
           # The binding resolves these by name at runtime. A missing one is a
           # crash on first use with no useful message, so it is checked here
           # where the failure is cheap and obvious.
+          # --dynamic, not the default table. A release build strips the
+          # static symbols, so plain nm reports "no symbols" on a library whose
+          # exports are perfectly fine. What dlsym resolves against is the
+          # DYNAMIC table, so that is what has to be inspected; checking the
+          # wrong one fails a good build and would pass a stripped bad one.
           NM="$(find "$ANDROID_NDK_HOME" -name 'llvm-nm' | head -1)"
+          test -n "$NM" || { echo "llvm-nm not found in the NDK"; exit 1; }
+          "$NM" --dynamic --defined-only "$SO" > /tmp/syms.txt
+          echo "exported symbols: $(wc -l < /tmp/syms.txt)"
           for sym in aether_version aether_identity_open aether_scan_start \
                      aether_verify_start aether_tunnel_start aether_job_poll \
                      aether_job_cancel aether_string_free; do
-            "$NM" --defined-only "$SO" | grep -q " T $sym\$" \
-              || { echo "missing export: $sym"; exit 1; }
+            grep -qE "[[:space:]][TtWw][[:space:]]$sym\$" /tmp/syms.txt \
+              || { echo "missing export: $sym"; grep -c . /tmp/syms.txt; exit 1; }
           done
           echo "all expected symbols are exported"
         env:
