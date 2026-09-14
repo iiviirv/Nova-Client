@@ -255,3 +255,45 @@ class AetherConfig {
     );
   }
 }
+
+/// The Cloudflare ranges Aether dials while scanning for a gateway.
+///
+/// These matter because of a loop. Aether is a separate process, so in TUN mode
+/// sing-box captures its outbound connection too, feeds it back into the socks
+/// chain, and nothing ever reaches Cloudflare. The same trap the Xray/xhttp
+/// bridge hit, solved the same way: send this traffic straight out `direct`.
+///
+/// Another client's exported config carries no such rule, which is not a sign
+/// it is unnecessary. That config runs a socks inbound, where nothing is
+/// captured in the first place. Nova runs a tunnel by default, so it needs it.
+///
+/// A single gateway address is not enough to route around, because a scanning
+/// config has no address yet: it sweeps these ranges to find one. So the ranges
+/// go direct, not one IP.
+///
+/// Taken from the scanner's own tables (aether/src/prober.rs and
+/// aether/src/wireguard.rs, read 2026-09-14) rather than from published WARP
+/// documentation, so they match what the binary will actually dial.
+const List<String> kAetherDirectCidrs = <String>[
+  '162.159.36.0/24',
+  '162.159.46.0/24',
+  '162.159.192.0/24',
+  '162.159.193.0/24',
+  '162.159.195.0/24',
+  '162.159.196.0/24',
+  '162.159.197.0/24',
+  '162.159.198.0/24',
+  '162.159.204.0/24',
+  '188.114.96.0/24',
+  '188.114.97.0/24',
+  '188.114.98.0/24',
+  '188.114.99.0/24',
+  '2606:4700:100::/48',
+  '2606:4700:102::/48',
+  '2606:4700:d0::/48',
+  '2606:4700:d1::/48',
+];
+
+/// The host Aether registers its WARP identity against, which must also escape
+/// the tunnel for a first run to succeed.
+const String kAetherRegistrationHost = 'engage.cloudflareclient.com';

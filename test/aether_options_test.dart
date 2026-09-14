@@ -9,6 +9,7 @@ import 'package:nova_client/src/core/proxy/aether/aether_options.dart';
 /// fingerprint, the core refused the whole config and every node in a measuring
 /// pool went undialled, with nothing on screen to say why.
 void main() {
+  _loopPrevention();
   group('the command line matches what the binary accepts', () {
     test('a default MASQUE config', () {
       expect(const AetherOptions().toCliArgs(),
@@ -178,5 +179,43 @@ void main() {
     expect(const AetherOptions().isQuic, isTrue);
     expect(const AetherOptions(transport: AetherTransport.h2).isQuic, isFalse);
     expect(const AetherOptions(mode: AetherMode.wg).isQuic, isFalse);
+  });
+}
+
+/// The ranges that must escape the tunnel, and why.
+void _loopPrevention() {
+  group('the scan ranges escape the tunnel', () {
+    test('every gateway seen in a real shared config is covered', () {
+      // The three links another client exported name these gateways. If a
+      // range were missing, that config would connect there and nowhere else,
+      // which is exactly the kind of gap that looks like "sometimes one IP
+      // does not work".
+      const List<String> seen = <String>[
+        '162.159.198.1', // masque
+        '162.159.195.150', // wireguard
+        '162.159.195.16', // gool outer
+        '162.159.192.1', // gool inner
+      ];
+      for (final String ip in seen) {
+        final String slash24 =
+            '${ip.substring(0, ip.lastIndexOf('.'))}.0/24';
+        expect(kAetherDirectCidrs.contains(slash24), isTrue,
+            reason: '$ip would be captured by the tunnel and loop');
+      }
+    });
+
+    test('both address families are covered', () {
+      expect(kAetherDirectCidrs.any((String c) => c.contains(':')), isTrue,
+          reason: 'a v6 config would loop with only v4 ranges listed');
+      expect(kAetherDirectCidrs.any((String c) => !c.contains(':')), isTrue);
+    });
+
+    test('every entry is a well-formed CIDR', () {
+      for (final String c in kAetherDirectCidrs) {
+        expect(c.contains('/'), isTrue, reason: '$c has no prefix length');
+        final int bits = int.parse(c.split('/').last);
+        expect(bits > 0 && bits <= 128, isTrue, reason: '$c has a bad prefix');
+      }
+    });
   });
 }
