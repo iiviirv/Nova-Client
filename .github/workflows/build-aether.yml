@@ -176,6 +176,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/setup-nasm@v1
 
+      # dumpbin is an MSVC tool and is not on PATH in a plain bash shell, so
+      # the export check below found no tool and reported a missing symbol on a
+      # library that was fine. This puts the developer environment on PATH.
+      - name: Put the MSVC tools on PATH
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Build
         shell: bash
         working-directory: aether
@@ -212,7 +219,11 @@ jobs:
             Linux)   LIST="nm --dynamic --defined-only $OUT" ;;
             Windows) LIST="dumpbin //exports $OUT" ;;
           esac
-          $LIST > syms.txt || true
+          # Fail loudly when the tool itself is missing. Letting this fall
+          # through produced "missing export: aether_version" against a library
+          # whose exports were all present, which points at exactly the wrong
+          # thing.
+          $LIST > syms.txt || { echo "could not list symbols with: $LIST"; exit 1; }
           for sym in aether_version aether_identity_open aether_scan_start \
                      aether_verify_start aether_tunnel_start aether_job_poll \
                      aether_job_cancel aether_string_free; do

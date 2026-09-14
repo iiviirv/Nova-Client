@@ -26,6 +26,7 @@ import '../../widgets/nova_scope.dart';
 import '../profiles/profiles_controller.dart';
 import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
+import 'aether_editor_screen.dart';
 import 'node_list_screen.dart';
 
 /// Probe every profile once per app launch. [ServersBody] exists in both the
@@ -1128,7 +1129,12 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 spacing: 8,
                 runSpacing: 8,
                 children: <Widget>[
+                  // Aether is deliberately absent: these pills say what was
+                  // pasted, and an Aether config is built in its own editor.
+                  // A pasted `aether://` link is detected from its scheme, so
+                  // the pill would only ever be a choice that changes nothing.
                   for (final ProxyKind k in ProxyKind.values)
+                    if (k != ProxyKind.aether)
                     NovaPill(
                       label: k.label,
                       selected: _kind == k,
@@ -1208,6 +1214,7 @@ ProxyKind? _detectKind(String raw) {
   }
   if (l.startsWith('vmess://')) return ProxyKind.vmess;
   if (l.startsWith('tuic://')) return ProxyKind.tuic;
+  if (l.startsWith('aether://')) return ProxyKind.aether;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
   // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
   if (l.startsWith('awg://') ||
@@ -1297,6 +1304,29 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               onTap: () async {
                 Navigator.pop(sheetCtx);
                 await showAddServerDialog(context);
+              },
+            ),
+            // Set apart from the three above, and the only warm colour in the
+            // sheet, because it is the one entry that brings nothing in from
+            // outside: there is no link, file or code, the config is built
+            // here. An `aether://` link pasted above already imports on its own.
+            Divider(
+              height: NovaSpace.lg,
+              indent: NovaSpace.lg,
+              endIndent: NovaSpace.lg,
+              color: nova.border,
+            ),
+            _AddOption(
+              icon: Icons.auto_awesome_rounded,
+              color: nova.star,
+              title: s.aetherAdd,
+              subtitle: s.aetherAddSub,
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                      builder: (_) => const AetherEditorScreen()),
+                );
               },
             ),
             const SizedBox(height: 8),

@@ -74,6 +74,82 @@ class NovaStrings {
   String get bypassResetDefaults => t('bypass.reset');
   String get nodeBypassAllBlocked => t('node.bypassAllBlocked');
 
+  // ---- Aether config editor ----
+  String get aetherAdd => t('aether.add');
+  String get aetherAddSub => t('aether.addSub');
+  String get aetherTitle => t('aether.title');
+  String get aetherIntro => t('aether.intro');
+  String get aetherName => t('aether.name');
+  String get aetherNameHint => t('aether.nameHint');
+  String get aetherProtocol => t('aether.protocol');
+  String get aetherProtoMasque => t('aether.protoMasque');
+  String get aetherProtoWg => t('aether.protoWg');
+  String get aetherProtoGool => t('aether.protoGool');
+  String get aetherProtoMasqueSub => t('aether.protoMasqueSub');
+  String get aetherProtoWgSub => t('aether.protoWgSub');
+  String get aetherProtoGoolSub => t('aether.protoGoolSub');
+  String get aetherTransport => t('aether.transport');
+  String get aetherTransportH3 => t('aether.transportH3');
+  String get aetherTransportH2 => t('aether.transportH2');
+  String get aetherTransportH3Sub => t('aether.transportH3Sub');
+  String get aetherTransportH2Sub => t('aether.transportH2Sub');
+  String get aetherFragment => t('aether.fragment');
+  String get aetherFragmentSub => t('aether.fragmentSub');
+  String get aetherScanMode => t('aether.scanMode');
+  String get aetherScanTurbo => t('aether.scanTurbo');
+  String get aetherScanBalanced => t('aether.scanBalanced');
+  String get aetherScanThorough => t('aether.scanThorough');
+  String get aetherScanStealth => t('aether.scanStealth');
+  String get aetherScanIronclad => t('aether.scanIronclad');
+  String get aetherScanTurboSub => t('aether.scanTurboSub');
+  String get aetherScanBalancedSub => t('aether.scanBalancedSub');
+  String get aetherScanThoroughSub => t('aether.scanThoroughSub');
+  String get aetherScanStealthSub => t('aether.scanStealthSub');
+  String get aetherScanIroncladSub => t('aether.scanIroncladSub');
+  String get aetherNoize => t('aether.noize');
+  String get aetherNoizeAuto => t('aether.noizeAuto');
+  String get aetherNoizeSub => t('aether.noizeSub');
+  String get aetherNoizeAutoSub => t('aether.noizeAutoSub');
+  String get aetherIp => t('aether.ip');
+  String get aetherIpV4 => t('aether.ipV4');
+  String get aetherIpV6 => t('aether.ipV6');
+  String get aetherIpBoth => t('aether.ipBoth');
+  String get aetherIpSub => t('aether.ipSub');
+  String get aetherGateway => t('aether.gateway');
+  String get aetherGatewayAddress => t('aether.gatewayAddress');
+  String get aetherGatewayHint => t('aether.gatewayHint');
+  String get aetherGatewayScanned => t('aether.gatewayScanned');
+  String get aetherGatewayManual => t('aether.gatewayManual');
+  String get aetherHopOuter => t('aether.hopOuter');
+  String get aetherHopInner => t('aether.hopInner');
+  String get aetherHopsSub => t('aether.hopsSub');
+  String get aetherFindNow => t('aether.findNow');
+  String get aetherFindAgain => t('aether.findAgain');
+  String get aetherCancel => t('aether.cancel');
+  String get aetherCoreMissing => t('aether.coreMissing');
+  String get aetherScanCancelled => t('aether.scanCancelled');
+
+  /// "Address 2: looking for one" — the attempt number is what explains a long
+  /// wait, so it is in the line rather than only in a spinner.
+  String aetherScanningAt(int n) =>
+      t('aether.scanningAt').replaceFirst('{n}', '$n');
+
+  /// "Address 2: checking that it carries traffic".
+  String aetherVerifyingAt(int n) =>
+      t('aether.verifyingAt').replaceFirst('{n}', '$n');
+
+  /// How many addresses answered a probe but carried nothing.
+  String aetherRuledOut(int n) =>
+      t('aether.ruledOut').replaceFirst('{n}', '$n');
+
+  /// The working gateway, named.
+  String aetherFound(String endpoint) =>
+      t('aether.found').replaceFirst('{ep}', endpoint);
+
+  /// Why the search ended with nothing, in the core's own words.
+  String aetherFindFailed(String reason) =>
+      t('aether.findFailed').replaceFirst('{why}', reason);
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -857,6 +933,103 @@ class NovaStrings {
     'bypass.cipherSuites': 'Cipher suites (one per line)',
     'bypass.maskInvalid': 'This is not valid JSON.',
     'bypass.reset': 'Reset to defaults',
+
+    // Aether. The copy avoids promising speed: what these settings decide is
+    // whether the tunnel comes up at all on a filtered network.
+    'aether.add': 'Build an Aether config',
+    'aether.addSub': 'Cloudflare WARP as a Nova server, no link to paste',
+    'aether.title': 'Aether config',
+    'aether.intro':
+        'Aether opens a Cloudflare WARP tunnel and hands it to Nova as a local '
+            'proxy. There is no server address to paste: you choose how the '
+            'tunnel is built, and Nova finds a gateway for it.',
+    'aether.name': 'Name',
+    'aether.nameHint': 'Aether',
+    'aether.protocol': 'Protocol',
+    'aether.protoMasque': 'MASQUE',
+    'aether.protoWg': 'WireGuard',
+    'aether.protoGool': 'gool',
+    'aether.protoMasqueSub':
+        'WARP carried over HTTP, so it looks like ordinary web traffic. Start '
+            'here.',
+    'aether.protoWgSub':
+        'Plain WireGuard to a WARP endpoint. Lighter, and easier for a filter '
+            'to recognise.',
+    'aether.protoGoolSub':
+        'WireGuard inside WireGuard, over two hops. Slower, and it gets '
+            'through some networks that one hop does not.',
+    'aether.transport': 'Transport',
+    'aether.transportH3': 'HTTP/3',
+    'aether.transportH2': 'HTTP/2',
+    'aether.transportH3Sub':
+        'QUIC, over UDP. Connects faster and costs noticeably more battery. A '
+            'network that drops UDP blocks it outright.',
+    'aether.transportH2Sub':
+        'TCP. Slower to open, cheaper to run, and it survives a network that '
+            'blocks QUIC.',
+    'aether.fragment': 'Split the TLS hello',
+    'aether.fragmentSub':
+        'Sends the handshake in pieces so a filter cannot match it in a single '
+            'packet. HTTP/2 only.',
+    'aether.scanMode': 'Scan mode',
+    'aether.scanTurbo': 'Turbo',
+    'aether.scanBalanced': 'Balanced',
+    'aether.scanThorough': 'Thorough',
+    'aether.scanStealth': 'Stealth',
+    'aether.scanIronclad': 'Ironclad',
+    'aether.scanTurboSub': 'Tries the fewest addresses, so it answers soonest.',
+    'aether.scanBalancedSub':
+        'Enough addresses to find a gateway on most networks. Leave it here '
+            'unless a scan comes back empty.',
+    'aether.scanThoroughSub':
+        'Sweeps widely. Takes minutes, and finds a gateway where the quick '
+            'modes give up.',
+    'aether.scanStealthSub':
+        'Probes slowly, so the sweep itself is less of a pattern to spot.',
+    'aether.scanIroncladSub':
+        'The slowest and most stubborn sweep, for a network that has blocked '
+            'everything else.',
+    'aether.noize': 'Obfuscation',
+    'aether.noizeAuto': 'Auto',
+    'aether.noizeSub':
+        'Shapes the handshake so it does not match what a filter looks for. A '
+            'heavier profile costs more to set up.',
+    'aether.noizeAutoSub':
+        'The Aether core picks the profile that suits this protocol. Leave it '
+            'here unless the tunnel will not open.',
+    'aether.ip': 'IP version',
+    'aether.ipV4': 'IPv4',
+    'aether.ipV6': 'IPv6',
+    'aether.ipBoth': 'Both',
+    'aether.ipSub':
+        'Which addresses the scan tries. IPv6 gets through on some mobile '
+            'networks where IPv4 does not.',
+    'aether.gateway': 'Gateway',
+    'aether.gatewayAddress': 'Address and port',
+    'aether.gatewayHint': '162.159.198.1:443',
+    'aether.gatewayScanned':
+        'Left empty, Nova scans for a gateway and checks it carries traffic '
+            'before saving it here.',
+    'aether.gatewayManual':
+        'Nova will dial this address and will not scan. Clear it to scan '
+            'instead.',
+    'aether.hopOuter': 'Outer hop',
+    'aether.hopInner': 'Inner hop',
+    'aether.hopsSub':
+        'gool runs one tunnel inside another, so it takes two addresses. Leave '
+            'them empty and Nova finds both.',
+    'aether.findNow': 'Find a gateway now',
+    'aether.findAgain': 'Find another gateway',
+    'aether.cancel': 'Cancel',
+    'aether.coreMissing':
+        'This build ships no Aether core, so it cannot scan here. The config '
+            'still saves and shares.',
+    'aether.scanCancelled': 'Search stopped.',
+    'aether.scanningAt': 'Address {n}: looking for one',
+    'aether.verifyingAt': 'Address {n}: checking that it carries traffic',
+    'aether.ruledOut': '{n} ruled out so far',
+    'aether.found': '{ep} carried traffic.',
+    'aether.findFailed': 'No gateway carried traffic: {why}',
     'node.bypassAllBlocked':
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
@@ -1693,6 +1866,103 @@ class NovaStrings {
     'bypass.cipherSuites': 'مجموعه رمزها (هر خط یکی)',
     'bypass.maskInvalid': 'این JSON معتبر نیست.',
     'bypass.reset': 'بازگردانی به پیش‌فرض',
+
+    // Aether.
+    'aether.add': 'ساخت کانفیگ \u2066Aether\u2069',
+    'aether.addSub': '\u2066WARP\u2069 کلودفلر به‌عنوان سرور نوا، بدون لینک',
+    'aether.title': 'کانفیگ \u2066Aether\u2069',
+    'aether.intro':
+        '\u2066Aether\u2069 یک تونل \u2066WARP\u2069 کلودفلر باز می‌کند و آن '
+            'را به شکل یک پروکسی محلی به نوا می‌دهد. آدرس سروری برای وارد کردن '
+            'وجود ندارد: شما انتخاب می‌کنید تونل چطور ساخته شود و نوا برایش '
+            'دروازه پیدا می‌کند.',
+    'aether.name': 'نام',
+    'aether.nameHint': 'Aether',
+    'aether.protocol': 'پروتکل',
+    'aether.protoMasque': 'MASQUE',
+    'aether.protoWg': 'WireGuard',
+    'aether.protoGool': 'gool',
+    'aether.protoMasqueSub':
+        '\u2066WARP\u2069 روی \u2066HTTP\u2069 که مثل ترافیک معمولی وب دیده '
+            'می‌شود. از همین شروع کنید.',
+    'aether.protoWgSub':
+        '\u2066WireGuard\u2069 ساده به یک نقطه‌ی \u2066WARP\u2069. سبک‌تر است '
+            'و فیلترینگ راحت‌تر تشخیصش می‌دهد.',
+    'aether.protoGoolSub':
+        '\u2066WireGuard\u2069 داخل \u2066WireGuard\u2069، با دو پرش. کندتر '
+            'است و از بعضی شبکه‌هایی رد می‌شود که یک پرش از آن‌ها رد نمی‌شود.',
+    'aether.transport': 'انتقال',
+    'aether.transportH3': 'HTTP/3',
+    'aether.transportH2': 'HTTP/2',
+    'aether.transportH3Sub':
+        '\u2066QUIC\u2069 روی \u2066UDP\u2069. سریع‌تر وصل می‌شود و باتری '
+            'محسوسا بیشتری می‌برد. شبکه‌ای که \u2066UDP\u2069 را می‌اندازد، '
+            'کلا جلویش را می‌گیرد.',
+    'aether.transportH2Sub':
+        '\u2066TCP\u2069. دیرتر باز می‌شود، کم‌مصرف‌تر است و روی شبکه‌ای که '
+            '\u2066QUIC\u2069 را می‌بندد هم کار می‌کند.',
+    'aether.fragment': 'تکه‌تکه کردن پیام \u2066TLS Hello\u2069',
+    'aether.fragmentSub':
+        'دست‌دهی را تکه‌تکه می‌فرستد تا فیلتر نتواند آن را در یک بسته تشخیص '
+            'دهد. فقط روی \u2066HTTP/2\u2069.',
+    'aether.scanMode': 'حالت اسکن',
+    'aether.scanTurbo': 'توربو',
+    'aether.scanBalanced': 'متعادل',
+    'aether.scanThorough': 'کامل',
+    'aether.scanStealth': 'کم‌سروصدا',
+    'aether.scanIronclad': 'سرسخت',
+    'aether.scanTurboSub':
+        'کمترین تعداد آدرس را امتحان می‌کند، پس زودتر جواب می‌دهد.',
+    'aether.scanBalancedSub':
+        'به‌اندازه‌ای آدرس امتحان می‌کند که روی بیشتر شبکه‌ها دروازه پیدا شود. '
+            'تا وقتی اسکن دست‌خالی برنگشته، همین را نگه دارید.',
+    'aether.scanThoroughSub':
+        'گسترده جست‌وجو می‌کند. چند دقیقه طول می‌کشد و جایی که حالت‌های سریع '
+            'جا می‌زنند، دروازه پیدا می‌کند.',
+    'aether.scanStealthSub':
+        'آرام پروب می‌فرستد تا خود اسکن الگوی چشمگیری نسازد.',
+    'aether.scanIroncladSub':
+        'کندترین و سمج‌ترین جست‌وجو، برای شبکه‌ای که بقیه را بسته است.',
+    'aether.noize': 'مبهم‌سازی',
+    'aether.noizeAuto': 'خودکار',
+    'aether.noizeSub':
+        'دست‌دهی را طوری شکل می‌دهد که با الگوی فیلترینگ جور درنیاید. پروفایل '
+            'سنگین‌تر، برپاسازی پرهزینه‌تر.',
+    'aether.noizeAutoSub':
+        'هسته‌ی \u2066Aether\u2069 خودش پروفایل مناسب این پروتکل را انتخاب '
+            'می‌کند. تا وقتی تونل بالا می‌آید، همین را نگه دارید.',
+    'aether.ip': 'نسخه‌ی \u2066IP\u2069',
+    'aether.ipV4': 'IPv4',
+    'aether.ipV6': 'IPv6',
+    'aether.ipBoth': 'هر دو',
+    'aether.ipSub':
+        'اسکن سراغ کدام آدرس‌ها برود. روی بعضی شبکه‌های موبایل \u2066IPv6\u2069 '
+            'رد می‌شود ولی \u2066IPv4\u2069 نه.',
+    'aether.gateway': 'دروازه',
+    'aether.gatewayAddress': 'آدرس و پورت',
+    'aether.gatewayHint': '162.159.198.1:443',
+    'aether.gatewayScanned':
+        'اگر خالی بماند، نوا دنبال دروازه می‌گردد و قبل از ذخیره‌اش اینجا '
+            'بررسی می‌کند که ترافیک را عبور می‌دهد.',
+    'aether.gatewayManual':
+        'نوا همین آدرس را می‌گیرد و اسکن نمی‌کند. برای اسکن، خالی‌اش کنید.',
+    'aether.hopOuter': 'پرش بیرونی',
+    'aether.hopInner': 'پرش درونی',
+    'aether.hopsSub':
+        '\u2066gool\u2069 یک تونل را داخل تونل دیگر می‌برد، پس دو آدرس '
+            'می‌خواهد. خالی بگذارید تا نوا هر دو را پیدا کند.',
+    'aether.findNow': 'همین حالا دروازه پیدا کن',
+    'aether.findAgain': 'یک دروازه‌ی دیگر پیدا کن',
+    'aether.cancel': 'لغو',
+    'aether.coreMissing':
+        'این نسخه هسته‌ی \u2066Aether\u2069 را همراه ندارد، پس اینجا نمی‌تواند '
+            'اسکن کند. کانفیگ همچنان ذخیره و به‌اشتراک گذاشته می‌شود.',
+    'aether.scanCancelled': 'جست‌وجو متوقف شد.',
+    'aether.scanningAt': 'آدرس \u2066{n}\u2069: در حال گشتن',
+    'aether.verifyingAt': 'آدرس \u2066{n}\u2069: بررسی عبور ترافیک',
+    'aether.ruledOut': 'تا اینجا \u2066{n}\u2069 آدرس کنار گذاشته شد',
+    'aether.found': '\u2066{ep}\u2069 ترافیک را عبور داد.',
+    'aether.findFailed': 'هیچ دروازه‌ای ترافیک را عبور نداد: \u2066{why}\u2069',
     'node.bypassAllBlocked':
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '

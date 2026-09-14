@@ -22,6 +22,11 @@ enum ProxyKind {
   hysteria2,
   vmess,
   tuic,
+  // A WARP tunnel built by the Aether core, not a server to dial. Added so the
+  // row reads "Aether" instead of "Subscription": an `aether://` link has no
+  // scheme any of the others recognise, so before this it fell through to
+  // whatever pill happened to be selected.
+  aether,
 }
 
 /// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
@@ -41,6 +46,7 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.hysteria2 => 'Hysteria2',
         ProxyKind.vmess => 'VMess',
         ProxyKind.tuic => 'TUIC',
+        ProxyKind.aether => 'Aether',
       };
 }
 
