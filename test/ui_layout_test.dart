@@ -352,9 +352,26 @@ void main() {
     // The editor is the densest screen in the app: five choice groups, a field
     // and a live status line. At 320dp with doubled text the pill rows are what
     // break first, and a Wrap that cannot wrap throws rather than looking bad.
+
+    /// Drags the whole screen past the viewport.
+    ///
+    /// An overflow only throws when the offending row is PAINTED, and a
+    /// ListView paints nothing below the fold. Pumping this screen and looking
+    /// at the exception without scrolling passed against a version whose pills
+    /// could not wrap at all, so the scroll is the test.
+    Future<void> scrollThrough(WidgetTester tester) async {
+      final Finder list = find.byType(Scrollable).first;
+      for (int i = 0; i < 12; i++) {
+        expect(tester.takeException(), isNull);
+        await tester.drag(list, const Offset(0, -300));
+        await tester.pump();
+      }
+      expect(tester.takeException(), isNull);
+    }
+
     testWidgets('lays out at 320dp and 2x text', (WidgetTester tester) async {
       await _pump(tester, const AetherEditorScreen(), textScale: 2.0);
-      expect(tester.takeException(), isNull);
+      await scrollThrough(tester);
       await _teardown(tester);
     });
 
@@ -364,7 +381,7 @@ void main() {
           textScale: 2.0,
           locale: const Locale('fa'),
           themeMode: ThemeMode.light);
-      expect(tester.takeException(), isNull);
+      await scrollThrough(tester);
       await _teardown(tester);
     });
 
@@ -376,7 +393,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('gool'));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+      await scrollThrough(tester);
       await _teardown(tester);
     });
   });

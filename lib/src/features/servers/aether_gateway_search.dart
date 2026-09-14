@@ -62,7 +62,10 @@ abstract class AetherGatewaySearch {
 
 /// The real search, against the Aether core over FFI.
 class AetherCoreSearch implements AetherGatewaySearch {
-  AetherCoreSearch({this.attempts = 4, this.pollEvery = const Duration(milliseconds: 500)});
+  AetherCoreSearch({
+    this.attempts = 4,
+    this.pollEvery = const Duration(milliseconds: 500),
+  });
 
   /// How many gateways to try before giving up, passed to the finder.
   final int attempts;
@@ -137,14 +140,18 @@ class AetherCoreSearch implements AetherGatewaySearch {
             verifying: true,
             ruledOut: finder.rejected.length));
         final int port = await _freeLoopbackPort();
-        // The endpoint travels on the options, which is the only channel the
-        // finder's contract gives it. A scratch port, never the one a live
-        // tunnel serves on, so proving an address cannot collide with a
-        // connection the user is currently using.
+        // A scratch port, never the one a live tunnel serves on, so proving an
+        // address cannot collide with a connection the user is using.
+        //
+        // The endpoint is passed directly now. It used to ride on the options
+        // instead, because the payload builder had no field for it, and that
+        // was a real hole: the core's tunnel payload requires `peer`, so
+        // verification would have been refused outright rather than quietly
+        // proving the wrong address.
         return _await(
             core,
-            core.verifyStart(identity, o.copyWith(peer: endpoint),
-                socks: '127.0.0.1:$port'));
+            core.verifyStart(identity, o,
+                endpoint: endpoint, socks: '127.0.0.1:$port'));
       },
     );
     return finder.find(options);

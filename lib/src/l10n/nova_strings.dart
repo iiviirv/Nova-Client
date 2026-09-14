@@ -129,7 +129,7 @@ class NovaStrings {
   String get aetherCoreMissing => t('aether.coreMissing');
   String get aetherScanCancelled => t('aether.scanCancelled');
 
-  /// "Address 2: looking for one" — the attempt number is what explains a long
+  /// "Address 2: looking for one". The attempt number is what explains a long
   /// wait, so it is in the line rather than only in a spinner.
   String aetherScanningAt(int n) =>
       t('aether.scanningAt').replaceFirst('{n}', '$n');
@@ -939,10 +939,12 @@ class NovaStrings {
     'aether.add': 'Build an Aether config',
     'aether.addSub': 'Cloudflare WARP as a Nova server, no link to paste',
     'aether.title': 'Aether config',
+    // Deliberately stops before the gateway: the Gateway card owns that fact,
+    // and saying it twice on one screen reads as a page arguing with itself.
     'aether.intro':
         'Aether opens a Cloudflare WARP tunnel and hands it to Nova as a local '
-            'proxy. There is no server address to paste: you choose how the '
-            'tunnel is built, and Nova finds a gateway for it.',
+            'proxy. There is no server address to paste, only choices about '
+            'how the tunnel is built.',
     'aether.name': 'Name',
     'aether.nameHint': 'Aether',
     'aether.protocol': 'Protocol',
@@ -1874,8 +1876,7 @@ class NovaStrings {
     'aether.intro':
         '\u2066Aether\u2069 یک تونل \u2066WARP\u2069 کلودفلر باز می‌کند و آن '
             'را به شکل یک پروکسی محلی به نوا می‌دهد. آدرس سروری برای وارد کردن '
-            'وجود ندارد: شما انتخاب می‌کنید تونل چطور ساخته شود و نوا برایش '
-            'دروازه پیدا می‌کند.',
+            'وجود ندارد، فقط انتخاب‌هایی درباره‌ی اینکه تونل چطور ساخته شود.',
     'aether.name': 'نام',
     'aether.nameHint': 'Aether',
     'aether.protocol': 'پروتکل',

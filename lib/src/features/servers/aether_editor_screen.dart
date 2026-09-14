@@ -358,7 +358,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
             runSpacing: NovaSpace.sm,
             children: <Widget>[
               for (final AetherScan m in AetherScan.values)
-                _pill(_scanLabel(s, m), _scan == m, () => _set(() => _scan = m)),
+                _pill(_scanLabel(s, m), _scan == m,
+                    () => _set(() => _scan = m)),
             ],
           ),
           const SizedBox(height: NovaSpace.sm),
@@ -367,8 +368,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
           if (!gool) ...<Widget>[
             const SizedBox(height: NovaSpace.md),
             if (!_search.available)
-              Text(s.aetherCoreMissing,
-                  style: text.bodySmall?.copyWith(color: nova.warning))
+              _line(Icons.info_outline_rounded, nova.warning,
+                  s.aetherCoreMissing, text)
             else if (_searching)
               NovaButton(
                 label: s.aetherCancel,
@@ -457,13 +458,23 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     );
   }
 
+  /// A status line: the icon carries the colour, the words do not.
+  ///
+  /// Warning amber and danger red are the same tokens in both themes, and on
+  /// the light background they come out around 2:1 against body text, which is
+  /// not readable. The rest of the app solves it the same way.
   Widget _line(IconData icon, Color color, String body, TextTheme text) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon, size: 16, color: color),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 16, color: color),
+          ),
           const SizedBox(width: NovaSpace.sm),
           Expanded(
-            child: Text(body, style: text.bodySmall?.copyWith(color: color)),
+            child: Text(body,
+                style:
+                    text.bodySmall?.copyWith(color: text.bodyMedium?.color)),
           ),
         ],
       );
@@ -533,7 +544,10 @@ class _Group extends StatelessWidget {
         children: <Widget>[
           NovaEyebrow(title),
           const SizedBox(height: NovaSpace.md),
-          Wrap(spacing: NovaSpace.sm, runSpacing: NovaSpace.sm, children: pills),
+          Wrap(
+              spacing: NovaSpace.sm,
+              runSpacing: NovaSpace.sm,
+              children: pills),
           const SizedBox(height: NovaSpace.sm),
           Text(description, style: text.bodySmall?.copyWith(color: nova.muted)),
           if (extra != null) ...<Widget>[

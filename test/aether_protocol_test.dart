@@ -143,10 +143,28 @@ void main() {
           'wg');
     });
 
-    test('a tunnel payload carries the local socks address', () {
+    test('a tunnel payload names the gateway it is told to dial', () {
+      // The core requires `peer` here. Omitting it, as the first version did,
+      // gets the call refused outright, which is the same class of mistake as
+      // opening an identity without a path.
       final Map<String, dynamic> p = dec(AetherPayloads.tunnel(
-          const AetherOptions(), socks: '127.0.0.1:19819'));
+          const AetherOptions(),
+          endpoint: '162.159.198.1:443',
+          socks: '127.0.0.1:19819'));
+      expect(p['peer'], '162.159.198.1:443');
       expect(p['socks'], '127.0.0.1:19819');
+    });
+
+    test('a tunnel is told an address rather than re-deciding the search', () {
+      // mode and ip are search settings; the core's tunnel payload has no such
+      // fields. Sending them would read as though a tunnel re-picks something
+      // it does not.
+      final Map<String, dynamic> p = dec(AetherPayloads.tunnel(
+          const AetherOptions(mode: AetherMode.gool, ip: AetherIpMode.both),
+          endpoint: '1.2.3.4:443',
+          socks: '127.0.0.1:1'));
+      expect(p.containsKey('mode'), isFalse);
+      expect(p.containsKey('ip'), isFalse);
     });
 
     test('the obfuscation profile is omitted when unset', () {

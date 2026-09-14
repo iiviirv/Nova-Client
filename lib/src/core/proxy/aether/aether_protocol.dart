@@ -129,13 +129,25 @@ class AetherPayloads {
         if (excluded.isNotEmpty) 'excluded': excluded,
       });
 
-  /// For `aether_verify_start` and `aether_tunnel_start`. [socks] is the local
-  /// address the tunnel should serve on.
-  static String tunnel(AetherOptions o, {required String socks}) =>
+  /// For `aether_verify_start` and `aether_tunnel_start`.
+  ///
+  /// [endpoint] is required and is the gateway to dial, as `ip:port`. This is
+  /// the difference between a tunnel and a scan: a scan sweeps for an address,
+  /// a tunnel is told one. The first version of this omitted it, which the core
+  /// would have refused with "missing field `peer`", the same way it refused an
+  /// identity without a path.
+  ///
+  /// [socks] is the local address to serve on.
+  ///
+  /// Note what is NOT sent: the core's tunnel payload has no mode or ip field.
+  /// Those belong to the search. Sending them is harmless (unknown fields are
+  /// ignored) but misleading to read, since it suggests a tunnel re-decides
+  /// something it does not.
+  static String tunnel(AetherOptions o,
+          {required String endpoint, required String socks}) =>
       jsonEncode(<String, dynamic>{
+        'peer': endpoint,
         'transport': _transport(o),
-        'mode': o.mode.name,
-        'ip': o.ip.name,
         if (o.noize != null) 'profile': o.noize!.name,
         'socks': socks,
       });

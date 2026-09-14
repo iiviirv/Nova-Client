@@ -138,18 +138,18 @@ class AetherCore {
 
   /// Opens a real tunnel to prove an endpoint carries traffic. Returns a job id.
   AetherReply verifyStart(int identity, AetherOptions o,
-          {required String socks}) =>
+          {required String endpoint, required String socks}) =>
       _withJson(
-          AetherPayloads.tunnel(o, socks: socks),
+          AetherPayloads.tunnel(o, endpoint: endpoint, socks: socks),
           (Pointer<pkg_ffi.Utf8> p) => _take(_lib
               .lookupFunction<_IdJsonC, _IdJson>('aether_verify_start')(
               identity, p)));
 
   /// Brings the tunnel up for real, serving SOCKS5 on [socks].
   AetherReply tunnelStart(int identity, AetherOptions o,
-          {required String socks}) =>
+          {required String endpoint, required String socks}) =>
       _withJson(
-          AetherPayloads.tunnel(o, socks: socks),
+          AetherPayloads.tunnel(o, endpoint: endpoint, socks: socks),
           (Pointer<pkg_ffi.Utf8> p) => _take(_lib
               .lookupFunction<_IdJsonC, _IdJson>('aether_tunnel_start')(
               identity, p)));
