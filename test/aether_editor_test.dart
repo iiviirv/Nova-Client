@@ -119,7 +119,7 @@ Future<void> _open(
   // Tall enough that the whole editor is built at once: a ListView does not
   // build what is off screen, and every one of these checks is about what is
   // on the page.
-  tester.view.physicalSize = const Size(420, 2000);
+  tester.view.physicalSize = const Size(420, 3000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -207,6 +207,14 @@ Future<void> _findGateway(WidgetTester tester, _FakeSearch search,
       AetherFindResult(endpoint: endpoint, attempts: 1, rejected: const <String>[]));
   await tester.pumpAndSettle();
 }
+
+/// A gool config with both hops pinned, the shape another client writes and
+/// the shape that has to come back out of the editor unchanged.
+const AetherOptions _pinnedHops = AetherOptions(
+  mode: AetherMode.gool,
+  wiwOuter: '162.159.195.16:864',
+  wiwInner: '162.159.192.1:2408',
+);
 
 /// A saved Aether profile, for the seeded-list and edit cases.
 ProxyProfile _aether(String id, String name, String link) => ProxyProfile(
@@ -403,6 +411,123 @@ void main() {
     expect(after.id, 'z');
     expect(after.name, 'Home');
     expect(AetherConfig.parse(after.uri)!.gateway, '188.114.97.3:2408');
+  });
+
+  testWidgets('an address typed by hand can be checked, and that unlocks Save',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+    await _advanced(tester);
+
+    await tester.enterText(
+        find.byType(TextField).last, '162.159.198.1:443');
+    await tester.pump();
+    expect(_saveEnabled(tester), isFalse,
+        reason: 'typed is not proven');
+    expect(find.textContaining('Nova has not checked this address'),
+        findsOneWidget);
+
+    await tester.tap(find.text('Check this address'));
+    await tester.pumpAndSettle();
+
+    expect(search.checked, '162.159.198.1:443',
+        reason: 'the address on screen is the one that gets proven');
+    expect(find.text('162.159.198.1:443 carried traffic.'), findsOneWidget);
+    expect(_saveEnabled(tester), isTrue,
+        reason: 'a checked address is a verified gateway, same as a found one');
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final AetherConfig read = AetherConfig.parse(profiles.profiles
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether)
+        .uri)!;
+    expect(read.gateway, '162.159.198.1:443');
+  });
+
+  testWidgets('an address that carries nothing leaves Save locked',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch()..addressIsGood = false;
+    await _open(tester, search: search);
+    await _advanced(tester);
+
+    await tester.enterText(find.byType(TextField).last, '10.0.0.1:443');
+    await tester.pump();
+    await tester.tap(find.text('Check this address'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('did not carry traffic'), findsOneWidget);
+    expect(_saveEnabled(tester), isFalse,
+        reason: 'a check that failed is not a gateway, and saving it would '
+            'produce exactly the config that could not connect');
+  });
+
+  testWidgets('a checked address stops counting when an option changes',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+    await _advanced(tester);
+
+    await tester.enterText(find.byType(TextField).last, '162.159.198.1:443');
+    await tester.pump();
+    await tester.tap(find.text('Check this address'));
+    await tester.pumpAndSettle();
+    expect(_saveEnabled(tester), isTrue);
+
+    // Proven over HTTP/3. That says nothing about HTTP/2.
+    await _choose(tester, 'HTTP/2');
+    expect(_saveEnabled(tester), isFalse);
+    expect(find.text('Check this address'), findsOneWidget,
+        reason: 'the address is still there, so the offer to prove it is too');
+  });
+
+  testWidgets('an imported gool config keeps its two hops through an edit',
+      (WidgetTester tester) async {
+    final ProxyProfile saved = _aether('h1', 'Imported',
+        const AetherConfig(options: _pinnedHops, name: 'Imported').toLink());
+    await _open(tester, seed: <ProxyProfile>[saved], existing: saved);
+
+    expect(_saveEnabled(tester), isTrue,
+        reason: 'the link already says where it dials, and the only way to '
+            'verify a gateway would rewrite the link it came in as');
+    expect(find.textContaining('two hops written into the link'),
+        findsOneWidget);
+    // Opened at the depth that shows the gateway, because a config carrying
+    // something Simple does not show must not open on a screen that hides it.
+    expect(find.text('Address and port'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'Tehran');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final String link = profiles.profiles
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether)
+        .uri;
+    expect(link, const AetherConfig(options: _pinnedHops, name: 'Tehran').toLink(),
+        reason: 'the format is byte-compatible with another client, so a '
+            'config that changes on its way through here stops importing '
+            'back into the app it came from');
+  });
+
+  testWidgets('a search replaces the hops it supersedes',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    final ProxyProfile saved = _aether('h1', 'Imported',
+        const AetherConfig(options: _pinnedHops, name: 'Imported').toLink());
+    await _open(tester,
+        search: search, seed: <ProxyProfile>[saved], existing: saved);
+
+    await _findGateway(tester, search, endpoint: '188.114.96.7:2408');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final AetherConfig read = AetherConfig.parse(profiles.profiles
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether)
+        .uri)!;
+    expect(read.gateway, '188.114.96.7:2408');
+    expect(read.options.wiwOuter, isNull,
+        reason: 'one verified gateway is what this config dials now, and the '
+            'core finds the inner hop itself');
+    expect(read.options.wiwInner, isNull);
   });
 
   testWidgets('a saved config is a link the shared parser reads back',

@@ -67,6 +67,16 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// they are carried rather than dropped on the way back out.
   String? _dns;
 
+  /// The two hops of an imported gool link, for the same reason.
+  ///
+  /// Nova's `aether://` format is byte-compatible with another client's, and a
+  /// config that comes back different from the editor stops importing into the
+  /// app it came from. So these survive an edit untouched. A search replaces
+  /// them, because it returns one verified gateway and the core finds the
+  /// inner hop itself, but merely opening the screen does not.
+  String? _wiwOuter;
+  String? _wiwInner;
+
   bool _advanced = false;
 
   /// True while the name is still Nova's to write. The first keystroke in the
@@ -79,6 +89,17 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// has checked, which is the config the tester could not connect with.
   String? _verified;
 
+  /// True while one typed address is being checked, and true after a check
+  /// that came back negative. Two states, because a check in flight and a
+  /// check that failed are not the same thing to look at.
+  bool _checking = false;
+  bool _checkFailed = false;
+
+  /// Invalidates a check in flight. A check takes seconds, and a keystroke in
+  /// the address field during those seconds means the answer arriving is about
+  /// an address that is no longer on screen.
+  int _checkToken = 0;
+
   late final AetherGatewaySearch _search = widget.search ?? AetherCoreSearch();
 
   AetherSearchProgress? _progress;
@@ -87,7 +108,25 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
 
   bool get _searching => _progress != null;
 
-  bool get _canSave => !_searching && _verified != null;
+  /// A gool link that pins both hops already names where it dials, which is
+  /// why it is allowed to save without a search: a search is the only way to
+  /// verify a gateway, and running one here would rewrite the link it came in
+  /// as. Only while the protocol is still gool, because the hops mean nothing
+  /// to the other two and would be passed to a core that refuses them.
+  bool get _hasHops =>
+      _mode == AetherMode.gool &&
+      (_wiwOuter ?? '').isNotEmpty &&
+      (_wiwInner ?? '').isNotEmpty;
+
+  /// True when the field holds an address that has not been proven. Empty is
+  /// not unchecked, it is nothing to check.
+  bool get _needsCheck {
+    final String a = _address.text.trim();
+    return a.isNotEmpty && a != _verified;
+  }
+
+  bool get _canSave =>
+      !_searching && !_checking && (_verified != null || _hasHops);
 
   @override
   void initState() {
@@ -107,6 +146,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     _noize = o.noize;
     _fragment = o.fragment;
     _dns = o.dns;
+    _wiwOuter = o.wiwOuter;
+    _wiwInner = o.wiwInner;
     _address.text = o.peer ?? '';
     // A saved gateway was verified when it was saved, so editing the name does
     // not cost the user another three-minute search.
@@ -140,7 +181,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       o.ip == AetherIpMode.v4 &&
       o.scan == AetherScan.balanced &&
       o.noize == null &&
-      !o.fragment;
+      !o.fragment &&
+      (o.wiwOuter ?? '').isEmpty &&
+      (o.wiwInner ?? '').isEmpty;
 
   /// Applies an option change, dropping any search in flight and the gateway
   /// it was for.
@@ -151,10 +194,13 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// against different settings is not a proven address.
   void _set(VoidCallback change) {
     if (_searching) _search.cancel();
+    _checkToken++;
     setState(() {
       _progress = null;
       _result = null;
       _verified = null;
+      _checking = false;
+      _checkFailed = false;
       change();
     });
   }
@@ -209,6 +255,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       scan: _scan,
       noize: _noize,
       peer: withPeer && peer.isNotEmpty ? peer : null,
+      wiwOuter: _hasHops ? _wiwOuter : null,
+      wiwInner: _hasHops ? _wiwInner : null,
       // The core refuses --fragment outside HTTP/2, so it is only carried where
       // it means something rather than saved and silently dropped later.
       fragment: _fragment &&
@@ -218,13 +266,50 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     );
   }
 
+  /// Proves the address the user typed, without sweeping for others.
+  ///
+  /// Someone handed a working gateway had no way to use it once Save started
+  /// waiting for proof: the only route to a saved config was a sweep that may
+  /// never pick theirs. This gives that address the same proof, and costs a
+  /// fraction of a search because there is one candidate.
+  Future<void> _check() async {
+    final String address = _address.text.trim();
+    if (address.isEmpty) return;
+    final int token = ++_checkToken;
+    setState(() {
+      _checking = true;
+      _checkFailed = false;
+      _stopped = false;
+      _result = null;
+    });
+    bool ok;
+    try {
+      ok = await _search.verifyAddress(_options(withPeer: false), address);
+    } catch (_) {
+      // Across an FFI boundary, so a throw here would otherwise leave the
+      // button spinning for good.
+      ok = false;
+    }
+    // An option changed, or the address did, while the core was answering. The
+    // answer is about a config that is no longer on screen.
+    if (!mounted || token != _checkToken) return;
+    setState(() {
+      _checking = false;
+      _checkFailed = !ok;
+      if (ok) _verified = address;
+    });
+  }
+
   Future<void> _find() async {
     // Whatever is in the field now is what a replacement search should skip.
     // gool included: the core's scan returns one endpoint for it in the same
     // shape as the other two, and verifying with that address alone succeeds
     // because the core finds the inner hop itself.
     final String previous = _address.text.trim();
+    _checkToken++;
     setState(() {
+      _checking = false;
+      _checkFailed = false;
       _stopped = false;
       _result = null;
       _verified = null;
@@ -238,8 +323,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
         (AetherSearchProgress p) {
           if (mounted && _searching) setState(() => _progress = p);
         },
-        excludedFirst:
-            previous.isEmpty ? const <String>[] : <String>[previous],
+        excludedFirst: previous.isEmpty ? const <String>[] : <String>[previous],
       );
     } catch (e) {
       // A search runs across an FFI boundary in a UI path, so a throw here is
@@ -266,6 +350,11 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       if (found.endpoint != null) {
         _address.text = found.endpoint!;
         _verified = found.endpoint;
+        // One verified gateway is what this config dials now, and the core
+        // finds the inner hop itself, so the pinned pair it was imported with
+        // no longer describes it.
+        _wiwOuter = null;
+        _wiwInner = null;
       }
     });
   }
@@ -306,8 +395,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-          title:
-              Text(widget.existing == null ? s.aetherTitle : s.aetherEditTitle)),
+          title: Text(
+              widget.existing == null ? s.aetherTitle : s.aetherEditTitle)),
       body: Center(
         child: ConstrainedBox(
           constraints:
@@ -486,6 +575,23 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
             const SizedBox(height: NovaSpace.sm),
           ],
           _status(s, nova, text),
+          // Under the line that says the address is unchecked, because that
+          // line is the reason to press it. It goes quietly (ghost, not the
+          // search's filled secondary): the sweep is the main way to a
+          // gateway, and this is for someone who already has one.
+          if (_advanced &&
+              _search.available &&
+              !_searching &&
+              _needsCheck) ...<Widget>[
+            const SizedBox(height: NovaSpace.sm),
+            NovaButton(
+              label: s.aetherCheckAddress,
+              icon: Icons.verified_outlined,
+              variant: NovaButtonVariant.ghost,
+              loading: _checking,
+              onPressed: _checking ? null : _check,
+            ),
+          ],
           if (_advanced) ...<Widget>[
             const SizedBox(height: NovaSpace.md),
             _subLabel(s.aetherScanMode, text, nova),
@@ -540,6 +646,15 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     final AetherSearchProgress? p = _progress;
     if (p != null) return AetherProgressLines(progress: p);
 
+    if (_checking) {
+      return _line(
+          Icons.hourglass_top_rounded, nova.cyan, s.aetherChecking, text);
+    }
+    if (_checkFailed) {
+      return _line(
+          Icons.error_outline_rounded, nova.danger, s.aetherCheckFailed, text);
+    }
+
     final AetherFindResult? r = _result;
     if (r != null && r.endpoint != null) {
       return _line(Icons.check_circle_rounded, nova.success,
@@ -572,6 +687,12 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       return Text(s.aetherScanCancelled,
           style: text.bodySmall?.copyWith(color: nova.muted));
     }
+    // Before the empty-field line, which would otherwise offer to scan for a
+    // gateway this config already has two of.
+    if (_hasHops) {
+      return Text(s.aetherHopsPinned,
+          style: text.bodySmall?.copyWith(color: nova.muted));
+    }
     return Text(
       _address.text.trim().isEmpty
           ? s.aetherGatewayScanned
@@ -595,8 +716,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
           const SizedBox(width: NovaSpace.sm),
           Expanded(
             child: Text(body,
-                style:
-                    text.bodySmall?.copyWith(color: text.bodyMedium?.color)),
+                style: text.bodySmall?.copyWith(color: text.bodyMedium?.color)),
           ),
         ],
       );
@@ -667,9 +787,7 @@ class _Group extends StatelessWidget {
           NovaEyebrow(title),
           const SizedBox(height: NovaSpace.md),
           Wrap(
-              spacing: NovaSpace.sm,
-              runSpacing: NovaSpace.sm,
-              children: pills),
+              spacing: NovaSpace.sm, runSpacing: NovaSpace.sm, children: pills),
           const SizedBox(height: NovaSpace.sm),
           Text(description, style: text.bodySmall?.copyWith(color: nova.muted)),
           if (extra != null) ...<Widget>[

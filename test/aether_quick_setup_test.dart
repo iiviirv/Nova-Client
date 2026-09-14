@@ -44,6 +44,10 @@ class _FakeSearch implements AetherGatewaySearch {
   bool get cancelled => _cancelled;
 
   @override
+  Future<bool> verifyAddress(AetherOptions options, String endpoint) async =>
+      true;
+
+  @override
   void cancel() {
     _cancelled = true;
     if (!_done.isCompleted) {

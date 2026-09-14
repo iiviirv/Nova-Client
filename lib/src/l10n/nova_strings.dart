@@ -164,6 +164,15 @@ class NovaStrings {
   /// Why Save is disabled. Shown instead of leaving a dead button unexplained.
   String get aetherSaveNeedsGateway => t('aether.saveNeedsGateway');
 
+  // Proving one address the user typed, rather than sweeping for others.
+  String get aetherCheckAddress => t('aether.checkAddress');
+  String get aetherChecking => t('aether.checking');
+  String get aetherCheckFailed => t('aether.checkFailed');
+
+  /// Said for a gool config imported with both of its hops written into the
+  /// link, which is where it dials and why it needs no search.
+  String get aetherHopsPinned => t('aether.hopsPinned');
+
   /// The title when an existing config was opened from the servers list.
   String get aetherEditTitle => t('aether.editTitle');
 
@@ -1067,6 +1076,14 @@ class NovaStrings {
     'aether.saveNeedsGateway':
         'Save waits for a gateway. A config saved without one connects to '
             'nothing.',
+    'aether.checkAddress': 'Check this address',
+    'aether.checking': 'Checking that this address carries traffic',
+    'aether.checkFailed':
+        'This address did not carry traffic. Try another, or let Nova find '
+            'one.',
+    'aether.hopsPinned':
+        'This config dials two hops written into the link it came from. Nova '
+            'keeps them as they are. Finding a gateway replaces them.',
     'aether.editTitle': 'Edit Aether config',
     'aether.quickTitle': 'Build a WARP tunnel',
     'aether.quickBody':
@@ -2020,6 +2037,15 @@ class NovaStrings {
     'aether.saveNeedsGateway':
         'تا یک دروازه پیدا نشود، ذخیره فعال نمی‌شود. کانفیگی که بدون دروازه '
             'ذخیره شود به جایی وصل نمی‌شود.',
+    'aether.checkAddress': 'بررسی همین آدرس',
+    'aether.checking': 'در حال بررسی عبور ترافیک از این آدرس',
+    'aether.checkFailed':
+        'این آدرس ترافیک را عبور نداد. آدرس دیگری بزنید یا بگذارید نوا یکی '
+            'پیدا کند.',
+    'aether.hopsPinned':
+        'این کانفیگ دو پرش دارد که در لینک اصلی‌اش نوشته شده‌اند. نوا آن‌ها را '
+            'دست‌نخورده نگه می‌دارد. اگر دروازه‌ای پیدا کنید، جای آن‌ها را '
+            'می‌گیرد.',
     'aether.editTitle': 'ویرایش کانفیگ \u2066Aether\u2069',
     'aether.quickTitle': 'ساخت تونل \u2066WARP\u2069',
     'aether.quickBody':
