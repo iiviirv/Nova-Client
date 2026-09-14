@@ -122,3 +122,107 @@ jobs:
           name: libaether-${{ matrix.abi }}
           path: aether/target/${{ matrix.target }}/release/libaether.so
           if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Desktop. Same core, same pinned commit, built as a shared library
+  # rather than the CLI binary upstream ships, because Nova links it.
+  #
+  # macOS is built for both architectures and merged with lipo: Nova's
+  # macOS build is universal, and shipping one slice would fail at load
+  # on the other kind of Mac with nothing but a dlopen error to show.
+  # ------------------------------------------------------------------
+  desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+            out: libaether.dylib
+          - name: linux-x86_64
+            os: ubuntu-latest
+            targets: x86_64-unknown-linux-gnu
+            out: libaether.so
+          - name: windows-x86_64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+            out: aether.dll
+    steps:
+      - name: Check out Aether at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: CluvexStudio/Aether
+          ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
+          persist-credentials: false
+
+      - name: Confirm quiche came with it
+        shell: bash
+        run: test -d quiche || { echo "quiche is missing from the checkout"; exit 1; }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add targets
+        shell: bash
+        run: for t in ${{ matrix.targets }}; do rustup target add "$t"; done
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Install NASM (BoringSSL needs it on Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
+
+      - name: Build
+        shell: bash
+        working-directory: aether
+        run: for t in ${{ matrix.targets }}; do cargo build --release --target "$t"; done
+
+      - name: Collect the library
+        shell: bash
+        working-directory: aether
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist
+          read -r -a TARGETS <<< "${{ matrix.targets }}"
+          if [ "${#TARGETS[@]}" -gt 1 ]; then
+            # Universal: one file that loads on both kinds of Mac.
+            lipo -create -output "../dist/${{ matrix.out }}" \
+              $(for t in "${TARGETS[@]}"; do echo "target/$t/release/${{ matrix.out }}"; done)
+            lipo -info "../dist/${{ matrix.out }}"
+          else
+            cp "target/${TARGETS[0]}/release/${{ matrix.out }}" "../dist/${{ matrix.out }}"
+          fi
+          ls -l "../dist/${{ matrix.out }}"
+
+      - name: Prove the exports are there
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          OUT="${{ matrix.out }}"
+          # Same reasoning as the Android leg: a missing export is a crash on
+          # first use whose only message is that a symbol was not found. The
+          # tool differs per platform, the check does not.
+          case "${{ runner.os }}" in
+            macOS)   LIST="nm -gU $OUT" ;;
+            Linux)   LIST="nm --dynamic --defined-only $OUT" ;;
+            Windows) LIST="dumpbin //exports $OUT" ;;
+          esac
+          $LIST > syms.txt || true
+          for sym in aether_version aether_identity_open aether_scan_start \
+                     aether_verify_start aether_tunnel_start aether_job_poll \
+                     aether_job_cancel aether_string_free; do
+            grep -q "$sym" syms.txt || { echo "missing export: $sym"; exit 1; }
+          done
+          echo "all expected symbols are exported"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-${{ matrix.name }}
+          path: dist/${{ matrix.out }}
+          if-no-files-found: error
