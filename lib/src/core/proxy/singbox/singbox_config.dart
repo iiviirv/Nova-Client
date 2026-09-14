@@ -1,3 +1,4 @@
+import '../aether/aether_options.dart';
 import 'dart:convert';
 import 'dart:io' show InternetAddress;
 
@@ -416,6 +417,77 @@ class SingboxConfig {
         'outbound': 'direct',
       });
     }
+  }
+
+  /// The core config for an Aether exit: forward everything into the local
+  /// SOCKS port the Aether core serves, and keep that core's own traffic out of
+  /// the tunnel.
+  ///
+  /// Aether opens a WARP tunnel and offers it as SOCKS5, so the core never
+  /// dials a gateway itself. That is the same two-core shape the Xray/xhttp
+  /// bridge uses, and it inherits the same trap: in TUN mode sing-box captures
+  /// the Aether core's dial to Cloudflare, feeds it back into the socks chain,
+  /// and nothing ever reaches the edge.
+  ///
+  /// The fix has to cover ranges, not one address. A config that has not
+  /// scanned yet has no gateway at all, and even a pinned one may be abandoned
+  /// for another in the same sweep, so pinning a single /32 would work until
+  /// the moment it mattered. [kAetherDirectCidrs] is the scanner's own table.
+  ///
+  /// A config exported by another client carries no such rule. That is not
+  /// evidence it is unnecessary: that client runs a socks inbound, where
+  /// nothing is captured to begin with.
+  static Map<String, dynamic> buildAetherSocksBridgeMap(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+  }) {
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+        // First run registers a WARP identity against this host. If it is
+        // resolved inside the tunnel it cannot answer, because the tunnel does
+        // not exist yet.
+        kAetherRegistrationHost,
+      }),
+      'inbounds': _inbounds(options),
+      'outbounds': <Map<String, dynamic>>[
+        // The Aether core's local SOCKS. Tagged `proxy` so the shared route
+        // targets it exactly like any real exit.
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': socksPort,
+          'version': '5',
+        },
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      'route': _routeForAether(options),
+    };
+  }
+
+  /// The normal route with the WARP ranges pinned to `direct` ahead of
+  /// everything, so the Aether core can reach an edge from inside a tunnel it
+  /// is itself providing.
+  static Map<String, dynamic> _routeForAether(SingboxRouteOptions o) {
+    final Map<String, dynamic> route = _route(o, blockQuic: false);
+    final List<dynamic> rules = route['rules'] as List<dynamic>;
+    // Ahead of every other rule: nothing later may steer this back into the
+    // tunnel. QUIC is deliberately NOT blocked here, unlike the xhttp bridge,
+    // because the MASQUE transport IS QUIC and blocking it would leave only the
+    // HTTP/2 mode working, with no error to explain the difference.
+    rules.insert(0, <String, dynamic>{
+      'ip_cidr': kAetherDirectCidrs,
+      'outbound': 'direct',
+    });
+    rules.insert(1, <String, dynamic>{
+      'domain': <String>[kAetherRegistrationHost],
+      'outbound': 'direct',
+    });
+    return route;
   }
 
   /// Returns the config as a map (useful for tests / further mutation).
