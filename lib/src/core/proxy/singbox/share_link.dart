@@ -1,3 +1,4 @@
+import '../aether/aether_options.dart';
 import 'dart:convert';
 
 import 'awg_config.dart';
@@ -53,6 +54,10 @@ ProxyNode? parseShareLink(String raw) {
       // mieru (enfein/mieru): the simple mierus:// form. server + one port +
       // TCP/UDP is enough to build the outbound the core now runs.
       'mieru' || 'mierus' => _parseMieru(input),
+      // Aether: a WARP core of its own. There is no server to dial, so the
+      // link's authority is the pinned gateway when it has one and empty when
+      // the config should scan for one.
+      'aether' => _parseAether(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -616,4 +621,32 @@ String _tryBase64(String input) {
   } catch (_) {
     return '';
   }
+}
+
+/// An `aether://` link, in the shape other clients already write.
+ProxyNode? _parseAether(String input) {
+  final AetherConfig? c = AetherConfig.parse(input);
+  if (c == null) return null;
+  // The gateway travels as host:port in the authority. Split it back out so the
+  // socks outbound this becomes has somewhere to point; an empty one means the
+  // core has not scanned yet, which is a valid state for a saved config.
+  String server = '';
+  int port = 0;
+  final String? gw = c.gateway;
+  if (gw != null && gw.isNotEmpty) {
+    final int colon = gw.lastIndexOf(':');
+    if (colon > 0) {
+      server = gw.substring(0, colon);
+      port = int.tryParse(gw.substring(colon + 1)) ?? 0;
+    } else {
+      server = gw;
+    }
+  }
+  return ProxyNode(
+    protocol: NodeProtocol.aether,
+    server: server,
+    port: port,
+    tag: c.name,
+    aetherOpts: c.options.toQuery(),
+  );
 }

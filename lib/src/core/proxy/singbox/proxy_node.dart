@@ -34,6 +34,15 @@ enum NodeProtocol {
   /// mieru/mita server. Credentials are a username + password; transport is
   /// TCP or UDP. Ported into the sing-box core as a native outbound.
   mieru,
+
+  /// Aether: a WARP core of its own that opens a MASQUE or WireGuard tunnel and
+  /// serves it as a local SOCKS5 proxy, which the core then forwards into. The
+  /// same two-core shape as the Xray/xhttp path.
+  ///
+  /// There is no server to dial here, so [ProxyNode.server] is the chosen
+  /// gateway when one is pinned and empty when the scan should find one. The
+  /// settings live in [ProxyNode.aetherOpts].
+  aether,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -50,6 +59,10 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.http => 'http',
         NodeProtocol.naive => 'naive',
         NodeProtocol.mieru => 'mieru',
+        // The core never dials an Aether gateway itself: it forwards into the
+        // local SOCKS port the Aether core serves, so the outbound is a socks
+        // one. The gateway is the Aether core's business.
+        NodeProtocol.aether => 'socks',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -105,6 +118,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.http => 'HTTP',
         NodeProtocol.naive => 'NaiveProxy',
         NodeProtocol.mieru => 'mieru',
+        NodeProtocol.aether => 'Aether',
       };
 }
 
@@ -142,6 +156,7 @@ class ProxyNode {
     this.mieruMultiplexing = 'MULTIPLEXING_LOW',
     this.cipherSuites = const <String>[],
     this.fragmentMask,
+    this.aetherOpts,
   });
 
   /// Build an AmneziaWG node from a raw `awg-quick` `.conf`. The peer endpoint
@@ -227,6 +242,12 @@ class ProxyNode {
   final List<String> cipherSuites;
   final String? fragmentMask;
 
+  /// Aether settings, in the query form of an `aether://` link. Held as the
+  /// encoded string for the same reason [awgConf] holds raw `.conf` text: the
+  /// shape belongs to that core, and keeping it verbatim means a config
+  /// re-shares byte for byte instead of being rebuilt from parts.
+  final String? aetherOpts;
+
   bool get isReality =>
       (realityPublicKey != null && realityPublicKey!.isNotEmpty);
 
@@ -297,6 +318,7 @@ class ProxyNode {
     String? wsHost,
     List<String>? cipherSuites,
     String? fragmentMask,
+    String? aetherOpts,
     String? fingerprint,
     String? awgConf,
   }) {
@@ -330,6 +352,7 @@ class ProxyNode {
       awgConf: awgConf ?? this.awgConf,
       cipherSuites: cipherSuites ?? this.cipherSuites,
       fragmentMask: fragmentMask ?? this.fragmentMask,
+      aetherOpts: aetherOpts ?? this.aetherOpts,
       fingerprint: fingerprint ?? this.fingerprint,
     );
   }

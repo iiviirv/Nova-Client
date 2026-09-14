@@ -1640,6 +1640,7 @@ class _ProtoBadge extends StatelessWidget {
         NodeProtocol.hysteria2 => nova.cyan,
         NodeProtocol.tuic => nova.violet,
         NodeProtocol.awg => nova.success,
+        NodeProtocol.aether => nova.violet,
         NodeProtocol.socks => nova.muted,
         NodeProtocol.http => nova.muted,
         NodeProtocol.naive => nova.info,

@@ -7,6 +7,7 @@
 // parameter order (`sourcecode.js`), so a stamped node is structurally
 // identical to one the subscription hands out.
 
+import '../aether/aether_options.dart';
 import 'proxy_node.dart';
 
 /// Renders [node] as a share link (`vless://…` or `trojan://…`).
@@ -23,6 +24,14 @@ String buildShareLink(ProxyNode node) {
     // server, not a CF IP the scanner would find.
     // AmneziaWG shares as its `.conf` text (what a QR encodes), not a URI.
     NodeProtocol.awg => node.awgConf ?? '',
+    // Aether shares as the `aether://` link other clients read. The settings
+    // are kept verbatim in aetherOpts so the link comes back byte for byte
+    // rather than being rebuilt from parts and drifting.
+    NodeProtocol.aether => AetherConfig(
+          options: AetherOptions.fromQuery(node.aetherOpts,
+              peer: node.server.isEmpty ? null : '${node.server}:${node.port}'),
+          name: node.tag,
+        ).toLink(),
     // Radar only ever stamps clean Cloudflare IPs into the worker's VLESS
     // template, so these never arise here: a VMess/Hysteria2/TUIC exit is a real
     // server, not a CF IP the scanner would find.

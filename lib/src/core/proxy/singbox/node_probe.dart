@@ -124,6 +124,14 @@ Future<NodeProbeResult> _probe(
   required bool deep,
 }) async {
   switch (n.protocol) {
+    case NodeProtocol.aether:
+      // There is no gateway to reach from here. The Aether core finds one by
+      // scanning, and a config that has not scanned yet has no address at all.
+      // Its own FFI exposes a real verification that opens a tunnel and carries
+      // traffic; that is what should answer this, not a TCP connect to an
+      // address we do not have.
+      return const NodeProbeResult.untestable(
+          'Aether is measured by its own core, not by a probe');
     case NodeProtocol.awg:
       // A WireGuard handshake initiation is authenticated with the peer's
       // static keys; without completing the noise handshake there is nothing
@@ -469,6 +477,9 @@ List<int>? _requestHeader(ProxyNode n) {
   // header; a probe that ignores that would misread a healthy node as broken.
   if ((n.flow ?? '').isNotEmpty) return null;
   switch (n.protocol) {
+    // No probe header: nothing here dials an Aether gateway directly.
+    case NodeProtocol.aether:
+      return null;
     case NodeProtocol.vless:
       final Uint8List? uuid = _uuidBytes(n.uuid);
       if (uuid == null) return null;

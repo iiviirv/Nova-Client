@@ -1145,6 +1145,10 @@ class SingboxConfig {
       'server_port': n.port,
     };
     switch (n.protocol) {
+      // server/port were set above to the local address the Aether core serves;
+      // the gateway itself is that core's business, not the outbound's.
+      case NodeProtocol.aether:
+        o['version'] = '5';
       case NodeProtocol.vless:
         o['uuid'] = n.uuid;
         final String? flow = _singboxFlow(n.flow);
