@@ -118,6 +118,31 @@ void main() {
           .containsKey('excluded'), isFalse);
     });
 
+    test('an identity payload names a directory and the transport', () {
+      // The core replied "missing field `path`" when this was omitted, which
+      // is how the field was learned rather than guessed. It is a directory:
+      // the core derives the filename per transport, so MASQUE and WireGuard
+      // keep separate identities side by side.
+      final Map<String, dynamic> p = dec(AetherPayloads.identity(
+          const AetherOptions(), dir: '/data/user/0/app/files/aether'));
+      expect(p['path'], '/data/user/0/app/files/aether');
+      expect(p['transport'], 'h3');
+      expect(p.containsKey('socks'), isFalse,
+          reason: 'opening an identity does not serve anything');
+    });
+
+    test('the identity follows the transport, not just the mode', () {
+      expect(
+          dec(AetherPayloads.identity(
+              const AetherOptions(transport: AetherTransport.h2),
+              dir: '/x'))['transport'],
+          'h2');
+      expect(
+          dec(AetherPayloads.identity(
+              const AetherOptions(mode: AetherMode.wg), dir: '/x'))['transport'],
+          'wg');
+    });
+
     test('a tunnel payload carries the local socks address', () {
       final Map<String, dynamic> p = dec(AetherPayloads.tunnel(
           const AetherOptions(), socks: '127.0.0.1:19819'));

@@ -98,6 +98,22 @@ class AetherJobStatus {
 
 /// The payloads the core expects, built from a config.
 class AetherPayloads {
+  /// For `aether_identity_open`.
+  ///
+  /// [dir] is a DIRECTORY, not a file. The core derives the filename from the
+  /// transport, so MASQUE and WireGuard keep separate identities in the same
+  /// place. Learned from the core itself: calling it without this field returns
+  /// "missing field `path`", which is a better contract than a guess.
+  ///
+  /// The call is asynchronous like the others: it returns a job id to poll, not
+  /// a handle. Treating it as immediate gets a job number where an identity was
+  /// expected, and every later call then fails with "there is no identity".
+  static String identity(AetherOptions o, {required String dir}) =>
+      jsonEncode(<String, dynamic>{
+        'path': dir,
+        'transport': _transport(o),
+      });
+
   /// For `aether_scan_start`.
   ///
   /// [excluded] is what makes a retry different from the first attempt. When a

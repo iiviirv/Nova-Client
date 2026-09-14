@@ -113,7 +113,16 @@ class AetherCore {
   }
 
   /// Opens (or creates) the WARP identity. Everything else needs its handle.
-  AetherReply identityOpen(String payloadJson) => _withJson(
+  ///
+  /// Asynchronous: the reply carries a job id, and the identity handle arrives
+  /// in that job's result. [dir] is a directory; the core names the file itself
+  /// per transport.
+  AetherReply identityOpen(AetherOptions o, {required String dir}) =>
+      identityOpenRaw(AetherPayloads.identity(o, dir: dir));
+
+  /// The same call with a payload built elsewhere, for tests that want to send
+  /// something deliberately wrong.
+  AetherReply identityOpenRaw(String payloadJson) => _withJson(
       payloadJson,
       (Pointer<pkg_ffi.Utf8> p) => _take(_lib
           .lookupFunction<_JsonInC, _JsonIn>('aether_identity_open')(p)));
