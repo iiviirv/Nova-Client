@@ -10,8 +10,10 @@
 
   If the first route it finds turns out not to work, Nova tries the next one by
   itself rather than making you start again. Three ways to carry it are
-  offered, and the app tells you what each costs: the fastest one uses more
-  battery and is blocked outright on networks that drop that kind of traffic.
+  offered, and the app says what each is for instead of leaving you to guess:
+  one is disguised as ordinary web traffic, one is lighter but easier for a
+  filter to spot, and one takes two hops to get through networks that a single
+  hop cannot.
 
   A route that worked when you saved it can stop answering later. When that
   happens Nova now says so and offers to go find another one, with the dead
