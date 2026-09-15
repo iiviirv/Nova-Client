@@ -34,6 +34,41 @@ These steps create the extension target and wire the provided files into it.
    - Select your team; let Xcode create the provisioning profiles.
 5. **Run on a real device** (the simulator's NE support is limited).
 
+## The Aether core (WARP)
+
+`ios/Frameworks/Aether.xcframework` is the Rust WARP core, gitignored for the
+same reason as Novacore. Build it with the **Build Aether core** workflow and
+download the `aether-ios-xcframework` artifact into `ios/Frameworks/`.
+
+It is linked into **both** targets, for different reasons:
+
+- **NovaTunnel** calls it from Swift (`startAetherIfConfigured`). The tunnel has
+  to live in the extension: iOS suspends the app in the background, and a core
+  hosted there would be suspended with it and take the tunnel down.
+- **Runner** needs the same symbols for the in-app gateway search, which runs
+  over `dart:ffi` in the foreground. Nothing in Swift references them there, and
+  a static archive contributes only what something references, so the entry
+  points are named with `-Wl,-u,_aether_*` in OTHER_LDFLAGS.
+
+Three linker settings are load-bearing and not obvious:
+
+- `-Wl,-no_compact_unwind` on both targets. Rust brings its own unwinding
+  personality routine and compact unwind cannot encode that many. Do **not**
+  reach for `panic = "abort"` instead: the crate sets `panic = "unwind"` and
+  catches panics at its FFI boundary, so abort would turn a handled panic into a
+  dead extension.
+- `-Wl,-u,_aether_*` rather than `-force_load`. The archive carries two copies of
+  BoringSSL (quiche vendors one, the `boring` crate another); normal linking
+  picks one, `-force_load` pulls in both and fails with thousands of duplicate
+  symbols.
+- `IPHONEOS_DEPLOYMENT_TARGET=15.0` when building the core, or the link cannot
+  find `___chkstk_darwin`.
+
+The app writes `aether.json` into the App Group beside `config.json`, the same
+way it writes `xray.json`, and the extension starts the core from it before
+sing-box. Unlike Android, the order is all that is needed: the extension's own
+sockets bypass its tunnel, so the core's dial is never captured.
+
 ## Rebuild the core
 Current core: **sing-box v1.12.25** (upgraded from v1.11.15 on 2026-07-04 to get
 TLS fragmentation, added upstream in 1.12.0).

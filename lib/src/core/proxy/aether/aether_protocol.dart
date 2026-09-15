@@ -182,6 +182,14 @@ class AetherPayloads {
   /// Measured rather than reasoned: a gool search returned 162.159.198.2:443,
   /// the same MASQUE gateway and port as a plain MASQUE search, where WireGuard
   /// returned 188.114.98.211:939.
+  /// The transport, for callers that need it outside a payload.
+  ///
+  /// iOS hands the tunnel to the Network Extension, which has to open the
+  /// identity itself because only it knows its own container path. It needs the
+  /// transport to do that, and taking it from here keeps one answer to what the
+  /// transport is rather than a second opinion in Swift.
+  static String transportOf(AetherOptions o) => _transport(o);
+
   static String _transport(AetherOptions o) {
     if (o.mode == AetherMode.masque) {
       return o.transport == AetherTransport.h2 ? 'h2' : 'h3';

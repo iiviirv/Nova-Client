@@ -56,10 +56,14 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       // Present only for an xhttp node: the Xray core config the extension runs
       // alongside the sing-box TUN->SOCKS bridge.
       let xrayConfig = args["xrayConfigJson"] as? String
+      // Present only for an Aether node: what the extension needs to open the
+      // WARP tunnel the sing-box config forwards into.
+      let aetherConfig = args["aetherConfigJson"] as? String
       // Cosmetic profile name for the home-screen widget.
       profileLabel = (args["label"] as? String)?.isEmpty == false
         ? (args["label"] as? String) : nil
       start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
+            aetherConfig: aetherConfig,
             autoReconnect: (args["autoReconnect"] as? Bool) ?? false,
             result: result)
     case "stop":
@@ -146,7 +150,8 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
   private static let ruleSetBaseToken = "__NOVA_BASE__"
 
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
-                     xrayConfig: String?, autoReconnect: Bool,
+                     xrayConfig: String?, aetherConfig: String?,
+                     autoReconnect: Bool,
                      result: @escaping FlutterResult) {
     // A measuring core still running would share the command socket path with
     // the extension; stop it first (its caller gets what it has so far).
@@ -174,6 +179,15 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         try xrayConfig.write(to: xrayURL, atomically: true, encoding: .utf8)
       } else if FileManager.default.fileExists(atPath: xrayURL.path) {
         try FileManager.default.removeItem(at: xrayURL)
+      }
+      // The Aether parameters for a WARP node, cleared the same way: a stale
+      // one would have the extension open a tunnel this connection is not
+      // forwarding into, and hold a port for the length of the session.
+      let aetherURL = container.appendingPathComponent("aether.json")
+      if let aetherConfig, !aetherConfig.isEmpty {
+        try aetherConfig.write(to: aetherURL, atomically: true, encoding: .utf8)
+      } else if FileManager.default.fileExists(atPath: aetherURL.path) {
+        try FileManager.default.removeItem(at: aetherURL)
       }
     } catch {
       result(FlutterError(code: "write", message: error.localizedDescription, details: nil))

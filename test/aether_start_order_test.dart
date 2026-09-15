@@ -43,8 +43,18 @@ void main() {
   });
 
   test('a failed start leaves no half-open tunnel behind', () {
-    expect(src.contains('_pendingAether = null;\n      await AetherTunnel.stop();'),
-        isTrue,
+    // Both have to happen on the failure path, but not necessarily adjacent:
+    // this asserted one exact two-line string and broke the moment a third
+    // statement was added between them, which is a test failing on formatting
+    // rather than on behaviour.
+    // Anchored on this path's own comment: the file has three catch blocks and
+    // indexOf found the first, which is a different one.
+    final int fail = src.indexOf('A half-started Aether tunnel is worse');
+    expect(fail, isNot(-1), reason: 'the connect failure path moved');
+    final String body = src.substring(fail, fail + 400);
+    expect(body.contains('_pendingAether = null;'), isTrue,
+        reason: 'a pending start left behind would fire on the next connect');
+    expect(body.contains('AetherTunnel.stop()'), isTrue,
         reason: 'sing-box would otherwise forward into a port that never '
             'answers');
   });

@@ -64,6 +64,12 @@ class AetherCore {
     final AetherCore? existing = _instance;
     if (existing != null) return existing;
     try {
+      // iOS links the core statically, so there is nothing to open: the
+      // symbols are already in this process. A dynamic library would have to
+      // be an embedded framework, and iOS will not load a loose one at all.
+      if (Platform.isIOS) {
+        return _instance = AetherCore._(DynamicLibrary.process());
+      }
       final String name = switch (Platform.operatingSystem) {
         'android' || 'linux' => 'libaether.so',
         'macos' => 'libaether.dylib',

@@ -28,6 +28,7 @@ import 'aether/aether_gateway_finder.dart';
 import 'singbox/share_link.dart';
 import 'singbox/share_link_builder.dart';
 import 'aether/aether_options.dart';
+import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
 import 'xray/xray_config.dart';
 
@@ -210,6 +211,10 @@ class SingboxProxyController extends ProxyController {
   /// Set by [_buildSingboxConfig] when the exit is an xhttp node: the Xray core
   /// config the native host starts alongside the sing-box TUN->SOCKS bridge.
   String? _pendingXrayConfig;
+
+  /// iOS only: what the extension needs to start the Aether core itself.
+  /// Null everywhere else, where the core runs in this process instead.
+  String? _pendingAetherJson;
 
   @override
   String? exitName(String? key) => key == null ? null : _keyToName[key];
@@ -825,6 +830,8 @@ class SingboxProxyController extends ProxyController {
         // For an xhttp node, the Xray core config the host runs alongside the
         // sing-box bridge (Android only for now).
         if (_pendingXrayConfig != null) 'xrayConfigJson': _pendingXrayConfig,
+        // iOS only: the extension starts the Aether core from this.
+        if (_pendingAetherJson != null) 'aetherConfigJson': _pendingAetherJson,
         // Bundled rule-set files the lean iOS config references as local
         // rule-sets. The host writes them next to the config in the App Group.
         if (ruleSets != null) 'ruleSets': ruleSets,
@@ -839,12 +846,14 @@ class SingboxProxyController extends ProxyController {
       });
       // Only now, with the tunnel device up, is it safe to dial the Aether
       // gateway. See [_pendingAether] for why the other order cannot work.
+      _pendingAetherJson = null;
       await _startPendingAether();
       _armWatchdog();
     } catch (e) {
       // A half-started Aether tunnel is worse than none: sing-box would sit
       // forwarding into a port that never answers.
       _pendingAether = null;
+      _pendingAetherJson = null;
       await AetherTunnel.stop();
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
@@ -1246,12 +1255,30 @@ class SingboxProxyController extends ProxyController {
     // The port is reserved now and the core is started later, once the tunnel
     // device exists. See [_pendingAether].
     final int port = await AetherTunnel.freeLoopbackPort();
-    _pendingAether = _PendingAether(
-      options: AetherOptions.fromQuery(node.aetherOpts),
-      endpoint: endpoint,
-      identityBase: '${support.path}/aether',
-      socksPort: port,
-    );
+    final AetherOptions o = AetherOptions.fromQuery(node.aetherOpts);
+    if (Platform.isIOS) {
+      // On iOS the tunnel belongs to the Network Extension, not to this
+      // process. The extension is what keeps running when the user leaves the
+      // app; a core hosted here would be suspended with the app and take the
+      // tunnel down with it. So the parameters travel to the extension the way
+      // the Xray ones already do, and it starts the core itself.
+      //
+      // The tunnel payload goes over verbatim. The identity payload does not,
+      // because it names a path and only the extension knows its own container,
+      // so it gets the transport and builds that half there.
+      _pendingAetherJson = jsonEncode(<String, dynamic>{
+        'transport': AetherPayloads.transportOf(o),
+        'tunnel': jsonDecode(AetherPayloads.tunnel(o,
+            endpoint: endpoint, socks: '127.0.0.1:$port')),
+      });
+    } else {
+      _pendingAether = _PendingAether(
+        options: o,
+        endpoint: endpoint,
+        identityBase: '${support.path}/aether',
+        socksPort: port,
+      );
+    }
     return const JsonEncoder.withIndent('  ').convert(
         SingboxConfig.buildAetherSocksBridgeMap(port, options: options));
   }

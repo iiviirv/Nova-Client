@@ -12,7 +12,7 @@
 		330E2057E8E77B4ED1D815BC /* NovaProxyHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C53A5315F8A862FF61E51C91 /* NovaProxyHost.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		NOVA0002PRIVACYMANIFEST0002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = NOVA0001PRIVACYMANIFEST0001 /* PrivacyInfo.xcprivacy */; };
+		4C5E29A3BE179BB85BAEA3A9 /* Aether.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70B6D8F88C700FF86BAD4928 /* Aether.xcframework */; };
 		6D584F74B0741E9AD8ABA03B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9B91EB01CB2DF1872C3A6BE /* Pods_Runner.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
@@ -22,8 +22,10 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		C37BA94982AEC047716F3763 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD88F51CF2FD9B4D1BF4DDC /* PacketTunnelProvider.swift */; };
+		C3DD33D8672EC7364A3A40CD /* Aether.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70B6D8F88C700FF86BAD4928 /* Aether.xcframework */; };
 		C49934106BF9CA117E7BC8EB /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9CDD88B8659E6B5B82B40AB7 /* Foundation.framework */; };
 		C9B711CDE8FF1FF3C0E061BD /* NovaTunnel.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B1E9602D3A467948F5D61ED5 /* NovaTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		NOVA0002PRIVACYMANIFEST0002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = NOVA0001PRIVACYMANIFEST0001 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +78,7 @@
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		5AD88F51CF2FD9B4D1BF4DDC /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PacketTunnelProvider.swift; path = NovaTunnel/PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		6ABF3CF6D8C630EB4AF8A17F /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		70B6D8F88C700FF86BAD4928 /* Aether.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; name = Aether.xcframework; path = Frameworks/Aether.xcframework; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		77D753B8830FF76E2AC2ED54 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -91,7 +94,6 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		NOVA0001PRIVACYMANIFEST0001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9CDD88B8659E6B5B82B40AB7 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		B1E9602D3A467948F5D61ED5 /* NovaTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NovaTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C53A5315F8A862FF61E51C91 /* NovaProxyHost.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NovaProxyHost.swift; path = NovaProxyHost.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 		D9B91EB01CB2DF1872C3A6BE /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		E489434E61F496301B6212FB /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		FB27A74E8FCC9BAD4BF4DAAD /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		NOVA0001PRIVACYMANIFEST0001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,6 +111,7 @@
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
 				6D584F74B0741E9AD8ABA03B /* Pods_Runner.framework in Frameworks */,
+				4C5E29A3BE179BB85BAEA3A9 /* Aether.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -117,6 +121,7 @@
 			files = (
 				C49934106BF9CA117E7BC8EB /* Foundation.framework in Frameworks */,
 				7F1A0CEEBB0280A2DC6218AD /* Novacore.xcframework in Frameworks */,
+				C3DD33D8672EC7364A3A40CD /* Aether.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,6 +151,7 @@
 				83A22BECAF2027BA0F7F8897 /* Novacore.xcframework */,
 				D9B91EB01CB2DF1872C3A6BE /* Pods_Runner.framework */,
 				6ABF3CF6D8C630EB4AF8A17F /* Pods_RunnerTests.framework */,
+				70B6D8F88C700FF86BAD4928 /* Aether.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -569,6 +575,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -649,6 +656,15 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
+					"-Wl,-u,_aether_version",
+					"-Wl,-u,_aether_string_free",
+					"-Wl,-u,_aether_job_poll",
+					"-Wl,-u,_aether_job_cancel",
+					"-Wl,-u,_aether_identity_open",
+					"-Wl,-u,_aether_scan_start",
+					"-Wl,-u,_aether_verify_start",
+					"-Wl,-u,_aether_tunnel_start",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -728,6 +744,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -757,6 +774,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge.NovaTunnel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -896,6 +914,15 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
+					"-Wl,-u,_aether_version",
+					"-Wl,-u,_aether_string_free",
+					"-Wl,-u,_aether_job_poll",
+					"-Wl,-u,_aether_job_cancel",
+					"-Wl,-u,_aether_identity_open",
+					"-Wl,-u,_aether_scan_start",
+					"-Wl,-u,_aether_verify_start",
+					"-Wl,-u,_aether_tunnel_start",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -924,6 +951,15 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lresolv",
+					"-Wl,-no_compact_unwind",
+					"-Wl,-u,_aether_version",
+					"-Wl,-u,_aether_string_free",
+					"-Wl,-u,_aether_job_poll",
+					"-Wl,-u,_aether_job_cancel",
+					"-Wl,-u,_aether_identity_open",
+					"-Wl,-u,_aether_scan_start",
+					"-Wl,-u,_aether_verify_start",
+					"-Wl,-u,_aether_tunnel_start",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = tech.innovatenorth.novaedge;
 				PRODUCT_NAME = "$(TARGET_NAME)";

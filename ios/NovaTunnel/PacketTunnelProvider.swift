@@ -1,4 +1,7 @@
 import Foundation
+// The Rust WARP core, linked as a static library. Its module map comes from
+// Aether.xcframework; see ios/IOS_BUILD.md for where that is built.
+import Aether
 import Novacore
 import Network
 import NetworkExtension
@@ -21,6 +24,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   private var commandServer: NovacoreCommandServer?
   private var xrayStarted = false
+  /// The Aether tunnel's job id, or nil when this connection has no WARP core.
+  private var aetherJob: UInt64?
   private var xrayLogSink: XrayLogSink?
   private var pathMonitor: NWPathMonitor?
 
@@ -64,6 +69,18 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       }
       xrayStarted = true
     }
+
+    // WARP node: open the Aether tunnel before sing-box, so the local SOCKS it
+    // forwards into is already serving. Same shape as the Xray block above, and
+    // for the same reason.
+    //
+    // Unlike Android, order is all this needs: the extension's own sockets
+    // bypass its tunnel, so the core's dial to Cloudflare is never captured and
+    // fed back into the chain it is supposed to be providing.
+    //
+    // The core lives here rather than in the app because the app is suspended
+    // when the user leaves it, and a tunnel hosted there would go with it.
+    try startAetherIfConfigured(container: container)
 
     // sing-box 1.13 folded the box service into the command server: instead of
     // NovacoreNewService(config, platform) + a separate command server, the command
@@ -113,7 +130,172 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       _ = NovaxrayStop()
     }
     xrayLogSink = nil
+    if let job = aetherJob {
+      aetherJob = nil
+      // Frees the job and closes the SOCKS port with it. Left running, the next
+      // connection would find the port taken and pick a different one while the
+      // config it was written against still names this one.
+      if let raw = aether_job_cancel(job) { aether_string_free(raw) }
+    }
     notifyIfUnexpected(reason)
+  }
+
+  // MARK: - Aether (WARP)
+
+  /// Opens the WARP tunnel this connection forwards into, if there is one.
+  ///
+  /// `aether.json` is written by the app next to `config.json`, and carries the
+  /// tunnel payload verbatim plus the transport. The identity half is built
+  /// here because it names a path, and only this process knows its own
+  /// container.
+  ///
+  /// Every call into the core returns a malloc'd JSON string that has to be
+  /// freed, and every one of them can report failure inside a reply that is
+  /// itself successful, so both layers are checked.
+  private func startAetherIfConfigured(container: URL) throws {
+    let url = container.appendingPathComponent("aether.json")
+    guard let raw = try? Data(contentsOf: url),
+          let envelope = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+          let transport = envelope["transport"] as? String,
+          let tunnel = envelope["tunnel"] else { return }
+
+    // The identity is per transport and is kept in the shared container, so a
+    // registration survives a reconnect instead of being made again each time.
+    let identityPayload: [String: Any] = [
+      "path": container.appendingPathComponent("aether").path,
+      "transport": transport,
+    ]
+    let identity = try aetherJob(
+      call: { aether_identity_open($0) },
+      payload: identityPayload,
+      what: "open the WARP identity")
+    guard let handle = (identity["identity"] as? NSNumber)?.uint64Value else {
+      throw aetherError("the core returned no identity handle")
+    }
+
+    let started = try aetherCall(
+      { aether_tunnel_start(handle, $0) },
+      payload: tunnel,
+      what: "start the WARP tunnel")
+    guard let job = (started["job"] as? NSNumber)?.uint64Value else {
+      throw aetherError("the core started no job for the tunnel")
+    }
+    aetherJob = job
+
+    // A tunnel job stays running for as long as the tunnel is up, so there is
+    // nothing to wait for it to finish. What matters is that it has not already
+    // failed, and that the port answers before sing-box is pointed at it.
+    let now = try aetherPoll(job)
+    if (now["state"] as? String) == "failed" {
+      throw aetherError((now["error"] as? String) ?? "the tunnel failed on startup")
+    }
+    guard let socks = (tunnel as? [String: Any])?["socks"] as? String,
+          let port = UInt16(socks.split(separator: ":").last.map(String.init) ?? "") else {
+      throw aetherError("the tunnel payload named no port to wait on")
+    }
+    try awaitAetherPort(port)
+  }
+
+  /// One call into the core, with its reply parsed and its string freed.
+  private func aetherCall(_ fn: (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?,
+                          payload: Any,
+                          what: String) throws -> [String: Any] {
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    guard let json = String(data: data, encoding: .utf8) else {
+      throw aetherError("could not encode the payload to \(what)")
+    }
+    guard let out = json.withCString({ fn($0) }) else {
+      throw aetherError("the core returned nothing when asked to \(what)")
+    }
+    defer { aether_string_free(out) }
+    guard let parsed = try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))
+            as? [String: Any] else {
+      throw aetherError("the core returned something that is not JSON")
+    }
+    if (parsed["ok"] as? Bool) != true {
+      throw aetherError((parsed["error"] as? String) ?? "could not \(what)")
+    }
+    return parsed
+  }
+
+  /// A call that returns a job id, polled until it finishes.
+  ///
+  /// Opening an identity talks to Cloudflare on a first run, so this can take
+  /// seconds. Treating it as immediate gets a job number where a handle was
+  /// expected and every later call then fails with "there is no identity".
+  private func aetherJob(call: (UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?,
+                         payload: Any,
+                         what: String) throws -> [String: Any] {
+    let started = try aetherCall(call, payload: payload, what: what)
+    guard let job = (started["job"] as? NSNumber)?.uint64Value else {
+      throw aetherError("the core started no job to \(what)")
+    }
+    let deadline = Date().addingTimeInterval(45)
+    while Date() < deadline {
+      let st = try aetherPoll(job)
+      switch st["state"] as? String {
+      case "running": Thread.sleep(forTimeInterval: 0.25)
+      case "failed": throw aetherError((st["error"] as? String) ?? "could not \(what)")
+      default:
+        // The result is itself an envelope: a poll can succeed while the work
+        // inside it failed, so the inner ok is the one that matters.
+        guard let inner = st["result"] as? [String: Any] else {
+          throw aetherError("the job finished without saying what happened")
+        }
+        if (inner["ok"] as? Bool) != true {
+          throw aetherError((inner["error"] as? String) ?? "could not \(what)")
+        }
+        return inner
+      }
+    }
+    if let raw = aether_job_cancel(job) { aether_string_free(raw) }
+    throw aetherError("the core did not answer in time when asked to \(what)")
+  }
+
+  private func aetherPoll(_ job: UInt64) throws -> [String: Any] {
+    guard let out = aether_job_poll(job) else {
+      throw aetherError("the core returned nothing for a job poll")
+    }
+    defer { aether_string_free(out) }
+    guard let parsed = try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))
+            as? [String: Any] else {
+      throw aetherError("the core returned a job status that is not JSON")
+    }
+    if (parsed["ok"] as? Bool) != true {
+      throw aetherError((parsed["error"] as? String) ?? "the job poll failed")
+    }
+    return parsed
+  }
+
+  /// Waits for the SOCKS port to accept a connection.
+  ///
+  /// Without it sing-box is pointed at a port nothing is listening on yet, and
+  /// the first requests fail for no reason the user can see.
+  private func awaitAetherPort(_ port: UInt16) throws {
+    let deadline = Date().addingTimeInterval(45)
+    while Date() < deadline {
+      let fd = socket(AF_INET, SOCK_STREAM, 0)
+      if fd >= 0 {
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let ok = withUnsafePointer(to: &addr) {
+          $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+          }
+        }
+        close(fd)
+        if ok { return }
+      }
+      Thread.sleep(forTimeInterval: 0.2)
+    }
+    throw aetherError("the WARP tunnel never started serving on \(port)")
+  }
+
+  private func aetherError(_ message: String) -> NSError {
+    NSError(domain: "Nova", code: 5,
+            userInfo: [NSLocalizedDescriptionKey: "Aether: \(message)"])
   }
 
   /// iOS already shows the system VPN pill on connect, so the only notification

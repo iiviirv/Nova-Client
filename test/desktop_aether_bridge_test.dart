@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,6 +74,8 @@ void main() {
     expect((first['ip_cidr'] as List<dynamic>).join(','), contains('188.114.98.'));
   });
 
+  _wiring();
+
   test('a config with no gateway yet says so instead of building nothing',
       () async {
     await expectLater(
@@ -81,5 +84,46 @@ void main() {
       throwsA(isA<String>().having((String e) => e, 'message',
           contains('no gateway'))),
     );
+  });
+}
+
+/// The config half of this is checked above. This is the other half: the core
+/// has to actually be started, and started in the right place.
+///
+/// A config pointing at a port nothing is listening on produces the same
+/// "Verifying" forever as the bug it replaced, so a missing call here would
+/// look exactly like a fix that did not work.
+void _wiring() {
+  final String src =
+      File('lib/src/core/proxy/desktop_proxy_controller.dart').readAsStringSync();
+
+  test('the core is started on the connect path', () {
+    expect(src.contains('await _startPendingAether();'), isTrue,
+        reason: 'the config names a loopback port; something has to serve it');
+  });
+
+  test('it starts after sing-box, in both the TUN and proxy branches', () {
+    // Anchored on the two places sing-box is actually launched, not on some
+    // later line. The first version of this compared against a line further
+    // down, which the wrong order also satisfies, so it passed against the
+    // very mutation it existed to catch.
+    final int aether = src.indexOf('await _startPendingAether();');
+    final int tunLaunch = src.indexOf('await _startElevatedTun(binary, cfgFile);');
+    final int procLaunch = src.indexOf('await Process.start(binary,');
+    expect(aether, isNot(-1), reason: 'the core is never started');
+    expect(tunLaunch, isNot(-1), reason: 'the TUN launch moved');
+    expect(procLaunch, isNot(-1), reason: 'the proxy-mode launch moved');
+    expect(aether, greaterThan(tunLaunch),
+        reason: 'in TUN mode a socket opened before the device exists is bound '
+            'to the real interface, and the core gives up ten seconds later');
+    expect(aether, greaterThan(procLaunch),
+        reason: 'the same order in proxy mode, so there is one order and not '
+            'two to keep straight');
+  });
+
+  test('stopping the tunnel is part of teardown', () {
+    expect(src.contains('AetherTunnel.stop()'), isTrue,
+        reason: 'a core left running holds its loopback port, and the next '
+            'connect picks a different one');
   });
 }

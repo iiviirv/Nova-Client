@@ -34,6 +34,10 @@ dist/
 # Large iOS core framework (build artifact, regenerated locally; too big for GitHub 100MB limit)
 ios/Frameworks/Novacore.xcframework/
 
+# The Aether core for iOS, same reason: a build artifact from the
+# "Build Aether core" workflow, larger than GitHub takes. See ios/IOS_BUILD.md.
+ios/Frameworks/Aether.xcframework/
+
 # Xray core AAR (Phase-1 spike), built by tool/core/build-xray.sh
 libxray.aar
 android/app/libs/libxray.aar
