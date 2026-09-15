@@ -98,13 +98,31 @@ void main() {
           'h2');
     });
 
+    test('gool declares the WireGuard transport, with the mode alongside', () {
+      // The core's transport enum is {WireGuard, Masque} with an unrecognised
+      // value falling through to Masque, so "gool" there meant Masque: the
+      // search swept MASQUE endpoints and the tunnel was a MASQUE tunnel.
+      // Confirmed on a device, where a gool search returned the same 443
+      // gateway as MASQUE while WireGuard returned a high port.
+      final Map<String, dynamic> sc =
+          dec(AetherPayloads.scan(const AetherOptions(mode: AetherMode.gool)));
+      expect(sc['transport'], 'wg');
+      expect(sc['mode'], 'gool');
+      final Map<String, dynamic> tn = dec(AetherPayloads.tunnel(
+          const AetherOptions(mode: AetherMode.gool),
+          endpoint: '1.2.3.4:2408',
+          socks: '127.0.0.1:1'));
+      expect(tn['transport'], 'wg');
+      expect(tn['mode'], 'gool');
+    });
+
     test('the WireGuard modes never claim an HTTP transport', () {
       // Sending h3 with wg would have the config quietly do something other
       // than what its name says.
       for (final AetherMode m in <AetherMode>[AetherMode.wg, AetherMode.gool]) {
         final Map<String, dynamic> p =
             dec(AetherPayloads.scan(AetherOptions(mode: m)));
-        expect(p['transport'], m.name);
+        expect(p['transport'], 'wg');
         expect(p['transport'] == 'h3' || p['transport'] == 'h2', isFalse);
       }
     });

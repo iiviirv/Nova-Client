@@ -165,12 +165,27 @@ class AetherPayloads {
         'socks': socks,
       });
 
-  /// The core names the transport, not the mode: the WireGuard modes are not
-  /// carried over HTTP at all, and sending an HTTP transport with them is how
-  /// a config ends up silently doing something other than what it says.
+  /// The transport the core understands, which is not the same as the mode.
+  ///
+  /// Its enum has exactly two values and anything unrecognised becomes Masque:
+  ///
+  ///     "wg" | "wireguard" | "warp" => WireGuard,  _ => Masque
+  ///
+  /// So gool must say "wg". It is WARP inside WARP, WireGuard nested in
+  /// WireGuard, and the nesting is selected by the mode sent alongside. Sending
+  /// "gool" here fell through to Masque, which made a gool config scan MASQUE
+  /// endpoints and build a MASQUE tunnel. It connected, so it read as working,
+  /// and a tester confirmed three of them as good; they were all MASQUE.
+  ///
+  /// Measured rather than reasoned: a gool search returned 162.159.198.2:443,
+  /// the same MASQUE gateway and port as a plain MASQUE search, where WireGuard
+  /// returned 188.114.98.211:939.
   static String _transport(AetherOptions o) {
-    if (o.mode != AetherMode.masque) return o.mode.name;
-    return o.transport == AetherTransport.h2 ? 'h2' : 'h3';
+    if (o.mode == AetherMode.masque) {
+      return o.transport == AetherTransport.h2 ? 'h2' : 'h3';
+    }
+    // Both wg and gool ride WireGuard; the mode says which.
+    return 'wg';
   }
 }
 
