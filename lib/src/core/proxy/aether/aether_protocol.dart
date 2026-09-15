@@ -153,6 +153,14 @@ class AetherPayloads {
       jsonEncode(<String, dynamic>{
         'peer': endpoint,
         'transport': _transport(o),
+        // The core's transport has only two values, Masque and WireGuard, and
+        // anything it does not recognise becomes Masque. So "gool" parses as
+        // Masque, and without the mode alongside it a gool tunnel is a plain
+        // MASQUE tunnel wearing a gool label: it connects, which is why it
+        // reads as working, while not being what the config says.
+        //
+        // The scan has always carried mode. Dropping it here was wrong.
+        'mode': o.mode.name,
         if (o.noize != null) 'profile': o.noize!.name,
         'socks': socks,
       });

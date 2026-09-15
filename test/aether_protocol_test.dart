@@ -159,16 +159,26 @@ void main() {
       expect(p['socks'], '127.0.0.1:19819');
     });
 
-    test('a tunnel is told an address rather than re-deciding the search', () {
-      // mode and ip are search settings; the core's tunnel payload has no such
-      // fields. Sending them would read as though a tunnel re-picks something
-      // it does not.
+    test('a tunnel carries the mode, because transport cannot express gool', () {
+      // The core's transport has two values, Masque and WireGuard, and anything
+      // unrecognised becomes Masque. So "gool" parses as Masque, and a tunnel
+      // told only the transport builds a plain MASQUE tunnel under a gool name:
+      // it connects, which is why it reads as working, while not being what the
+      // config says.
       final Map<String, dynamic> p = dec(AetherPayloads.tunnel(
-          const AetherOptions(mode: AetherMode.gool, ip: AetherIpMode.both),
+          const AetherOptions(mode: AetherMode.gool),
           endpoint: '1.2.3.4:443',
           socks: '127.0.0.1:1'));
-      expect(p.containsKey('mode'), isFalse);
-      expect(p.containsKey('ip'), isFalse);
+      expect(p['mode'], 'gool');
+      expect(p['peer'], '1.2.3.4:443');
+    });
+
+    test('every mode is named in the tunnel payload', () {
+      for (final AetherMode m in AetherMode.values) {
+        final Map<String, dynamic> p = dec(AetherPayloads.tunnel(
+            AetherOptions(mode: m), endpoint: '1.2.3.4:443', socks: '1.2.3.4:1'));
+        expect(p['mode'], m.name, reason: '$m must reach the core');
+      }
     });
 
     test('the obfuscation profile is omitted when unset', () {

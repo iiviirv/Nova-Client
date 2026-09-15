@@ -60,7 +60,24 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
 
   /// The options this shortcut builds. Everything at its default, which is the
   /// point of it.
-  static const AetherOptions _options = AetherOptions(mode: AetherMode.wg);
+  /// MASQUE, not WireGuard.
+  ///
+  /// WireGuard was the first choice because it is the quickest to find. Then a
+  /// tester in Iran reported it coming up and carrying nothing, while MASQUE and
+  /// gool both worked, and the same WireGuard path scans, verifies and carries
+  /// traffic without complaint from outside Iran.
+  ///
+  /// The likely reason is what each one looks like on the wire: WireGuard is
+  /// raw UDP on whatever high port the scan lands on (891 and 1070 in two runs
+  /// here), while MASQUE rides 443 and can fall back to HTTP/2 over TCP. A
+  /// network that drops the first and allows the second produces exactly the
+  /// reported result.
+  ///
+  /// Until that is understood, the one-tap button on the main screen has to use
+  /// the protocol confirmed working for the people this is for. A shortcut that
+  /// builds something that does not connect is worse than no shortcut.
+  static const AetherOptions _options =
+      AetherOptions(mode: AetherMode.masque);
 
   bool get _busy => _progress != null || _connecting;
 
