@@ -17,6 +17,8 @@ import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
+import 'aether/aether_options.dart';
+import 'aether/aether_tunnel.dart';
 import 'core_features.dart';
 import 'measure_runner.dart';
 import 'proxy_controller.dart';
@@ -36,6 +38,23 @@ import 'xray/xray_config.dart';
 ///
 /// Android keeps its VpnService host and iOS its Network Extension; this is the
 /// desktop equivalent of those hosts.
+/// What [DesktopProxyController._pendingAether] remembers between building the
+/// config and starting the core: everything the tunnel needs, plus the port the
+/// config was already written against.
+class _PendingAether {
+  const _PendingAether({
+    required this.options,
+    required this.endpoint,
+    required this.identityBase,
+    required this.socksPort,
+  });
+
+  final AetherOptions options;
+  final String endpoint;
+  final String identityBase;
+  final int socksPort;
+}
+
 class DesktopProxyController extends ProxyController {
   DesktopProxyController({
     int socksPort = kDefaultLocalProxyPort,
@@ -372,6 +391,8 @@ class DesktopProxyController extends ProxyController {
         });
         unawaited(_systemProxyPending!);
       }
+      // Now, and not before sing-box: see [_pendingAether].
+      await _startPendingAether();
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
       // Auto (subscription) post-connect health check, proxy mode only (a TUN
@@ -649,6 +670,33 @@ class DesktopProxyController extends ProxyController {
         // matches an IP by ip_cidr and a name by domain.
         cfg = SingboxConfig.buildXraySocksBridgeMap(_xraySocksPort,
             options: opts, directServers: <String>[x.server]);
+      } else if (nodes.length == 1 &&
+          nodes.first.protocol == NodeProtocol.aether) {
+        // An Aether node is not a server to dial. The core opens the WARP
+        // tunnel and serves it as a local SOCKS proxy, and sing-box forwards
+        // into that.
+        //
+        // Without this branch the node fell through to buildMap, which emits a
+        // socks outbound aimed at the node's own address: the WARP gateway. A
+        // tester's Windows log showed it plainly, every request failing with
+        // "dial tcp 188.114.98.209:3476: i/o timeout" against a gateway that
+        // does not speak SOCKS, and then "expected socks version 5, got 72"
+        // when it finally answered with HTTP. macOS did the same. Desktop had
+        // the core, the editor and the search, and no way to connect with it.
+        final ProxyNode a = nodes.first;
+        if (a.server.isEmpty) {
+          throw 'This Aether config has no gateway yet. Open it and search '
+              'for one.';
+        }
+        final int port = await AetherTunnel.freeLoopbackPort();
+        final Directory support = await getApplicationSupportDirectory();
+        _pendingAether = _PendingAether(
+          options: AetherOptions.fromQuery(a.aetherOpts),
+          endpoint: '${a.server}:${a.port}',
+          identityBase: '${support.path}/aether',
+          socksPort: port,
+        );
+        cfg = SingboxConfig.buildAetherSocksBridgeMap(port, options: opts);
       } else if (nodes.length == 1) {
         cfg = SingboxConfig.buildMap(nodes.first, options: opts);
       } else {
@@ -1103,6 +1151,35 @@ class DesktopProxyController extends ProxyController {
     // to reach the bridge right after.
     await Future<void>.delayed(const Duration(milliseconds: 400));
     return true;
+  }
+
+  /// The Aether tunnel to bring up once sing-box is running, or null when this
+  /// connect has nothing to do with Aether.
+  ///
+  /// Started after the core, not before, for the reason the mobile controller
+  /// carries at length: the core dials its gateway on a socket of its own, and
+  /// in TUN mode a socket opened before the tunnel device exists is bound to
+  /// the real interface. The device then takes the default route, the replies
+  /// come back through sing-box, and they are delivered to an address that no
+  /// longer receives. The core waits out its handshake and shuts down.
+  ///
+  /// Proxy mode has no device and no such problem, but the order costs nothing
+  /// there, so there is one order rather than two.
+  _PendingAether? _pendingAether;
+
+  Future<void> _startPendingAether() async {
+    final _PendingAether? p = _pendingAether;
+    _pendingAether = null;
+    if (p == null) return;
+    final AetherTunnel t = await AetherTunnel.start(
+      p.options,
+      endpoint: p.endpoint,
+      identityBase: p.identityBase,
+      port: p.socksPort,
+    );
+    NovaLog.instance.write(
+        'Aether tunnel up on 127.0.0.1:${t.socksPort} via ${p.endpoint}; '
+        'the core forwards into it.');
   }
 
   void _stopXray() {
@@ -1680,6 +1757,8 @@ class DesktopProxyController extends ProxyController {
       proc?.kill();
       _measureProcess = null;
       _stopXray();
+    _pendingAether = null;
+    unawaited(AetherTunnel.stop());
       measuring.value = false;
     }
   }
@@ -1695,6 +1774,8 @@ class DesktopProxyController extends ProxyController {
     _measureProcess?.kill();
     _measureProcess = null;
     _stopXray();
+    _pendingAether = null;
+    unawaited(AetherTunnel.stop());
     NovaLog.instance.write('Measuring stopped');
   }
 
@@ -2442,6 +2523,8 @@ class DesktopProxyController extends ProxyController {
       await MacTunnelExtension.stop();
     }
     _stopXray();
+    _pendingAether = null;
+    unawaited(AetherTunnel.stop());
     // Flush and close the tee log so the last core output (a FATAL reason) is
     // on disk for the user to send.
     try {

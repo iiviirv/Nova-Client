@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.24.1 (2026-09-15)
+
+- **Fixed: on Windows, macOS and Linux the new WARP connections could not
+  carry traffic.** They searched, found a route, saved it and then sat on
+  "Verifying" forever. The desktop app was pointing itself at the route's
+  address as though it were a proxy, instead of at the connection the app
+  builds for it, so every request went to something that could not answer.
+  Phones were never affected.
+
 ## v1.24.0 (2026-09-15)
 
 - **A new free way out, with no server to find.** Nova can now build its own

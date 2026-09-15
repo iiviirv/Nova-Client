@@ -283,11 +283,20 @@ jobs:
 
       - name: Build each slice
         working-directory: aether
+        env:
+          # Rust defaults the iOS minimum to something ancient, and the link
+          # then looks for BoringSSL's stack probe in a libSystem stub that
+          # predates it: "Undefined symbols: ___chkstk_darwin". Pinned to the
+          # app's own minimum, which is what the Podfile declares.
+          IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         run: |
           set -euo pipefail
           for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
             echo "::group::$t"
-            cargo build --release --target "$t" --lib
+            # Static library only. The crate also declares a cdylib, and
+            # building it was what failed above: iOS cannot load a loose dylib
+            # anyway, so linking one is work that can only produce errors.
+            cargo rustc --release --target "$t" --lib --crate-type staticlib
             echo "::endgroup::"
           done
 
