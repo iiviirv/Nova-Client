@@ -84,8 +84,16 @@ for fw in "$APP"/Contents/Frameworks/*.framework(N); do
   codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$fw" 2>&1 | tail -1
 done
 # Every bundled core must be signed, or notarization rejects the app.
-for core in "$APP"/Contents/Resources/sing-box-macos-* "$APP"/Contents/Resources/xray-macos-*; do
+#
+# Found rather than listed. This was a list of the cores that existed when it
+# was written, so when the Aether core joined the bundle it was copied in and
+# never signed, and Apple rejected build 147 with "The binary is not signed"
+# against libaether.dylib. A list has to be updated by whoever adds the next
+# core; a search does not.
+for core in "$APP"/Contents/Resources/*(N); do
   [[ -f "$core" ]] || continue
+  file -b "$core" | grep -q 'Mach-O' || continue
+  echo "signing $(basename "$core")"
   codesign --force --options runtime --timestamp -s "$ID" "${KCARGS[@]}" "$core" 2>&1 | tail -1
 done
 # The tunnel's system extension, signed inside out and with its OWN
@@ -231,6 +239,19 @@ echo "-- iOS is NOT part of this. Run: ./tool/release_ios.sh $B \"what to test\"
 fi
 if [[ -z "$TAG" ]]; then
   echo "!! no tag found; push the release tag first, or set NOVA_TAG"
+  exit 1
+fi
+# The tag has to be THIS build's tag, not merely the newest one that exists.
+#
+# `git describe` answers with the most recent tag reachable from HEAD, which on
+# an untagged release commit is the PREVIOUS release. Run before the tag is
+# pushed, this script would have quietly attached build 147's macOS files to
+# the v1.23.5 release: new binaries under an old version, on the page the
+# website links to.
+if [[ "$(git -C "$PROJ" rev-parse "$TAG^{commit}" 2>/dev/null)" != \
+      "$(git -C "$PROJ" rev-parse HEAD)" ]]; then
+  echo "!! $TAG does not point at HEAD, so it is not this build's tag."
+  echo "   Push the release tag first, or set NOVA_TAG to override."
   exit 1
 fi
 echo "############ publish to $TAG ############"
