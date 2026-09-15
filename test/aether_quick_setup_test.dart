@@ -233,7 +233,9 @@ void main() {
     expect(AetherConfig.parse(saved.uri)!.gateway, '188.114.97.3:2408');
     // WireGuard, because the tester's MASQUE searches took about three minutes
     // each and this path is for someone who wants it over with.
-    expect(search.asked!.mode, AetherMode.wg);
+    expect(search.asked!.mode, AetherMode.masque,
+        reason: 'the one-tap button must build the protocol confirmed working '
+            'for users in Iran; WireGuard connects there and carries nothing');
     expect(profiles.activeId, saved.id);
     expect(_proxy.activeProfile?.id, saved.id);
     expect(_proxy.connects, 1,
