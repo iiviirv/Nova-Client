@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../core/models/proxy_profile.dart';
 import '../core/proxy/proxy_controller.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/servers/servers_screen.dart';
@@ -42,6 +43,19 @@ class _NovaAppShellState extends State<NovaAppShell> {
   /// auto-failover message). Tracked so we can move the listener if it changes.
   ProxyController? _noticeSource;
 
+  /// True while a gateway replacement is running. The search takes minutes, so
+  /// without this a second tap would start a second one behind the first.
+  /// Nothing in [build] reads it, so it is a plain field rather than state.
+  bool _replacingGateway = false;
+
+  /// The connection the stale-gateway offer has already been made for.
+  ///
+  /// Ignoring the offer is an answer. The controller re-raises the notice every
+  /// time its probe loop gives up, so without this one bad connection would
+  /// keep asking the same question, which is the nagging the tester would have
+  /// got instead of the silence he did get.
+  String? _gatewayOfferedFor;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -59,6 +73,15 @@ class _NovaAppShellState extends State<NovaAppShell> {
     final ProxyNotice? code = _noticeSource?.notice.value;
     if (code == null || !mounted) return;
     final NovaStrings s = NovaStrings.of(context);
+    // The stale gateway is the one notice with something to answer: the
+    // controller can find another gateway and reconnect, which no other exit
+    // can do. A message asking "look for another one?" with no way to say yes
+    // is worse than no message, so it gets an action rather than a line.
+    if (code == ProxyNotice.aetherGatewayStale) {
+      _offerAnotherGateway(s);
+      _noticeSource?.notice.value = null;
+      return;
+    }
     final String message = switch (code) {
       ProxyNotice.failoverToWorkingServer => s.failoverSwitched,
       ProxyNotice.pinnedExitNoTraffic => s.pinnedExitNoTraffic,
@@ -80,6 +103,67 @@ class _NovaAppShellState extends State<NovaAppShell> {
         duration: duration,
       ));
     _noticeSource?.notice.value = null;
+  }
+
+  /// Offers to replace an Aether gateway that has stopped carrying traffic.
+  ///
+  /// Once per connection. A replacement that works reconnects, which starts a
+  /// new connection, so a second stale gateway can ask again; a replacement
+  /// that fails does not, so it stays quiet.
+  void _offerAnotherGateway(NovaStrings s) {
+    final ProxyController? proxy = _noticeSource;
+    final ProxyProfile? profile = proxy?.activeProfile;
+    if (proxy == null || profile == null || _replacingGateway) return;
+    final String key =
+        '${profile.id}@${proxy.connectedSince?.microsecondsSinceEpoch}';
+    if (_gatewayOfferedFor == key) return;
+    _gatewayOfferedFor = key;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(s.aetherGatewayStale),
+        // Longer than the notices that only inform: this one is a question,
+        // and it disappears when it is answered either way.
+        duration: const Duration(seconds: 12),
+        action: SnackBarAction(
+          label: s.aetherFindAnother,
+          onPressed: () => _replaceGateway(profile),
+        ),
+      ));
+  }
+
+  Future<void> _replaceGateway(ProxyProfile profile) async {
+    final ProxyController? proxy = _noticeSource;
+    if (proxy == null || _replacingGateway) return;
+    _replacingGateway = true;
+    // Both captured before the await: the search runs for minutes, and the
+    // context may be gone by the time it answers.
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final NovaStrings s = NovaStrings.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: _ReplacingGatewayNote(text: s.aetherReplacing),
+        // It ends when the search does, not on a timer. Anything shorter would
+        // leave minutes of silence, which is what sent the tester rebuilding
+        // the config by hand.
+        duration: const Duration(minutes: 10),
+      ));
+    bool ok;
+    try {
+      ok = await proxy.replaceAetherGateway(profile);
+    } catch (_) {
+      ok = false;
+    }
+    _replacingGateway = false;
+    if (!mounted) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content:
+            Text(ok ? s.aetherGatewayReplaced : s.aetherNoOtherGateway),
+        duration: Duration(seconds: ok ? 4 : 10),
+      ));
   }
 
   @override
@@ -460,6 +544,31 @@ class _RailItem extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The snackbar body while a replacement search runs: a spinner beside the
+/// line, so a wait measured in minutes reads as work rather than a stall.
+class _ReplacingGatewayNote extends StatelessWidget {
+  const _ReplacingGatewayNote({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = DefaultTextStyle.of(context).style.color ??
+        Theme.of(context).colorScheme.onInverseSurface;
+    return Row(
+      children: <Widget>[
+        SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+        ),
+        const SizedBox(width: NovaSpace.md),
+        Expanded(child: Text(text)),
+      ],
     );
   }
 }

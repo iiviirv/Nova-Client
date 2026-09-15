@@ -1400,6 +1400,7 @@ class SingboxProxyController extends ProxyController {
   /// that just failed is excluded, because a search that does not exclude it
   /// tends to return it again, which is what made rebuilding a config by hand
   /// feel like a coin flip.
+  @override
   Future<bool> replaceAetherGateway(ProxyProfile profile) async {
     final ProxyNode? node = parseShareLink(profile.uri.trim());
     if (node == null || node.protocol != NodeProtocol.aether) return false;

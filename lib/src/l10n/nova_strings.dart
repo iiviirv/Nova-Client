@@ -40,6 +40,17 @@ class NovaStrings {
   /// an offer because finding another takes minutes.
   String get aetherGatewayStale => t('notice.aetherGatewayStale');
 
+  /// The answer to that question. Short, because it rides on a snackbar.
+  String get aetherFindAnother => t('notice.aetherFindAnother');
+
+  /// Said while the replacement search runs, which is minutes.
+  String get aetherReplacing => t('notice.aetherReplacing');
+
+  /// The two ways it ends. A search that found nothing is a different fact
+  /// from the gateway that went stale, so it does not repeat that message.
+  String get aetherGatewayReplaced => t('notice.aetherGatewayReplaced');
+  String get aetherNoOtherGateway => t('notice.aetherNoOtherGateway');
+
   /// Shown when the pinned server has disappeared from the subscription, so
   /// this session had to auto-select.
   String get pinnedExitGone => t('notice.pinnedExitGone');
@@ -947,10 +958,19 @@ class NovaStrings {
         'The server you picked is connected but no traffic is getting through. '
             'Nova is staying on your choice: pick another server, or switch to '
             'Auto, in the server list.',
+    // The offer used to end "Look for another one?" with nothing to press.
+    // It has a button now, so the question is asked once, by the button.
     'notice.aetherGatewayStale':
-        'This connection came up but nothing is getting through. Its Cloudflare '
-            'gateway may have stopped answering since it was checked. Look for '
-            'another one?',
+        'This connection came up but nothing is getting through. Its '
+            'Cloudflare gateway may have stopped answering since it was '
+            'checked.',
+    'notice.aetherFindAnother': 'Find another',
+    'notice.aetherReplacing':
+        'Looking for another gateway. This takes a few minutes.',
+    'notice.aetherGatewayReplaced': 'Connected through a new gateway.',
+    'notice.aetherNoOtherGateway':
+        'No other gateway answered either. Every address Nova tried is blocked '
+            'here, so try another protocol in the config, or another network.',
     'notice.pinnedExitGone':
         'The server you had picked is no longer in this subscription, so Nova '
             'auto-selected one. Open the server list to choose again.',
@@ -1910,8 +1930,15 @@ class NovaStrings {
             'دیگری را انتخاب کنید یا حالت خودکار را بزنید.',
     'notice.aetherGatewayStale':
         'اتصال برقرار شد ولی چیزی رد نمی‌شود. احتمالاً دروازه‌ی '
-            '\u2066Cloudflare\u2069 آن بعد از بررسی از کار افتاده. دنبال یکی '
-            'دیگر بگردیم؟',
+            '\u2066Cloudflare\u2069 آن بعد از بررسی از کار افتاده.',
+    'notice.aetherFindAnother': 'یکی دیگر پیدا کن',
+    'notice.aetherReplacing':
+        'در حال گشتن دنبال یک دروازه‌ی دیگر. چند دقیقه طول می‌کشد.',
+    'notice.aetherGatewayReplaced': 'با یک دروازه‌ی تازه وصل شد.',
+    'notice.aetherNoOtherGateway':
+        'هیچ دروازه‌ی دیگری هم جواب نداد. همه‌ی آدرس‌هایی که نوا امتحان کرد '
+            'اینجا بسته‌اند. پروتکل دیگری را در کانفیگ امتحان کنید یا از شبکه‌ی '
+            'دیگری وصل شوید.',
     'notice.pinnedExitGone':
         'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
             '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '

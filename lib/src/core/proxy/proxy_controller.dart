@@ -407,6 +407,19 @@ abstract class ProxyController extends ChangeNotifier {
   /// Tears the tunnel down.
   Future<void> disconnect();
 
+  /// Finds another gateway for an Aether profile and reconnects through it,
+  /// with the address that just failed excluded.
+  ///
+  /// The answer to [ProxyNotice.aetherGatewayStale], which is a question rather
+  /// than something done silently because the search runs for minutes. False
+  /// when no other gateway answered either, which is a different fact from the
+  /// first failure and worth saying out loud.
+  ///
+  /// Declared here rather than only on the sing-box controller so the shell,
+  /// which holds the abstraction, can offer it. Controllers that cannot search
+  /// answer false rather than pretending.
+  Future<bool> replaceAetherGateway(ProxyProfile profile) async => false;
+
   Future<void> toggle() {
     return state.isActive ? disconnect() : connect();
   }
