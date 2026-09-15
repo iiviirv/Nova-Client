@@ -52,7 +52,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _address = TextEditingController();
 
-  AetherMode _mode = AetherMode.masque;
+  /// WireGuard first: it is the quickest to find a gateway for, so the default
+  /// is the one that gets someone connected soonest.
+  AetherMode _mode = AetherMode.wg;
   AetherTransport _transport = AetherTransport.h3;
   AetherIpMode _ip = AetherIpMode.v4;
   AetherScan _scan = AetherScan.balanced;

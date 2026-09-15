@@ -231,14 +231,8 @@ void main() {
     await _open(tester);
     await _advanced(tester);
 
-    // MASQUE is the default, so the transport is there on arrival.
-    expect(find.text('Transport'), findsOneWidget);
-    expect(find.text('HTTP/3'), findsOneWidget);
-    expect(find.text('HTTP/2'), findsOneWidget);
-
-    // WireGuard and gool are not carried over HTTP at all, so a transport
-    // choice there would be a setting that changes nothing.
-    await _choose(tester, 'WireGuard');
+    // WireGuard is the default, and it is not carried over HTTP at all, so a
+    // transport choice here would be a setting that changes nothing.
     expect(find.text('Transport'), findsNothing);
     expect(find.text('HTTP/3'), findsNothing);
 
@@ -247,6 +241,11 @@ void main() {
 
     await _choose(tester, 'MASQUE');
     expect(find.text('Transport'), findsOneWidget);
+    expect(find.text('HTTP/3'), findsOneWidget);
+    expect(find.text('HTTP/2'), findsOneWidget);
+
+    await _choose(tester, 'WireGuard');
+    expect(find.text('Transport'), findsNothing);
   });
 
   testWidgets('gool searches for a gateway like the other two',
@@ -295,6 +294,9 @@ void main() {
     }
 
     await _advanced(tester);
+    // Transport is in that list and only MASQUE has one, so pick it before
+    // asking for the full set.
+    await _choose(tester, 'MASQUE');
     for (final String shown in advancedOnly) {
       expect(find.text(shown), findsOneWidget);
     }
@@ -306,6 +308,8 @@ void main() {
     await _open(tester, search: search);
 
     await _advanced(tester);
+    // Transport belongs to MASQUE, and the editor now arrives on WireGuard.
+    await _choose(tester, 'MASQUE');
     await _choose(tester, 'HTTP/2');
     await _choose(tester, 'Ironclad');
     await _choose(tester, 'Simple');
@@ -356,27 +360,28 @@ void main() {
     await _findGateway(tester, search);
     expect(_saveEnabled(tester), isTrue);
 
-    // A gateway proven over WireGuard says nothing about MASQUE.
-    await _choose(tester, 'WireGuard');
+    // A gateway proven over WireGuard says nothing about MASQUE, and the
+    // editor arrives on WireGuard, so MASQUE is the change that invalidates it.
+    await _choose(tester, 'MASQUE');
     expect(_saveEnabled(tester), isFalse);
   });
 
   testWidgets('a new config is named after its protocol, numbered past a '
       'name already taken', (WidgetTester tester) async {
     await _open(tester, seed: <ProxyProfile>[
-      _aether('a', 'MASQUE', 'aether://1.1.1.1:443?protocol=masque'),
+      _aether('a', 'WireGuard', 'aether://1.1.1.1:443?protocol=wg'),
       _aether('b', 'Gool', 'aether://1.1.1.2:443?protocol=gool'),
     ]);
 
-    expect(_nameField(tester), 'MASQUE 2',
-        reason: 'MASQUE is the default protocol and that name is taken');
+    expect(_nameField(tester), 'WireGuard 2',
+        reason: 'WireGuard is the default protocol and that name is taken');
 
     await _choose(tester, 'gool');
     expect(_nameField(tester), 'Gool 2');
 
-    await _choose(tester, 'WireGuard');
-    expect(_nameField(tester), 'WireGuard',
-        reason: 'nothing is called WireGuard yet, so it needs no number');
+    await _choose(tester, 'MASQUE');
+    expect(_nameField(tester), 'MASQUE',
+        reason: 'nothing is called MASQUE yet, so it needs no number');
 
     // Once the user types, the name is theirs.
     await tester.enterText(find.byType(TextField).first, 'Tehran');
@@ -466,6 +471,9 @@ void main() {
     final _FakeSearch search = _FakeSearch();
     await _open(tester, search: search);
     await _advanced(tester);
+    // The transport this turns on is MASQUE's, and the editor arrives on
+    // WireGuard, which has none.
+    await _choose(tester, 'MASQUE');
 
     await tester.enterText(find.byType(TextField).last, '162.159.198.1:443');
     await tester.pump();
@@ -537,6 +545,8 @@ void main() {
     await _advanced(tester);
 
     await tester.enterText(find.byType(TextField).first, 'Home WARP');
+    // HTTP/2 is a MASQUE transport, and the editor arrives on WireGuard.
+    await _choose(tester, 'MASQUE');
     await _choose(tester, 'HTTP/2');
     await _choose(tester, 'Both');
     await _choose(tester, 'Thorough');

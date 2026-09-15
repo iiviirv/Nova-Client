@@ -1106,12 +1106,12 @@ class NovaStrings {
             'keeps them as they are. Finding a gateway replaces them.',
     'aether.editTitle': 'Edit Aether config',
     'aether.quickTitle': 'Build a WARP tunnel',
-    // Names MASQUE because that is what the shortcut builds. It said WireGuard
-    // for one release after the shortcut changed, which told the user the one
-    // thing about this button that was not true.
+    // Names the protocol the shortcut actually builds. It named the wrong one
+    // for a release once, which told the user the single thing about this
+    // button that was not true. Change both together or neither.
     'aether.quickBody':
-        'Nova can build a Cloudflare WARP tunnel over MASQUE with no link to '
-            'paste. It looks for a gateway, proves the gateway carries '
+        'Nova can build a Cloudflare WARP tunnel over WireGuard with no link '
+            'to paste. It looks for a gateway, proves the gateway carries '
             'traffic, and connects.',
     'aether.quickCta': 'Build it and connect',
     'aether.quickRetry': 'Try again',
@@ -2080,7 +2080,7 @@ class NovaStrings {
     'aether.quickTitle': 'ساخت تونل \u2066WARP\u2069',
     'aether.quickBody':
         'نوا می‌تواند بدون هیچ لینکی یک تونل \u2066Cloudflare WARP\u2069 روی '
-            '\u2066MASQUE\u2069 بسازد. دنبال دروازه می‌گردد، ثابت می‌کند که '
+            '\u2066WireGuard\u2069 بسازد. دنبال دروازه می‌گردد، ثابت می‌کند که '
             'دروازه ترافیک را عبور می‌دهد و بعد وصل می‌شود.',
     'aether.quickCta': 'بساز و وصل شو',
     'aether.quickRetry': 'دوباره تلاش کن',

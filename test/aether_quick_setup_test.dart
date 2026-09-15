@@ -231,11 +231,12 @@ void main() {
     final ProxyProfile saved = profiles.profiles
         .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether);
     expect(AetherConfig.parse(saved.uri)!.gateway, '188.114.97.3:2408');
-    // WireGuard, because the tester's MASQUE searches took about three minutes
-    // each and this path is for someone who wants it over with.
-    expect(search.asked!.mode, AetherMode.masque,
-        reason: 'the one-tap button must build the protocol confirmed working '
-            'for users in Iran; WireGuard connects there and carries nothing');
+    // WireGuard, because it is the quickest gateway to find and this path is
+    // for someone who wants it over with. It was MASQUE for two releases while
+    // WireGuard looked blocked in Iran; it was not blocked, the core was being
+    // started before the tunnel device. The tester asked for the fast one back.
+    expect(search.asked!.mode, AetherMode.wg,
+        reason: 'the one-tap button builds the quickest protocol to find');
     expect(profiles.activeId, saved.id);
     expect(_proxy.activeProfile?.id, saved.id);
     expect(_proxy.connects, 1,
