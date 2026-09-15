@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.24.0 (2026-09-14)
+## v1.24.0 (2026-09-15)
 
 - **A new free way out, with no server to find.** Nova can now build its own
   connection over Cloudflare's network, so there is no address to paste and
@@ -12,6 +12,10 @@
   itself rather than making you start again. Three ways to carry it are
   offered, and the app tells you what each costs: the fastest one uses more
   battery and is blocked outright on networks that drop that kind of traffic.
+
+  A route that worked when you saved it can stop answering later. When that
+  happens Nova now says so and offers to go find another one, with the dead
+  address ruled out so the search does not hand you the same one back.
 
   Configs made this way can be shared like any other, and they work in other
   apps that support the same method.
