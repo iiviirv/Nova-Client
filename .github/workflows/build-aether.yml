@@ -243,3 +243,131 @@ jobs:
           name: aether-${{ matrix.name }}
           path: dist/${{ matrix.out }}
           if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # iOS. A static library, not a dylib, and an xcframework around it.
+  #
+  # iOS is the one platform where the core cannot live in the app process.
+  # The VPN runs in a Network Extension, a separate process that keeps running
+  # when the app is backgrounded, and an app-hosted core would be suspended
+  # with the app and take the tunnel down. So this is linked into the extension
+  # the way Novacore already is, which means a static archive rather than
+  # something dlopen'd at runtime.
+  #
+  # Device and simulator are separate slices and must stay separate: an
+  # xcframework is exactly the container for that, and lipo cannot merge them
+  # because both are arm64.
+  # ------------------------------------------------------------------
+  ios:
+    name: ios-xcframework
+    runs-on: macos-latest
+    steps:
+      - name: Check out Aether at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: CluvexStudio/Aether
+          ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
+          persist-credentials: false
+
+      - name: Confirm quiche came with it
+        run: test -d quiche || { echo "quiche is missing from the checkout"; exit 1; }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Build each slice
+        working-directory: aether
+        run: |
+          set -euo pipefail
+          for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+            echo "::group::$t"
+            cargo build --release --target "$t" --lib
+            echo "::endgroup::"
+          done
+
+      - name: Assemble the xcframework
+        run: |
+          set -euo pipefail
+          cd aether
+          mkdir -p ../dist/device ../dist/sim ../dist/include
+          cp "target/aarch64-apple-ios/release/libaether.a" ../dist/device/libaether.a
+          # Both simulator slices in one archive; they are different
+          # architectures so lipo can merge them.
+          lipo -create -output ../dist/sim/libaether.a \
+            target/aarch64-apple-ios-sim/release/libaether.a \
+            target/x86_64-apple-ios/release/libaether.a
+          lipo -info ../dist/device/libaether.a ../dist/sim/libaether.a
+
+          # The crate ships no C header, so the one Swift imports is written
+          # here from its FFI. Every function returns a malloc'd JSON string
+          # that the caller frees with aether_string_free.
+          cat > ../dist/include/aether.h <<'HDR'
+          #ifndef AETHER_H
+          #define AETHER_H
+          #include <stdint.h>
+          #ifdef __cplusplus
+          extern "C" {
+          #endif
+          char *aether_version(void);
+          void aether_string_free(char *raw);
+          char *aether_job_poll(uint64_t id);
+          char *aether_job_cancel(uint64_t id);
+          char *aether_job_free(uint64_t id);
+          char *aether_identity_open(const char *payload);
+          char *aether_identity_summary(uint64_t id);
+          char *aether_identity_free(uint64_t id);
+          char *aether_scan_start(uint64_t identity, const char *payload);
+          char *aether_verify_start(uint64_t identity, const char *payload);
+          char *aether_tunnel_start(uint64_t identity, const char *payload);
+          char *aether_core_start(const char *arguments);
+          #ifdef __cplusplus
+          }
+          #endif
+          #endif
+          HDR
+          cat > ../dist/include/module.modulemap <<'MOD'
+          module Aether {
+            header "aether.h"
+            export *
+          }
+          MOD
+          cp -R ../dist/include ../dist/device-include
+          cp -R ../dist/include ../dist/sim-include
+
+          cd ..
+          xcodebuild -create-xcframework \
+            -library dist/device/libaether.a -headers dist/device-include \
+            -library dist/sim/libaether.a -headers dist/sim-include \
+            -output dist/Aether.xcframework
+          find dist/Aether.xcframework -maxdepth 2
+
+      - name: Prove the exports are there
+        run: |
+          set -euo pipefail
+          # A missing export is a link error in the extension, or worse a crash
+          # on first use. Checked on both slices: a simulator-only symbol would
+          # pass a desk test and fail on a phone.
+          for lib in dist/device/libaether.a dist/sim/libaether.a; do
+            nm -g "$lib" 2>/dev/null | grep -E '^[0-9a-f]* [TD] _aether_' > "syms-$(basename $(dirname $lib)).txt" || true
+            f="syms-$(basename $(dirname $lib)).txt"
+            test -s "$f" || { echo "no aether symbols in $lib"; exit 1; }
+            for sym in aether_version aether_identity_open aether_scan_start \
+                       aether_verify_start aether_tunnel_start aether_job_poll \
+                       aether_job_cancel aether_string_free; do
+              grep -q "_$sym$" "$f" || { echo "missing export in $lib: $sym"; exit 1; }
+            done
+            echo "$lib: all expected symbols are exported"
+          done
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-ios-xcframework
+          path: dist/Aether.xcframework
+          if-no-files-found: error
