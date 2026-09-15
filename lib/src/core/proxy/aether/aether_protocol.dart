@@ -69,6 +69,8 @@ class AetherJobStatus {
 
   bool get isRunning => state == AetherJobState.running;
 
+  bool get isFailed => state == AetherJobState.failed;
+
   /// Reads a poll reply, unwrapping the nested envelope.
   ///
   /// Three outcomes hide in two layers here: the poll failed; the poll

@@ -88,6 +88,22 @@ class AetherTunnel {
     return _live = AetherTunnel._(core, id, jobId.toInt(), socks);
   }
 
+  /// Whether the live tunnel is still doing its job.
+  ///
+  /// Worth asking before blaming the gateway. The core can give up after it has
+  /// started, and when it does it closes the port sing-box forwards into, so
+  /// every request fails at the bridge and none of it is Cloudflare's doing.
+  /// Null when there is no tunnel to ask about.
+  static bool? get liveIsServing {
+    final AetherTunnel? t = _live;
+    if (t == null) return null;
+    try {
+      return !t._core.jobPoll(t.job).isFailed;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Stops the running tunnel, if there is one. Safe to call when there is not.
   static Future<void> stop() async {
     final AetherTunnel? t = _live;

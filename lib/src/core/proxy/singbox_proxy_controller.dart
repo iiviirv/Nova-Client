@@ -109,6 +109,25 @@ NovaLogLevel coreLogLevelFor(String message, NovaLogLevel level) =>
 ///
 /// Until the native hosts ship, the app wires up [MockProxyController]; flip the
 /// instance in `main.dart` to switch over with zero UI changes.
+/// What [SingboxProxyController._pendingAether] remembers between building the
+/// config and starting the core: everything the tunnel needs, plus the port the
+/// config was already written against.
+class _PendingAether {
+  const _PendingAether({
+    required this.options,
+    required this.endpoint,
+    required this.identityBase,
+    required this.socksPort,
+  });
+
+  final AetherOptions options;
+  final String endpoint;
+  final String identityBase;
+
+  /// Reserved before sing-box started, because its config names this port.
+  final int socksPort;
+}
+
 class SingboxProxyController extends ProxyController {
   SingboxProxyController({
     MethodChannel? control,
@@ -818,8 +837,15 @@ class SingboxProxyController extends ProxyController {
         // own Settings actually turns Nova off and a second VPN can take over.
         'autoReconnect': autoReconnectProvider?.call() ?? false,
       });
+      // Only now, with the tunnel device up, is it safe to dial the Aether
+      // gateway. See [_pendingAether] for why the other order cannot work.
+      await _startPendingAether();
       _armWatchdog();
     } catch (e) {
+      // A half-started Aether tunnel is worse than none: sing-box would sit
+      // forwarding into a port that never answers.
+      _pendingAether = null;
+      await AetherTunnel.stop();
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();
@@ -1217,17 +1243,97 @@ class SingboxProxyController extends ProxyController {
           'This Aether config has no gateway yet. Open it and search for one.');
     }
     final Directory support = await getApplicationSupportDirectory();
-    final AetherTunnel tunnel = await AetherTunnel.start(
-      AetherOptions.fromQuery(node.aetherOpts),
+    // The port is reserved now and the core is started later, once the tunnel
+    // device exists. See [_pendingAether].
+    final int port = await AetherTunnel.freeLoopbackPort();
+    _pendingAether = _PendingAether(
+      options: AetherOptions.fromQuery(node.aetherOpts),
       endpoint: endpoint,
       identityBase: '${support.path}/aether',
+      socksPort: port,
+    );
+    return const JsonEncoder.withIndent('  ').convert(
+        SingboxConfig.buildAetherSocksBridgeMap(port, options: options));
+  }
+
+  /// The Aether tunnel to bring up once the tunnel device is in place, or null
+  /// when this connect has nothing to do with Aether.
+  ///
+  /// The order is the whole point and it is not an optimisation. The core dials
+  /// its gateway over a socket of its own, which sing-box knows nothing about.
+  /// Opened before the tunnel device exists, that socket is bound to the phone's
+  /// real interface address; the device then takes the default route, the
+  /// gateway's replies come back through sing-box, and sing-box writes them to
+  /// an address that is no longer reachable. Nothing arrives, the handshake
+  /// times out, and the core shuts the tunnel down about ten seconds in.
+  ///
+  /// That is what a tester in Iran saw as a config that verified and then
+  /// carried nothing, and what the app then blamed on Cloudflare. Measured on an
+  /// emulator: the core's socket sat on 10.0.2.16 while the device came up as
+  /// 172.19.0.1, and it died ten seconds later, taking its SOCKS port with it.
+  ///
+  /// Started afterwards, the socket belongs to the routed world the device set
+  /// up, and the direct rule for the WARP ranges carries it out and back.
+  _PendingAether? _pendingAether;
+
+  /// Waits for the tunnel device to actually exist.
+  ///
+  /// The platform's `start` returns once the service has been asked to run, not
+  /// once it is routing, and the gap is a few seconds. Measured on an emulator:
+  /// the call returned at 11:04:22 and tun0 appeared at 11:04:26, so a core
+  /// started on the call's return still got a socket from the old routing and
+  /// still died. Waiting on the call was the first attempt at this fix and it
+  /// did not work; waiting on the device is the fix.
+  ///
+  /// Returns as soon as a tunnel interface is up, and gives up after a few
+  /// seconds rather than blocking the connect. Proxy mode has no such device
+  /// and no such problem, so it falls straight through the timeout.
+  Future<void> _awaitTunnelDevice() async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final List<NetworkInterface> ifs = await NetworkInterface.list(
+            includeLoopback: false, type: InternetAddressType.IPv4);
+        if (ifs.any(_isTunnelDevice)) return;
+      } catch (_) {
+        // Listing interfaces is a best effort; a refusal is not a reason to
+        // hold up the connect.
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+  }
+
+  /// The tunnel device, by the names the platforms give it.
+  static bool _isTunnelDevice(NetworkInterface i) {
+    final String n = i.name.toLowerCase();
+    return n.startsWith('tun') || n.startsWith('utun');
+  }
+
+  /// Brings up the deferred Aether tunnel, now that the tunnel device exists.
+  ///
+  /// sing-box is already running and will fail to reach the SOCKS port for the
+  /// second or two this takes. That is harmless: it retries, and the first
+  /// request only has to wait. The alternative, which is what shipped, is a
+  /// port that answers immediately and stops answering ten seconds later.
+  Future<void> _startPendingAether() async {
+    final _PendingAether? p = _pendingAether;
+    _pendingAether = null;
+    if (p == null) return;
+    // Only an Aether connect waits, and only when there is a device coming.
+    // Proxy mode never raises one, and a connect with no Aether in it has
+    // nothing to hold up: waiting there would put seconds on every connect the
+    // app makes, which is how the first version of this broke a race test.
+    if (proxyPortProvider?.call() == null) await _awaitTunnelDevice();
+    final AetherTunnel tunnel = await AetherTunnel.start(
+      p.options,
+      endpoint: p.endpoint,
+      identityBase: p.identityBase,
+      port: p.socksPort,
     );
     NovaLog.instance.write(
-        'Aether tunnel up on 127.0.0.1:${tunnel.socksPort} via $endpoint; '
+        'Aether tunnel up on 127.0.0.1:${tunnel.socksPort} via ${p.endpoint}; '
         'sing-box forwards into it.');
-    return const JsonEncoder.withIndent('  ').convert(
-        SingboxConfig.buildAetherSocksBridgeMap(tunnel.socksPort,
-            options: options));
   }
 
   /// Writes the bundled `.srs` rule-sets into the app-support dir (once) and
@@ -1378,6 +1484,17 @@ class SingboxProxyController extends ProxyController {
       unawaited(HealthStore.save(profile.id, coreHealth.value));
     }
     exitUnreachable = true;
+    // Say which half failed. "The gateway stopped answering" is a guess, and it
+    // was the wrong guess once already: the core had given up and closed the
+    // port sing-box forwards into, so nothing reached Cloudflare to be answered.
+    // The two look identical from here, and only one of them is our fault.
+    if (_isAetherProfile(profile) && AetherTunnel.liveIsServing == false) {
+      NovaLog.instance.write(
+        'The Aether core stopped serving, so nothing could be forwarded into '
+        'it. This is not the gateway refusing traffic.',
+        level: NovaLogLevel.warn,
+      );
+    }
     // An Aether exit gets its own notice, because it has a remedy the others do
     // not: its gateway can be replaced without the user choosing a new server.
     notice.value = _isAetherProfile(profile)

@@ -20,6 +20,16 @@
   Configs made this way can be shared like any other, and they work in other
   apps that support the same method.
 
+- **Fixed: WireGuard and gool connected and then carried nothing.** The search
+  proved the gateway, the connection came up, and no traffic moved. The gateway
+  was never the problem and neither was the network. Nova was opening the
+  tunnel a moment too early, before the phone's VPN device existed, so the
+  replies coming back from Cloudflare had nowhere to arrive. About ten seconds
+  later the tunnel gave up, and everything after that failed inside the app.
+
+  Nova now waits for the VPN device before opening the tunnel. MASQUE was not
+  affected, which is why it kept working while the other two did not.
+
 ## v1.23.5 (2026-09-10)
 
 - Wording only. A log line named a third-party tool, so that name appeared in
