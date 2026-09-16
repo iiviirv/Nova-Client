@@ -53,6 +53,34 @@ flutter build ipa --release \
 IPA="$(ls build/ios/ipa/*.ipa 2>/dev/null | head -1)"
 [[ -f "$IPA" ]] || { echo "!! no IPA was produced"; exit 1; }
 
+# The App Store build strips the executable, and dart:ffi resolves the Aether
+# core with dlsym at run time. Build 148 shipped to TestFlight exporting exactly
+# one symbol (__mh_execute_header), so every lookup failed with "symbol not
+# found" while the same code worked from a local flutter run, which does not
+# strip. Checked on the IPA that is about to be uploaded, because the artifact
+# that ships is the only one whose exports matter.
+say "Checking the Aether entry points survived stripping"
+WORK="$(mktemp -d)"
+unzip -q "$IPA" -d "$WORK" || { echo "!! could not open the IPA"; exit 1; }
+BIN="$(ls -d "$WORK"/Payload/*.app 2>/dev/null | head -1)/Runner"
+[[ -f "$BIN" ]] || { echo "!! no app binary inside the IPA"; exit 1; }
+EXPORTS="$(xcrun dyld_info -exports "$BIN" 2>/dev/null)"
+MISSING=0
+for sym in aether_version aether_string_free aether_job_poll aether_job_cancel \
+           aether_identity_open aether_scan_start aether_verify_start \
+           aether_tunnel_start; do
+  grep -q "_$sym\$" <<< "$EXPORTS" || { echo "   MISSING export: $sym"; MISSING=1; }
+done
+rm -rf "$WORK"
+if [[ "$MISSING" == "1" ]]; then
+  echo "!! the core is linked but not reachable: dart:ffi looks these up by"
+  echo "   name and a stripped binary exports none of them. Check that"
+  echo "   ios/aether_exports.txt is still wired into the Runner target's"
+  echo "   OTHER_LDFLAGS. Not uploading."
+  exit 1
+fi
+echo "   all eight exported"
+
 say "Uploading to App Store Connect"
 xcrun altool --upload-app --type ios -f "$IPA" \
   --apiKey "$KEYID" --apiIssuer "$ISSUER" 2>&1 | grep -E "UPLOAD|ERROR|Delivery UUID"
