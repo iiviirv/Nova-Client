@@ -53,33 +53,51 @@ flutter build ipa --release \
 IPA="$(ls build/ios/ipa/*.ipa 2>/dev/null | head -1)"
 [[ -f "$IPA" ]] || { echo "!! no IPA was produced"; exit 1; }
 
-# The App Store build strips the executable, and dart:ffi resolves the Aether
-# core with dlsym at run time. Build 148 shipped to TestFlight exporting exactly
-# one symbol (__mh_execute_header), so every lookup failed with "symbol not
-# found" while the same code worked from a local flutter run, which does not
-# strip. Checked on the IPA that is about to be uploaded, because the artifact
-# that ships is the only one whose exports matter.
-say "Checking the Aether entry points survived stripping"
+# The core rides in an embedded framework, so three things have to be true of
+# the IPA about to be uploaded: the framework is actually in there, it exports
+# what dart:ffi looks up by name, and it imports no crypto from the host.
+#
+# That last one is the one that matters most. The app already contains a
+# BoringSSL, inside cronet, which sing-box's NaiveProxy outbound uses. If this
+# framework left its own crypto symbols undefined they would bind to that one,
+# two libraries would share a single TLS implementation, and one would free the
+# other's memory. It crashed a tester's phone on the naive protocol in 148.
+#
+# The earlier version of this checked the app binary's export trie, which was
+# right when the core was a static archive and wrong the moment it became a
+# framework. It blocked build 150 rather than passing it by accident, which is
+# the failure mode to prefer.
+say "Checking the core is embedded and self-contained"
 WORK="$(mktemp -d)"
 unzip -q "$IPA" -d "$WORK" || { echo "!! could not open the IPA"; exit 1; }
-BIN="$(ls -d "$WORK"/Payload/*.app 2>/dev/null | head -1)/Runner"
-[[ -f "$BIN" ]] || { echo "!! no app binary inside the IPA"; exit 1; }
-EXPORTS="$(xcrun dyld_info -exports "$BIN" 2>/dev/null)"
+FW="$(ls -d "$WORK"/Payload/*.app/Frameworks/Aether.framework/Aether 2>/dev/null | head -1)"
+[[ -f "$FW" ]] || {
+  echo "!! Aether.framework is not embedded in the app. Without it the app"
+  echo "   launches and every WARP action fails at dlopen."
+  rm -rf "$WORK"; exit 1
+}
+EXPORTS="$(xcrun dyld_info -exports "$FW" 2>/dev/null)"
 MISSING=0
 for sym in aether_version aether_string_free aether_job_poll aether_job_cancel \
            aether_identity_open aether_scan_start aether_verify_start \
            aether_tunnel_start; do
   grep -q "_$sym\$" <<< "$EXPORTS" || { echo "   MISSING export: $sym"; MISSING=1; }
 done
+BOUND="$(nm -u "$FW" 2>/dev/null \
+  | grep -E "_(SSL_|OPENSSL_|CRYPTO_|EVP_|BIO_|X509_)" | sort -u || true)"
+if [[ -n "$BOUND" ]]; then
+  echo "!! the core expects the host to supply its crypto:"
+  echo "$BOUND" | head -20
+  echo "   That is the two-BoringSSL crash from build 148. Not uploading."
+  rm -rf "$WORK"; exit 1
+fi
 rm -rf "$WORK"
 if [[ "$MISSING" == "1" ]]; then
-  echo "!! the core is linked but not reachable: dart:ffi looks these up by"
-  echo "   name and a stripped binary exports none of them. Check that"
-  echo "   ios/aether_exports.txt is still wired into the Runner target's"
-  echo "   OTHER_LDFLAGS. Not uploading."
+  echo "!! the framework is embedded but does not export its entry points."
+  echo "   Not uploading."
   exit 1
 fi
-echo "   all eight exported"
+echo "   embedded, exports its entry points, imports no crypto"
 
 say "Uploading to App Store Connect"
 xcrun altool --upload-app --type ios -f "$IPA" \
