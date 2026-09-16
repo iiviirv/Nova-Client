@@ -332,8 +332,12 @@ jobs:
               echo "$BOUND" | head -20
               exit 1
             fi
-            # And it must actually contain one, rather than having none at all.
-            test "$(nm -a "$LIB" 2>/dev/null | grep -cE " [a-zA-Z] _SSL_free$")" -ge 1 \
+            # And it must actually contain one, rather than passing by having
+            # no crypto at all. Not via nm: the crate strips release builds, so
+            # internal symbols are not listed and the first version of this
+            # check failed on a library that was perfectly fine. BoringSSL's own
+            # version string survives stripping.
+            strings -a "$LIB" 2>/dev/null | grep -qiE "boringssl" \
               || { echo "!! $t has no BoringSSL of its own"; exit 1; }
             echo "$t: self-contained"
           done
