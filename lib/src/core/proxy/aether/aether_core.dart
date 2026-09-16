@@ -64,11 +64,18 @@ class AetherCore {
     final AetherCore? existing = _instance;
     if (existing != null) return existing;
     try {
-      // iOS links the core statically, so there is nothing to open: the
-      // symbols are already in this process. A dynamic library would have to
-      // be an embedded framework, and iOS will not load a loose one at all.
+      // iOS embeds the core as a framework and opens it by name.
+      //
+      // Not DynamicLibrary.process() over a static archive, which is what this
+      // did first. Two reasons it could not stay that way: the App Store build
+      // strips the executable, so the symbols dlsym needs are gone by the time
+      // it ships; and the archive's BoringSSL then shares a namespace with the
+      // one inside cronet, which sing-box's NaiveProxy outbound uses. A
+      // framework has its own two-level namespace and its own exports, and
+      // neither problem exists.
       if (Platform.isIOS) {
-        return _instance = AetherCore._(DynamicLibrary.process());
+        return _instance =
+            AetherCore._(DynamicLibrary.open('Aether.framework/Aether'));
       }
       final String name = switch (Platform.operatingSystem) {
         'android' || 'linux' => 'libaether.so',

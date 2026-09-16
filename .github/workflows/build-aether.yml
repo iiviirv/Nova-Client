@@ -341,13 +341,13 @@ jobs:
               echo "$BOUND" | head -20
               exit 1
             fi
-            # And it must actually contain one, rather than passing by having
-            # no crypto at all. Not via nm: the crate strips release builds, so
-            # internal symbols are not listed and the first version of this
-            # check failed on a library that was perfectly fine. BoringSSL's own
-            # version string survives stripping.
-            strings -a "$LIB" 2>/dev/null | grep -qiE "boringssl" \
-              || { echo "!! $t has no BoringSSL of its own"; exit 1; }
+            # There is deliberately no "and it really does contain a
+            # BoringSSL" check here. Two attempts at one both failed on a
+            # library that was correct: nm lists no internal symbols because
+            # the crate strips release builds, and the boringssl strings in
+            # other builds are debug paths that stripping removes. A library
+            # with no crypto at all would pass the check above and simply not
+            # work, which the device test catches and a marker hunt does not.
             echo "$t: self-contained"
           done
 
