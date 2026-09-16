@@ -300,23 +300,96 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Hide everything but the entry points
+        working-directory: aether
+        run: |
+          set -euo pipefail
+          # The app and the Network Extension already contain a BoringSSL, the
+          # one inside cronet inside the sing-box core. This archive carries
+          # another, from quiche. Linked as-is they do not coexist: static
+          # archive resolution binds quiche's calls to whichever _SSL_free was
+          # already defined, so one library ends up driving the other's SSL
+          # objects, with a different struct layout and a different allocator.
+          #
+          # That is not theoretical. It crashed a tester's phone on build 148:
+          # SSL_free -> ~ssl_st -> ~SSL_CONFIG -> OPENSSL_free on a pointer read
+          # at the wrong offset (0xfffffffffffffff9), inside cronet's socket
+          # teardown, in an app binary that had exactly one _SSL_free for two
+          # BoringSSLs.
+          #
+          # So each slice is partially linked into a single object with only the
+          # twelve entry points left global. Everything else, crypto included,
+          # becomes local: it cannot interpose on the host's symbols and the
+          # host's cannot interpose on it. Each library keeps its own BoringSSL.
+          cat > /tmp/aether_keep.txt <<'KEEP'
+          _aether_version
+          _aether_string_free
+          _aether_job_poll
+          _aether_job_cancel
+          _aether_job_free
+          _aether_identity_open
+          _aether_identity_summary
+          _aether_identity_free
+          _aether_scan_start
+          _aether_verify_start
+          _aether_tunnel_start
+          _aether_core_start
+          KEEP
+          # -u per entry point, never -force_load. The archive carries TWO
+          # BoringSSL builds (quiche vendors one, the boring crate another), so
+          # pulling every object in duplicates thousands of symbols; that is how
+          # the first attempt at linking this into the app failed. Naming the
+          # entry points pulls their objects and whatever they reach, and each
+          # BoringSSL symbol resolves once.
+          UFLAGS=""
+          while read -r sym; do
+            [ -n "$sym" ] && UFLAGS="$UFLAGS -u $sym"
+          done < /tmp/aether_keep.txt
+          hide() {
+            local arch="$1" inlib="$2" out="$3"
+            # -r keeps it relocatable; with an exported list, every global not
+            # named is demoted to local.
+            ld -r -arch "$arch" $UFLAGS \
+              -exported_symbols_list /tmp/aether_keep.txt \
+              -o "$out.o" "$inlib"
+            libtool -static -o "$out" "$out.o"
+            rm -f "$out.o"
+          }
+          mkdir -p ../dist/device ../dist/sim ../dist/include
+          hide arm64 target/aarch64-apple-ios/release/libaether.a ../dist/device/libaether.a
+          hide arm64 target/aarch64-apple-ios-sim/release/libaether.a /tmp/sim-arm64.a
+          hide x86_64 target/x86_64-apple-ios/release/libaether.a /tmp/sim-x86.a
+          lipo -create -output ../dist/sim/libaether.a /tmp/sim-arm64.a /tmp/sim-x86.a
+          lipo -info ../dist/device/libaether.a ../dist/sim/libaether.a
+
+      - name: Prove no crypto symbol escaped
+        run: |
+          set -euo pipefail
+          # The whole point of the step above. A single leaked BoringSSL global
+          # is enough to reintroduce the crash, so this counts rather than
+          # trusts: the only globals may be the aether entry points.
+          for lib in dist/device/libaether.a dist/sim/libaether.a; do
+            LEAKED="$(nm -g "$lib" 2>/dev/null \
+              | awk '$2 ~ /^[TDBS]$/ {print $3}' \
+              | grep -v '^_aether_' | sort -u || true)"
+            if [ -n "$LEAKED" ]; then
+              echo "!! $lib exports symbols that are not entry points:"
+              echo "$LEAKED" | head -20
+              echo "   ($(echo "$LEAKED" | wc -l) in total)"
+              exit 1
+            fi
+            echo "$lib: nothing global but the entry points"
+          done
+
       - name: Assemble the xcframework
         run: |
           set -euo pipefail
-          cd aether
-          mkdir -p ../dist/device ../dist/sim ../dist/include
-          cp "target/aarch64-apple-ios/release/libaether.a" ../dist/device/libaether.a
-          # Both simulator slices in one archive; they are different
-          # architectures so lipo can merge them.
-          lipo -create -output ../dist/sim/libaether.a \
-            target/aarch64-apple-ios-sim/release/libaether.a \
-            target/x86_64-apple-ios/release/libaether.a
-          lipo -info ../dist/device/libaether.a ../dist/sim/libaether.a
+          mkdir -p dist/include
 
           # The crate ships no C header, so the one Swift imports is written
           # here from its FFI. Every function returns a malloc'd JSON string
           # that the caller frees with aether_string_free.
-          cat > ../dist/include/aether.h <<'HDR'
+          cat > dist/include/aether.h <<'HDR'
           #ifndef AETHER_H
           #define AETHER_H
           #include <stdint.h>
@@ -340,16 +413,15 @@ jobs:
           #endif
           #endif
           HDR
-          cat > ../dist/include/module.modulemap <<'MOD'
+          cat > dist/include/module.modulemap <<'MOD'
           module Aether {
             header "aether.h"
             export *
           }
           MOD
-          cp -R ../dist/include ../dist/device-include
-          cp -R ../dist/include ../dist/sim-include
+          cp -R dist/include dist/device-include
+          cp -R dist/include dist/sim-include
 
-          cd ..
           xcodebuild -create-xcframework \
             -library dist/device/libaether.a -headers dist/device-include \
             -library dist/sim/libaether.a -headers dist/sim-include \
