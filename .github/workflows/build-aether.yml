@@ -345,20 +345,25 @@ jobs:
           while read -r sym; do
             [ -n "$sym" ] && UFLAGS="$UFLAGS -u $sym"
           done < /tmp/aether_keep.txt
+          # ld insists on knowing the platform even for a relocatable link, and
+          # device and simulator are different platforms rather than different
+          # architectures, which is the same reason they cannot share a slice.
+          SDK_IOS="$(xcrun --sdk iphoneos --show-sdk-version)"
+          SDK_SIM="$(xcrun --sdk iphonesimulator --show-sdk-version)"
           hide() {
-            local arch="$1" inlib="$2" out="$3"
+            local arch="$1" platform="$2" sdk="$3" inlib="$4" out="$5"
             # -r keeps it relocatable; with an exported list, every global not
             # named is demoted to local.
-            ld -r -arch "$arch" $UFLAGS \
+            ld -r -arch "$arch" -platform_version "$platform" 15.0 "$sdk" $UFLAGS \
               -exported_symbols_list /tmp/aether_keep.txt \
               -o "$out.o" "$inlib"
             libtool -static -o "$out" "$out.o"
             rm -f "$out.o"
           }
           mkdir -p ../dist/device ../dist/sim ../dist/include
-          hide arm64 target/aarch64-apple-ios/release/libaether.a ../dist/device/libaether.a
-          hide arm64 target/aarch64-apple-ios-sim/release/libaether.a /tmp/sim-arm64.a
-          hide x86_64 target/x86_64-apple-ios/release/libaether.a /tmp/sim-x86.a
+          hide arm64 ios "$SDK_IOS" target/aarch64-apple-ios/release/libaether.a ../dist/device/libaether.a
+          hide arm64 ios-simulator "$SDK_SIM" target/aarch64-apple-ios-sim/release/libaether.a /tmp/sim-arm64.a
+          hide x86_64 ios-simulator "$SDK_SIM" target/x86_64-apple-ios/release/libaether.a /tmp/sim-x86.a
           lipo -create -output ../dist/sim/libaether.a /tmp/sim-arm64.a /tmp/sim-x86.a
           lipo -info ../dist/device/libaether.a ../dist/sim/libaether.a
 
