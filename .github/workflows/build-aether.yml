@@ -325,6 +325,15 @@ jobs:
           # the host at load time, which is the bug this is meant to remove.
           for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
             LIB="target/$t/release/libaether.dylib"
+            # Before anything else. Both checks below read the file through a
+            # pipeline that swallows errors, so a missing library passed the
+            # first one silently and then failed the second for the wrong
+            # reason, which cost a build to work out.
+            if [ ! -f "$LIB" ]; then
+              echo "!! $t produced no dylib at $LIB. What is there:"
+              ls -la "target/$t/release/" | head -20
+              exit 1
+            fi
             BOUND="$(nm -u "$LIB" 2>/dev/null \
               | grep -E "_(SSL_|OPENSSL_|CRYPTO_|EVP_|BIO_|X509_)" | sort -u || true)"
             if [ -n "$BOUND" ]; then
