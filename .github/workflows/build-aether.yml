@@ -352,13 +352,27 @@ jobs:
           SDK_SIM="$(xcrun --sdk iphonesimulator --show-sdk-version)"
           hide() {
             local arch="$1" platform="$2" sdk="$3" inlib="$4" out="$5"
+            local plat=(-arch "$arch" -platform_version "$platform" 15.0 "$sdk")
             # -r keeps it relocatable; with an exported list, every global not
             # named is demoted to local.
-            ld -r -arch "$arch" -platform_version "$platform" 15.0 "$sdk" $UFLAGS \
+            ld -r "${plat[@]}" $UFLAGS \
               -exported_symbols_list /tmp/aether_keep.txt \
-              -o "$out.o" "$inlib"
-            libtool -static -o "$out" "$out.o"
-            rm -f "$out.o"
+              -o "$out.pass1.o" "$inlib"
+            # An exported list does not catch everything: three BoringSSL error
+            # tables (_kOpenSSLReason*) came through the first pass still
+            # global. Rather than name them and wait for the next three, take
+            # whatever is still global and is not an entry point, and hide that.
+            nm -g "$out.pass1.o" 2>/dev/null \
+              | awk '$2 ~ /^[TDBS]$/ {print $3}' \
+              | grep -v '^_aether_' | sort -u > "$out.extra.txt" || true
+            if [ -s "$out.extra.txt" ]; then
+              echo "  second pass hides $(wc -l < "$out.extra.txt") stragglers"
+              ld -r "${plat[@]}" -unexported_symbols_list "$out.extra.txt" \
+                -o "$out.pass2.o" "$out.pass1.o"
+              mv "$out.pass2.o" "$out.pass1.o"
+            fi
+            libtool -static -o "$out" "$out.pass1.o"
+            rm -f "$out.pass1.o" "$out.extra.txt"
           }
           mkdir -p ../dist/device ../dist/sim ../dist/include
           hide arm64 ios "$SDK_IOS" target/aarch64-apple-ios/release/libaether.a ../dist/device/libaether.a
