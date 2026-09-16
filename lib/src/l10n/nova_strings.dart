@@ -155,6 +155,12 @@ class NovaStrings {
   String aetherRuledOut(int n) =>
       t('aether.ruledOut').replaceFirst('{n}', '$n');
 
+  /// How long the search has been going, as mm:ss. The row shows the clock on
+  /// its own, because a figure that changes every second explains itself; this
+  /// is what a screen reader gets instead, where nothing is ticking.
+  String aetherElapsed(String clock) =>
+      t('aether.elapsed').replaceFirst('{t}', clock);
+
   /// The working gateway, named.
   String aetherFound(String endpoint) =>
       t('aether.found').replaceFirst('{ep}', endpoint);
@@ -1083,6 +1089,7 @@ class NovaStrings {
     'aether.scanningAt': 'Address {n}: looking for one',
     'aether.verifyingAt': 'Address {n}: checking that it carries traffic',
     'aether.ruledOut': '{n} ruled out so far',
+    'aether.elapsed': 'Running for {t}',
     'aether.found': '{ep} carried traffic.',
     'aether.findFailed': 'No gateway carried traffic: {why}',
     'aether.modeSimple': 'Simple',
@@ -2054,6 +2061,7 @@ class NovaStrings {
     'aether.scanningAt': 'آدرس \u2066{n}\u2069: در حال گشتن',
     'aether.verifyingAt': 'آدرس \u2066{n}\u2069: بررسی عبور ترافیک',
     'aether.ruledOut': 'تا اینجا \u2066{n}\u2069 آدرس کنار گذاشته شد',
+    'aether.elapsed': '\u2066{t}\u2069 است که در حال اجراست',
     'aether.found': '\u2066{ep}\u2069 ترافیک را عبور داد.',
     'aether.findFailed': 'هیچ دروازه‌ای ترافیک را عبور نداد: \u2066{why}\u2069',
     'aether.modeSimple': 'ساده',

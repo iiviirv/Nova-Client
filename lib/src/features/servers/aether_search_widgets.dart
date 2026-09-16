@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../l10n/nova_strings.dart';
@@ -49,40 +51,216 @@ class AetherWaitHint extends StatelessWidget {
   }
 }
 
-/// Where a running search has got to: a bar, which address it is on, and how
-/// many have already been ruled out.
-class AetherProgressLines extends StatelessWidget {
+/// Where a running search has got to: which address it is on, how long it has
+/// been going, and how many have already been ruled out.
+///
+/// This used to lead with three pixels of indeterminate bar. A tester watched
+/// it for two minutes, read the screen as frozen, and gave up on a search that
+/// had not finished rather than one that had failed. What replaced it is two
+/// things that cannot be mistaken for a stall: a sweep that turns beside the
+/// phase the search is in, and a clock that counts up.
+///
+/// Neither claims to know how far along the search is, because nothing here
+/// does. The finder stops when an address carries traffic, not at a fraction,
+/// so a bar filling towards an end would be a number invented to look
+/// reassuring. The attempt count, the ruled-out count and the clock are all
+/// measured.
+class AetherProgressLines extends StatefulWidget {
   const AetherProgressLines({super.key, required this.progress});
 
   final AetherSearchProgress progress;
+
+  @override
+  State<AetherProgressLines> createState() => _AetherProgressLinesState();
+}
+
+class _AetherProgressLinesState extends State<AetherProgressLines> {
+  /// Added up from the ticks rather than read off a wall clock: a [Stopwatch]
+  /// does not follow the fake time a widget test runs on, and a second of drift
+  /// across a three-minute wait is not a figure anyone reads to that precision.
+  Duration _elapsed = Duration.zero;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // This widget is built when a search starts and removed when it ends, so
+    // its own life is exactly the thing being timed.
+    _tick = Timer.periodic(const Duration(seconds: 1),
+        (_) => setState(() => _elapsed += const Duration(seconds: 1)));
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  /// mm:ss. Past an hour the minutes keep counting rather than rolling into an
+  /// hours field, because a search that long has gone wrong and hiding that in
+  /// a 00 is the opposite of what this line is for.
+  static String _clock(Duration d) =>
+      '${d.inMinutes.toString().padLeft(2, '0')}:'
+      '${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     final NovaStrings s = NovaStrings.of(context);
     final NovaColors nova = context.nova;
     final TextTheme text = Theme.of(context).textTheme;
-    return Column(
+    final AetherSearchProgress p = widget.progress;
+    final String clock = _clock(_elapsed);
+
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        ClipRRect(
-          borderRadius: NovaRadii.pillR,
-          child: LinearProgressIndicator(
-            minHeight: 3,
-            backgroundColor: nova.border,
-            valueColor: AlwaysStoppedAnimation<Color>(nova.cyan),
+        _PhaseSweep(verifying: p.verifying),
+        const SizedBox(width: NovaSpace.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Semantics(
+                // The phase changes every half minute or so, and a reader who
+                // cannot see the sweep has nothing else saying the wait is
+                // still going anywhere.
+                liveRegion: true,
+                child: Text(
+                  p.verifying
+                      ? s.aetherVerifyingAt(p.attempt)
+                      : s.aetherScanningAt(p.attempt),
+                  style: text.bodySmall?.copyWith(color: nova.text),
+                ),
+              ),
+              if (p.ruledOut > 0)
+                Text(s.aetherRuledOut(p.ruledOut),
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
+            ],
           ),
         ),
-        const SizedBox(height: NovaSpace.sm),
-        Text(
-          progress.verifying
-              ? s.aetherVerifyingAt(progress.attempt)
-              : s.aetherScanningAt(progress.attempt),
-          style: text.bodySmall?.copyWith(color: nova.text),
+        const SizedBox(width: NovaSpace.sm),
+        // The only figure here that moves every second, which is what turns an
+        // open-ended wait into one with a length. Tabular so the digits sit
+        // still instead of nudging the row as they change.
+        Semantics(
+          label: s.aetherElapsed(clock),
+          excludeSemantics: true,
+          child: Text(
+            clock,
+            style: text.bodySmall?.copyWith(
+              color: nova.muted,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
         ),
-        if (progress.ruledOut > 0)
-          Text(s.aetherRuledOut(progress.ruledOut),
-              style: text.bodySmall?.copyWith(color: nova.muted)),
       ],
     );
   }
+}
+
+/// A slow sweep around the glyph for the phase the search is in.
+///
+/// 2.4 seconds a turn, the tempo the free list search already uses: a fast
+/// spinner beside a number that changes every half minute looks impatient, and
+/// this screen is asking minutes of someone who is usually already anxious
+/// about being cut off.
+///
+/// The glyph swaps when the search moves from looking for an address to proving
+/// one, so that step is something to see and not only something to read. They
+/// are the icons the buttons on the editor use for the same two jobs.
+class _PhaseSweep extends StatefulWidget {
+  const _PhaseSweep({required this.verifying});
+
+  final bool verifying;
+
+  @override
+  State<_PhaseSweep> createState() => _PhaseSweepState();
+}
+
+class _PhaseSweepState extends State<_PhaseSweep>
+    with SingleTickerProviderStateMixin {
+  static const double _size = 24;
+
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaColors nova = context.nova;
+    return SizedBox(
+      width: _size,
+      height: _size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          RotationTransition(
+            turns: _c,
+            child: CustomPaint(
+              size: const Size.square(_size),
+              painter: _SweepPainter(
+                  nova.cyan, nova.cyan.withValues(alpha: 0.16)),
+            ),
+          ),
+          AnimatedSwitcher(
+            // Long enough to read as a change of state, short enough that it is
+            // over before the eye goes looking for what moved.
+            duration: const Duration(milliseconds: 180),
+            child: Icon(
+              widget.verifying ? Icons.verified_outlined : Icons.radar_rounded,
+              key: ValueKey<bool>(widget.verifying),
+              size: 13,
+              color: nova.cyan,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SweepPainter extends CustomPainter {
+  const _SweepPainter(this.color, this.track);
+
+  /// How much of the ring the moving head covers, in radians. Under half a
+  /// turn, so there is always more gap than arc and the rotation has something
+  /// to be read against.
+  static const double _arc = 2.6;
+
+  final Color color;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    final Paint base = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = track;
+    canvas.drawCircle(rect.center, size.width / 2 - 1, base);
+    // One arc rather than a full ring: the gap is what makes the turn readable.
+    // The gradient ends where the arc does, so the head reaches full colour
+    // instead of stopping at the fraction of a whole turn the arc happens to
+    // cover, which at this size left nothing anyone could see moving.
+    final Paint arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        endAngle: _arc,
+        colors: <Color>[color.withValues(alpha: 0), color],
+      ).createShader(rect);
+    canvas.drawArc(rect.deflate(1), 0, _arc, false, arc);
+  }
+
+  @override
+  bool shouldRepaint(_SweepPainter old) =>
+      old.color != color || old.track != track;
 }

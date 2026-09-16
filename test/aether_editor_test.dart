@@ -583,7 +583,9 @@ void main() {
 
     expect(find.text('Address 1: looking for one'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byIcon(Icons.radar_rounded), findsOneWidget,
+        reason: 'the sweep is what says the screen is still working; the Find '
+            'button that shares this icon is a Cancel button while it runs');
 
     search.report(2, verifying: true, ruledOut: 1);
     await tester.pump();
@@ -602,6 +604,61 @@ void main() {
     // The verified address is kept, which is the whole difference from a scan
     // that hands back something unproven.
     expect(find.text('188.114.97.3:2408'), findsOneWidget);
+  });
+
+  testWidgets('a running search says how long it has been going',
+      (WidgetTester tester) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+
+    await tester.tap(find.text('Find a gateway now'));
+    await tester.pump();
+    expect(find.text('00:00'), findsOneWidget,
+        reason: 'the clock starts with the search, not at the first tick');
+
+    await tester.pump(const Duration(seconds: 65));
+    expect(find.text('01:05'), findsOneWidget,
+        reason: 'the tester gave up at about two minutes because nothing on '
+            'the card said how long two minutes was');
+
+    // What a screen reader gets, where nothing is ticking to explain itself.
+    expect(tester.getSemantics(find.text('01:05')).label,
+        contains('Running for 01:05'),
+        reason: 'a bare clock explains itself by ticking, which is nothing to '
+            'someone listening to the card instead of watching it');
+
+    search.finish(const AetherFindResult(
+        endpoint: '188.114.97.3:2408', attempts: 2, rejected: <String>[]));
+    await tester.pumpAndSettle();
+    expect(find.text('01:05'), findsNothing,
+        reason: 'a clock still counting after the search ended would be '
+            'timing nothing');
+    semantics.dispose();
+  });
+
+  testWidgets('the sweep changes glyph when the search starts proving an '
+      'address', (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+
+    await tester.tap(find.text('Find a gateway now'));
+    await tester.pump();
+    expect(find.byIcon(Icons.radar_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.verified_outlined), findsNothing);
+
+    search.report(1, verifying: true);
+    await tester.pump();
+    // Past the crossfade, so the outgoing glyph has been taken away.
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byIcon(Icons.verified_outlined), findsOneWidget,
+        reason: 'scanning and proving are two different waits, and the change '
+            'from one to the other is the proof that the wait is moving');
+    expect(find.byIcon(Icons.radar_rounded), findsNothing);
+
+    search.finish(const AetherFindResult(
+        endpoint: '188.114.97.3:2408', attempts: 1, rejected: <String>[]));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('a search can be stopped', (WidgetTester tester) async {

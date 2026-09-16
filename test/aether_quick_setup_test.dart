@@ -243,6 +243,29 @@ void main() {
         reason: 'the ask was one tap to a connection, not one tap to a form');
   });
 
+  testWidgets('the one-tap wait is counted out on the card too',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _pump(tester, search: search);
+
+    await tester.tap(find.text('Build it and connect'));
+    await tester.pump();
+    expect(find.text('00:00'), findsOneWidget);
+    // The sweep, which is the part that says the card is working rather than
+    // stuck. Nothing else on the dashboard card carries this icon.
+    expect(find.byIcon(Icons.radar_rounded), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 132));
+    expect(find.text('02:12'), findsOneWidget,
+        reason: 'this button is the one a first-time user presses, so it is '
+            'the one where a silent three-minute wait costs the most');
+
+    search.finish(const AetherFindResult(
+        endpoint: '188.114.97.3:2408', attempts: 1, rejected: <String>[]));
+    await tester.pumpAndSettle();
+    expect(find.text('02:12'), findsNothing);
+  });
+
   testWidgets('a search that found nothing says so and offers another go',
       (WidgetTester tester) async {
     final _FakeSearch search = _FakeSearch();
