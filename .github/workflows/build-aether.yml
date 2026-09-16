@@ -281,129 +281,71 @@ jobs:
       - name: Install CMake and Ninja
         uses: lukka/get-cmake@latest
 
-      - name: Build each slice
+      - name: Build each slice as a dynamic framework
         working-directory: aether
         env:
           # Rust defaults the iOS minimum to something ancient, and the link
           # then looks for BoringSSL's stack probe in a libSystem stub that
-          # predates it: "Undefined symbols: ___chkstk_darwin". Pinned to the
-          # app's own minimum, which is what the Podfile declares.
+          # predates it: "Undefined symbols: ___chkstk_darwin".
           IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         run: |
           set -euo pipefail
+          # A dynamic library, not a static archive, and this is the whole
+          # point rather than packaging taste.
+          #
+          # The app and the Network Extension already contain a BoringSSL: the
+          # one inside cronet, which sing-box's NaiveProxy outbound uses for its
+          # TLS. This core brings another, from quiche. Linked as static
+          # archives into the same binary they do not coexist. The undefined
+          # BoringSSL references inside this archive bind to whichever
+          # definition the link already had, so one library ends up driving the
+          # other's SSL objects with a different struct layout and a different
+          # allocator. The app binary ended up with exactly one _SSL_free for
+          # two BoringSSLs, and it crashed a tester's phone on the naive
+          # protocol, which is precisely the one that goes through cronet.
+          #
+          # Apple's two-level namespace solves this properly. A dylib records
+          # which library each of its undefined symbols came from, and a
+          # BoringSSL linked inside this one is not undefined at all. Neither
+          # side can bind to the other's copy, by construction rather than by
+          # symbol surgery.
           for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
             echo "::group::$t"
-            # Static library only. The crate also declares a cdylib, and
-            # building it was what failed above: iOS cannot load a loose dylib
-            # anyway, so linking one is work that can only produce errors.
-            cargo rustc --release --target "$t" --lib --crate-type staticlib
+            cargo rustc --release --target "$t" --lib --crate-type cdylib -- \
+              -C link-arg=-Wl,-install_name,@rpath/Aether.framework/Aether
             echo "::endgroup::"
           done
 
-      - name: Hide everything but the entry points
+      - name: Prove each slice carries its own BoringSSL
         working-directory: aether
         run: |
           set -euo pipefail
-          # The app and the Network Extension already contain a BoringSSL, the
-          # one inside cronet inside the sing-box core. This archive carries
-          # another, from quiche. Linked as-is they do not coexist: static
-          # archive resolution binds quiche's calls to whichever _SSL_free was
-          # already defined, so one library ends up driving the other's SSL
-          # objects, with a different struct layout and a different allocator.
-          #
-          # That is not theoretical. It crashed a tester's phone on build 148:
-          # SSL_free -> ~ssl_st -> ~SSL_CONFIG -> OPENSSL_free on a pointer read
-          # at the wrong offset (0xfffffffffffffff9), inside cronet's socket
-          # teardown, in an app binary that had exactly one _SSL_free for two
-          # BoringSSLs.
-          #
-          # So each slice is partially linked into a single object with only the
-          # twelve entry points left global. Everything else, crypto included,
-          # becomes local: it cannot interpose on the host's symbols and the
-          # host's cannot interpose on it. Each library keeps its own BoringSSL.
-          cat > /tmp/aether_keep.txt <<'KEEP'
-          _aether_version
-          _aether_string_free
-          _aether_job_poll
-          _aether_job_cancel
-          _aether_job_free
-          _aether_identity_open
-          _aether_identity_summary
-          _aether_identity_free
-          _aether_scan_start
-          _aether_verify_start
-          _aether_tunnel_start
-          _aether_core_start
-          KEEP
-          # -u per entry point, never -force_load. The archive carries TWO
-          # BoringSSL builds (quiche vendors one, the boring crate another), so
-          # pulling every object in duplicates thousands of symbols; that is how
-          # the first attempt at linking this into the app failed. Naming the
-          # entry points pulls their objects and whatever they reach, and each
-          # BoringSSL symbol resolves once.
-          UFLAGS=""
-          while read -r sym; do
-            [ -n "$sym" ] && UFLAGS="$UFLAGS -u $sym"
-          done < /tmp/aether_keep.txt
-          # ld insists on knowing the platform even for a relocatable link, and
-          # device and simulator are different platforms rather than different
-          # architectures, which is the same reason they cannot share a slice.
-          SDK_IOS="$(xcrun --sdk iphoneos --show-sdk-version)"
-          SDK_SIM="$(xcrun --sdk iphonesimulator --show-sdk-version)"
-          hide() {
-            local arch="$1" platform="$2" sdk="$3" inlib="$4" out="$5"
-            local plat=(-arch "$arch" -platform_version "$platform" 15.0 "$sdk")
-            # -r keeps it relocatable; with an exported list, every global not
-            # named is demoted to local.
-            ld -r "${plat[@]}" $UFLAGS \
-              -exported_symbols_list /tmp/aether_keep.txt \
-              -o "$out.pass1.o" "$inlib"
-            # Neither an exported nor an unexported list reaches everything:
-            # three BoringSSL error tables (_kOpenSSLReason*) came through both
-            # still global, because they are type S rather than text or data and
-            # the linker's lists do not cover them. nmedit edits the symbol
-            # table directly, which is the tool for this: -s keeps the listed
-            # symbols global and turns every other global static.
-            nmedit -s /tmp/aether_keep.txt "$out.pass1.o" -o "$out.pass2.o"
-            mv "$out.pass2.o" "$out.pass1.o"
-            libtool -static -o "$out" "$out.pass1.o"
-            rm -f "$out.pass1.o"
-          }
-          mkdir -p ../dist/device ../dist/sim ../dist/include
-          hide arm64 ios "$SDK_IOS" target/aarch64-apple-ios/release/libaether.a ../dist/device/libaether.a
-          hide arm64 ios-simulator "$SDK_SIM" target/aarch64-apple-ios-sim/release/libaether.a /tmp/sim-arm64.a
-          hide x86_64 ios-simulator "$SDK_SIM" target/x86_64-apple-ios/release/libaether.a /tmp/sim-x86.a
-          lipo -create -output ../dist/sim/libaether.a /tmp/sim-arm64.a /tmp/sim-x86.a
-          lipo -info ../dist/device/libaether.a ../dist/sim/libaether.a
-
-      - name: Prove no crypto symbol escaped
-        run: |
-          set -euo pipefail
-          # The whole point of the step above. A single leaked BoringSSL global
-          # is enough to reintroduce the crash, so this counts rather than
-          # trusts: the only globals may be the aether entry points.
-          for lib in dist/device/libaether.a dist/sim/libaether.a; do
-            LEAKED="$(nm -g "$lib" 2>/dev/null \
-              | awk '$2 ~ /^[TDBS]$/ {print $3}' \
-              | grep -v '^_aether_' | sort -u || true)"
-            if [ -n "$LEAKED" ]; then
-              echo "!! $lib exports symbols that are not entry points:"
-              echo "$LEAKED" | head -20
-              echo "   ($(echo "$LEAKED" | wc -l) in total)"
+          # The claim above, checked rather than asserted. If any BoringSSL
+          # symbol is UNDEFINED in the built library, it would be resolved from
+          # the host at load time, which is the bug this is meant to remove.
+          for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+            LIB="target/$t/release/libaether.dylib"
+            BOUND="$(nm -u "$LIB" 2>/dev/null \
+              | grep -E "_(SSL_|OPENSSL_|CRYPTO_|EVP_|BIO_|X509_)" | sort -u || true)"
+            if [ -n "$BOUND" ]; then
+              echo "!! $t leaves crypto symbols to be resolved by the host:"
+              echo "$BOUND" | head -20
               exit 1
             fi
-            echo "$lib: nothing global but the entry points"
+            # And it must actually contain one, rather than having none at all.
+            test "$(nm -a "$LIB" 2>/dev/null | grep -cE " [a-zA-Z] _SSL_free$")" -ge 1 \
+              || { echo "!! $t has no BoringSSL of its own"; exit 1; }
+            echo "$t: self-contained"
           done
 
       - name: Assemble the xcframework
         run: |
           set -euo pipefail
           mkdir -p dist/include
-
           # The crate ships no C header, so the one Swift imports is written
           # here from its FFI. Every function returns a malloc'd JSON string
           # that the caller frees with aether_string_free.
-          cat > dist/include/aether.h <<'HDR'
+          cat > dist/include/Aether.h <<'HDR'
           #ifndef AETHER_H
           #define AETHER_H
           #include <stdint.h>
@@ -428,36 +370,67 @@ jobs:
           #endif
           HDR
           cat > dist/include/module.modulemap <<'MOD'
-          module Aether {
-            header "aether.h"
+          framework module Aether {
+            umbrella header "Aether.h"
             export *
           }
           MOD
-          cp -R dist/include dist/device-include
-          cp -R dist/include dist/sim-include
+
+          # One framework per platform. Device and simulator are different
+          # platforms, not different architectures, so they cannot share a
+          # slice; the two simulator architectures can.
+          lipo -create -output /tmp/aether-sim.dylib \
+            aether/target/aarch64-apple-ios-sim/release/libaether.dylib \
+            aether/target/x86_64-apple-ios/release/libaether.dylib
+
+          mkframework() {
+            local dylib="$1" out="$2" platform="$3"
+            rm -rf "$out"
+            mkdir -p "$out/Headers" "$out/Modules"
+            cp "$dylib" "$out/Aether"
+            chmod +x "$out/Aether"
+            cp dist/include/Aether.h "$out/Headers/Aether.h"
+            cp dist/include/module.modulemap "$out/Modules/module.modulemap"
+            cat > "$out/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleExecutable</key><string>Aether</string>
+            <key>CFBundleIdentifier</key><string>tech.innovatenorth.Aether</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>Aether</string>
+            <key>CFBundlePackageType</key><string>FMWK</string>
+            <key>CFBundleShortVersionString</key><string>1.9.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>MinimumOSVersion</key><string>15.0</string>
+            <key>CFBundleSupportedPlatforms</key><array><string>$platform</string></array>
+          </dict></plist>
+          PLIST
+          }
+          mkframework aether/target/aarch64-apple-ios/release/libaether.dylib \
+            /tmp/dev/Aether.framework iPhoneOS
+          mkframework /tmp/aether-sim.dylib /tmp/sim/Aether.framework iPhoneSimulator
 
           xcodebuild -create-xcframework \
-            -library dist/device/libaether.a -headers dist/device-include \
-            -library dist/sim/libaether.a -headers dist/sim-include \
+            -framework /tmp/dev/Aether.framework \
+            -framework /tmp/sim/Aether.framework \
             -output dist/Aether.xcframework
           find dist/Aether.xcframework -maxdepth 2
 
       - name: Prove the exports are there
         run: |
           set -euo pipefail
-          # A missing export is a link error in the extension, or worse a crash
-          # on first use. Checked on both slices: a simulator-only symbol would
-          # pass a desk test and fail on a phone.
-          for lib in dist/device/libaether.a dist/sim/libaether.a; do
-            nm -g "$lib" 2>/dev/null | grep -E '^[0-9a-f]* [TD] _aether_' > "syms-$(basename $(dirname $lib)).txt" || true
-            f="syms-$(basename $(dirname $lib)).txt"
-            test -s "$f" || { echo "no aether symbols in $lib"; exit 1; }
+          # A dylib's exports are what dlopen/dlsym and the Swift import both
+          # read, and unlike a stripped executable's they survive distribution.
+          for f in dist/Aether.xcframework/*/Aether.framework/Aether; do
+            EX="$(xcrun dyld_info -exports "$f" 2>/dev/null)"
             for sym in aether_version aether_identity_open aether_scan_start \
                        aether_verify_start aether_tunnel_start aether_job_poll \
                        aether_job_cancel aether_string_free; do
-              grep -q "_$sym$" "$f" || { echo "missing export in $lib: $sym"; exit 1; }
+              grep -q "_$sym\$" <<< "$EX" || { echo "!! $f missing export: $sym"; exit 1; }
             done
-            echo "$lib: all expected symbols are exported"
+            echo "$f: all expected symbols are exported"
           done
 
       - name: Upload
