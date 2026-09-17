@@ -376,24 +376,35 @@ class DesktopProxyController extends ProxyController {
         // is up as soon as the core answers; point the OS at it in the
         // background and let the dashboard's Proxy mode card report the
         // result.
-        _systemProxyAttempted = true;
-        _systemProxyPending = _setSystemProxy(true).then((_) async {
-          notifyListeners();
-          // The set can take as long as the user takes to answer a password
-          // prompt. If the tunnel went away in that time, the OS has just been
-          // pointed at a local port with nothing behind it, and every app that
-          // follows the system proxy loses the network until someone works out
-          // why. Undo it immediately rather than leaving the machine broken.
-          if (_state != ProxyConnectionState.connected && _systemProxyOn) {
-            NovaLog.instance.write(
-                'The tunnel went away while the system proxy was being set; '
-                'clearing it again');
-            await _setSystemProxy(false);
-            _systemProxyAttempted = false;
+        //
+        // Only when the user has asked Nova to manage the system proxy. This
+        // used to be marked unconditionally, while the set itself quietly did
+        // nothing with the setting off. Disconnect saw the mark and went to
+        // clear a proxy Nova had never set, and clearing it on macOS takes an
+        // administrator password: everyone who had turned the automatic
+        // setting off was asked for their password on every disconnect, for
+        // nothing. A proxy that really was set still gets cleared, because
+        // teardown also checks [_systemProxyOn].
+        if (autoSystemProxy) {
+          _systemProxyAttempted = true;
+          _systemProxyPending = _setSystemProxy(true).then((_) async {
             notifyListeners();
-          }
-        });
-        unawaited(_systemProxyPending!);
+            // The set can take as long as the user takes to answer a password
+            // prompt. If the tunnel went away in that time, the OS has just been
+            // pointed at a local port with nothing behind it, and every app that
+            // follows the system proxy loses the network until someone works out
+            // why. Undo it immediately rather than leaving the machine broken.
+            if (_state != ProxyConnectionState.connected && _systemProxyOn) {
+              NovaLog.instance.write(
+                  'The tunnel went away while the system proxy was being set; '
+                  'clearing it again');
+              await _setSystemProxy(false);
+              _systemProxyAttempted = false;
+              notifyListeners();
+            }
+          });
+          unawaited(_systemProxyPending!);
+        }
       }
       // Now, and not before sing-box: see [_pendingAether].
       await _startPendingAether();
