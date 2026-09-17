@@ -319,6 +319,25 @@ class NovaStrings {
   String get routeProxyPortHelp => t('route.proxyPortHelp');
   String get routeIosAutoReconnect => t('route.iosAutoReconnect');
   String get routeIosAutoReconnectSub => t('route.iosAutoReconnectSub');
+
+  /// Sharing the local proxy with the network. The confirm and the open
+  /// warning name the port, because "the port" means nothing to someone who
+  /// has not looked at the row above.
+  String get routeShare => t('route.share');
+  String get routeShareSub => t('route.shareSub');
+  String get routeShareConfirmTitle => t('route.shareConfirmTitle');
+  String routeShareConfirmBody(int port) =>
+      t('route.shareConfirmBody').replaceAll('{port}', '$port');
+  String get routeShareConfirm => t('route.shareConfirm');
+  String routeShareOpen(int port) =>
+      t('route.shareOpen').replaceAll('{port}', '$port');
+  String get routeShareHalf => t('route.shareHalf');
+  String get routeShareLocked => t('route.shareLocked');
+  String get routeShareUser => t('route.shareUser');
+  String get routeSharePass => t('route.sharePass');
+  String get routeSharePassShow => t('route.sharePassShow');
+  String get routeSharePassHide => t('route.sharePassHide');
+
   String get setTestOptions => t('set.testOptions');
   String get setTestOptionsSub => t('set.testOptionsSub');
   String get setServerOwner => t('set.serverOwner');
@@ -564,6 +583,16 @@ class NovaStrings {
   String get proxyModeSysOff => t('proxyMode.sysOff');
   String get proxyModeCopied => t('proxyMode.copied');
   String get proxyModeSetFailed => t('proxyMode.setFailed');
+
+  /// The shared address on the dashboard. Each line describes what a probe of
+  /// the running proxy found, not what Settings says, since the two differ
+  /// until the next connect.
+  String get proxyModeLan => t('proxyMode.lan');
+  String get proxyModeLanOpen => t('proxyMode.lanOpen');
+  String get proxyModeLanLocked => t('proxyMode.lanLocked');
+  String get proxyModeLanStill => t('proxyMode.lanStill');
+  String get proxyModeLanPending => t('proxyMode.lanPending');
+  String get proxyModeLanNoNetwork => t('proxyMode.lanNoNetwork');
   String get routeDns => t('route.dns');
   String get routeDnsSub => t('route.dnsSub');
   String get routeApplyNote => t('route.applyNote');
@@ -1231,6 +1260,31 @@ class NovaStrings {
     'route.proxyPortHelp':
         'The port apps point at in proxy mode. Change it if another program '
         'already uses 2080. Applies on the next connect.',
+    'route.share': 'Share with other devices',
+    'route.shareSub':
+        'Lets a TV or another computer on the same network use this proxy.',
+    'route.shareConfirmTitle': 'Share this proxy with the network?',
+    'route.shareConfirmBody':
+        'Anything that can reach port {port} on this device will be able to '
+        'send its traffic through your connection.\n\n'
+        'On a home network, that is everyone in the house. On cafe or hotel '
+        'wifi, it is everyone connected there. If the port is forwarded on '
+        'your router, it is anyone on the internet.\n\n'
+        'Set a username and password unless you trust everyone who can reach '
+        'it.',
+    'route.shareConfirm': 'Share',
+    'route.shareOpen':
+        'Open to anyone who can reach port {port}. Set a username and '
+        'password below so only your own devices can use it.',
+    'route.shareHalf':
+        'Fill in both. With only one of them, the proxy stays open to anyone '
+        'who can reach it.',
+    'route.shareLocked':
+        'Other devices have to sign in with the username and password below.',
+    'route.shareUser': 'Username',
+    'route.sharePass': 'Password',
+    'route.sharePassShow': 'Show password',
+    'route.sharePassHide': 'Hide password',
     'route.iosAutoReconnect': 'Let iOS reconnect on its own',
     'route.iosAutoReconnectSub':
         'Brings the tunnel back if iOS shuts it down. Leave off and the VPN '
@@ -1527,6 +1581,19 @@ class NovaStrings {
     'proxyMode.copied': 'Copied',
     'proxyMode.setFailed': 'Could not change the system proxy (admin approval '
         'needed).',
+    'proxyMode.lan': 'From other devices',
+    'proxyMode.lanOpen':
+        'No sign-in. Anyone who can reach this address can use it.',
+    'proxyMode.lanLocked': 'Asks for the username and password you set.',
+    'proxyMode.lanStill':
+        'Sharing is off, but this connection keeps accepting other devices '
+        'until you reconnect.',
+    'proxyMode.lanPending':
+        'Other devices cannot reach the proxy yet. Reconnect to start '
+        'sharing.',
+    'proxyMode.lanNoNetwork':
+        'Sharing is on, but this device has no local network address right '
+        'now, so nothing else can reach it.',
     'route.dns': 'DNS resolver',
     'route.dnsSub': 'Encrypted DNS over HTTPS, resolved through the tunnel.',
     'route.applyNote': 'Changes apply the next time you connect.',
@@ -2199,6 +2266,33 @@ class NovaStrings {
     'route.proxyPortHelp':
         'پورتی که برنامه‌ها در حالت پروکسی به آن وصل می‌شوند. اگر برنامه‌ی '
         'دیگری \u2066۲۰۸۰\u2069 را گرفته باشد عوضش کنید. از اتصال بعدی اعمال می‌شود.',
+    'route.share': 'اشتراک با دستگاه‌های دیگر',
+    'route.shareSub':
+        'تلویزیون یا کامپیوتر دیگری که در همین شبکه است می‌تواند از این '
+        'پروکسی استفاده کند.',
+    'route.shareConfirmTitle': 'این پروکسی با شبکه به اشتراک گذاشته شود؟',
+    'route.shareConfirmBody':
+        'هر چیزی که به پورت \u2066{port}\u2069 این دستگاه برسد می‌تواند '
+        'ترافیکش را از اتصال شما رد کند.\n\n'
+        'در شبکه‌ی خانه یعنی همه‌ی اهل خانه. در وای‌فای کافه یا هتل یعنی همه‌ی '
+        'کسانی که به آن وصل‌اند. اگر این پورت روی مودم فوروارد شده باشد، یعنی '
+        'هر کسی در اینترنت.\n\n'
+        'اگر به همه‌ی کسانی که به این شبکه دسترسی دارند اعتماد ندارید، نام '
+        'کاربری و رمز بگذارید.',
+    'route.shareConfirm': 'اشتراک بگذار',
+    'route.shareOpen':
+        'برای هر کسی که به پورت \u2066{port}\u2069 برسد باز است. پایین‌تر نام '
+        'کاربری و رمز بگذارید تا فقط دستگاه‌های خودتان بتوانند از آن استفاده '
+        'کنند.',
+    'route.shareHalf':
+        'هر دو را پر کنید. با فقط یکی از آن‌ها، پروکسی همچنان برای هر کسی که '
+        'به آن برسد باز است.',
+    'route.shareLocked':
+        'دستگاه‌های دیگر باید با نام کاربری و رمز زیر وارد شوند.',
+    'route.shareUser': 'نام کاربری',
+    'route.sharePass': 'رمز',
+    'route.sharePassShow': 'نمایش رمز',
+    'route.sharePassHide': 'پنهان کردن رمز',
     'route.iosAutoReconnect': 'اجازه بده \u2066iOS\u2069 خودش وصل کند',
     'route.iosAutoReconnectSub':
         'اگر \u2066iOS\u2069 تونل را ببندد دوباره برش می‌گرداند. خاموش بگذارید تا '
@@ -2495,6 +2589,19 @@ class NovaStrings {
     'proxyMode.sysOff': 'پروکسی سیستم تنظیم نشده',
     'proxyMode.copied': 'کپی شد',
     'proxyMode.setFailed': 'پروکسی سیستم تغییر نکرد (تایید مدیر لازم است).',
+    'proxyMode.lan': 'از دستگاه‌های دیگر',
+    'proxyMode.lanOpen':
+        'ورود لازم نیست. هر کسی که به این آدرس برسد می‌تواند از آن استفاده کند.',
+    'proxyMode.lanLocked': 'نام کاربری و رمزی را که گذاشته‌اید می‌خواهد.',
+    'proxyMode.lanStill':
+        'اشتراک خاموش است، اما این اتصال تا دوباره وصل نشوید دستگاه‌های دیگر '
+        'را هم می‌پذیرد.',
+    'proxyMode.lanPending':
+        'دستگاه‌های دیگر هنوز به پروکسی نمی‌رسند. برای شروع اشتراک دوباره وصل '
+        'شوید.',
+    'proxyMode.lanNoNetwork':
+        'اشتراک روشن است، اما این دستگاه الان آدرس شبکه‌ی محلی ندارد و '
+        'دستگاه دیگری به آن نمی‌رسد.',
     'route.dns': 'حل‌کنندهٔ DNS',
     'route.dnsSub': 'DNS رمزگذاری‌شده روی HTTPS که از طریق تونل حل می‌شود.',
     'route.applyNote': 'تغییرات در اتصال بعدی اعمال می‌شوند.',

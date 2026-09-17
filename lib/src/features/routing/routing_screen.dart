@@ -132,8 +132,10 @@ class RoutingScreen extends StatelessWidget {
                           value: settings.mobileProxyMode,
                           onChanged: settings.setMobileProxyMode,
                         ),
-                        if (settings.mobileProxyMode)
+                        if (settings.mobileProxyMode) ...<Widget>[
                           _ProxyPortRow(settings: settings),
+                          _ProxyShareSection(settings: settings),
+                        ],
                         if (Platform.isIOS)
                           _RuleSwitch(
                             icon: Icons.autorenew_rounded,
@@ -168,6 +170,7 @@ class RoutingScreen extends StatelessWidget {
                             onChanged: settings.setAutoSystemProxy,
                           ),
                           _ProxyPortRow(settings: settings),
+                          _ProxyShareSection(settings: settings),
                         ],
                       ],
                     ),
@@ -666,6 +669,192 @@ class _ProxyPortRowState extends State<_ProxyPortRow> {
           const SizedBox(height: 4),
           Text(s.routeProxyPortHelp,
               style: text.bodySmall?.copyWith(color: nova.muted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sharing the local proxy with the rest of the network.
+///
+/// The switch asks first, because the same switch that lets a TV use this
+/// connection lets everyone on a hotel network use it too, and the moment of
+/// turning it on is the one moment someone is certainly reading. Once on, the
+/// status line stays loud for as long as the port is open to anyone and calms
+/// down only when both a username and a password are set, which is the
+/// condition the core uses to require them.
+///
+/// The login fields only exist while sharing is on: a password on a port only
+/// this device can reach protects nothing, and showing the fields would say it
+/// does.
+class _ProxyShareSection extends StatefulWidget {
+  const _ProxyShareSection({required this.settings});
+  final SettingsController settings;
+
+  @override
+  State<_ProxyShareSection> createState() => _ProxyShareSectionState();
+}
+
+class _ProxyShareSectionState extends State<_ProxyShareSection> {
+  late final TextEditingController _user =
+      TextEditingController(text: widget.settings.proxyShareUser);
+  late final TextEditingController _pass =
+      TextEditingController(text: widget.settings.proxySharePass);
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _user.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onSwitch(bool on) async {
+    if (!on) {
+      await widget.settings.setProxyShareOnLan(false);
+      return;
+    }
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: nova.bgAlt,
+        shape: const RoundedRectangleBorder(borderRadius: NovaRadii.cardR),
+        icon: Icon(Icons.wifi_tethering_rounded, color: nova.warning),
+        title: Text(s.routeShareConfirmTitle),
+        content: SingleChildScrollView(
+          child: Text(s.routeShareConfirmBody(widget.settings.proxyPort)),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.routeShareConfirm),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.settings.setProxyShareOnLan(true);
+  }
+
+  void _saveLogin() {
+    widget.settings.setProxyShareCredentials(_user.text, _pass.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final SettingsController settings = widget.settings;
+    final bool on = settings.proxyShareOnLan;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _RuleSwitch(
+          icon: Icons.wifi_tethering_rounded,
+          title: s.routeShare,
+          subtitle: s.routeShareSub,
+          value: on,
+          onChanged: _onSwitch,
+        ),
+        if (on)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                NovaSpace.lg, NovaSpace.xs, NovaSpace.lg, NovaSpace.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _shareStatus(context, s, settings),
+                const SizedBox(height: NovaSpace.md),
+                TextField(
+                  key: const ValueKey<String>('proxyShareUser'),
+                  controller: _user,
+                  textDirection: TextDirection.ltr,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: s.routeShareUser,
+                    prefixIcon: const Icon(Icons.person_outline_rounded),
+                  ),
+                  onChanged: (_) => _saveLogin(),
+                ),
+                const SizedBox(height: NovaSpace.md),
+                TextField(
+                  key: const ValueKey<String>('proxySharePass'),
+                  controller: _pass,
+                  obscureText: _obscure,
+                  textDirection: TextDirection.ltr,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: s.routeSharePass,
+                    prefixIcon: const Icon(Icons.key_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: _obscure
+                          ? s.routeSharePassShow
+                          : s.routeSharePassHide,
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: nova.muted,
+                        size: 20,
+                      ),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ),
+                  onChanged: (_) => _saveLogin(),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Same tinted panel as the fingerprint status above, in amber while anyone
+  /// can get in and in green once they cannot.
+  Widget _shareStatus(
+      BuildContext context, NovaStrings s, SettingsController settings) {
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool hasUser = settings.proxyShareUser.isNotEmpty;
+    final bool hasPass = settings.proxySharePass.isNotEmpty;
+    final bool locked = hasUser && hasPass;
+
+    final Color accent = locked ? nova.successStrong : nova.warning;
+    final IconData icon =
+        locked ? Icons.lock_outline_rounded : Icons.lock_open_rounded;
+    final String line = locked
+        ? s.routeShareLocked
+        : (hasUser || hasPass)
+            ? s.routeShareHalf
+            : s.routeShareOpen(settings.proxyPort);
+
+    return Container(
+      key: const ValueKey<String>('proxyShareStatus'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(NovaSpace.md),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: NovaRadii.smR,
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(icon, size: 20, color: accent),
+          const SizedBox(width: NovaSpace.sm),
+          Expanded(
+            child: Text(line,
+                style: text.bodySmall?.copyWith(color: nova.text)),
+          ),
         ],
       ),
     );

@@ -30,6 +30,7 @@ import '../servers/node_list_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
 import 'aether_quick_setup_card.dart';
+import 'lan_share_probe.dart';
 
 /// The home screen: a Summary/Configs segmented header, the connect orb with a
 /// live uptime timer, one connection panel (exit country, IP, ping and live
@@ -441,42 +442,16 @@ class _ProxyModeCard extends StatelessWidget {
                 ),
                 const SizedBox(height: NovaSpace.sm),
                 // The address on its own line, one tap to copy.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: addr));
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('${s.proxyModeCopied}: $addr')));
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: nova.bgAlt,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: nova.border),
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(addr,
-                              textDirection: TextDirection.ltr,
-                              style: text.titleSmall?.copyWith(
-                                  fontFeatures: const <FontFeature>[
-                                    FontFeature.tabularFigures()
-                                  ],
-                                  fontWeight: FontWeight.w700)),
-                        ),
-                        Icon(Icons.copy_rounded, size: 16, color: nova.muted),
-                      ],
-                    ),
-                  ),
-                ),
+                _CopyableAddress(addr),
                 const SizedBox(height: NovaSpace.sm),
                 Text(s.proxyModeHint,
                     style: text.bodySmall?.copyWith(color: nova.muted)),
+                _SharedAddress(
+                  port: port,
+                  shareOn: scope.settings.proxyShareOnLan,
+                  user: scope.settings.proxyShareUser,
+                  pass: scope.settings.proxySharePass,
+                ),
                 if (hasSystemProxy) ...<Widget>[
                 const SizedBox(height: NovaSpace.sm),
                 Row(
@@ -532,6 +507,176 @@ class _ProxyModeCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// An address in its own box, one tap to copy.
+class _CopyableAddress extends StatelessWidget {
+  const _CopyableAddress(this.addr);
+
+  final String addr;
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    return Semantics(
+      button: true,
+      label: addr,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          await Clipboard.setData(ClipboardData(text: addr));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${s.proxyModeCopied}: $addr')));
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: nova.bgAlt,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: nova.border),
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(addr,
+                    textDirection: TextDirection.ltr,
+                    style: text.titleSmall?.copyWith(
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures()
+                        ],
+                        fontWeight: FontWeight.w700)),
+              ),
+              Icon(Icons.copy_rounded, size: 16, color: nova.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The address other devices use when the proxy is shared on the network.
+///
+/// Everything here comes from knocking on the running proxy, not from
+/// Settings. Sharing takes effect on the next connect, so for a while after the
+/// switch moves the two disagree, and the dangerous half of that is a switch
+/// turned off on a connection that is still open to the network. That case
+/// keeps its address on screen until a reconnect actually closes it.
+///
+/// Nothing is drawn for a proxy that was never shared.
+class _SharedAddress extends StatefulWidget {
+  const _SharedAddress({
+    required this.port,
+    required this.shareOn,
+    required this.user,
+    required this.pass,
+  });
+
+  final int port;
+  final bool shareOn;
+  final String user;
+  final String pass;
+
+  @override
+  State<_SharedAddress> createState() => _SharedAddressState();
+}
+
+class _SharedAddressState extends State<_SharedAddress> {
+  ({bool hasAddress, List<LanShareEndpoint> reachable})? _found;
+
+  // The card rebuilds every second while connected, so only a change that can
+  // alter the answer starts another knock, and a slow answer to an old
+  // question is dropped.
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _probe();
+  }
+
+  @override
+  void didUpdateWidget(_SharedAddress old) {
+    super.didUpdateWidget(old);
+    if (old.port != widget.port ||
+        old.shareOn != widget.shareOn ||
+        old.user != widget.user ||
+        old.pass != widget.pass) {
+      _probe();
+    }
+  }
+
+  Future<void> _probe() async {
+    final int gen = ++_generation;
+    final ({bool hasAddress, List<LanShareEndpoint> reachable}) r =
+        await LanShareProbe.run(widget.port);
+    if (!mounted || gen != _generation) return;
+    setState(() => _found = r);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ({bool hasAddress, List<LanShareEndpoint> reachable})? found =
+        _found;
+    if (found == null) return const SizedBox.shrink();
+    final bool open = found.reachable.isNotEmpty;
+    if (!open && !widget.shareOn) return const SizedBox.shrink();
+
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+
+    final IconData icon;
+    final Color tone;
+    final String line;
+    if (!open) {
+      icon = Icons.info_outline_rounded;
+      tone = nova.muted;
+      line = found.hasAddress ? s.proxyModeLanPending : s.proxyModeLanNoNetwork;
+    } else if (!widget.shareOn) {
+      icon = Icons.warning_amber_rounded;
+      tone = nova.warning;
+      line = s.proxyModeLanStill;
+    } else if (found.reachable.every((LanShareEndpoint e) => e.asksForLogin)) {
+      icon = Icons.lock_outline_rounded;
+      tone = NovaSemantics.connectGreen;
+      line = s.proxyModeLanLocked;
+    } else {
+      icon = Icons.lock_open_rounded;
+      tone = nova.warning;
+      line = s.proxyModeLanOpen;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: NovaSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(s.proxyModeLan,
+              style: text.bodySmall
+                  ?.copyWith(color: nova.muted, fontWeight: FontWeight.w600)),
+          for (final LanShareEndpoint e in found.reachable) ...<Widget>[
+            const SizedBox(height: NovaSpace.xs),
+            _CopyableAddress(e.hostPort),
+          ],
+          const SizedBox(height: NovaSpace.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(icon, size: 18, color: tone),
+              const SizedBox(width: 6),
+              Expanded(child: Text(line, style: text.bodySmall)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
