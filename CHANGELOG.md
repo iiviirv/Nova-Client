@@ -1,5 +1,40 @@
 # Changelog
 
+## v1.25.0 (2026-09-17)
+
+- **A new way out, for networks where almost nothing else gets through.**
+  Nova can now carry your traffic inside ordinary DNS lookups, using the
+  MasterDNS method. It is slow by nature, because every piece of your traffic
+  has to fit inside a DNS question and its answer, so it is a way through when
+  the usual ones are blocked rather than something to use every day. Add one
+  from the plus button on the Servers page, fill in the domain and key you were
+  given, or paste a config you already have.
+
+- **Fixed: waking a phone or computer could leave it with no internet at all.**
+  With one of the new WARP protocols, coming back after a few hours or out of
+  sleep could leave the connection up while nothing moved, and the whole device
+  offline until Nova was switched off, at which point every waiting message
+  arrived at once. Nova now watches that connection and brings it back by
+  itself, and checks it the moment you pick the device up.
+
+- **Share your connection with other devices on your network.** A TV, a console
+  or a work laptop cannot run Nova, but it can be pointed at a device that does.
+  This is off unless you turn it on, and Nova asks first, because the same
+  switch lets anything that can reach the port use your connection. You can set
+  a username and password.
+
+- **Fixed: on macOS, disconnecting asked for your password every time** if you
+  had turned off letting Nova set the system proxy. It was clearing a setting
+  it had never made.
+
+- **Fixed: on Linux, servers using the xhttp transport never worked.** Nova
+  could not find the second core it needs for them.
+
+- A route is now checked by carrying real traffic over an encrypted connection
+  and reporting where it came out, so a route that answers without carrying
+  anything is no longer saved as working.
+
+
 ## v1.24.3 (2026-09-17)
 
 - **Fixed: the log could contain your own address.** When a route answered but
