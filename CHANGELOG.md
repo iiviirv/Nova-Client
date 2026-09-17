@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.24.2 (2026-09-16)
+
+- **Fixed: a working route could be reported as broken on a slow connection.**
+  Checking a route had a fixed five second limit, and the check needs about
+  five trips to the far end and back. On a slower path it ran out of time and a
+  route that was perfectly good got marked unhealthy. The result looked
+  identical to a route that was genuinely dead, so there was no way to tell the
+  two apart.
+
+  Nova now opens the route for real and carries traffic through it to decide,
+  and gives that enough time to finish. This is why the same route could work
+  on one device and fail on another sitting on the same wifi, and why changing
+  the settings never made any difference.
+
+- **A route has to carry your traffic to count as working.** The check reports
+  where your connection actually came out, so a route that answers but sends
+  traffic around the tunnel rather than through it is refused instead of saved.
+
+- Ruling out a route that really is dead now takes about twenty seconds rather
+  than five, so a search that finds nothing takes longer than before. That is
+  deliberate: a little more waiting is better than discarding a route that
+  works.
+
+- When a search does not go the way you expect, Settings then Logs now shows
+  what it tried: which address, how long each step took, and whether traffic
+  reached the far end.
+
 ## v1.24.1 (2026-09-15)
 
 - **Fixed: on Windows, macOS and Linux the new WARP connections could not
