@@ -114,6 +114,13 @@ class MainActivity : FlutterActivity() {
 
                 "status" -> result.success(NovaProxyBridge.state)
 
+                // Where Android unpacked this app's native binaries. The
+                // MasterDNS engine ships there as libmasterdns.so: it is an
+                // executable, not a library, and that directory is one of the
+                // few places an app is allowed to run a file from. The path
+                // changes with every install, so it is asked for, not built.
+                "nativeLibraryDir" -> result.success(applicationInfo.nativeLibraryDir)
+
                 // Carrier identity for per-ISP optimization. networkOperator is
                 // the MCC+MNC of the network the phone is registered on (falls
                 // back to the SIM's home operator); neither needs a runtime

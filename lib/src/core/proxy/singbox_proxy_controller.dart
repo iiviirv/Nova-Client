@@ -30,6 +30,7 @@ import 'singbox/share_link_builder.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
+import 'masterdns/masterdns_config.dart';
 import 'xray/xray_config.dart';
 
 /// Phase-3 xhttp/Xray path, ON: the Android libbox.aar is the combined
@@ -110,6 +111,14 @@ NovaLogLevel coreLogLevelFor(String message, NovaLogLevel level) =>
 ///
 /// Until the native hosts ship, the app wires up [MockProxyController]; flip the
 /// instance in `main.dart` to switch over with zero UI changes.
+/// A MasterDNS engine waiting to be started for the connect being built.
+class _PendingMasterDns {
+  const _PendingMasterDns({required this.config, required this.port});
+
+  final MasterDnsConfig config;
+  final int port;
+}
+
 /// What [SingboxProxyController._pendingAether] remembers between building the
 /// config and starting the core: everything the tunnel needs, plus the port the
 /// config was already written against.
@@ -216,6 +225,20 @@ class SingboxProxyController extends ProxyController {
   /// Set by [_buildSingboxConfig] when the exit is an xhttp node: the Xray core
   /// config the native host starts alongside the sing-box TUN->SOCKS bridge.
   String? _pendingXrayConfig;
+
+  /// The MasterDNS engine for this connection. It runs as its own process,
+  /// which on Android also keeps it apart from sing-box: both are Go, and one
+  /// process cannot hold two Go runtimes.
+  Process? _masterDnsProcess;
+  _PendingMasterDns? _pendingMasterDns;
+  bool _masterDnsExited = false;
+
+  /// True while a full-device MasterDNS connection has taken this app out of
+  /// its own tunnel. See [_buildMasterDnsConfig] for why it has to.
+  bool _masterDnsActive = false;
+
+  /// This app's package, as the tunnel's app lists name it.
+  static const String _selfPackage = 'online.novaproxy.nova_client';
 
   /// iOS only: what the extension needs to start the Aether core itself.
   /// Null everywhere else, where the core runs in this process instead.
@@ -476,6 +499,11 @@ class SingboxProxyController extends ProxyController {
     return o.includePackages.isNotEmpty || o.excludePackages.isNotEmpty;
   }
 
+  /// True whenever this app is outside its own tunnel, for whatever reason.
+  /// Per-app routing puts it there, and so does a MasterDNS connection; either
+  /// way the app needs the loopback inbound to reach its own tunnel.
+  bool get _selfExcluded => _perAppActive || _masterDnsActive;
+
   @override
   bool get isProxyMode => proxyPortProvider?.call() != null;
 
@@ -504,7 +532,7 @@ class SingboxProxyController extends ProxyController {
     // app can reach its own tunnel. Reporting it here is what points the
     // dashboard's IP and country probes through it instead of out the user's
     // own line.
-    return _perAppActive ? kDefaultLocalProxyPort : null;
+    return _selfExcluded ? kDefaultLocalProxyPort : null;
   }
 
   /// In proxy mode the phone itself is NOT tunnelled, so anything the app
@@ -853,6 +881,21 @@ class SingboxProxyController extends ProxyController {
       final Map<String, Uint8List>? ruleSets =
           Platform.isIOS ? await _leanRuleSets() : null;
       if (seq != _opSeq) return;
+      // The engine first, and the tunnel only once it answers. Its port opens
+      // only when it has a working path through the resolvers, so a connect
+      // that does not wait for it would report success over a tunnel that
+      // carries nothing. It sits outside the tunnel either way, so starting it
+      // before the device exists changes nothing about where its traffic goes.
+      if (!await _startMasterDns()) {
+        if (seq != _opSeq) return;
+        _state = ProxyConnectionState.error;
+        notifyListeners();
+        return;
+      }
+      if (seq != _opSeq) {
+        _stopMasterDns();
+        return;
+      }
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
         // Shown in the platform's ongoing VPN notification. Cosmetic only.
@@ -885,6 +928,7 @@ class SingboxProxyController extends ProxyController {
       _pendingAether = null;
       _pendingAetherJson = null;
       await AetherTunnel.stop();
+      _stopMasterDns();
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();
@@ -953,6 +997,8 @@ class SingboxProxyController extends ProxyController {
     // without this it keeps a WARP tunnel and a listening port alive after the
     // user has disconnected, and the next connect starts a second one.
     await AetherTunnel.stop();
+    // The MasterDNS engine never exits by itself, so it has to be told.
+    _stopMasterDns();
     try {
       await _control.invokeMethod<void>('stop');
       // The host answers a stop with a `disconnected` state event (Android
@@ -1249,6 +1295,18 @@ class SingboxProxyController extends ProxyController {
       }
     }
 
+    // A MasterDNS exit: a DNS tunnel run by its own engine, which serves it as
+    // a local SOCKS port for sing-box to forward into.
+    _masterDnsActive = false;
+    if (nodes.length == 1 && nodes.first.protocol == NodeProtocol.masterdns) {
+      final String mdns = await _buildMasterDnsConfig(nodes.first, tuned);
+      if (Platform.isAndroid) {
+        final String base = await _extractRuleSets();
+        return mdns.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      }
+      return mdns;
+    }
+
     // An Aether exit is not dialled by the core at all: the Aether library
     // opens a WARP tunnel in this process and serves it as local SOCKS5, and
     // sing-box forwards into that. Same two-core shape as xhttp, except the
@@ -1271,6 +1329,157 @@ class SingboxProxyController extends ProxyController {
       return config.replaceAll(SingboxConfig.ruleSetBaseToken, base);
     }
     return config;
+  }
+
+  /// Prepares a MasterDNS connection and returns the config that forwards into
+  /// the engine.
+  ///
+  /// The awkward part is full-device mode. The engine's traffic IS DNS, and
+  /// the tunnel hijacks every DNS packet it sees into sing-box's own resolver,
+  /// so an engine inside the tunnel would have its queries answered by sing-box
+  /// and never reach the resolvers. Two ways out were considered and refused:
+  ///
+  /// Routing the resolvers' addresses out direct would, with the usual list,
+  /// send every lookup on the phone out in plain text. The tunnel tells Android
+  /// its DNS server is 1.1.1.1, which is also one of the resolvers people use.
+  ///
+  /// Matching this app's traffic out direct inside sing-box would move all of
+  /// Nova's own requests outside the tunnel, which is how the dashboard once
+  /// reported the user's real address as the exit.
+  ///
+  /// So this app is taken out of its own tunnel at the Android level, which is
+  /// exactly the state per-app routing already runs in, and the loopback
+  /// inbound per-app routing relies on is kept so the app can still reach its
+  /// tunnel for its own measurements. The engine runs as this app, so its
+  /// queries leave on the real network untouched.
+  Future<String> _buildMasterDnsConfig(
+      ProxyNode node, SingboxRouteOptions options) async {
+    if (Platform.isIOS) {
+      // iOS cannot run a second process at all, and the extension already
+      // holds a Go runtime for sing-box, so the engine has to be built into
+      // that core. Until it is, say so rather than failing somewhere deeper.
+      throw StateError('MasterDNS is not available on iPhone yet.');
+    }
+    final MasterDnsConfig? m =
+        MasterDnsConfig.parseLink(node.masterDnsConf ?? '');
+    if (m == null) throw StateError('This MasterDNS config could not be read.');
+    final String? missing = m.problem;
+    if (missing != null) {
+      throw StateError(
+          'This MasterDNS config has $missing. Open it and fill that in.');
+    }
+    final int port = await AetherTunnel.freeLoopbackPort();
+    _pendingMasterDns = _PendingMasterDns(config: m, port: port);
+
+    SingboxRouteOptions o = options;
+    if (proxyPortProvider?.call() == null) {
+      _masterDnsActive = true;
+      // Android refuses a config that names both an allow list and a deny list,
+      // so only one of them is ever touched.
+      final List<String> allowed = <String>[
+        for (final String p in o.includePackages)
+          if (p != _selfPackage) p,
+      ];
+      o = allowed.isNotEmpty
+          // An allow list without this app already leaves it outside.
+          ? o.copyWith(includePackages: allowed)
+          : o.copyWith(
+              includePackages: const <String>[],
+              excludePackages: <String>{...o.excludePackages, _selfPackage}
+                  .toList(),
+            );
+      o = o.copyWith(
+        mixedInboundPort: o.mixedInboundPort ?? kDefaultLocalProxyPort,
+        tunWithLocalProxy: true,
+      );
+    }
+    return const JsonEncoder.withIndent('  ')
+        .convert(SingboxConfig.buildMasterDnsSocksBridgeMap(port, options: o));
+  }
+
+  /// Starts the MasterDNS engine and waits until it is actually carrying
+  /// traffic. Returns false, with [_lastError] set, when it is not.
+  Future<bool> _startMasterDns() async {
+    final _PendingMasterDns? p = _pendingMasterDns;
+    _pendingMasterDns = null;
+    if (p == null) return true;
+    final String? libDir =
+        await _control.invokeMethod<String>('nativeLibraryDir');
+    final File bin = File('${libDir ?? ''}/libmasterdns.so');
+    if (libDir == null || !bin.existsSync()) {
+      _lastError = 'This build has no MasterDNS engine.';
+      return false;
+    }
+    final Directory dir = await getApplicationSupportDirectory();
+    final File resolvers = File('${dir.path}/nova-masterdns-resolvers.txt');
+    await resolvers.writeAsString(p.config.resolversFile);
+    // App-private storage already keeps this from other apps. It is still
+    // removed as soon as the engine has read it, so the key does not sit on
+    // disk for the life of the connection.
+    final File conf = File('${dir.path}/nova-masterdns.json');
+    await conf.writeAsString(p.config.engineJson(port: p.port), flush: true);
+
+    _masterDnsExited = false;
+    final Process proc = await Process.start(
+        bin.path, <String>['-json', conf.path, '-resolvers', resolvers.path]);
+    _masterDnsProcess = proc;
+    // The engine retries a bad connection forever, but exits at once on a
+    // config it cannot use, and that should fail the connect now.
+    unawaited(proc.exitCode.then((_) {
+      if (identical(_masterDnsProcess, proc)) _masterDnsExited = true;
+    }));
+    for (final Stream<List<int>> out in <Stream<List<int>>>[proc.stdout, proc.stderr]) {
+      out
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((String line) {
+        final String clean = line
+            .replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '')
+            .replaceAll(RegExp(r'</?[a-z]+>'), '')
+            .trim();
+        if (clean.isNotEmpty) NovaLog.instance.writeCore('[masterdns] $clean');
+      });
+    }
+
+    bool up = false;
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 45));
+    while (DateTime.now().isBefore(deadline) && !_masterDnsExited) {
+      try {
+        final Socket s = await Socket.connect('127.0.0.1', p.port,
+            timeout: const Duration(milliseconds: 500));
+        s.destroy();
+        up = true;
+        break;
+      } catch (_) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+    }
+    try {
+      await conf.delete();
+    } catch (_) {
+      // Already gone.
+    }
+    if (up) {
+      NovaLog.instance.write(
+          'MasterDNS tunnel up on 127.0.0.1:${p.port}; sing-box forwards into it.');
+      return true;
+    }
+    final bool died = _masterDnsExited;
+    _stopMasterDns();
+    _lastError = died
+        ? 'The MasterDNS engine refused this config. Check the domain and the '
+            'encryption key.'
+        : 'MasterDNS could not reach its server through any of the resolvers. '
+            'The domain may be wrong, or these resolvers may be filtered on '
+            'this network; try different ones.';
+    return false;
+  }
+
+  void _stopMasterDns() {
+    _masterDnsProcess?.kill();
+    _masterDnsProcess = null;
+    _pendingMasterDns = null;
+    _masterDnsActive = false;
   }
 
   /// Brings the Aether tunnel up and returns the config that forwards into it.
