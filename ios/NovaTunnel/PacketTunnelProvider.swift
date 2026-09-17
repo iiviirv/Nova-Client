@@ -24,6 +24,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   private var commandServer: NovacoreCommandServer?
   private var xrayStarted = false
+
+  /// True while the MasterDNS engine is running in this process.
+  private var masterDnsStarted = false
   /// The Aether tunnel's job id, or nil when this connection has no WARP core.
   private var aetherJob: UInt64?
 
@@ -96,6 +99,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // The core lives here rather than in the app because the app is suspended
     // when the user leaves it, and a tunnel hosted there would go with it.
     try startAetherIfConfigured(container: container)
+    // MasterDNS node: start the engine before sing-box, and only carry on once
+    // its port answers, which it does once it has a working path through the
+    // resolvers. A tunnel brought up before that would carry nothing.
+    try startMasterDnsIfConfigured(container: container)
 
     // sing-box 1.13 folded the box service into the command server: instead of
     // NovacoreNewService(config, platform) + a separate command server, the command
@@ -139,6 +146,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     try? commandServer?.closeService()
     try? commandServer?.close()
     commandServer = nil
+    if masterDnsStarted {
+      masterDnsStarted = false
+      // The engine never stops on its own, even with nothing to reach.
+      NovamasterdnsStop()
+    }
     if xrayStarted {
       xrayStarted = false
       NovaxraySetLogger(nil)
@@ -154,6 +166,59 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       if let raw = aether_job_cancel(job) { aether_string_free(raw) }
     }
     notifyIfUnexpected(reason)
+  }
+
+  // MARK: - MasterDNS
+
+  /// Starts the MasterDNS engine from `masterdns.json`, when this connection
+  /// has one.
+  ///
+  /// The engine is compiled into Novacore rather than run as a process: iOS
+  /// allows no second process, and this extension already holds sing-box's Go
+  /// runtime, so the engine has to share it.
+  ///
+  /// The file carries the encryption key, so it is removed as soon as it has
+  /// been read. Resolvers go to a file of their own because the engine cannot
+  /// read them from its JSON.
+  private func startMasterDnsIfConfigured(container: URL) throws {
+    let url = container.appendingPathComponent("masterdns.json")
+    guard let raw = try? Data(contentsOf: url) else { return }
+    try? FileManager.default.removeItem(at: url)
+    guard let env = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+          let engine = env["config"] as? String,
+          let resolvers = env["resolvers"] as? String,
+          let portNumber = env["port"] as? NSNumber else {
+      throw masterDnsError("its settings could not be read")
+    }
+    let resolversURL = container.appendingPathComponent("masterdns-resolvers.txt")
+    try resolvers.write(to: resolversURL, atomically: true, encoding: .utf8)
+    // The engine's own log, since this extension's output goes nowhere. It is
+    // what explains a tunnel that never formed.
+    let logURL = container.appendingPathComponent("masterdns.log")
+    try? FileManager.default.removeItem(at: logURL)
+
+    var failure: NSError?
+    if !NovamasterdnsStart(engine, resolversURL.path, logURL.path, &failure) {
+      throw masterDnsError(failure?.localizedDescription ?? "the engine did not start")
+    }
+    masterDnsStarted = true
+
+    let port = portNumber.uint16Value
+    let deadline = Date().addingTimeInterval(40)
+    while Date() < deadline {
+      if aetherPortAccepts(port) { return }
+      Thread.sleep(forTimeInterval: 0.3)
+    }
+    masterDnsStarted = false
+    NovamasterdnsStop()
+    throw masterDnsError(
+      "could not reach its server through any of the resolvers. The domain may "
+        + "be wrong, or these resolvers may be filtered on this network.")
+  }
+
+  private func masterDnsError(_ message: String) -> NSError {
+    NSError(domain: "Nova", code: 6,
+            userInfo: [NSLocalizedDescriptionKey: "MasterDNS: \(message)"])
   }
 
   // MARK: - Aether (WARP)

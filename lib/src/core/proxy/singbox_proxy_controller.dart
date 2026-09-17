@@ -233,6 +233,10 @@ class SingboxProxyController extends ProxyController {
   _PendingMasterDns? _pendingMasterDns;
   bool _masterDnsExited = false;
 
+  /// iOS only: the engine's settings, for the Network Extension to start it.
+  /// The engine runs inside the extension there, so nothing is started here.
+  String? _pendingMasterDnsJson;
+
   /// True while a full-device MasterDNS connection has taken this app out of
   /// its own tunnel. See [_buildMasterDnsConfig] for why it has to.
   bool _masterDnsActive = false;
@@ -905,6 +909,9 @@ class SingboxProxyController extends ProxyController {
         if (_pendingXrayConfig != null) 'xrayConfigJson': _pendingXrayConfig,
         // iOS only: the extension starts the Aether core from this.
         if (_pendingAetherJson != null) 'aetherConfigJson': _pendingAetherJson,
+        // iOS only: the extension starts the MasterDNS engine from this.
+        if (_pendingMasterDnsJson != null)
+          'masterDnsConfigJson': _pendingMasterDnsJson,
         // Bundled rule-set files the lean iOS config references as local
         // rule-sets. The host writes them next to the config in the App Group.
         if (ruleSets != null) 'ruleSets': ruleSets,
@@ -920,6 +927,7 @@ class SingboxProxyController extends ProxyController {
       // Only now, with the tunnel device up, is it safe to dial the Aether
       // gateway. See [_pendingAether] for why the other order cannot work.
       _pendingAetherJson = null;
+      _pendingMasterDnsJson = null;
       await _startPendingAether();
       _armWatchdog();
     } catch (e) {
@@ -927,6 +935,7 @@ class SingboxProxyController extends ProxyController {
       // forwarding into a port that never answers.
       _pendingAether = null;
       _pendingAetherJson = null;
+      _pendingMasterDnsJson = null;
       await AetherTunnel.stop();
       _stopMasterDns();
       _lastError = e is PlatformException ? e.message : e.toString();
@@ -1354,12 +1363,6 @@ class SingboxProxyController extends ProxyController {
   /// queries leave on the real network untouched.
   Future<String> _buildMasterDnsConfig(
       ProxyNode node, SingboxRouteOptions options) async {
-    if (Platform.isIOS) {
-      // iOS cannot run a second process at all, and the extension already
-      // holds a Go runtime for sing-box, so the engine has to be built into
-      // that core. Until it is, say so rather than failing somewhere deeper.
-      throw StateError('MasterDNS is not available on iPhone yet.');
-    }
     final MasterDnsConfig? m =
         MasterDnsConfig.parseLink(node.masterDnsConf ?? '');
     if (m == null) throw StateError('This MasterDNS config could not be read.');
@@ -1369,6 +1372,20 @@ class SingboxProxyController extends ProxyController {
           'This MasterDNS config has $missing. Open it and fill that in.');
     }
     final int port = await AetherTunnel.freeLoopbackPort();
+    if (Platform.isIOS) {
+      // iOS allows no second process, so the engine is compiled into the core
+      // the Network Extension runs, and the extension starts it. Its settings
+      // travel there the way Aether's do. No app list is touched: the
+      // extension is a different process from this app, so there is nothing
+      // of this app's to take out of the tunnel.
+      _pendingMasterDnsJson = jsonEncode(<String, dynamic>{
+        'config': m.engineJson(port: port),
+        'resolvers': m.resolversFile,
+        'port': port,
+      });
+      return const JsonEncoder.withIndent('  ').convert(
+          SingboxConfig.buildMasterDnsSocksBridgeMap(port, options: options));
+    }
     _pendingMasterDns = _PendingMasterDns(config: m, port: port);
 
     SingboxRouteOptions o = options;

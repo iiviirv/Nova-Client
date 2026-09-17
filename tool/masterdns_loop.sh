@@ -8,7 +8,14 @@
 # point of the test.
 #
 #   tool/masterdns_loop.sh -- flutter test integration_test/desktop_masterdns_test.dart -d macos
+#
+# MDNS_HOST and MDNS_PORT move it off loopback, for a phone on the same network.
+# Avoid 5353 on a real interface: that is multicast DNS, and the system already
+# listens there. Stop it as soon as the test is done, because anything that can
+# reach it and knows the test key can use it.
 set -euo pipefail
+MDNS_HOST=${MDNS_HOST:-127.0.0.1}
+MDNS_PORT=${MDNS_PORT:-5353}
 cd "$(dirname "$0")/.."
 PROJ="$PWD"
 COMMIT=${MASTERDNS_COMMIT:-acbf1c61f90786f41b975d2e2f616afbce292b29}
@@ -25,13 +32,13 @@ git -C "$WORK/src" checkout -q FETCH_HEAD
 mkdir -p "$WORK/run" && cd "$WORK/run"
 printf '%s' 0123456789abcdef0123456789abcdef > encrypt_key.txt
 sed -e 's/^DOMAIN = .*/DOMAIN = ["t.nova.test"]/' \
-    -e 's/^UDP_HOST = .*/UDP_HOST = "127.0.0.1"/' \
-    -e 's/^UDP_PORT = .*/UDP_PORT = 5353/' \
+    -e "s/^UDP_HOST = .*/UDP_HOST = \"$MDNS_HOST\"/" \
+    -e "s/^UDP_PORT = .*/UDP_PORT = $MDNS_PORT/" \
     "$WORK/src/server_config.toml.simple" > server_config.toml
 "$WORK/server" -config server_config.toml > "$WORK/server.log" 2>&1 &
 SRV=$!
 perl -e 'select(undef,undef,undef,1.5)'
-echo "masterdns test server up on 127.0.0.1:5353 (pid $SRV)"
+echo "masterdns test server up on $MDNS_HOST:$MDNS_PORT (pid $SRV)"
 
 [[ "${1:-}" == "--" ]] && shift
 cd "$PROJ"

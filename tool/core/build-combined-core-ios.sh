@@ -22,6 +22,10 @@ SINGBOX_COMMIT="b5ebaa1fc0f2b94256180b95468e73ef53caa27d"
 PATCH_SHA256="eed006f03760bce7b627f988e0e03a73b69392dc93a5f0779ff373570b97ceac"
 NOVAFRAG_PATCH_SHA256="6f1b70fd7eed68ac4b1c2007e75512ebbb70c2d93ee4e1123f59ce29e2833a69"
 XRAY_VERSION="${XRAY_VERSION:-v1.260327.0}"
+# MasterDNS, the DNS tunnel engine. Pinned to the commit the desktop and Android
+# engines are built from (tool/build_masterdns.sh), so every platform runs the
+# same engine.
+MASTERDNS_COMMIT="${MASTERDNS_COMMIT:-acbf1c61f90786f41b975d2e2f616afbce292b29}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 patch_file="$repo_root/tool/core/amneziawg.patch"
@@ -29,6 +33,8 @@ novafrag_file="$repo_root/tool/core/novafrag.patch"
 novaxray_src="$repo_root/tool/core/xray/novaxray/xray.go"
 mieru_out="$repo_root/tool/core/mieru/outbound.go"
 mieru_opt="$repo_root/tool/core/mieru/option_mieru.go"
+mdns_mobile="$repo_root/tool/core/masterdns/mdnsmobile/mobile.go"
+mdns_wrapper="$repo_root/tool/core/masterdns/novamasterdns/masterdns.go"
 PLATFORM="${1:-ios}"
 case "$PLATFORM" in
   ios) GOMOBILE_TARGET="ios,iossimulator"
@@ -83,6 +89,21 @@ grep -q 'mieru.RegisterOutbound' include/registry.go || { echo "failed to regist
 GOFLAGS=-mod=mod go get github.com/enfein/mieru/v3@v3.36.0
 GOFLAGS=-mod=mod go mod tidy
 
+say "Folding in the MasterDNS engine at $MASTERDNS_COMMIT"
+# A second process is not an option on iOS, and the extension already holds a
+# Go runtime for sing-box, so the engine is compiled into this one. Its code
+# lives under internal/, which only its own module may import, so a small
+# public package is dropped into its tree and the wrapper here imports that.
+git clone -q https://github.com/masterking32/MasterDnsVPN.git "$work/masterdns"
+git -C "$work/masterdns" checkout -q "$MASTERDNS_COMMIT"
+[ "$(git -C "$work/masterdns" rev-parse HEAD)" = "$MASTERDNS_COMMIT" ] || { echo "masterdns commit moved" >&2; exit 1; }
+mkdir -p "$work/masterdns/mobile"
+cp "$mdns_mobile" "$work/masterdns/mobile/mobile.go"
+mkdir -p novamasterdns
+cp "$mdns_wrapper" novamasterdns/masterdns.go
+go mod edit -require=masterdnsvpn-go@v0.0.0 -replace=masterdnsvpn-go="$work/masterdns"
+GOFLAGS=-mod=mod go mod tidy
+
 say "Installing the pinned gomobile"
 export PATH="$PATH:$(go env GOPATH)/bin"
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
@@ -92,7 +113,7 @@ go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
 TAGS="with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_naive_outbound,with_clash_api,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird,with_dhcp,grpcnotrace"
 CT="$(cat .version)"
 
-say "Binding the combined Novacore.xcframework for $PLATFORM (novacore + novaxray)"
+say "Binding the combined Novacore.xcframework for $PLATFORM (novacore + novaxray + novamasterdns)"
 rm -rf "$OUT"
 gomobile bind -v -target "$GOMOBILE_TARGET" -libname=core \
   -tags-not-macos=with_low_memory \
@@ -100,10 +121,11 @@ gomobile bind -v -target "$GOMOBILE_TARGET" -libname=core \
   -ldflags "-X github.com/sagernet/sing-box/constant.Version=$CT -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid= -checklinkname=0" \
   -tags "$TAGS" \
   -o "$OUT" \
-  ./experimental/novacore ./novaxray
+  ./experimental/novacore ./novaxray ./novamasterdns
 
 say "Verifying both cores are in the framework"
 grep -rq "NovacoreCommandClient" "$OUT" || { echo "novacore missing" >&2; exit 1; }
 grep -rq "NovaxrayStart" "$OUT" || { echo "novaxray missing" >&2; exit 1; }
-echo "OK: framework has both Novacore* and Novaxray*"
+grep -rq "NovamasterdnsStart" "$OUT" || { echo "novamasterdns missing" >&2; exit 1; }
+echo "OK: framework has Novacore*, Novaxray* and Novamasterdns*"
 ls -la "$OUT"

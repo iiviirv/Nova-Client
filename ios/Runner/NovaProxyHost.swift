@@ -59,11 +59,13 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
       // Present only for an Aether node: what the extension needs to open the
       // WARP tunnel the sing-box config forwards into.
       let aetherConfig = args["aetherConfigJson"] as? String
+      let masterDnsConfig = args["masterDnsConfigJson"] as? String
       // Cosmetic profile name for the home-screen widget.
       profileLabel = (args["label"] as? String)?.isEmpty == false
         ? (args["label"] as? String) : nil
       start(config: config, ruleSets: ruleSets, xrayConfig: xrayConfig,
             aetherConfig: aetherConfig,
+            masterDnsConfig: masterDnsConfig,
             autoReconnect: (args["autoReconnect"] as? Bool) ?? false,
             result: result)
     case "stop":
@@ -151,6 +153,7 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
 
   private func start(config: String, ruleSets: [String: FlutterStandardTypedData],
                      xrayConfig: String?, aetherConfig: String?,
+                     masterDnsConfig: String?,
                      autoReconnect: Bool,
                      result: @escaping FlutterResult) {
     // A measuring core still running would share the command socket path with
@@ -188,6 +191,15 @@ final class NovaProxyHost: NSObject, FlutterStreamHandler {
         try aetherConfig.write(to: aetherURL, atomically: true, encoding: .utf8)
       } else if FileManager.default.fileExists(atPath: aetherURL.path) {
         try FileManager.default.removeItem(at: aetherURL)
+      }
+      // The MasterDNS engine's settings, cleared the same way. This carries the
+      // encryption key, so the extension deletes it as soon as it has read it
+      // rather than leaving it in the shared container for the session.
+      let masterDnsURL = container.appendingPathComponent("masterdns.json")
+      if let masterDnsConfig, !masterDnsConfig.isEmpty {
+        try masterDnsConfig.write(to: masterDnsURL, atomically: true, encoding: .utf8)
+      } else if FileManager.default.fileExists(atPath: masterDnsURL.path) {
+        try FileManager.default.removeItem(at: masterDnsURL)
       }
     } catch {
       result(FlutterError(code: "write", message: error.localizedDescription, details: nil))
