@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/models/proxy_profile.dart';
+import '../../core/proxy/masterdns/masterdns_config.dart';
 import '../../core/proxy/singbox/awg_config.dart';
 import '../../core/proxy/singbox/proxy_node.dart';
 import '../relay/relay_link.dart';
@@ -27,6 +28,7 @@ import '../profiles/profiles_controller.dart';
 import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
 import 'aether_editor_screen.dart';
+import 'masterdns_editor_screen.dart';
 import 'node_list_screen.dart';
 
 /// Probe every profile once per app launch. [ServersBody] exists in both the
@@ -283,6 +285,13 @@ class _ServersBodyState extends State<ServersBody> {
     if (p.kind == ProxyKind.aether) {
       await Navigator.of(context).push<void>(MaterialPageRoute<void>(
           builder: (_) => AetherEditorScreen(existing: p)));
+      return;
+    }
+    // The same for MasterDNS: its link is base64 JSON, which nobody should be
+    // asked to edit in a one-line field.
+    if (p.kind == ProxyKind.masterdns) {
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+          builder: (_) => MasterDnsEditorScreen(existing: p)));
       return;
     }
     final bool isSub = p.isSubscription;
@@ -860,6 +869,17 @@ Future<void> showAddServerDialog(BuildContext context,
     return;
   }
 
+  // MasterDNS text (the JSON another client shows, or the engine's TOML) goes
+  // to its editor rather than straight into a profile. The connect path reads
+  // only the link form, and the engine's formats cannot carry resolvers, so
+  // the person has to see what is missing before it saves.
+  final MasterDnsConfig? pastedDns =
+      MasterDnsConfig.parseText(prefill ?? '');
+  if (pastedDns != null) {
+    await _openMasterDnsEditor(context, pastedDns);
+    return;
+  }
+
   final ProxyKind detected =
       _detectKind(prefill ?? '') ?? ProxyKind.subscription;
 
@@ -883,6 +903,32 @@ Future<void> showAddServerDialog(BuildContext context,
     // exactly what it is, so an https://…/sub URL or a vless:// link always
     // lands in the right field instead of failing later as an invalid link.
     final ProxyKind resolved = _detectKind(uri) ?? res.kind;
+    // Typed or pasted into the dialog rather than the sheet: the same reasons
+    // apply, and the raw text must never become the stored uri.
+    if (resolved == ProxyKind.masterdns &&
+        MasterDnsConfig.parseLink(uri) == null) {
+      final MasterDnsConfig? typed = MasterDnsConfig.parseText(uri);
+      if (!context.mounted) return;
+      if (typed == null) {
+        // A `masterdns://` link that does not decode. Saved, it would be a
+        // row that can never connect.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(s.masterdnsLinkUnreadable)),
+        );
+        return;
+      }
+      await _openMasterDnsEditor(
+        context,
+        MasterDnsConfig(
+          domains: typed.domains,
+          key: typed.key,
+          method: typed.method,
+          resolvers: typed.resolvers,
+          name: res.name,
+        ),
+      );
+      return;
+    }
     final bool isSub = resolved == ProxyKind.subscription;
     final ProxyProfile profile = ProxyProfile(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -900,6 +946,11 @@ Future<void> showAddServerDialog(BuildContext context,
     _scheduleProfileMetadata(profiles, profile);
   }
 }
+
+Future<void> _openMasterDnsEditor(
+        BuildContext context, MasterDnsConfig initial) =>
+    Navigator.of(context).push<void>(MaterialPageRoute<void>(
+        builder: (_) => MasterDnsEditorScreen(initial: initial)));
 
 void _scheduleProfileMetadata(
     ProfilesController profiles, ProxyProfile profile) {
@@ -1204,6 +1255,11 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   }
 }
 
+/// [_detectKind], for tests. The rules are order dependent, which is what a
+/// test has to be able to reach.
+@visibleForTesting
+ProxyKind? detectProfileKind(String raw) => _detectKind(raw);
+
 /// Infers the profile kind from the scheme of what was pasted, or null when it
 /// is not recognisable (so the manually selected pill is used as the fallback).
 ProxyKind? _detectKind(String raw) {
@@ -1226,6 +1282,10 @@ ProxyKind? _detectKind(String raw) {
   if (l.startsWith('tuic://')) return ProxyKind.tuic;
   if (l.startsWith('aether://')) return ProxyKind.aether;
   if (l.startsWith('masterdns://')) return ProxyKind.masterdns;
+  // Ahead of the `{` rule. A MasterDNS JSON is also an object, and treated as
+  // a sing-box config it fails to start with nothing to say why. parseText
+  // returns null for a sing-box config, which has no domain and no key.
+  if (MasterDnsConfig.parseText(s) != null) return ProxyKind.masterdns;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
   // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
   if (l.startsWith('awg://') ||
@@ -1246,102 +1306,126 @@ Future<void> showAddConfigSheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: nova.bgAlt,
+    // A bottom sheet is capped at 9/16 of the screen unless told otherwise,
+    // and with two built-in editors below the divider the options are taller
+    // than that on an ordinary phone. The last one was being clipped.
+    isScrollControlled: true,
+    useSafeArea: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (BuildContext sheetCtx) {
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const SizedBox(height: 10),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: nova.border,
-                borderRadius: BorderRadius.circular(2),
+        // Grows to fit, and scrolls only on a screen too short for that.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: nova.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            // "Connect your VPS" is not here. The + sheet is the path people
-            // take many times a week to add a link or a file; running your own
-            // server is a once-ever decision and it lives on the empty-servers
-            // screen, where someone with nothing yet actually meets it.
-            if (canScan)
+              const SizedBox(height: 6),
+              // "Connect your VPS" is not here. The + sheet is the path people
+              // take many times a week to add a link or a file; running your own
+              // server is a once-ever decision and it lives on the empty-servers
+              // screen, where someone with nothing yet actually meets it.
+              if (canScan)
+                _AddOption(
+                  icon: Icons.qr_code_scanner_rounded,
+                  color: nova.cyan,
+                  title: s.serversScanQr,
+                  subtitle: s.serversScanQrSub,
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    final String? code = await Navigator.of(context).push<String>(
+                      MaterialPageRoute<String>(
+                          builder: (_) => const QrScanScreen()),
+                    );
+                    if (code != null &&
+                        code.trim().isNotEmpty &&
+                        context.mounted) {
+                      await showAddServerDialog(context, prefill: code.trim());
+                    }
+                  },
+                ),
               _AddOption(
-                icon: Icons.qr_code_scanner_rounded,
-                color: nova.cyan,
-                title: s.serversScanQr,
-                subtitle: s.serversScanQrSub,
+                icon: Icons.content_paste_rounded,
+                color: nova.violet,
+                title: s.serversPaste,
+                subtitle: s.serversPasteSub,
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  final String? code = await Navigator.of(context).push<String>(
-                    MaterialPageRoute<String>(
-                        builder: (_) => const QrScanScreen()),
-                  );
-                  if (code != null &&
-                      code.trim().isNotEmpty &&
-                      context.mounted) {
-                    await showAddServerDialog(context, prefill: code.trim());
+                  final ClipboardData? data =
+                      await Clipboard.getData(Clipboard.kTextPlain);
+                  final String text = (data?.text ?? '').trim();
+                  if (!context.mounted) return;
+                  if (text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(s.serversClipboardEmpty)),
+                    );
+                    return;
                   }
+                  await showAddServerDialog(context, prefill: text);
                 },
               ),
-            _AddOption(
-              icon: Icons.content_paste_rounded,
-              color: nova.violet,
-              title: s.serversPaste,
-              subtitle: s.serversPasteSub,
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                final ClipboardData? data =
-                    await Clipboard.getData(Clipboard.kTextPlain);
-                final String text = (data?.text ?? '').trim();
-                if (!context.mounted) return;
-                if (text.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(s.serversClipboardEmpty)),
+              _AddOption(
+                icon: Icons.edit_rounded,
+                color: nova.indigo,
+                title: s.serversManual,
+                subtitle: s.serversManualSub,
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await showAddServerDialog(context);
+                },
+              ),
+              // Set apart from the three above, and the only warm colour in the
+              // sheet, because these entries bring nothing in from outside:
+              // there is no link, file or code, the config is built here. An
+              // `aether://` link pasted above already imports on its own.
+              Divider(
+                height: NovaSpace.lg,
+                indent: NovaSpace.lg,
+                endIndent: NovaSpace.lg,
+                color: nova.border,
+              ),
+              _AddOption(
+                icon: Icons.auto_awesome_rounded,
+                color: nova.star,
+                title: s.aetherAdd,
+                subtitle: s.aetherAddSub,
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const AetherEditorScreen()),
                   );
-                  return;
-                }
-                await showAddServerDialog(context, prefill: text);
-              },
-            ),
-            _AddOption(
-              icon: Icons.edit_rounded,
-              color: nova.indigo,
-              title: s.serversManual,
-              subtitle: s.serversManualSub,
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                await showAddServerDialog(context);
-              },
-            ),
-            // Set apart from the three above, and the only warm colour in the
-            // sheet, because it is the one entry that brings nothing in from
-            // outside: there is no link, file or code, the config is built
-            // here. An `aether://` link pasted above already imports on its own.
-            Divider(
-              height: NovaSpace.lg,
-              indent: NovaSpace.lg,
-              endIndent: NovaSpace.lg,
-              color: nova.border,
-            ),
-            _AddOption(
-              icon: Icons.auto_awesome_rounded,
-              color: nova.star,
-              title: s.aetherAdd,
-              subtitle: s.aetherAddSub,
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                await Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                      builder: (_) => const AetherEditorScreen()),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+                },
+              ),
+              // Pasted MasterDNS text lands in this same editor through Paste
+              // above, so this entry is for someone holding only a domain and a
+              // key. The icon, not the colour, tells it apart from Aether.
+              _AddOption(
+                icon: Icons.dns_rounded,
+                color: nova.star,
+                title: s.masterdnsAdd,
+                subtitle: s.masterdnsAddSub,
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const MasterDnsEditorScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       );
     },

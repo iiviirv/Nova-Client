@@ -201,6 +201,44 @@ class NovaStrings {
   String get aetherQuickRetry => t('aether.quickRetry');
   String get aetherQuickConnecting => t('aether.quickConnecting');
 
+  // ---- MasterDNS editor ----
+  String get masterdnsAdd => t('masterdns.add');
+  String get masterdnsAddSub => t('masterdns.addSub');
+  String get masterdnsTitle => t('masterdns.title');
+  String get masterdnsEditTitle => t('masterdns.editTitle');
+  String get masterdnsIntro => t('masterdns.intro');
+  String get masterdnsName => t('masterdns.name');
+  String get masterdnsNameHint => t('masterdns.nameHint');
+  String get masterdnsTabFields => t('masterdns.tabFields');
+  String get masterdnsTabText => t('masterdns.tabText');
+  String get masterdnsServer => t('masterdns.server');
+  String get masterdnsDomain => t('masterdns.domain');
+  String get masterdnsDomainHint => t('masterdns.domainHint');
+  String get masterdnsDomainHelp => t('masterdns.domainHelp');
+  String get masterdnsKey => t('masterdns.key');
+  String get masterdnsKeyShow => t('masterdns.keyShow');
+  String get masterdnsKeyHide => t('masterdns.keyHide');
+  String get masterdnsMethod => t('masterdns.method');
+  String get masterdnsMethodSub => t('masterdns.methodSub');
+  String get masterdnsMethodNoneSub => t('masterdns.methodNoneSub');
+  String get masterdnsResolvers => t('masterdns.resolvers');
+  String get masterdnsResolversLabel => t('masterdns.resolversLabel');
+  String get masterdnsResolversHelp => t('masterdns.resolversHelp');
+  String get masterdnsResolversEmpty => t('masterdns.resolversEmpty');
+  String get masterdnsResolversFill => t('masterdns.resolversFill');
+  String get masterdnsText => t('masterdns.text');
+  String get masterdnsTextLabel => t('masterdns.textLabel');
+  String get masterdnsTextHelp => t('masterdns.textHelp');
+  String get masterdnsPaste => t('masterdns.paste');
+  String get masterdnsTextUnreadable => t('masterdns.textUnreadable');
+  String get masterdnsLinkUnreadable => t('masterdns.linkUnreadable');
+
+  /// Why Save is disabled, one per thing the config can be missing.
+  String get masterdnsNeedsDomain => t('masterdns.needsDomain');
+  String get masterdnsNeedsKey => t('masterdns.needsKey');
+  String get masterdnsNeedsResolvers => t('masterdns.needsResolvers');
+  String get masterdnsNeedsText => t('masterdns.needsText');
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -1152,6 +1190,58 @@ class NovaStrings {
     'aether.quickCta': 'Build it and connect',
     'aether.quickRetry': 'Try again',
     'aether.quickConnecting': 'Gateway found. Connecting.',
+    // MasterDNS. The copy says what the tunnel is and stops there: whether it
+    // works on a given network is not something this screen can know.
+    'masterdns.add': 'Add a MasterDNS tunnel',
+    'masterdns.addSub': 'A DNS tunnel, from a domain and a key',
+    'masterdns.title': 'MasterDNS config',
+    'masterdns.editTitle': 'Edit MasterDNS config',
+    'masterdns.intro':
+        'MasterDNS carries traffic inside DNS lookups for a domain the server '
+            'owns. Fill in what you were given, or paste the whole config '
+            'under Text.',
+    'masterdns.name': 'Name',
+    'masterdns.nameHint': 'MasterDNS',
+    'masterdns.tabFields': 'Fields',
+    'masterdns.tabText': 'Text',
+    'masterdns.server': 'Server',
+    'masterdns.domain': 'Domain',
+    'masterdns.domainHint': 't.example.com',
+    'masterdns.domainHelp':
+        'More than one? Separate them with commas or new lines.',
+    'masterdns.key': 'Encryption key',
+    'masterdns.keyShow': 'Show key',
+    'masterdns.keyHide': 'Hide key',
+    'masterdns.method': 'Encryption method',
+    'masterdns.methodSub': 'This has to match the server.',
+    'masterdns.methodNoneSub':
+        'No encryption, so no key is needed. Anyone who can see your DNS '
+            'traffic can read what it carries.',
+    'masterdns.resolvers': 'Resolvers',
+    'masterdns.resolversLabel': 'One per line',
+    'masterdns.resolversHelp':
+        'The DNS servers your lookups pass through on the way to the tunnel '
+            'domain.',
+    'masterdns.resolversEmpty':
+        'No resolvers yet. Add the ones you were given, or start from three '
+            'public ones.',
+    'masterdns.resolversFill': 'Use public resolvers',
+    'masterdns.text': 'Config',
+    'masterdns.textLabel': 'JSON or TOML',
+    'masterdns.textHelp':
+        'The same config as the fields, with the key shown in full.',
+    'masterdns.paste': 'Paste',
+    'masterdns.textUnreadable':
+        'Nova cannot read this as a MasterDNS config. Fix it, or clear the '
+            'box to go back to the fields as they were.',
+    'masterdns.linkUnreadable':
+        'Nova cannot read this MasterDNS link, so nothing was added.',
+    'masterdns.needsDomain': 'Save waits for the tunnel domain.',
+    'masterdns.needsKey':
+        'Save waits for the encryption key. If the server uses no encryption, '
+            'set the method to None.',
+    'masterdns.needsResolvers': 'Save waits for at least one resolver.',
+    'masterdns.needsText': 'Save waits for a config Nova can read.',
     'node.bypassAllBlocked':
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
@@ -2160,6 +2250,60 @@ class NovaStrings {
     'aether.quickCta': 'بساز و وصل شو',
     'aether.quickRetry': 'دوباره تلاش کن',
     'aether.quickConnecting': 'دروازه پیدا شد. در حال اتصال.',
+    // MasterDNS.
+    'masterdns.add': 'افزودن تونل \u2066MasterDNS\u2069',
+    'masterdns.addSub': 'تونل \u2066DNS\u2069، با یک دامنه و یک کلید',
+    'masterdns.title': 'کانفیگ \u2066MasterDNS\u2069',
+    'masterdns.editTitle': 'ویرایش کانفیگ \u2066MasterDNS\u2069',
+    'masterdns.intro':
+        '\u2066MasterDNS\u2069 ترافیک را داخل درخواست‌های \u2066DNS\u2069 '
+            'دامنه‌ای که متعلق به سرور است جابه‌جا می‌کند. مشخصاتی را که به شما '
+            'داده‌اند وارد کنید، یا کل کانفیگ را در بخش متن جای‌گذاری کنید.',
+    'masterdns.name': 'نام',
+    'masterdns.nameHint': 'MasterDNS',
+    'masterdns.tabFields': 'فیلدها',
+    'masterdns.tabText': 'متن',
+    'masterdns.server': 'سرور',
+    'masterdns.domain': 'دامنه',
+    'masterdns.domainHint': 't.example.com',
+    'masterdns.domainHelp':
+        'بیش از یک دامنه دارید؟ آن‌ها را با ویرگول یا خط جدید از هم جدا کنید.',
+    'masterdns.key': 'کلید رمزنگاری',
+    'masterdns.keyShow': 'نمایش کلید',
+    'masterdns.keyHide': 'پنهان کردن کلید',
+    'masterdns.method': 'روش رمزنگاری',
+    'masterdns.methodSub': 'باید با تنظیم سرور یکی باشد.',
+    'masterdns.methodNoneSub':
+        'بدون رمزنگاری، پس کلیدی لازم نیست. هر کسی که ترافیک '
+            '\u2066DNS\u2069 شما را ببیند، محتوای آن را هم می‌تواند بخواند.',
+    'masterdns.resolvers': 'ریزالورها',
+    'masterdns.resolversLabel': 'هر کدام در یک خط',
+    'masterdns.resolversHelp':
+        'سرورهای \u2066DNS\u2069 که درخواست‌های شما از راه آن‌ها به دامنه‌ی '
+            'تونل می‌رسد.',
+    'masterdns.resolversEmpty':
+        'هنوز ریزالوری وارد نشده. آن‌هایی را که به شما داده‌اند وارد کنید، یا '
+            'با سه ریزالور عمومی شروع کنید.',
+    'masterdns.resolversFill': 'استفاده از ریزالورهای عمومی',
+    'masterdns.text': 'کانفیگ',
+    'masterdns.textLabel': '\u2066JSON\u2069 یا \u2066TOML\u2069',
+    'masterdns.textHelp':
+        'همان کانفیگ فیلدها، با کلید رمزنگاری که کامل نمایش داده می‌شود.',
+    'masterdns.paste': 'جای‌گذاری',
+    'masterdns.textUnreadable':
+        'نوا نمی‌تواند این متن را به‌عنوان کانفیگ \u2066MasterDNS\u2069 '
+            'بخواند. اصلاحش کنید، یا کادر را خالی کنید تا به فیلدها همان‌طور که '
+            'بودند برگردید.',
+    'masterdns.linkUnreadable':
+        'نوا نمی‌تواند این لینک \u2066MasterDNS\u2069 را بخواند، پس چیزی اضافه نشد.',
+    'masterdns.needsDomain': 'تا دامنه‌ی تونل وارد نشود، ذخیره فعال نمی‌شود.',
+    'masterdns.needsKey':
+        'تا کلید رمزنگاری وارد نشود، ذخیره فعال نمی‌شود. اگر سرور رمزنگاری '
+            'ندارد، روش را روی \u2066None\u2069 بگذارید.',
+    'masterdns.needsResolvers':
+        'تا دست‌کم یک ریزالور وارد نشود، ذخیره فعال نمی‌شود.',
+    'masterdns.needsText':
+        'تا متنی که نوا بتواند بخواند وارد نشود، ذخیره فعال نمی‌شود.',
     'node.bypassAllBlocked':
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '
