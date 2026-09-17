@@ -30,6 +30,31 @@ abstract final class AetherSearchLog {
     return Platform.operatingSystem;
   }
 
+  /// What a finished verification records.
+  ///
+  /// The rule worth having in one testable place is the address. `ip` is only
+  /// a Cloudflare exit when the traffic actually went through WARP. When it did
+  /// not, the same field holds the user's own address, and this map is written
+  /// to a log the app invites them to export and paste into a support thread.
+  /// Publishing "this residential address runs Nova" is the worst thing this
+  /// app could emit, and it would happen only in the failure case, which is the
+  /// case people report.
+  ///
+  /// `warp` is kept either way, so a leak is still diagnosable without naming
+  /// the person who hit it.
+  static Map<String, dynamic> proof({
+    required bool viaWarp,
+    required int ms,
+    String? warp,
+    String? ip,
+  }) =>
+      <String, dynamic>{
+        'reachable': viaWarp,
+        if (warp != null) 'warp': warp,
+        if (viaWarp && ip != null) 'exit_ip': ip,
+        'ms': ms,
+      };
+
   /// The scalar fields of a core result, for the log.
   ///
   /// Only small, plainly non-secret values are written out. A shared log is the
@@ -57,12 +82,46 @@ abstract final class AetherSearchLog {
     return '{${out.join(', ')}}';
   }
 
-  /// Longest string value written out in full. A WARP key is longer than this,
-  /// and so is anything base64, while every field worth reading in a log
-  /// (a state, a reason, an address) is far shorter.
-  static const int maxValue = 120;
+  /// Longest string value written out in full.
+  ///
+  /// This was 120 on the reasoning that a WARP key is longer. It is not: a
+  /// WireGuard key in base64 is 44 characters and a WARP subscription key is
+  /// 26, so both sailed under the old ceiling. Every field actually worth
+  /// reading in a log (a state, a short reason, an address) fits in 48.
+  static const int maxValue = 48;
 
   /// Field names whose values never go in the log, whatever they hold.
-  static final RegExp secretish =
-      RegExp(r'key|secret|token|priv|pass|seed', caseSensitive: false);
+  /// Field names whose values never reach the log, whatever they hold.
+  ///
+  /// `license` is the one that matters most and was missing: it is what the
+  /// WARP API calls a transferable subscription credential, and it sits in the
+  /// registration response as a plain sibling of `token`.
+  static final RegExp secretish = RegExp(
+      r'key|secret|token|priv|pass|seed|licen[cs]e|cred|jwt|bearer|session|'
+      r'cookie|sig|auth|account',
+      caseSensitive: false);
+
+  /// A string that came from outside Dart, made safe to log.
+  ///
+  /// The careful filtering in [fields] only ever guarded a map Nova builds
+  /// itself. The strings that are genuinely untrusted, the core's own error
+  /// text, went straight to the log uncapped and unexamined, where a refusal
+  /// that quotes the config it rejected would take the credential with it.
+  static String scrub(String? text) {
+    if (text == null) return '';
+    String out = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // Anything shaped like a key, wherever it sits in the sentence.
+    out = out.replaceAll(
+        RegExp(r'\b[A-Za-z0-9+/]{32,}={0,2}\b'), '<hidden>');
+    out = out.replaceAllMapped(
+        RegExp(r'("?)(\w*(?:key|secret|token|licen[cs]e|pass|auth)\w*)\1'
+            r'\s*[:=]\s*"?([^",}\s]+)"?',
+            caseSensitive: false),
+        (Match m) => '${m[2]}=<hidden>');
+    return out.length <= maxError ? out : '${out.substring(0, maxError - 3)}...';
+  }
+
+  /// Longest core-supplied message kept. Long enough to diagnose, short enough
+  /// that a core which decides to print a whole struct cannot fill the log.
+  static const int maxError = 200;
 }

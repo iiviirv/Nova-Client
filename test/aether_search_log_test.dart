@@ -84,4 +84,78 @@ void main() {
     // said nothing here would read as "not set" for a run that did have one.
     expect(line, contains('noize=auto'));
   });
+
+  group('what a finished verification records', () {
+    const String realIp = '5.106.77.201';
+
+    test('a WARP exit address is kept, because that is the useful part', () {
+      final Map<String, dynamic> m = AetherSearchLog.proof(
+          viaWarp: true, warp: 'on', ip: '104.28.208.123', ms: 1600);
+      expect(m['reachable'], isTrue);
+      expect(m['warp'], 'on');
+      expect(m['exit_ip'], '104.28.208.123');
+    });
+
+    // The one that matters. When traffic leaked around the tunnel, the address
+    // the far end saw is the user's own, and this map goes into a log they are
+    // invited to paste in public.
+    test('the address is dropped when the traffic did not go through WARP', () {
+      final Map<String, dynamic> m = AetherSearchLog.proof(
+          viaWarp: false, warp: 'off', ip: realIp, ms: 812);
+      expect(m.toString(), isNot(contains(realIp)));
+      expect(m.containsKey('exit_ip'), isFalse);
+      // Still diagnosable: we can tell a leak from a dead gateway.
+      expect(m['warp'], 'off');
+      expect(m['reachable'], isFalse);
+    });
+
+    test('a failure with no answer at all still says so', () {
+      final Map<String, dynamic> m =
+          AetherSearchLog.proof(viaWarp: false, ms: 20003);
+      expect(m['reachable'], isFalse);
+      expect(m.containsKey('warp'), isFalse);
+      expect(m.containsKey('exit_ip'), isFalse);
+      expect(m['ms'], 20003);
+    });
+  });
+
+  group('core-supplied text', () {
+    test('a subscription credential in an error is not logged', () {
+      const String licence = 'k3Jd8Fq2';
+      final String out = AetherSearchLog.scrub(
+          'refused: {"license":"$licence","id":7}');
+      expect(out, isNot(contains(licence)));
+    });
+
+    test('a key-shaped blob anywhere in a message is hidden', () {
+      const String key = 'oPqRsTuVwXyZ0123456789abcdefghijklmnopqrstuvw';
+      final String out =
+          AetherSearchLog.scrub('handshake failed for peer $key at stage 2');
+      expect(out, isNot(contains(key)));
+      expect(out, contains('handshake failed'));
+    });
+
+    // Short words on purpose. A long run of one character is blob-shaped, so
+    // the key scrubber shortens it and the truncation never gets tested, which
+    // is how the first version of this passed against untruncated code.
+    test('a core that prints a whole struct cannot fill the log', () {
+      final String out =
+          AetherSearchLog.scrub('failed to parse the field at index 4, ' * 200);
+      expect(out.length, lessThanOrEqualTo(AetherSearchLog.maxError));
+      expect(out, endsWith('...'));
+    });
+
+    test('an ordinary reason survives intact', () {
+      expect(AetherSearchLog.scrub('connection refused'), 'connection refused');
+      expect(AetherSearchLog.scrub(null), '');
+    });
+  });
+
+  test('a subscription credential field name is covered', () {
+    final String line = AetherSearchLog.fields(<String, dynamic>{
+      'license': 'k3Jd8Fq2', 'credential': 'x', 'session_id': 'y',
+    });
+    expect(line, isNot(contains('k3Jd8Fq2')));
+    expect(line, contains('license=<hidden>'));
+  });
 }

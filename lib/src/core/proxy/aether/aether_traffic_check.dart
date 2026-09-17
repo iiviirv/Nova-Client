@@ -68,28 +68,71 @@ abstract final class AetherTrafficCheck {
   static const int port = 80;
   static const String path = '/cdn-cgi/trace';
 
+  /// A trace is a few hundred bytes. Anything beyond this is not an answer, it
+  /// is something trying to make us read forever, so reading stops here and
+  /// what arrived is judged on its own.
+  static const int maxBody = 16384;
+
+  /// Deliberately ordinary. A request that names this app is a one line
+  /// signature for anything watching, and the case where that matters is
+  /// exactly the case this check exists to detect: a request that escaped the
+  /// tunnel and crossed the network in the open.
+  static const String _agent =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
   /// Makes one request through the SOCKS5 proxy on [socksPort].
+  /// [abort] is polled while the request is in flight. A user who presses
+  /// Cancel should not go on holding a WARP session and a loopback port for the
+  /// rest of the budget, and the budget here can be twenty seconds.
   static Future<AetherTrafficProof> through(
     int socksPort, {
     Duration budget = const Duration(seconds: 20),
+    bool Function()? abort,
   }) async {
     final Stopwatch clock = Stopwatch()..start();
+    // A budget that has already been spent is zero, not negative. A caller that
+    // subtracts elapsed time from a deadline can hand us a negative duration,
+    // and reporting "nothing came back within -0s" is worse than useless.
+    final Duration limit = budget.isNegative ? Duration.zero : budget;
+    // The socket has to be reachable from out here. Dart's `timeout` does not
+    // cancel the future it wraps: it completes the outer one and leaves the
+    // inner running. Without this handle the read below would keep draining a
+    // socket nobody is waiting for any more, which is how a hostile responder
+    // turned a five second budget into a gigabyte of memory.
+    final _Live live = _Live();
+    Timer? watch;
+    if (abort != null) {
+      watch = Timer.periodic(const Duration(milliseconds: 200), (Timer t) {
+        if (!abort()) return;
+        t.cancel();
+        // Closing the socket is what ends the read; the run then finishes on
+        // its own with whatever it had.
+        live.close();
+      });
+    }
     try {
-      return await _run(socksPort, clock).timeout(budget);
-    } on TimeoutException {
-      return AetherTrafficProof(
-          carried: false,
-          ms: clock.elapsedMilliseconds,
-          error: 'nothing came back within ${budget.inSeconds}s');
+      return await _run(socksPort, clock, live).timeout(limit, onTimeout: () {
+        live.close();
+        return AetherTrafficProof(
+            carried: false,
+            ms: clock.elapsedMilliseconds,
+            error: 'nothing came back within ${limit.inSeconds}s');
+      });
     } catch (e) {
+      live.close();
       return AetherTrafficProof(
           carried: false, ms: clock.elapsedMilliseconds, error: _short(e));
+    } finally {
+      watch?.cancel();
     }
   }
 
-  static Future<AetherTrafficProof> _run(int socksPort, Stopwatch clock) async {
+  static Future<AetherTrafficProof> _run(
+      int socksPort, Stopwatch clock, _Live live) async {
     final Socket sock = await Socket.connect('127.0.0.1', socksPort);
     final _Reader reader = _Reader(sock);
+    live.attach(sock, reader);
     try {
       // Greeting: SOCKS5, one method, no authentication. The tunnel serves a
       // loopback port for this process alone, so there is nothing to
@@ -129,12 +172,20 @@ abstract final class AetherTrafficCheck {
 
       sock.add(utf8.encode('GET $path HTTP/1.1\r\n'
           'Host: $host\r\n'
-          'User-Agent: Nova\r\n'
+          'User-Agent: $_agent\r\n'
           'Connection: close\r\n\r\n'));
       await sock.flush();
-      final String response = await reader.rest();
+      final String response = await reader.rest(maxBody);
       if (response.isEmpty) {
         return _failed(clock, 'the tunnel closed without answering');
+      }
+      // The status line is checked before the body is believed. Without it any
+      // response at all that happens to contain a warp line counts as proof,
+      // including an error page from something that is not the far end.
+      if (!response.startsWith('HTTP/1.1 200') &&
+          !response.startsWith('HTTP/1.0 200')) {
+        return _failed(clock,
+            'the far end answered ${response.split('\r\n').first.trim()}');
       }
       final Map<String, String> trace = _parse(response);
       if (trace.isEmpty) {
@@ -147,8 +198,9 @@ abstract final class AetherTrafficCheck {
         ip: trace['ip'],
       );
     } finally {
-      await reader.cancel();
-      sock.destroy();
+      // One teardown path, so a normal finish and an expired deadline cannot
+      // race each other into closing the same socket twice.
+      live.close();
     }
   }
 
@@ -205,12 +257,62 @@ class _Reader {
     return out;
   }
 
-  Future<String> rest() async {
-    while (await _it.moveNext()) {
+  /// Everything still to come, up to [cap] bytes.
+  ///
+  /// The cap is the point. This used to read to end of stream, and a responder
+  /// that never ends turned that into unbounded memory: a growable list of ints
+  /// in the Dart VM costs a machine word per byte, so a few hundred megabytes
+  /// on the wire became gigabytes resident, and it kept growing after the
+  /// caller had already given up.
+  Future<String> rest(int cap) async {
+    while (_buf.length < cap && await _it.moveNext()) {
       _buf.addAll(_it.current);
     }
-    return utf8.decode(_buf, allowMalformed: true);
+    return utf8.decode(
+        _buf.length > cap ? _buf.sublist(0, cap) : _buf,
+        allowMalformed: true);
   }
 
-  Future<void> cancel() => _it.cancel();
+  /// Safe to call more than once: the deadline and the normal finish can both
+  /// reach here, and cancelling an already cancelled iterator throws.
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _it.cancel();
+    _buf.clear();
+  }
+
+  bool _cancelled = false;
+}
+
+/// The socket and reader a run is currently using, so a deadline that fires
+/// outside that run can still shut them down.
+///
+/// Dart's `timeout` completes the outer future and walks away; the work it
+/// wrapped keeps going. For a network read that means the socket stays open and
+/// the buffer keeps filling long after an answer stopped being wanted. Holding
+/// the pieces here is what makes the deadline actually end the work.
+class _Live {
+  Socket? _sock;
+  _Reader? _reader;
+  bool _closed = false;
+
+  void attach(Socket sock, _Reader reader) {
+    if (_closed) {
+      // The deadline fired while the connection was still being made.
+      sock.destroy();
+      return;
+    }
+    _sock = sock;
+    _reader = reader;
+  }
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _reader?.cancel();
+    _sock?.destroy();
+    _sock = null;
+    _reader = null;
+  }
 }

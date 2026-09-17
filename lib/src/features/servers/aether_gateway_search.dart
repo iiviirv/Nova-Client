@@ -140,8 +140,10 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final AetherJobStatus opened = await _await(
         core, core.identityOpen(options, base: '${dir.path}/aether'));
     if (opened.state != AetherJobState.done) {
-      _log('identity failed after ${idClock.elapsedMilliseconds}ms: '
-          '${opened.error ?? 'no reason given'}', level: NovaLogLevel.error);
+      _log(
+          'identity failed after ${idClock.elapsedMilliseconds}ms: '
+          '${AetherSearchLog.scrub(opened.error) }',
+          level: NovaLogLevel.error);
       return AetherFindResult(
           endpoint: null,
           error: opened.error ?? 'the WARP identity could not be opened',
@@ -175,7 +177,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
             AetherEndpoint.parse(found.result?['endpoint']) ?? 'nothing';
         _log('scan $attempt took ${clock.elapsedMilliseconds}ms, '
             'excluded ${excluded.length}: ${found.state.name}, $where'
-            '${found.error == null ? '' : ', ${found.error}'}',
+            '${found.error == null ? '' : ', ${AetherSearchLog.scrub(found.error)}'}',
             level: found.state == AetherJobState.done
                 ? NovaLogLevel.info
                 : NovaLogLevel.warn);
@@ -210,7 +212,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
         result.ok
             ? 'found ${result.endpoint} on attempt ${result.attempts}'
             : 'gave up after ${result.attempts}: '
-                '${result.error ?? 'no reason given'} '
+                '${AetherSearchLog.scrub(result.error)} '
                 '(ruled out ${result.rejected.length})',
         level: result.ok ? NovaLogLevel.info : NovaLogLevel.error);
     return result;
@@ -219,13 +221,17 @@ class AetherCoreSearch implements AetherGatewaySearch {
   @override
   Future<bool> verifyAddress(AetherOptions options, String endpoint) async {
     if (endpoint.trim().isEmpty) return false;
+    // A previous search that the user stopped must not decide this. Without
+    // this line, Stop on a search made every later Check report a perfectly
+    // good address as unhealthy for the life of the screen.
+    _cancelled = false;
     _log('checking ${endpoint.trim()} on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}');
     final AetherCore core = AetherCore.open();
     final Directory dir = await getApplicationSupportDirectory();
     final AetherJobStatus opened = await _await(
         core, core.identityOpen(options, base: '${dir.path}/aether'));
     if (opened.state != AetherJobState.done) {
-      _log('identity failed: ${opened.error ?? 'no reason given'}',
+      _log('identity failed: ${AetherSearchLog.scrub(opened.error)}',
           level: NovaLogLevel.error);
       return false;
     }
@@ -273,6 +279,13 @@ class AetherCoreSearch implements AetherGatewaySearch {
       }
       job = _asInt(started['job']);
       if (job == null) {
+        // The tunnel is already up and serving, and there is no handle to stop
+        // it with. Trying the next address would start another one just as
+        // untrackable, so the search stops here instead of leaking one WARP
+        // session per attempt.
+        _cancelled = true;
+        _log('the core started a tunnel without a job id, so it cannot be '
+            'stopped; abandoning the search', level: NovaLogLevel.error);
         return _proved(clock, endpoint, false,
             error: 'the core started no job for the tunnel');
       }
@@ -290,9 +303,17 @@ class AetherCoreSearch implements AetherGatewaySearch {
                 : 'the tunnel never started serving');
       }
       final AetherTrafficProof proof = await AetherTrafficCheck.through(port,
-          budget: proofBudget - clock.elapsed);
+          budget: proofBudget - clock.elapsed, abort: () => _cancelled);
+      // The exit address is only recorded when the traffic actually went
+      // through WARP. When it did not, that field is not a Cloudflare exit at
+      // all, it is the user's own address, and this line ends up in a log they
+      // are invited to paste into a support thread. `warp` still says what
+      // happened, which is what makes the failure diagnosable without naming
+      // the person reporting it.
       return _proved(clock, endpoint, proof.viaWarp,
-          warp: proof.warp, ip: proof.ip, error: proof.error);
+          warp: proof.warp,
+          ip: proof.viaWarp ? proof.ip : null,
+          error: proof.error);
     } catch (e) {
       return _proved(clock, endpoint, false, error: '$e');
     } finally {
@@ -309,16 +330,12 @@ class AetherCoreSearch implements AetherGatewaySearch {
   /// Records the outcome and shapes it the way the finder expects.
   AetherJobStatus _proved(Stopwatch clock, String endpoint, bool ok,
       {String? warp, String? ip, String? error}) {
-    final Map<String, dynamic> result = <String, dynamic>{
-      'reachable': ok,
-      if (warp != null) 'warp': warp,
-      if (ip != null) 'exit_ip': ip,
-      'ms': clock.elapsedMilliseconds,
-    };
+    final Map<String, dynamic> result = AetherSearchLog.proof(
+        viaWarp: ok, warp: warp, ip: ip, ms: clock.elapsedMilliseconds);
     _log(
         'verify $endpoint took ${clock.elapsedMilliseconds}ms: '
         '${AetherSearchLog.fields(result)}'
-        '${error == null ? '' : ', $error'}',
+        '${error == null ? '' : ', ${AetherSearchLog.scrub(error)}'}',
         level: ok ? NovaLogLevel.info : NovaLogLevel.warn);
     return AetherJobStatus(AetherJobState.done,
         result: result, error: ok ? null : error);

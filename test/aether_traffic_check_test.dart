@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_traffic_check.dart';
 
 /// How the fake gateway behaves.
-enum Behaviour { serve, refuse, notSocks, silent, hangUp }
+enum Behaviour { serve, refuse, notSocks, silent, hangUp, endless, huge, dribble }
 
 /// A stand-in for the tunnel's SOCKS5 port.
 ///
@@ -18,6 +18,8 @@ Future<ServerSocket> fakeGateway({
   Behaviour how = Behaviour.serve,
   String warp = 'on',
   String ip = '104.28.208.123',
+  List<int>? sentCounter,
+  List<bool>? clientClosed,
 }) async {
   final ServerSocket server =
       await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
@@ -67,13 +69,77 @@ Future<ServerSocket> fakeGateway({
       }
       final String body = 'fl=29f172\nip=$ip\nts=1789598660.000\n'
           'colo=YYZ\nwarp=$warp\ngateway=off\n';
+      if (how == Behaviour.dribble) {
+        // Answers, then feeds bytes too slowly to ever reach the size cap. The
+        // cap cannot end this read, so only tearing the socket down can, which
+        // is what makes this a test of the teardown alone.
+        sock.add(utf8.encode(
+            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
+        await sock.flush();
+        // Notice when the client goes away. Nothing else here can tell us.
+        unawaited(it.moveNext().then((bool more) {
+          if (!more && clientClosed != null) clientClosed[0] = true;
+        }).catchError((Object _) {
+          if (clientClosed != null) clientClosed[0] = true;
+        }));
+        try {
+          for (int i = 0; i < 200; i++) {
+            sock.add(List<int>.filled(16, 122));
+            await sock.flush();
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+        } catch (_) {
+          if (clientClosed != null) clientClosed[0] = true;
+        }
+        return;
+      }
+      if (how == Behaviour.endless) {
+        // Answers correctly and then never stops. This is the shape a
+        // transparent proxy or an on-path injector takes, and it is the one
+        // that used to grow the client's buffer without limit.
+        sock.add(utf8.encode(
+            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
+        await sock.flush();
+        final List<int> chunk = List<int>.filled(65536, 65);
+        try {
+          // Bounded so a regression cannot take the test host down with it.
+          while ((sentCounter?[0] ?? 0) < 64 * 1024 * 1024) {
+            sock.add(chunk);
+            await sock.flush();
+            if (sentCounter != null) sentCounter[0] += chunk.length;
+          }
+        } catch (_) {
+          // The client went away, which is the point.
+        }
+        return;
+      }
+      if (how == Behaviour.huge) {
+        // A correct answer followed by far more than anyone should read. The
+        // budget is generous in that test, so only the size cap can stop this.
+        sock.add(utf8.encode(
+            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n$body'));
+        await sock.flush();
+        final List<int> chunk = List<int>.filled(65536, 120);
+        try {
+          while ((sentCounter?[0] ?? 0) < 32 * 1024 * 1024) {
+            sock.add(chunk);
+            await sock.flush();
+            if (sentCounter != null) sentCounter[0] += chunk.length;
+          }
+        } catch (_) {
+          // The client stopped reading, which is the point.
+        }
+        return;
+      }
       sock.add(utf8.encode('HTTP/1.1 200 OK\r\n'
           'Content-Type: text/plain\r\n'
           'Content-Length: ${body.length}\r\n\r\n$body'));
       await sock.flush();
     } finally {
-      await it.cancel();
-      sock.destroy();
+      if (how != Behaviour.dribble) {
+        await it.cancel();
+        sock.destroy();
+      }
     }
   });
   return server;
@@ -154,5 +220,139 @@ void main() {
         budget: const Duration(seconds: 3));
     expect(p.carried, isFalse);
     expect(p.error, isNotNull);
+  });
+
+  // The finding this test exists for: `timeout` completes the outer future and
+  // leaves the inner one running, so the read kept draining a socket nobody was
+  // waiting for. Measured at 1.5GB resident inside a five second budget, still
+  // climbing minutes after the call returned.
+  test('an endless answer stops when the budget does', () async {
+    final List<int> sent = <int>[0];
+    final ServerSocket g =
+        await fakeGateway(how: Behaviour.endless, sentCounter: sent);
+    final Stopwatch clock = Stopwatch()..start();
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: 2));
+    clock.stop();
+    expect(p.carried, isFalse);
+    expect(clock.elapsedMilliseconds, lessThan(4000),
+        reason: 'the budget has to end the wait');
+
+    // The real assertion. If the socket were still being drained the server
+    // would still be writing, so the counter would keep climbing after the
+    // caller gave up.
+    final int atReturn = sent[0];
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    final int later = sent[0];
+    await g.close();
+    expect(later - atReturn, lessThan(2 * 1024 * 1024),
+        reason: 'the reader kept going after the budget expired: '
+            'grew ${later - atReturn} bytes');
+  });
+
+  // Budget is deliberately generous here, so the deadline cannot be what stops
+  // the read. Only the size cap can, which is what makes this a test of the cap
+  // rather than a second test of the timeout.
+  test('an answer bigger than the cap is cut short and still judged', () async {
+    final List<int> sent = <int>[0];
+    final ServerSocket g = await fakeGateway(
+        how: Behaviour.huge, warp: 'on', sentCounter: sent);
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: 30));
+    expect(p.carried, isTrue);
+    expect(p.viaWarp, isTrue, reason: 'the trace is inside the first 16KB');
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final int sentTotal = sent[0];
+    await g.close();
+    expect(sentTotal, lessThan(8 * 1024 * 1024),
+        reason: 'the whole body was read instead of the first ${AetherTrafficCheck.maxBody} '
+            'bytes: server pushed $sentTotal');
+  });
+
+  test('a non-200 answer is not proof, whatever the body says', () async {
+    final ServerSocket g = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    g.listen((Socket sock) async {
+      final StreamIterator<List<int>> it = StreamIterator<List<int>>(sock);
+      final List<int> buf = <int>[];
+      Future<List<int>?> take(int n) async {
+        while (buf.length < n) {
+          if (!await it.moveNext()) return null;
+          buf.addAll(it.current);
+        }
+        final List<int> o = buf.sublist(0, n);
+        buf.removeRange(0, n);
+        return o;
+      }
+      await take(3);
+      sock.add(<int>[0x05, 0x00]);
+      await sock.flush();
+      await take(4);
+      final int len = (await take(1))?.first ?? 0;
+      await take(len + 2);
+      sock.add(<int>[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
+      await sock.flush();
+      await take(1);
+      // A captive portal or an injected error page that happens to contain a
+      // warp line. Believing the body without the status made this proof.
+      const String body = 'warp=on\nip=1.2.3.4\n';
+      sock.add(utf8.encode('HTTP/1.1 403 Forbidden\r\n'
+          'Content-Length: ${body.length}\r\n\r\n$body'));
+      await sock.flush();
+      await it.cancel();
+      sock.destroy();
+    });
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: 5));
+    await g.close();
+    expect(p.carried, isFalse);
+    expect(p.viaWarp, isFalse);
+    expect(p.error, contains('403'));
+  });
+
+  test('a spent budget reads as zero, not as a negative number', () async {
+    final ServerSocket g = await fakeGateway(how: Behaviour.silent);
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: -3));
+    await g.close();
+    expect(p.carried, isFalse);
+    expect(p.error, isNot(contains('-')));
+  });
+
+  // MUT E caught nothing until this existed: the size cap was ending the read
+  // before the missing teardown could matter. Here the body never reaches the
+  // cap, so if the deadline does not close the socket, nothing does.
+  test('the budget closes the socket, it does not just stop waiting', () async {
+    final List<bool> closed = <bool>[false];
+    final ServerSocket g =
+        await fakeGateway(how: Behaviour.dribble, clientClosed: closed);
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: 2));
+    expect(p.carried, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    final bool sawClose = closed[0];
+    await g.close();
+    expect(sawClose, isTrue,
+        reason: 'the far end never saw the connection close, so the read was '
+            'still running after the budget expired');
+  });
+
+  test('cancelling stops the request instead of holding the tunnel', () async {
+    final List<bool> closed = <bool>[false];
+    bool cancelled = false;
+    final ServerSocket g =
+        await fakeGateway(how: Behaviour.dribble, clientClosed: closed);
+    Timer(const Duration(milliseconds: 600), () => cancelled = true);
+    final Stopwatch clock = Stopwatch()..start();
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        budget: const Duration(seconds: 25), abort: () => cancelled);
+    clock.stop();
+    expect(p.carried, isFalse);
+    // The budget is 25s. Returning anywhere near it means cancel did nothing.
+    expect(clock.elapsedMilliseconds, lessThan(5000),
+        reason: 'cancel did not interrupt the request');
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    final bool sawClose = closed[0];
+    await g.close();
+    expect(sawClose, isTrue, reason: 'the tunnel connection was left open');
   });
 }

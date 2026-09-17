@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.24.3 (2026-09-17)
+
+- **Fixed: the log could contain your own address.** When a route answered but
+  sent traffic around the tunnel instead of through it, the check recorded the
+  address the far end saw. In that case the address is not the route's exit, it
+  is yours, and the log is the thing the app asks you to send when you report a
+  problem. It now records that the traffic went around the tunnel without
+  recording who you are. Anyone who took 1.24.2 should move to this.
+
+- **Fixed: a hostile network could make a route search eat memory.** If
+  something on the network answered a search with a reply that never ended,
+  Nova kept reading it. There is now a limit on how much of an answer is read,
+  and giving up on a route now actually closes the connection instead of
+  leaving it running in the background.
+
+- **Fixed: stopping a search made later checks fail.** After pressing Stop,
+  checking an address by hand reported it as not working no matter how good it
+  was, until the screen was closed and reopened.
+
+- A route is no longer treated as proven unless the far end answered properly,
+  so an error page from something in the middle of the connection cannot stand
+  in for a working route.
+
+
 ## v1.24.2 (2026-09-16)
 
 - **Fixed: a working route could be reported as broken on a slow connection.**
