@@ -43,6 +43,15 @@ enum NodeProtocol {
   /// gateway when one is pinned and empty when the scan should find one. The
   /// settings live in [ProxyNode.aetherOpts].
   aether,
+
+  /// MasterDNS: a DNS tunnel run by a core of its own, which serves the tunnel
+  /// as a local SOCKS5 proxy for the core to forward into. The same two-core
+  /// shape as Aether.
+  ///
+  /// There is no server to dial. [ProxyNode.server] holds the tunnel's first
+  /// domain, purely so two configs are told apart and the list has something to
+  /// show; the settings live in [ProxyNode.masterDnsConf].
+  masterdns,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -63,6 +72,9 @@ extension NodeProtocolName on NodeProtocol {
         // local SOCKS port the Aether core serves, so the outbound is a socks
         // one. The gateway is the Aether core's business.
         NodeProtocol.aether => 'socks',
+        // Same reason as Aether: the core forwards into the local port the
+        // MasterDNS engine serves.
+        NodeProtocol.masterdns => 'socks',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -119,6 +131,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.naive => 'NaiveProxy',
         NodeProtocol.mieru => 'mieru',
         NodeProtocol.aether => 'Aether',
+        NodeProtocol.masterdns => 'MasterDNS',
       };
 }
 
@@ -157,6 +170,7 @@ class ProxyNode {
     this.cipherSuites = const <String>[],
     this.fragmentMask,
     this.aetherOpts,
+    this.masterDnsConf,
   });
 
   /// Build an AmneziaWG node from a raw `awg-quick` `.conf`. The peer endpoint
@@ -248,6 +262,11 @@ class ProxyNode {
   /// re-shares byte for byte instead of being rebuilt from parts.
   final String? aetherOpts;
 
+  /// MasterDNS settings, as the `masterdns://` link that carries them. Kept
+  /// whole for the same reason as [aetherOpts]: the shape belongs to that core,
+  /// and the link re-shares exactly as it arrived.
+  final String? masterDnsConf;
+
   bool get isReality =>
       (realityPublicKey != null && realityPublicKey!.isNotEmpty);
 
@@ -319,6 +338,7 @@ class ProxyNode {
     List<String>? cipherSuites,
     String? fragmentMask,
     String? aetherOpts,
+    String? masterDnsConf,
     String? fingerprint,
     String? awgConf,
   }) {
@@ -353,6 +373,7 @@ class ProxyNode {
       cipherSuites: cipherSuites ?? this.cipherSuites,
       fragmentMask: fragmentMask ?? this.fragmentMask,
       aetherOpts: aetherOpts ?? this.aetherOpts,
+      masterDnsConf: masterDnsConf ?? this.masterDnsConf,
       fingerprint: fingerprint ?? this.fingerprint,
     );
   }

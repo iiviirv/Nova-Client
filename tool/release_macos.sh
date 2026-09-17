@@ -73,6 +73,20 @@ for a in arm64 amd64; do
   fi
 done
 
+# Third core, the MasterDNS engine, for DNS tunnels. Required rather than
+# best-effort: a DMG without it would offer MasterDNS in the add menu and fail
+# every connect. Built by tool/build_masterdns.sh from a pinned commit.
+for a in arm64 amd64; do
+  src="$PROJ/assets/bin/masterdns-macos-$a"
+  if [[ ! -f "$src" ]]; then
+    echo "!! missing $src; run tool/build_masterdns.sh"; exit 1
+  fi
+  cp "$src" "$APP/Contents/Resources/masterdns-macos-$a"
+  echo "masterdns engine bundled ($a): $(ls -lh "$APP/Contents/Resources/masterdns-macos-$a" | awk '{print $5}')"
+done
+# MIT requires the notice to ship with the binary.
+cp "$PROJ/assets/bin/LICENSE-masterdns.txt" "$APP/Contents/Resources/LICENSE-masterdns.txt"
+
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
 # Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
 # (e.g. flutter_secure_storage_macos) left with its build-time signature fails

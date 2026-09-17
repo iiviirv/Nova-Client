@@ -27,6 +27,10 @@ enum ProxyKind {
   // scheme any of the others recognise, so before this it fell through to
   // whatever pill happened to be selected.
   aether,
+  // A DNS tunnel run by the MasterDNS engine. Built in its own editor, like
+  // Aether, because its settings (domains, key, resolvers) are not a link
+  // anyone types.
+  masterdns,
 }
 
 /// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
@@ -47,6 +51,7 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.vmess => 'VMess',
         ProxyKind.tuic => 'TUIC',
         ProxyKind.aether => 'Aether',
+        ProxyKind.masterdns => 'MasterDNS',
       };
 }
 

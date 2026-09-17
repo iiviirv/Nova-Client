@@ -27,6 +27,8 @@ String buildShareLink(ProxyNode node) {
     // Aether shares as the `aether://` link other clients read. The settings
     // are kept verbatim in aetherOpts so the link comes back byte for byte
     // rather than being rebuilt from parts and drifting.
+    // MasterDNS shares as the link it arrived as, kept whole on the node.
+    NodeProtocol.masterdns => node.masterDnsConf ?? '',
     NodeProtocol.aether => AetherConfig(
           options: AetherOptions.fromQuery(node.aetherOpts,
               peer: node.server.isEmpty ? null : '${node.server}:${node.port}'),

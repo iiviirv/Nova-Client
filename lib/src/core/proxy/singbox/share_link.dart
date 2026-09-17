@@ -1,4 +1,5 @@
 import '../aether/aether_options.dart';
+import '../masterdns/masterdns_config.dart';
 import 'dart:convert';
 
 import 'awg_config.dart';
@@ -58,6 +59,8 @@ ProxyNode? parseShareLink(String raw) {
       // link's authority is the pinned gateway when it has one and empty when
       // the config should scan for one.
       'aether' => _parseAether(input),
+      // MasterDNS: a DNS tunnel run by its own engine. No server to dial.
+      'masterdns' => _parseMasterDns(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -621,6 +624,23 @@ String _tryBase64(String input) {
   } catch (_) {
     return '';
   }
+}
+
+/// A `masterdns://` link.
+///
+/// The node's address is the tunnel's first domain. Nothing ever dials it, but
+/// the node list and the node key both need something, and the domain is the
+/// one thing that genuinely identifies which tunnel this is.
+ProxyNode? _parseMasterDns(String input) {
+  final MasterDnsConfig? c = MasterDnsConfig.parseLink(input);
+  if (c == null) return null;
+  return ProxyNode(
+    protocol: NodeProtocol.masterdns,
+    server: c.domains.isEmpty ? '' : c.domains.first,
+    port: 0,
+    tag: c.name,
+    masterDnsConf: input.trim(),
+  );
 }
 
 /// An `aether://` link, in the shape other clients already write.

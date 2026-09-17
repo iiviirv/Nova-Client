@@ -498,6 +498,61 @@ class SingboxConfig {
     };
   }
 
+  /// The core forwarding into a MasterDNS engine's local SOCKS port.
+  ///
+  /// [enginePath] is the engine binary this process launched, when it launched
+  /// one. It matters in full-device mode, and the reason is specific to what
+  /// this tunnel is made of: its traffic IS DNS. The shared route hijacks every
+  /// DNS packet it sees into the core's own resolver, second rule from the top,
+  /// so without an exception the engine's tunnel queries would be answered by
+  /// sing-box instead of reaching the resolvers, and the tunnel could never
+  /// form. Excluding the engine by process keeps that exception exact: matching
+  /// the resolvers' addresses instead would also let the user's own lookups to
+  /// those addresses out around the tunnel.
+  static Map<String, dynamic> buildMasterDnsSocksBridgeMap(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? enginePath,
+  }) {
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+      }),
+      'inbounds': _inbounds(options),
+      'outbounds': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': socksPort,
+          'version': '5',
+        },
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      'route': _routeForMasterDns(options, enginePath: enginePath),
+    };
+  }
+
+  static Map<String, dynamic> _routeForMasterDns(SingboxRouteOptions o,
+      {String? enginePath}) {
+    // QUIC stays blocked. The engine's SOCKS proxy carries UDP only to port 53
+    // and drops the rest, so HTTP/3 would hang rather than fail, and blocking it
+    // is what makes browsers and video apps fall back to TCP.
+    final Map<String, dynamic> route = _route(o);
+    if (enginePath != null && enginePath.isNotEmpty) {
+      // Ahead of the sniff and the DNS hijack, or it never gets a chance.
+      (route['rules'] as List<dynamic>).insert(0, <String, dynamic>{
+        'process_path': <String>[enginePath],
+        'outbound': 'direct',
+      });
+      route['find_process'] = true;
+    }
+    return route;
+  }
+
   /// The normal route with the WARP ranges pinned to `direct` ahead of
   /// everything, so the Aether core can reach an edge from inside a tunnel it
   /// is itself providing.
@@ -1261,6 +1316,7 @@ class SingboxConfig {
       // server/port were set above to the local address the Aether core serves;
       // the gateway itself is that core's business, not the outbound's.
       case NodeProtocol.aether:
+      case NodeProtocol.masterdns:
         o['version'] = '5';
       case NodeProtocol.vless:
         o['uuid'] = n.uuid;

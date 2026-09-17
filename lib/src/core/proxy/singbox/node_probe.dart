@@ -132,6 +132,12 @@ Future<NodeProbeResult> _probe(
       // address we do not have.
       return const NodeProbeResult.untestable(
           'Aether is measured by its own core, not by a probe');
+    case NodeProtocol.masterdns:
+      // A DNS tunnel has no server to connect to. The engine talks to public
+      // resolvers, and whether a tunnel forms is only known once it has run its
+      // own tests, which is what opening its local port signals.
+      return const NodeProbeResult.untestable(
+          'MasterDNS is measured by its own engine, not by a probe');
     case NodeProtocol.awg:
       // A WireGuard handshake initiation is authenticated with the peer's
       // static keys; without completing the noise handshake there is nothing
@@ -479,6 +485,7 @@ List<int>? _requestHeader(ProxyNode n) {
   switch (n.protocol) {
     // No probe header: nothing here dials an Aether gateway directly.
     case NodeProtocol.aether:
+    case NodeProtocol.masterdns:
       return null;
     case NodeProtocol.vless:
       final Uint8List? uuid = _uuidBytes(n.uuid);

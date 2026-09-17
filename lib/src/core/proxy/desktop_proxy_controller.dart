@@ -19,6 +19,7 @@ import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_tunnel.dart';
+import 'masterdns/masterdns_config.dart';
 import 'core_features.dart';
 import 'measure_runner.dart';
 import 'proxy_controller.dart';
@@ -38,6 +39,14 @@ import 'xray/xray_config.dart';
 ///
 /// Android keeps its VpnService host and iOS its Network Extension; this is the
 /// desktop equivalent of those hosts.
+/// A MasterDNS engine waiting to be started for the connect being built.
+class _PendingMasterDns {
+  const _PendingMasterDns({required this.config, required this.port});
+
+  final MasterDnsConfig config;
+  final int port;
+}
+
 /// What [DesktopProxyController._pendingAether] remembers between building the
 /// config and starting the core: everything the tunnel needs, plus the port the
 /// config was already written against.
@@ -127,6 +136,12 @@ class DesktopProxyController extends ProxyController {
   /// route-excluded from sing-box's tunnel to avoid a loop.
   Process? _xrayProcess;
   String? _pendingXrayConfig;
+
+  /// The MasterDNS engine for this connection, and what it should be started
+  /// with. Null when the connection has nothing to do with MasterDNS.
+  Process? _masterDnsProcess;
+  _PendingMasterDns? _pendingMasterDns;
+  bool _masterDnsExited = false;
 
   /// Stable node key -> the panel-given name, rebuilt on every connect, so the
   /// dashboard can say "Connected via" the server name (see [exitName]).
@@ -280,6 +295,14 @@ class DesktopProxyController extends ProxyController {
       // buildXraySocksBridgeMap's directServerIp).
       if (_pendingXrayConfig != null) {
         if (!await _startXray(dir, _pendingXrayConfig!)) return;
+      }
+
+      // MasterDNS: start the engine and wait until its port answers before the
+      // core is pointed at it. The port only opens once the engine has found a
+      // working path through the resolvers, so waiting on it is waiting on the
+      // tunnel itself, not on a process that merely started.
+      if (_pendingMasterDns != null) {
+        if (!await _startMasterDns(dir, _pendingMasterDns!)) return;
       }
 
       if (tunMode) {
@@ -712,6 +735,24 @@ class DesktopProxyController extends ProxyController {
           socksPort: port,
         );
         cfg = SingboxConfig.buildAetherSocksBridgeMap(port, options: opts);
+      } else if (nodes.length == 1 &&
+          nodes.first.protocol == NodeProtocol.masterdns) {
+        // A DNS tunnel run by its own engine, which serves it as a local SOCKS
+        // port for the core to forward into. Nothing here dials a server.
+        final MasterDnsConfig? m =
+            MasterDnsConfig.parseLink(nodes.first.masterDnsConf ?? '');
+        if (m == null) throw 'This MasterDNS config could not be read.';
+        final String? missing = m.problem;
+        if (missing != null) {
+          throw 'This MasterDNS config has $missing. Open it and fill that in.';
+        }
+        final int port = await AetherTunnel.freeLoopbackPort();
+        _pendingMasterDns = _PendingMasterDns(config: m, port: port);
+        cfg = SingboxConfig.buildMasterDnsSocksBridgeMap(port,
+            options: opts,
+            // Only full-device mode routes this process's own packets, so only
+            // there does it need excluding. See the bridge for why.
+            enginePath: tunMode ? await _ensureMasterDnsBinary() : null);
       } else if (nodes.length == 1) {
         cfg = SingboxConfig.buildMap(nodes.first, options: opts);
       } else {
@@ -1083,8 +1124,17 @@ class DesktopProxyController extends ProxyController {
   /// keeps its shared files). Falls back to the repo `assets/bin/` path when
   /// running from source (`flutter run`), where the executable lives in the
   /// build tree.
-  File _bundledBinary() {
-    final String name = _assetName();
+  File _bundledBinary() => _findBundledCore(_assetName());
+
+  /// Where a bundled core binary lives in an installed build, for every core.
+  ///
+  /// One function rather than one per core, because the per-core copies had
+  /// already drifted: the sing-box lookup knew where a Linux bundle keeps its
+  /// binaries and the Xray one did not, so on Linux Xray fell through to a path
+  /// relative to wherever the app happened to be started from. CI copies Xray
+  /// into the bundle directory, so an installed Linux build could not find it
+  /// and every xhttp server failed as "no Xray core".
+  File _findBundledCore(String name) {
     final Directory exeDir = File(Platform.resolvedExecutable).parent;
     if (Platform.isMacOS) {
       // .../Contents/MacOS/<exe> -> .../Contents/Resources/<name>
@@ -1125,18 +1175,7 @@ class DesktopProxyController extends ProxyController {
   /// arm64, Windows amd64, Linux amd64 all ship). A target with no binary returns
   /// a non-existent path, which [_startXray] turns into a clear "no Xray core"
   /// message rather than a crash.
-  File _bundledXrayBinary() {
-    final String name = _xrayAssetName();
-    final Directory exeDir = File(Platform.resolvedExecutable).parent;
-    if (Platform.isMacOS) {
-      final File f = File('${exeDir.parent.path}/Resources/$name');
-      if (f.existsSync()) return f;
-    } else if (Platform.isWindows) {
-      final File f = File('${exeDir.path}\\$name');
-      if (f.existsSync()) return f;
-    }
-    return File('assets/bin/$name');
-  }
+  File _bundledXrayBinary() => _findBundledCore(_xrayAssetName());
 
   /// Stages the Xray binary into app-support (chmod +x on POSIX) and returns its
   /// path, or null when this build carries no Xray core for the platform.
@@ -1216,6 +1255,118 @@ class DesktopProxyController extends ProxyController {
     _xrayProcess?.kill();
     _xrayProcess = null;
     _pendingXrayConfig = null;
+    _stopMasterDns();
+  }
+
+  // ---- third core: MasterDNS ----
+
+  String _masterDnsAssetName() {
+    final String arch = _arch();
+    if (Platform.isMacOS) return 'masterdns-macos-$arch';
+    if (Platform.isWindows) return 'masterdns-windows-$arch.exe';
+    return 'masterdns-linux-$arch';
+  }
+
+  File _bundledMasterDnsBinary() => _findBundledCore(_masterDnsAssetName());
+
+  /// Stages the engine into app-support, as the Xray binary is, and returns its
+  /// path. The staged path is also what full-device mode excludes by process,
+  /// so it has to be the path the engine actually runs from.
+  Future<String?> _ensureMasterDnsBinary() async {
+    final File src = _bundledMasterDnsBinary();
+    if (!src.existsSync()) return null;
+    final Directory dir = await getApplicationSupportDirectory();
+    final String exe = Platform.isWindows ? 'masterdns.exe' : 'masterdns';
+    final File out = File('${dir.path}/$exe');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', <String>['+x', out.path]);
+      }
+      await _unquarantine(out.path);
+    }
+    return out.path;
+  }
+
+  Future<bool> _startMasterDns(Directory dir, _PendingMasterDns p) async {
+    final String? bin = await _ensureMasterDnsBinary();
+    if (bin == null) {
+      _fail('This build has no MasterDNS engine for '
+          '${Platform.operatingSystem} yet.');
+      return false;
+    }
+    final File resolvers = File('${dir.path}/nova-masterdns-resolvers.txt');
+    await resolvers.writeAsString(p.config.resolversFile);
+
+    // The config goes in a file readable only by this user, and the file is
+    // removed as soon as the engine has read it. Passing it on the command line
+    // instead would put the encryption key in the process list, where other
+    // accounts on the same machine can read it.
+    final File conf = File('${dir.path}/nova-masterdns.json');
+    await conf.writeAsString(p.config.engineJson(port: p.port), flush: true);
+    if (!Platform.isWindows) {
+      await Process.run('chmod', <String>['600', conf.path]);
+    }
+
+    _masterDnsExited = false;
+    final Process proc = await Process.start(
+      bin,
+      <String>['-json', conf.path, '-resolvers', resolvers.path],
+      environment: _coreEnv,
+    );
+    _masterDnsProcess = proc;
+    // The engine never exits on a bad connection, it retries forever. It does
+    // exit at once on a config it cannot use, and that has to fail the connect
+    // now rather than after the whole wait.
+    unawaited(proc.exitCode.then((_) {
+      if (identical(_masterDnsProcess, proc)) _masterDnsExited = true;
+    }));
+    _pipeCore(proc.stdout, 'masterdns');
+    _pipeCore(proc.stderr, 'masterdns');
+
+    final bool up = await _awaitMasterDnsPort(p.port);
+    try {
+      await conf.delete();
+    } catch (_) {
+      // Already gone.
+    }
+    if (!up) {
+      final bool died = _masterDnsExited;
+      _stopMasterDns();
+      _fail(died
+          ? 'The MasterDNS engine refused this config. Check the domain and '
+              'the encryption key, and the log for its own reason.'
+          : 'MasterDNS could not reach its server through any of the '
+              'resolvers. The domain may be wrong, or these resolvers may be '
+              'filtered on this network; try different ones.');
+      return false;
+    }
+    NovaLog.instance.write(
+        'MasterDNS tunnel up on 127.0.0.1:${p.port}; the core forwards into it.');
+    return true;
+  }
+
+  /// Waits for the engine's port, and stops early if the engine has died.
+  Future<bool> _awaitMasterDnsPort(int port) async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 45));
+    while (DateTime.now().isBefore(deadline)) {
+      if (_masterDnsExited) return false;
+      try {
+        final Socket s = await Socket.connect('127.0.0.1', port,
+            timeout: const Duration(milliseconds: 500));
+        s.destroy();
+        return true;
+      } catch (_) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+    }
+    return false;
+  }
+
+  void _stopMasterDns() {
+    _masterDnsProcess?.kill();
+    _masterDnsProcess = null;
+    _pendingMasterDns = null;
   }
 
   /// An xhttp node with its server host resolved to an IPv4 address (Xray needs a

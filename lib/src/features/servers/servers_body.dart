@@ -1142,7 +1142,9 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                   // A pasted `aether://` link is detected from its scheme, so
                   // the pill would only ever be a choice that changes nothing.
                   for (final ProxyKind k in ProxyKind.values)
-                    if (k != ProxyKind.aether)
+                    // MasterDNS is absent for the same reason: it has its own
+                    // editor, and a pasted link is recognised by its scheme.
+                    if (k != ProxyKind.aether && k != ProxyKind.masterdns)
                     NovaPill(
                       label: k.label,
                       selected: _kind == k,
@@ -1223,6 +1225,7 @@ ProxyKind? _detectKind(String raw) {
   if (l.startsWith('vmess://')) return ProxyKind.vmess;
   if (l.startsWith('tuic://')) return ProxyKind.tuic;
   if (l.startsWith('aether://')) return ProxyKind.aether;
+  if (l.startsWith('masterdns://')) return ProxyKind.masterdns;
   if (s.startsWith('{')) return ProxyKind.singboxConfig;
   // An AmneziaWG / WireGuard `.conf` (pasted text or QR), or an awg:// link.
   if (l.startsWith('awg://') ||
