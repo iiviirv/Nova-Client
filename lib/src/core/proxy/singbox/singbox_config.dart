@@ -43,6 +43,8 @@ class SingboxRouteOptions {
     this.bypassFragmentMask,
     this.tunInterfaceName,
     this.mixedInboundPort,
+    this.mixedInboundOnLan = false,
+    this.mixedInboundUsers = const <({String user, String pass})>[],
     this.includePackages = const <String>[],
     this.excludePackages = const <String>[],
     this.tunWithLocalProxy = false,
@@ -57,6 +59,29 @@ class SingboxRouteOptions {
   /// It also means no VPN slot is taken: another VPN can be running at the same
   /// time, which a full-device tunnel makes impossible.
   final int? mixedInboundPort;
+
+  /// Whether the proxy port is reachable from the local network rather than
+  /// only from this device.
+  ///
+  /// Off by default, and it must stay that way. Binding the port to every
+  /// interface turns the device into an open relay for anyone who can reach it,
+  /// which on a cafe or hotel network is everyone, and on a network with the
+  /// port forwarded is the whole internet. That is a much worse thing to do by
+  /// accident than it is useful to do on purpose, so it is only ever done
+  /// because someone asked for it.
+  ///
+  /// The reason to offer it at all: a TV, a console or a work laptop has no way
+  /// to run Nova, and pointing it at a phone that can is the only way those
+  /// devices get out.
+  final bool mixedInboundOnLan;
+
+  /// Credentials the proxy requires, when it is shared on the network.
+  ///
+  /// Empty means no authentication, which is the right default for a loopback
+  /// port (anything that can reach it is already running as the user) and the
+  /// wrong one for a shared port. The UI should push people towards setting
+  /// these whenever [mixedInboundOnLan] is on.
+  final List<({String user, String pass})> mixedInboundUsers;
 
   /// The name to give the TUN interface, or null to let the core choose.
   ///
@@ -232,6 +257,8 @@ class SingboxRouteOptions {
     String? bypassFragmentMask,
     String? tunInterfaceName,
     int? mixedInboundPort,
+    bool? mixedInboundOnLan,
+    List<({String user, String pass})>? mixedInboundUsers,
     List<String>? includePackages,
     List<String>? excludePackages,
     bool? tunWithLocalProxy,
@@ -263,6 +290,8 @@ class SingboxRouteOptions {
         bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
         tunInterfaceName: tunInterfaceName ?? this.tunInterfaceName,
         mixedInboundPort: mixedInboundPort ?? this.mixedInboundPort,
+        mixedInboundOnLan: mixedInboundOnLan ?? this.mixedInboundOnLan,
+        mixedInboundUsers: mixedInboundUsers ?? this.mixedInboundUsers,
         includePackages: includePackages ?? this.includePackages,
         excludePackages: excludePackages ?? this.excludePackages,
         tunWithLocalProxy: tunWithLocalProxy ?? this.tunWithLocalProxy,
@@ -1056,6 +1085,11 @@ class SingboxConfig {
   /// own IP and country and presented them as the exit. A loopback inbound
   /// alongside the TUN gives the app a way into its own tunnel to ask, without
   /// putting Nova into the user's app list and changing what they chose.
+  /// The inbound list, for tests. Building a whole config to read one field
+  /// makes the test about everything else that could change in a config.
+  static List<Map<String, dynamic>> inboundsForTest(SingboxRouteOptions o) =>
+      _inbounds(o);
+
   static List<Map<String, dynamic>> _inbounds(SingboxRouteOptions o) {
     if (o.mixedInboundPort == null) {
       return <Map<String, dynamic>>[_tunInbound(o)];
@@ -1070,10 +1104,17 @@ class SingboxConfig {
       <String, dynamic>{
         'type': 'mixed',
         'tag': 'proxy-in',
-        // Loopback only. A phone on a shared network must not become an open
-        // relay for everyone else on that network.
-        'listen': '127.0.0.1',
+        // Loopback unless the user has explicitly asked to share this on their
+        // network. A device on a shared network must not become an open relay
+        // for everyone else on it by default, so the wide bind is opt-in and
+        // nothing else in the app can turn it on.
+        'listen': o.mixedInboundOnLan ? '0.0.0.0' : '127.0.0.1',
         'listen_port': o.mixedInboundPort,
+        if (o.mixedInboundUsers.isNotEmpty)
+          'users': <Map<String, String>>[
+            for (final ({String user, String pass}) u in o.mixedInboundUsers)
+              <String, String>{'username': u.user, 'password': u.pass},
+          ],
       };
 
   static Map<String, dynamic> _tunInbound(SingboxRouteOptions o) =>

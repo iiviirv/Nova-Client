@@ -69,6 +69,9 @@ class SettingsController extends ChangeNotifier {
   static const String _kPanelUrl = 'nova.panel.url';
   static const String _kPanelShortcut = 'nova.panel.shortcut';
   static const String _kProxyPort = 'nova.proxy.port';
+  static const String _kProxyShareOnLan = 'nova.proxy.shareOnLan';
+  static const String _kProxyShareUser = 'nova.proxy.shareUser';
+  static const String _kProxySharePass = 'nova.proxy.sharePass';
   static const String _kMobileProxyMode = 'nova.proxy.mobileMode';
   static const String _kIosAutoReconnect = 'nova.ios.autoReconnect';
 
@@ -212,6 +215,29 @@ class SettingsController extends ChangeNotifier {
   int _proxyPort = kDefaultLocalProxyPort;
   int get proxyPort => _proxyPort;
 
+  /// Share the local proxy with the rest of the network, rather than keeping it
+  /// to this device.
+  ///
+  /// The reason to want it: a TV, a console or a work laptop cannot run Nova,
+  /// and pointing it at a phone or a computer that can is the only way those
+  /// devices get out.
+  ///
+  /// The reason it is off by default and stays off unless someone deliberately
+  /// turns it on: the same switch makes this device an open relay for anyone
+  /// who can reach the port. On a home network that is the household; on a
+  /// cafe or hotel network it is everyone there; behind a forwarded port it is
+  /// the internet. Nothing else in the app may turn this on.
+  bool _proxyShareOnLan = false;
+  bool get proxyShareOnLan => _proxyShareOnLan;
+
+  /// Optional username and password for the shared proxy. Empty means anyone
+  /// who can reach the port may use it.
+  String _proxyShareUser = '';
+  String get proxyShareUser => _proxyShareUser;
+
+  String _proxySharePass = '';
+  String get proxySharePass => _proxySharePass;
+
   /// Android and iOS: run as a local SOCKS5/HTTP proxy instead of a full-device
   /// tunnel. The phone's own traffic is untouched and only an app pointed at
   /// [proxyPort] goes through Nova, which is also the only way to have Nova and
@@ -283,6 +309,9 @@ class SettingsController extends ChangeNotifier {
     _tunMode = p.getBool(_kTunMode) ?? (Platform.isMacOS || Platform.isLinux);
     _autoSystemProxy = p.getBool(_kAutoSysProxy) ?? true;
     _proxyPort = p.getInt(_kProxyPort) ?? kDefaultLocalProxyPort;
+    _proxyShareOnLan = p.getBool(_kProxyShareOnLan) ?? false;
+    _proxyShareUser = p.getString(_kProxyShareUser) ?? '';
+    _proxySharePass = p.getString(_kProxySharePass) ?? '';
     _mobileProxyMode = p.getBool(_kMobileProxyMode) ?? false;
     _iosAutoReconnect = p.getBool(_kIosAutoReconnect) ?? false;
     _urlTestUrl = p.getString(_kUrlTestUrl) ?? kDefaultUrlTestUrl;
@@ -350,6 +379,23 @@ class SettingsController extends ChangeNotifier {
     _panelUrl = t;
     notifyListeners();
     await _prefs?.setString(_kPanelUrl, t);
+  }
+
+  Future<void> setProxyShareOnLan(bool v) async {
+    if (v == _proxyShareOnLan) return;
+    _proxyShareOnLan = v;
+    notifyListeners();
+    await _prefs?.setBool(_kProxyShareOnLan, v);
+  }
+
+  Future<void> setProxyShareCredentials(String user, String pass) async {
+    final String u = user.trim();
+    if (u == _proxyShareUser && pass == _proxySharePass) return;
+    _proxyShareUser = u;
+    _proxySharePass = pass;
+    notifyListeners();
+    await _prefs?.setString(_kProxyShareUser, u);
+    await _prefs?.setString(_kProxySharePass, pass);
   }
 
   Future<void> setProxyPort(int v) async {

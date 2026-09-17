@@ -460,6 +460,15 @@ class SingboxProxyController extends ProxyController {
   /// the whole device with a TUN, or null for the ordinary full-device tunnel.
   int? Function()? proxyPortProvider;
 
+  /// Whether the proxy port should be reachable from the local network, and
+  /// with what credentials.
+  ///
+  /// A provider rather than a field for the same reason the port is: settings
+  /// can change between connects, and a value copied at construction would be
+  /// the one from whenever the app started. Null means keep it to this device,
+  /// which is what it must be unless someone has deliberately said otherwise.
+  ({bool onLan, String user, String pass}) Function()? proxyShareProvider;
+
   /// True when the route options carry an app allow/deny list, so the tunnel
   /// does not include Nova itself.
   bool get _perAppActive {
@@ -469,6 +478,22 @@ class SingboxProxyController extends ProxyController {
 
   @override
   bool get isProxyMode => proxyPortProvider?.call() != null;
+
+  /// The credentials for a shared proxy, or none.
+  ///
+  /// Credentials without sharing would be a password on a port only this device
+  /// can reach, which is noise; sharing without credentials is a decision the
+  /// user is allowed to make, and the UI is where they are warned about it.
+  List<({String user, String pass})> _shareUsers() {
+    if (proxyPortProvider?.call() == null) return const <({String user, String pass})>[];
+    final ({bool onLan, String user, String pass})? share =
+        proxyShareProvider?.call();
+    if (share == null || !share.onLan) return const <({String user, String pass})>[];
+    if (share.user.isEmpty || share.pass.isEmpty) {
+      return const <({String user, String pass})>[];
+    }
+    return <({String user, String pass})>[(user: share.user, pass: share.pass)];
+  }
 
   @override
   int? get localProxyPort {
@@ -1107,6 +1132,13 @@ class SingboxProxyController extends ProxyController {
       // SingboxRouteOptions.tunWithLocalProxy.
       mixedInboundPort: proxyPortProvider?.call() ??
           (_perAppActive ? kDefaultLocalProxyPort : null),
+      // Only ever wide when the user asked, and only when the port is the one
+      // they asked about: the per-app inbound above exists so Nova can query
+      // its own tunnel, and sharing that on the network is not what anyone
+      // turned on.
+      mixedInboundOnLan: proxyPortProvider?.call() != null &&
+          (proxyShareProvider?.call().onLan ?? false),
+      mixedInboundUsers: _shareUsers(),
       tunWithLocalProxy: proxyPortProvider?.call() == null && _perAppActive,
     );
     // Per-ISP optimization: detect the phone's carrier and fold in the DPI-best

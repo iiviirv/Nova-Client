@@ -98,6 +98,11 @@ Future<void> main() async {
     // another proxy app can move Nova instead of uninstalling one of them.
     desktop.socksPort = settings.proxyPort;
     settings.addListener(() => desktop.socksPort = settings.proxyPort);
+    desktop.proxyShareProvider = () => (
+          onLan: settings.proxyShareOnLan,
+          user: settings.proxyShareUser,
+          pass: settings.proxySharePass,
+        );
   }
   if (proxy is SingboxProxyController) {
     proxy.autoReconnectProvider = () => settings.iosAutoReconnect;
@@ -106,6 +111,13 @@ Future<void> main() async {
     // goes through Nova.
     proxy.proxyPortProvider =
         () => settings.mobileProxyMode ? settings.proxyPort : null;
+    // Sharing that port with the rest of the network is a separate, deliberate
+    // choice: it turns this device into a relay for anything that can reach it.
+    proxy.proxyShareProvider = () => (
+          onLan: settings.proxyShareOnLan,
+          user: settings.proxyShareUser,
+          pass: settings.proxySharePass,
+        );
   }
 
   // Windows and macOS: a menu-bar / notification-area icon, so closing the

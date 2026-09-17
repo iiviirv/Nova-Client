@@ -202,6 +202,10 @@ class DesktopProxyController extends ProxyController {
   @override
   int? get localProxyPort => tunMode ? null : socksPort;
 
+  /// Whether the local proxy should be shared with the network, and with what
+  /// credentials. Null, or onLan false, keeps it to this machine.
+  ({bool onLan, String user, String pass}) Function()? proxyShareProvider;
+
   /// Desktop has no per-app routing, so a local port and proxy mode are the
   /// same question here.
   @override
@@ -745,12 +749,27 @@ class DesktopProxyController extends ProxyController {
     // builder's `tun` inbound (auto_route) untouched so sing-box routes the
     // whole device once it is running elevated.
     if (!tunMode) {
+      final ({bool onLan, String user, String pass})? share =
+          proxyShareProvider?.call();
+      final bool onLan = share?.onLan ?? false;
+      final bool authed =
+          onLan && share!.user.isNotEmpty && share.pass.isNotEmpty;
       cfg['inbounds'] = <Map<String, dynamic>>[
         <String, dynamic>{
           'type': 'mixed',
           'tag': 'in',
-          'listen': '127.0.0.1',
+          // Loopback unless the user deliberately asked to share this with the
+          // rest of their network. Binding every interface turns this machine
+          // into an open relay for anything that can reach the port.
+          'listen': onLan ? '0.0.0.0' : '127.0.0.1',
           'listen_port': socksPort,
+          if (authed)
+            'users': <Map<String, String>>[
+              <String, String>{
+                'username': share.user,
+                'password': share.pass,
+              },
+            ],
         },
       ];
     }
