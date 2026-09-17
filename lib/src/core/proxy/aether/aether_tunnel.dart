@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../../logging/nova_log.dart';
 import 'aether_core.dart';
 import 'aether_options.dart';
 import 'aether_protocol.dart';
+import 'aether_watchdog.dart';
 
 /// A running Aether tunnel: the thing sing-box forwards into.
 ///
@@ -32,6 +34,20 @@ class AetherTunnel {
 
   static AetherTunnel? _live;
 
+  /// What the live tunnel was started with, kept so it can be brought back
+  /// without asking the caller to remember anything.
+  static _Spec? _spec;
+  static AetherWatchdog? _dog;
+  static Timer? _dogTimer;
+
+  /// How often the live tunnel is checked.
+  ///
+  /// Fifteen seconds is a compromise. The failure being watched for takes the
+  /// whole device offline, so noticing it late is expensive; but each check
+  /// opens a loopback connection, and doing that every second for the life of a
+  /// connection is not free either.
+  static const Duration watchEvery = Duration(seconds: 15);
+
   /// The tunnel currently running, if any.
   static AetherTunnel? get live => _live;
 
@@ -50,6 +66,92 @@ class AetherTunnel {
     Duration timeout = const Duration(seconds: 45),
   }) async {
     await stop();
+    final AetherTunnel t = await _open(options,
+        endpoint: endpoint,
+        identityBase: identityBase,
+        port: port,
+        timeout: timeout);
+    _spec = _Spec(options, endpoint, identityBase, t.socksPort, timeout);
+    _arm();
+    return t;
+  }
+
+  /// Starts the watchdog for the live tunnel.
+  ///
+  /// The core can stop serving while the app still believes it is connected,
+  /// and the way that showed up was worse than a disconnect: the tunnel device
+  /// stayed up, so every packet was routed into a tunnel carrying nothing and
+  /// the device lost the internet entirely until Nova was switched off. Waking
+  /// from sleep reproduces it, because the socket the core holds belongs to a
+  /// network that is no longer there.
+  static void _arm() {
+    _dogTimer?.cancel();
+    _dog = AetherWatchdog(
+      isServing: _probe,
+      restart: _restart,
+      log: (String m, {bool warn = false}) => NovaLog.instance.write(m,
+          level: warn ? NovaLogLevel.warn : NovaLogLevel.info),
+    );
+    _dogTimer = Timer.periodic(watchEvery, (_) => _dog?.check());
+  }
+
+  /// Checks the thing that actually matters, which is not the flag the app set
+  /// when it connected.
+  ///
+  /// Two questions, because they fail separately: the core can report its job
+  /// as failed, and it can also quietly stop accepting on the port sing-box
+  /// forwards into while the job still looks alive.
+  static Future<bool> _probe() async {
+    final AetherTunnel? t = _live;
+    if (t == null) return true; // nothing to watch
+    if (liveIsServing == false) return false;
+    try {
+      final Socket s = await Socket.connect('127.0.0.1', t.socksPort,
+          timeout: const Duration(seconds: 2));
+      s.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> _restart() async {
+    final _Spec? spec = _spec;
+    if (spec == null) return;
+    final AetherTunnel? old = _live;
+    _live = null;
+    if (old != null) {
+      try {
+        old._core.jobCancel(old.job);
+      } catch (_) {
+        // Already gone, which is the case being recovered from.
+      }
+    }
+    // The same port on purpose: sing-box is already forwarding into it and has
+    // no idea any of this happened.
+    await _open(spec.options,
+        endpoint: spec.endpoint,
+        identityBase: spec.identityBase,
+        port: spec.port,
+        timeout: spec.timeout);
+  }
+
+  /// Tells the watchdog to stop waiting out a backoff. Called when the app
+  /// comes back to the foreground or the network changes, because those are
+  /// exactly the moments a stale wait is pointless and the user is looking at
+  /// a dead connection.
+  static void wake() {
+    _dog?.wake();
+    unawaited(_dog?.check());
+  }
+
+  static Future<AetherTunnel> _open(
+    AetherOptions options, {
+    required String endpoint,
+    required String identityBase,
+    int? port,
+    required Duration timeout,
+  }) async {
     final AetherCore core = AetherCore.open();
 
     final AetherJobStatus opened = await _run(
@@ -106,6 +208,10 @@ class AetherTunnel {
 
   /// Stops the running tunnel, if there is one. Safe to call when there is not.
   static Future<void> stop() async {
+    _dogTimer?.cancel();
+    _dogTimer = null;
+    _dog = null;
+    _spec = null;
     final AetherTunnel? t = _live;
     _live = null;
     if (t == null) return;
@@ -171,4 +277,17 @@ class AetherTunnel {
     await s.close();
     return p;
   }
+}
+
+
+/// What a tunnel was started with, so it can be started again unchanged.
+class _Spec {
+  const _Spec(
+      this.options, this.endpoint, this.identityBase, this.port, this.timeout);
+
+  final AetherOptions options;
+  final String endpoint;
+  final String identityBase;
+  final int port;
+  final Duration timeout;
 }

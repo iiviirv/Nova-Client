@@ -26,6 +26,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private var xrayStarted = false
   /// The Aether tunnel's job id, or nil when this connection has no WARP core.
   private var aetherJob: UInt64?
+
+  /// What the WARP tunnel was started with, so it can be started again.
+  ///
+  /// The core can stop serving while the extension still believes it is
+  /// connected, and that is worse than a disconnect: the tunnel device stays
+  /// up, so every packet on the phone is routed into a tunnel that carries
+  /// nothing and the device loses the internet entirely until Nova is switched
+  /// off. Waking from sleep is the reliable way to reproduce it, because the
+  /// socket the core holds belongs to a network that no longer exists.
+  private var aetherSpec: (identity: [String: Any], tunnel: Any, port: UInt16)?
+  private var aetherTimer: DispatchSourceTimer?
+  private var aetherFailures = 0
+  private var aetherNextAttempt = Date.distantPast
+  private var aetherBusy = false
+  private let aetherQueue = DispatchQueue(label: "online.novaproxy.aether.watch")
   private var xrayLogSink: XrayLogSink?
   private var pathMonitor: NWPathMonitor?
 
@@ -130,6 +145,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       _ = NovaxrayStop()
     }
     xrayLogSink = nil
+    stopAetherWatchdog()
     if let job = aetherJob {
       aetherJob = nil
       // Frees the job and closes the SOCKS port with it. Left running, the next
@@ -194,6 +210,102 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       throw aetherError("the tunnel payload named no port to wait on")
     }
     try awaitAetherPort(port)
+    aetherSpec = (identity: identityPayload, tunnel: tunnel, port: port)
+    armAetherWatchdog()
+  }
+
+  // MARK: - Keeping the WARP tunnel alive
+
+  /// Checks the live tunnel every so often and brings it back when it dies.
+  ///
+  /// Fifteen seconds is a compromise: the failure takes the whole phone
+  /// offline, so noticing late is expensive, but each check opens a loopback
+  /// connection and doing that every second for the life of a connection is
+  /// not free either.
+  private func armAetherWatchdog() {
+    aetherTimer?.cancel()
+    let timer = DispatchSource.makeTimerSource(queue: aetherQueue)
+    timer.schedule(deadline: .now() + 15, repeating: 15)
+    timer.setEventHandler { [weak self] in self?.checkAether() }
+    timer.resume()
+    aetherTimer = timer
+  }
+
+  private func stopAetherWatchdog() {
+    aetherTimer?.cancel()
+    aetherTimer = nil
+    aetherSpec = nil
+    aetherFailures = 0
+    aetherNextAttempt = .distantPast
+  }
+
+  /// One pass. Overlapping calls do nothing, so a slow restart cannot have a
+  /// second one started on top of it.
+  private func checkAether() {
+    guard !aetherBusy, let spec = aetherSpec else { return }
+    aetherBusy = true
+    defer { aetherBusy = false }
+
+    if aetherIsServing(port: spec.port) {
+      if aetherFailures > 0 {
+        NSLog("Nova: the WARP tunnel is carrying traffic again")
+      }
+      aetherFailures = 0
+      aetherNextAttempt = .distantPast
+      return
+    }
+    // Backoff, because the usual cause is a network that is not there yet. A
+    // phone coming out of sleep has no route for a moment, and each attempt
+    // opens an identity and dials a gateway.
+    if Date() < aetherNextAttempt { return }
+    aetherFailures += 1
+    NSLog("Nova: the WARP tunnel stopped carrying traffic, so nothing on this "
+      + "device could reach the internet. Restarting it (attempt \(aetherFailures))")
+    restartAether(spec)
+    let backoff = min(5.0 * pow(2.0, Double(aetherFailures - 1)), 60.0)
+    aetherNextAttempt = Date().addingTimeInterval(backoff)
+  }
+
+  /// Two questions, because they fail separately: the core can report its job
+  /// as failed, and it can also quietly stop accepting on the port sing-box
+  /// forwards into while the job still looks alive.
+  private func aetherIsServing(port: UInt16) -> Bool {
+    if let job = aetherJob {
+      if let now = try? aetherPoll(job), (now["state"] as? String) == "failed" {
+        return false
+      }
+    }
+    return aetherPortAccepts(port)
+  }
+
+  private func restartAether(_ spec: (identity: [String: Any], tunnel: Any, port: UInt16)) {
+    if let job = aetherJob {
+      aetherJob = nil
+      if let raw = aether_job_cancel(job) { aether_string_free(raw) }
+    }
+    do {
+      let identity = try aetherJob(
+        call: { aether_identity_open($0) },
+        payload: spec.identity,
+        what: "reopen the WARP identity")
+      guard let handle = (identity["identity"] as? NSNumber)?.uint64Value else {
+        throw aetherError("the core returned no identity handle")
+      }
+      // The same port on purpose: sing-box is already forwarding into it and
+      // has no idea any of this happened.
+      let started = try aetherCall(
+        { aether_tunnel_start(handle, $0) },
+        payload: spec.tunnel,
+        what: "restart the WARP tunnel")
+      guard let job = (started["job"] as? NSNumber)?.uint64Value else {
+        throw aetherError("the core started no job for the tunnel")
+      }
+      aetherJob = job
+      try awaitAetherPort(spec.port)
+      NSLog("Nova: the WARP tunnel was restarted on port \(spec.port)")
+    } catch {
+      NSLog("Nova: could not restart the WARP tunnel: \(error.localizedDescription)")
+    }
   }
 
   /// One call into the core, with its reply parsed and its string freed.
@@ -274,23 +386,37 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private func awaitAetherPort(_ port: UInt16) throws {
     let deadline = Date().addingTimeInterval(45)
     while Date() < deadline {
-      let fd = socket(AF_INET, SOCK_STREAM, 0)
-      if fd >= 0 {
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        let ok = withUnsafePointer(to: &addr) {
-          $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
-          }
-        }
-        close(fd)
-        if ok { return }
-      }
+      if aetherPortAccepts(port) { return }
       Thread.sleep(forTimeInterval: 0.2)
     }
     throw aetherError("the WARP tunnel never started serving on \(port)")
+  }
+
+  /// Whether anything is accepting on the loopback port sing-box forwards into.
+  private func aetherPortAccepts(_ port: UInt16) -> Bool {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { return false }
+    defer { close(fd) }
+    var addr = sockaddr_in()
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = port.bigEndian
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+    return withUnsafePointer(to: &addr) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+      }
+    }
+  }
+
+  /// The system telling us the device woke up.
+  ///
+  /// This is the moment the core is most likely to be holding a socket for a
+  /// network that no longer exists, and the moment a stale backoff is most
+  /// pointless: the user has just picked the phone up and is looking at a
+  /// connection that carries nothing.
+  override func wake() {
+    aetherNextAttempt = .distantPast
+    aetherQueue.async { [weak self] in self?.checkAether() }
   }
 
   private func aetherError(_ message: String) -> NSError {

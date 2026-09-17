@@ -1571,6 +1571,10 @@ class DesktopProxyController extends ProxyController {
     if (visible == _visible) return;
     _visible = visible;
     if (_state.isActive) _armPolling();
+    // Waking a laptop is the reliable way to kill the core: the socket it holds
+    // belongs to a network that is no longer there. Check now rather than
+    // serving out a backoff started before the lid closed.
+    if (visible) AetherTunnel.wake();
   }
 
   /// Read the core's per-node urltest results off the Clash API and publish

@@ -161,6 +161,11 @@ class SingboxProxyController extends ProxyController {
       NovaLog.instance.write('Stopped measuring: Nova left the foreground');
       unawaited(cancelMeasure());
     }
+    // Coming back is the moment to look at the Aether tunnel rather than wait
+    // out a backoff. A phone that has been asleep for hours is the case that
+    // kills the core, and the user is now holding it and looking at a
+    // connection that carries nothing.
+    if (state == AppLifecycleState.resumed) AetherTunnel.wake();
   }
 
   final MethodChannel _control;
