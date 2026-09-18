@@ -136,6 +136,8 @@ jobs:
           files: Nova-Linux.tar.gz
           body_path: notes.md
           generate_release_notes: false
+          # Publish only after every platform asset has been verified.
+          draft: true
 
       # Mirror to IRNova (where the website's download links point). Non-fatal:
       # an expired IRNOVA_TOKEN must not fail an otherwise good release.
@@ -149,3 +151,5 @@ jobs:
           files: Nova-Linux.tar.gz
           body_path: notes.md
           generate_release_notes: false
+          # Publish only after every platform asset has been verified.
+          draft: true

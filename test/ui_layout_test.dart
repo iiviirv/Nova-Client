@@ -271,8 +271,7 @@ void main() {
     testWidgets('rows lay out at 320dp and 2x text',
         (WidgetTester tester) async {
       await _pump(tester, const ServersScreen(),
-          profiles: <ProxyProfile>[_subscription(), _single()],
-          textScale: 2.0);
+          profiles: <ProxyProfile>[_subscription(), _single()], textScale: 2.0);
       expect(tester.takeException(), isNull);
       expect(find.text('17 nodes'), findsOneWidget);
       expect(find.text('All'), findsOneWidget);
@@ -301,6 +300,19 @@ void main() {
   });
 
   group('Settings', () {
+    testWidgets('connection guide can be opened and closed from Settings',
+        (WidgetTester tester) async {
+      await _pump(tester, const SettingsScreen());
+      await tester.tap(find.text('Connection guide'));
+      await tester.pumpAndSettle();
+      expect(find.text('Three ways to get connected'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('Connection guide'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _teardown(tester);
+    });
+
     testWidgets('lays out at 320dp and 2x text, English dark',
         (WidgetTester tester) async {
       await _pump(tester, const SettingsScreen(), textScale: 2.0);
@@ -402,7 +414,7 @@ void main() {
     Widget onboarding() =>
         NovaOnboarding(onPickLanguage: (_) {}, onFinish: (_) {});
 
-    testWidgets('both steps lay out at 320dp and 2x text',
+    testWidgets('all steps lay out at 320dp and 2x text',
         (WidgetTester tester) async {
       await _pump(tester, onboarding(), textScale: 2.0);
       expect(tester.takeException(), isNull);
@@ -410,6 +422,11 @@ void main() {
 
       await tester.ensureVisible(find.text('Get started'));
       await tester.tap(find.text('Get started'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Three ways to get connected'), findsOneWidget);
+      await tester.ensureVisible(find.text('Choose how to start'));
+      await tester.tap(find.text('Choose how to start'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.text('How would you like to start?'), findsOneWidget);

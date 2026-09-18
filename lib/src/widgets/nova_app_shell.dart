@@ -160,8 +160,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content:
-            Text(ok ? s.aetherGatewayReplaced : s.aetherNoOtherGateway),
+        content: Text(ok ? s.aetherGatewayReplaced : s.aetherNoOtherGateway),
         duration: Duration(seconds: ok ? 4 : 10),
       ));
   }
@@ -185,6 +184,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
     super.initState();
     final String? action = widget.startAction;
     if (action == null) return;
+    if (action == 'aether') return; // Home owns the guided gateway search.
     if (action == 'free') {
       // They chose the free servers: they are already in the list (seeded on a
       // fresh install), so make sure they are the selected one and leave the
@@ -346,31 +346,31 @@ class _NovaBottomBar extends StatelessWidget {
                     ),
                     padding: EdgeInsets.only(bottom: bottomInset),
                     child: Row(
-                children: <Widget>[
-                  for (int i = 0; i < leftDests.length; i++)
-                    Expanded(
-                      child: _NavItem(
-                        dest: leftDests[i],
-                        selected: index == i,
-                        onTap: () => onSelect(i),
-                      ),
-                    ),
-                  const Spacer(), // center slot reserved for the connect button
-                  for (int i = 0; i < rightDests.length; i++)
-                    Expanded(
-                      child: _NavItem(
-                        dest: rightDests[i],
-                        selected: index == i + 2,
-                        onTap: () => onSelect(i + 2),
-                      ),
-                    ),
-                ],
-                      ),
+                      children: <Widget>[
+                        for (int i = 0; i < leftDests.length; i++)
+                          Expanded(
+                            child: _NavItem(
+                              dest: leftDests[i],
+                              selected: index == i,
+                              onTap: () => onSelect(i),
+                            ),
+                          ),
+                        const Spacer(), // center slot reserved for the connect button
+                        for (int i = 0; i < rightDests.length; i++)
+                          Expanded(
+                            child: _NavItem(
+                              dest: rightDests[i],
+                              selected: index == i + 2,
+                              onTap: () => onSelect(i + 2),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ),
           // Floating connect button, centered over the bar's top edge.
           Positioned(
             top: 0,

@@ -1,39 +1,33 @@
 # Changelog
 
-## v1.25.0 (2026-09-17)
+## v1.25.0 (2026-09-18)
 
-- **A new way out, for networks where almost nothing else gets through.**
-  Nova can now carry your traffic inside ordinary DNS lookups, using the
-  MasterDNS method. It is slow by nature, because every piece of your traffic
-  has to fit inside a DNS question and its answer, so it is a way through when
-  the usual ones are blocked rather than something to use every day. Add one
-  from the plus button on the Servers page, fill in the domain and key you were
-  given, or paste a config you already have.
+- Added a first-run connection guide for Free VPN servers, Aether and MasterDNS.
+  The same guide is always available in Settings, in English and Persian.
+- Added MasterDNS configuration import, editing and connections on supported
+  clients. MasterDNS carries traffic over DNS and needs your own server config;
+  it is intended for difficult network conditions, not high-throughput use.
+- LAN sharing now works alongside full-device tunnel mode as well as proxy mode.
+  Internal connection checks use a separate local listener, so enabling a LAN
+  username and password does not block the app's own checks.
+- The dashboard shows the running shared address and warns when a settings
+  change still needs a reconnect. On the receiving device, Wi-Fi HTTP proxy
+  settings are not a full-device VPN; use a compatible tunnel client when all
+  apps need the shared connection.
+- Improved Aether recovery monitoring and traffic verification. Gateway checks
+  use encrypted traffic, validate replies and limit response buffering.
+- Fixed spacing around Aether setup and improved onboarding on smaller screens.
+- Fixed unnecessary macOS authorization prompts during disconnect and bundled
+  the missing Xray core for Linux xhttp connections.
 
-- **Fixed: waking a phone or computer could leave it with no internet at all.**
-  With one of the new WARP protocols, coming back after a few hours or out of
-  sleep could leave the connection up while nothing moved, and the whole device
-  offline until Nova was switched off, at which point every waiting message
-  arrived at once. Nova now watches that connection and brings it back by
-  itself, and checks it the moment you pick the device up.
+Field testing covered Free VPN, Aether gateway discovery and network switching,
+MasterDNS XOR, and HTTP/SOCKS5 sharing through receiving clients. WARP upload
+performance can still vary. Overnight recovery and all MasterDNS encryption
+modes have not been comprehensively verified.
 
-- **Share your connection with other devices on your network.** A TV, a console
-  or a work laptop cannot run Nova, but it can be pointed at a device that does.
-  This is off unless you turn it on, and Nova asks first, because the same
-  switch lets anything that can reach the port use your connection. You can set
-  a username and password.
-
-- **Fixed: on macOS, disconnecting asked for your password every time** if you
-  had turned off letting Nova set the system proxy. It was clearing a setting
-  it had never made.
-
-- **Fixed: on Linux, servers using the xhttp transport never worked.** Nova
-  could not find the second core it needs for them.
-
-- A route is now checked by carrying real traffic over an encrypted connection
-  and reporting where it came out, so a route that answers without carrying
-  anything is no longer saved as working.
-
+Android upgrades: use the same APK variant as your current installation
+(universal, arm64-v8a, armeabi-v7a or x86_64). Switching variants can be rejected
+as a downgrade because their internal version codes differ.
 
 ## v1.24.3 (2026-09-17)
 

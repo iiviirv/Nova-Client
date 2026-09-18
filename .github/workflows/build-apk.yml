@@ -261,6 +261,8 @@ jobs:
           files: dist/*.apk
           body_path: notes.md
           generate_release_notes: false
+          # Publish only after every platform asset has been verified.
+          draft: true
 
       # Mirror to the IRNova/Nova-Client repo (binaries only, no source), which
       # is where novaproxy.online's download links point. This needs a PAT with
@@ -278,3 +280,5 @@ jobs:
           files: dist/*.apk
           body_path: notes.md
           generate_release_notes: false
+          # Publish only after every platform asset has been verified.
+          draft: true

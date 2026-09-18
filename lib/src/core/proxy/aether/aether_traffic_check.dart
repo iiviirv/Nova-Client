@@ -152,14 +152,22 @@ abstract final class AetherTrafficCheck {
       // question the tunnel exists to avoid asking.
       final List<int> name = utf8.encode(to.host);
       wire.write(<int>[
-        0x05, 0x01, 0x00,
-        0x03, name.length, ...name,
-        (port >> 8) & 0xff, port & 0xff,
+        0x05,
+        0x01,
+        0x00,
+        0x03,
+        name.length,
+        ...name,
+        (port >> 8) & 0xff,
+        port & 0xff,
       ]);
       final List<int>? reply = await wire.take(4);
-      if (reply == null || reply[1] != 0x00) {
-        return _failed(clock,
-            'the tunnel refused to connect (${_socksError(reply?[1])})');
+      if (reply == null ||
+          reply[0] != 0x05 ||
+          reply[2] != 0x00 ||
+          reply[1] != 0x00) {
+        return _failed(
+            clock, 'the tunnel refused to connect (${_socksError(reply?[1])})');
       }
       // Step over the bound address the proxy echoes back.
       final int addrLen = switch (reply[3]) {
@@ -185,10 +193,9 @@ abstract final class AetherTrafficCheck {
       // The status line is checked before the body is believed. Without it any
       // response at all that happens to contain a warp line counts as proof,
       // including an error page from something that is not the far end.
-      if (!response.startsWith('HTTP/1.1 200') &&
-          !response.startsWith('HTTP/1.0 200')) {
-        return _failed(
-            clock, 'the far end answered ${response.split('\r\n').first.trim()}');
+      if (!RegExp(r'^HTTP/1\.[01] 200(?: |\r\n)').hasMatch(response)) {
+        return _failed(clock,
+            'the far end answered ${response.split('\r\n').first.trim()}');
       }
       final Map<String, String> trace = _parse(response);
       if (trace.isEmpty) {
@@ -253,25 +260,37 @@ abstract final class AetherTrafficCheck {
 /// `RawSocket`, so the same pipe carries on afterwards.
 class _Wire {
   _Wire(this._sock) {
-    _sub = _sock.listen(_onEvent);
+    _sub = _sock.listen(_onEvent, onError: _onError);
   }
 
   RawSocket _sock;
   late StreamSubscription<RawSocketEvent> _sub;
   final List<int> _buf = <int>[];
   bool _done = false;
+  Object? _error;
   Completer<void>? _waiter;
 
   void _onEvent(RawSocketEvent e) {
     if (e == RawSocketEvent.read) {
-      final Uint8List? d = _sock.read();
+      // Bound allocation at the socket, including data arriving during a
+      // handshake. Truncating only in rest() happens after allocation.
+      final int room = AetherTrafficCheck.maxBody - _buf.length;
+      final Uint8List? d = room > 0 ? _sock.read(room) : null;
       if (d != null) _buf.addAll(d);
+      if (_buf.length >= AetherTrafficCheck.maxBody) {
+        _sock.readEventsEnabled = false;
+      }
     } else if (e == RawSocketEvent.readClosed || e == RawSocketEvent.closed) {
       _done = true;
     }
     final Completer<void>? w = _waiter;
     _waiter = null;
     if (w != null && !w.isCompleted) w.complete();
+  }
+
+  void _onError(Object error) {
+    _error = error;
+    close();
   }
 
   void write(List<int> bytes) {
@@ -289,8 +308,10 @@ class _Wire {
       _waiter = Completer<void>();
       await _waiter!.future;
     }
+    if (_error != null) throw _error!;
     final List<int> out = _buf.sublist(0, n);
     _buf.removeRange(0, n);
+    if (!_done) _sock.readEventsEnabled = true;
     return out;
   }
 
@@ -306,6 +327,7 @@ class _Wire {
       _waiter = Completer<void>();
       await _waiter!.future;
     }
+    if (_error != null) throw _error!;
     final List<int> out = _buf.length > cap ? _buf.sublist(0, cap) : _buf;
     return utf8.decode(out, allowMalformed: true);
   }
@@ -314,7 +336,7 @@ class _Wire {
     final RawSecureSocket sec =
         await RawSecureSocket.secure(_sock, subscription: _sub, host: host);
     _sock = sec;
-    _sub = sec.listen(_onEvent);
+    _sub = sec.listen(_onEvent, onError: _onError);
   }
 
   void close() {

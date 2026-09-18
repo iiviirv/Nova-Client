@@ -6,7 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_traffic_check.dart';
 
 /// How the fake gateway behaves.
-enum Behaviour { serve, refuse, notSocks, silent, hangUp, endless, huge, dribble }
+enum Behaviour {
+  serve,
+  refuse,
+  notSocks,
+  silent,
+  hangUp,
+  endless,
+  huge,
+  dribble
+}
 
 /// A stand-in for the tunnel's SOCKS5 port.
 ///
@@ -16,6 +25,9 @@ enum Behaviour { serve, refuse, notSocks, silent, hangUp, endless, huge, dribble
 /// just a switch.
 Future<ServerSocket> fakeGateway({
   Behaviour how = Behaviour.serve,
+  int replyVersion = 5,
+  int reserved = 0,
+  String status = '200 OK',
   String warp = 'on',
   String ip = '104.28.208.123',
   List<int>? sentCounter,
@@ -57,7 +69,7 @@ Future<ServerSocket> fakeGateway({
         return;
       }
       if (how == Behaviour.hangUp) return;
-      sock.add(<int>[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
+      sock.add(<int>[replyVersion, 0x00, reserved, 0x01, 0, 0, 0, 0, 0, 0]);
       await sock.flush();
 
       if (await take(1) == null) return;
@@ -73,8 +85,8 @@ Future<ServerSocket> fakeGateway({
         // Answers, then feeds bytes too slowly to ever reach the size cap. The
         // cap cannot end this read, so only tearing the socket down can, which
         // is what makes this a test of the teardown alone.
-        sock.add(utf8.encode(
-            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
+        sock.add(
+            utf8.encode('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
         await sock.flush();
         // Notice when the client goes away. Nothing else here can tell us.
         unawaited(it.moveNext().then((bool more) {
@@ -97,8 +109,8 @@ Future<ServerSocket> fakeGateway({
         // Answers correctly and then never stops. This is the shape a
         // transparent proxy or an on-path injector takes, and it is the one
         // that used to grow the client's buffer without limit.
-        sock.add(utf8.encode(
-            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
+        sock.add(
+            utf8.encode('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n'));
         await sock.flush();
         final List<int> chunk = List<int>.filled(65536, 65);
         try {
@@ -131,7 +143,7 @@ Future<ServerSocket> fakeGateway({
         }
         return;
       }
-      sock.add(utf8.encode('HTTP/1.1 200 OK\r\n'
+      sock.add(utf8.encode('HTTP/1.1 $status\r\n'
           'Content-Type: text/plain\r\n'
           'Content-Length: ${body.length}\r\n\r\n$body'));
       await sock.flush();
@@ -151,6 +163,34 @@ Future<ServerSocket> fakeGateway({
 final Uri plain = Uri.parse('http://www.cloudflare.com/cdn-cgi/trace');
 
 void main() {
+  test('rejects malformed SOCKS version and reserved byte', () async {
+    for (final values in <List<int>>[
+      <int>[4, 0],
+      <int>[5, 1]
+    ]) {
+      final server =
+          await fakeGateway(replyVersion: values[0], reserved: values[1]);
+      try {
+        final proof =
+            await AetherTrafficCheck.through(server.port, target: plain);
+        expect(proof.viaWarp, isFalse);
+      } finally {
+        await server.close();
+      }
+    }
+  });
+
+  test('a status starting with 200 is not necessarily HTTP success', () async {
+    final server = await fakeGateway(status: '2000 Invalid');
+    try {
+      final proof =
+          await AetherTrafficCheck.through(server.port, target: plain);
+      expect(proof.viaWarp, isFalse);
+    } finally {
+      await server.close();
+    }
+  });
+
   // The one test that is about the default. Plain HTTP here would let anyone on
   // the path answer warp=on in exactly the case the check exists to catch.
   test('production fetches the proof over TLS', () {
@@ -160,7 +200,8 @@ void main() {
 
   test('a tunnel that carries traffic through WARP passes', () async {
     final ServerSocket g = await fakeGateway(warp: 'on');
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.carried, isTrue);
     expect(p.viaWarp, isTrue);
@@ -170,7 +211,8 @@ void main() {
 
   test('warp=plus is WARP too', () async {
     final ServerSocket g = await fakeGateway(warp: 'plus');
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.viaWarp, isTrue);
   });
@@ -180,7 +222,8 @@ void main() {
   // an endpoint that proves nothing.
   test('traffic that leaked around the tunnel is not a pass', () async {
     final ServerSocket g = await fakeGateway(warp: 'off');
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.carried, isTrue, reason: 'bytes did move');
     expect(p.viaWarp, isFalse, reason: 'but not through WARP');
@@ -188,7 +231,8 @@ void main() {
 
   test('a refused connection says so rather than timing out', () async {
     final ServerSocket g = await fakeGateway(how: Behaviour.refuse);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.carried, isFalse);
     expect(p.error, contains('refused'));
@@ -196,7 +240,8 @@ void main() {
 
   test('a port that is not SOCKS5 is reported as such', () async {
     final ServerSocket g = await fakeGateway(how: Behaviour.notSocks);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.carried, isFalse);
     expect(p.error, contains('SOCKS5'));
@@ -206,8 +251,8 @@ void main() {
       () async {
     final ServerSocket g = await fakeGateway(how: Behaviour.silent);
     final Stopwatch clock = Stopwatch()..start();
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 2));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: 2));
     clock.stop();
     await g.close();
     expect(p.carried, isFalse);
@@ -219,7 +264,8 @@ void main() {
 
   test('a tunnel that hangs up mid-handshake is not a pass', () async {
     final ServerSocket g = await fakeGateway(how: Behaviour.hangUp);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain);
+    final AetherTrafficProof p =
+        await AetherTrafficCheck.through(g.port, target: plain);
     await g.close();
     expect(p.carried, isFalse);
   });
@@ -228,8 +274,8 @@ void main() {
     final ServerSocket g = await fakeGateway();
     final int dead = g.port;
     await g.close();
-    final AetherTrafficProof p = await AetherTrafficCheck.through(dead, target: plain,
-        budget: const Duration(seconds: 3));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(dead,
+        target: plain, budget: const Duration(seconds: 3));
     expect(p.carried, isFalse);
     expect(p.error, isNotNull);
   });
@@ -243,8 +289,8 @@ void main() {
     final ServerSocket g =
         await fakeGateway(how: Behaviour.endless, sentCounter: sent);
     final Stopwatch clock = Stopwatch()..start();
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 2));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: 2));
     clock.stop();
     expect(p.carried, isFalse);
     expect(clock.elapsedMilliseconds, lessThan(4000),
@@ -267,22 +313,24 @@ void main() {
   // rather than a second test of the timeout.
   test('an answer bigger than the cap is cut short and still judged', () async {
     final List<int> sent = <int>[0];
-    final ServerSocket g = await fakeGateway(
-        how: Behaviour.huge, warp: 'on', sentCounter: sent);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 30));
+    final ServerSocket g =
+        await fakeGateway(how: Behaviour.huge, warp: 'on', sentCounter: sent);
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: 30));
     expect(p.carried, isTrue);
     expect(p.viaWarp, isTrue, reason: 'the trace is inside the first 16KB');
     await Future<void>.delayed(const Duration(milliseconds: 500));
     final int sentTotal = sent[0];
     await g.close();
     expect(sentTotal, lessThan(8 * 1024 * 1024),
-        reason: 'the whole body was read instead of the first ${AetherTrafficCheck.maxBody} '
+        reason:
+            'the whole body was read instead of the first ${AetherTrafficCheck.maxBody} '
             'bytes: server pushed $sentTotal');
   });
 
   test('a non-200 answer is not proof, whatever the body says', () async {
-    final ServerSocket g = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final ServerSocket g =
+        await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     g.listen((Socket sock) async {
       final StreamIterator<List<int>> it = StreamIterator<List<int>>(sock);
       final List<int> buf = <int>[];
@@ -295,6 +343,7 @@ void main() {
         buf.removeRange(0, n);
         return o;
       }
+
       await take(3);
       sock.add(<int>[0x05, 0x00]);
       await sock.flush();
@@ -313,8 +362,8 @@ void main() {
       await it.cancel();
       sock.destroy();
     });
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 5));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: 5));
     await g.close();
     expect(p.carried, isFalse);
     expect(p.viaWarp, isFalse);
@@ -323,8 +372,8 @@ void main() {
 
   test('a spent budget reads as zero, not as a negative number', () async {
     final ServerSocket g = await fakeGateway(how: Behaviour.silent);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: -3));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: -3));
     await g.close();
     expect(p.carried, isFalse);
     expect(p.error, isNot(contains('-')));
@@ -337,8 +386,8 @@ void main() {
     final List<bool> closed = <bool>[false];
     final ServerSocket g =
         await fakeGateway(how: Behaviour.dribble, clientClosed: closed);
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 2));
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain, budget: const Duration(seconds: 2));
     expect(p.carried, isFalse);
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     final bool sawClose = closed[0];
@@ -355,8 +404,10 @@ void main() {
         await fakeGateway(how: Behaviour.dribble, clientClosed: closed);
     Timer(const Duration(milliseconds: 600), () => cancelled = true);
     final Stopwatch clock = Stopwatch()..start();
-    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port, target: plain,
-        budget: const Duration(seconds: 25), abort: () => cancelled);
+    final AetherTrafficProof p = await AetherTrafficCheck.through(g.port,
+        target: plain,
+        budget: const Duration(seconds: 25),
+        abort: () => cancelled);
     clock.stop();
     expect(p.carried, isFalse);
     // The budget is 25s. Returning anywhere near it means cancel did nothing.

@@ -132,10 +132,9 @@ class RoutingScreen extends StatelessWidget {
                           value: settings.mobileProxyMode,
                           onChanged: settings.setMobileProxyMode,
                         ),
-                        if (settings.mobileProxyMode) ...<Widget>[
+                        if (settings.mobileProxyMode || settings.proxyShareOnLan)
                           _ProxyPortRow(settings: settings),
-                          _ProxyShareSection(settings: settings),
-                        ],
+                        _ProxyShareSection(settings: settings),
                         if (Platform.isIOS)
                           _RuleSwitch(
                             icon: Icons.autorenew_rounded,
@@ -169,9 +168,10 @@ class RoutingScreen extends StatelessWidget {
                             value: settings.autoSystemProxy,
                             onChanged: settings.setAutoSystemProxy,
                           ),
-                          _ProxyPortRow(settings: settings),
-                          _ProxyShareSection(settings: settings),
                         ],
+                        if (!settings.tunMode || settings.proxyShareOnLan)
+                          _ProxyPortRow(settings: settings),
+                        _ProxyShareSection(settings: settings),
                       ],
                     ),
                   ),

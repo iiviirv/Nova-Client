@@ -6,10 +6,10 @@ import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_button.dart';
 import '../../widgets/nova_logo.dart';
+import 'connection_guide.dart';
 
-/// First-run onboarding, matching Nova v1.0.0: pick a language, then choose how
-/// to start (deploy your own panel, import from a panel, connect a VPS, or add
-/// a config). Text switches live with the language (and flips to RTL for
+/// First-run onboarding: pick a language, learn the connection options,
+/// then choose how to start. Text switches live with the language (and flips to RTL for
 /// Persian).
 ///
 /// Copy is inline here on purpose: the language step has to show both
@@ -22,7 +22,7 @@ class NovaOnboarding extends StatefulWidget {
   /// Apply the chosen locale immediately so the rest of the app follows.
   final void Function(String langCode) onPickLanguage;
 
-  /// action: 'deploy' | 'panel' | 'vps' | 'add' | null (skip).
+  /// action: 'free' | 'aether' | 'add' | null (skip).
   final void Function(String? action) onFinish;
 
   @override
@@ -32,6 +32,18 @@ class NovaOnboarding extends StatefulWidget {
 class _NovaOnboardingState extends State<NovaOnboarding> {
   String _lang = 'en';
   int _step = 0;
+  final ScrollController _scroll = ScrollController();
+
+  void _goTo(int step) {
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+    setState(() => _step = step);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   bool get _fa => _lang == 'fa';
 
@@ -49,6 +61,7 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 460),
               child: SingleChildScrollView(
+                controller: _scroll,
                 padding: const EdgeInsets.fromLTRB(
                     NovaSpace.xl, NovaSpace.xxl, NovaSpace.xl, NovaSpace.xl),
                 child: Column(
@@ -62,17 +75,19 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
                         textAlign: TextAlign.center),
                     const SizedBox(height: NovaSpace.sm),
                     Text(
-                        _t('Fast, free, unrestricted internet.',
-                            'اینترنت سریع، رایگان و بدون محدودیت.'),
+                        _t('Find the right connection for your network.',
+                            'اتصال مناسب شبکه خود را پیدا کنید.'),
                         style: text.bodyMedium?.copyWith(color: nova.muted),
                         textAlign: TextAlign.center),
                     const SizedBox(height: NovaSpace.lg),
-                    _StepDots(step: _step, count: 2),
+                    _StepDots(step: _step, count: 3),
                     const SizedBox(height: NovaSpace.xl),
                     // A one-shot fade between the two steps; nothing animates
                     // while a step is on screen.
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeIn,
                       transitionBuilder: (Widget child, Animation<double> a) =>
@@ -80,13 +95,18 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
                       layoutBuilder: (Widget? current, List<Widget> previous) =>
                           Stack(
                         alignment: Alignment.topCenter,
-                        children: <Widget>[...previous, if (current != null) current],
+                        children: <Widget>[
+                          ...previous,
+                          if (current != null) current
+                        ],
                       ),
                       child: KeyedSubtree(
                         key: ValueKey<int>(_step),
                         child: _step == 0
                             ? _languageStep(context, nova)
-                            : _startStep(context, nova),
+                            : _step == 1
+                                ? _guideStep(context)
+                                : _startStep(context, nova),
                       ),
                     ),
                   ],
@@ -98,6 +118,23 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
       ),
     );
   }
+
+  Widget _guideStep(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ConnectionGuideContent(isFarsi: _fa),
+          const SizedBox(height: NovaSpace.lg),
+          NovaButton(
+            label: _t('Choose how to start', 'انتخاب روش شروع'),
+            expand: true,
+            onPressed: () => _goTo(2),
+          ),
+          TextButton(
+            onPressed: () => _goTo(0),
+            child: Text(_t('Back', 'بازگشت')),
+          ),
+        ],
+      );
 
   Widget _languageStep(BuildContext context, NovaColors nova) {
     final text = Theme.of(context).textTheme;
@@ -114,7 +151,7 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
         NovaButton(
           label: _t('Get started', 'شروع کنیم'),
           expand: true,
-          onPressed: () => setState(() => _step = 1),
+          onPressed: () => _goTo(1),
         ),
       ],
     );
@@ -175,11 +212,30 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
         // the list, so this closes onboarding straight onto a Connect button
         // that works. Everything below it asks for an account, a server or a
         // link first.
-        _choice(context, Icons.card_giftcard_rounded,
+        _choice(
+            context,
+            Icons.card_giftcard_rounded,
             _t('Use the free servers', 'استفاده از سرورهای رایگان'),
-            _t('Already set up. Just press Connect.',
-                'همین حالا آماده است. فقط اتصال را بزنید.'),
-            highlighted: true, onTap: () => widget.onFinish('free')),
+            _t('No config needed. Select the free list, then tap Connect.',
+                'بدون نیاز به کانفیگ. فهرست رایگان را انتخاب کنید و اتصال را بزنید.'),
+            highlighted: true,
+            onTap: () => widget.onFinish('free')),
+        const SizedBox(height: NovaSpace.sm + 2),
+        _choice(
+            context,
+            Icons.shield_moon_rounded,
+            _t('Set up Aether', 'راه‌اندازی Aether'),
+            _t('Find a WARP gateway from the Home screen.',
+                'از صفحه خانه یک درگاه WARP پیدا کنید.'),
+            onTap: () => widget.onFinish('aether')),
+        const SizedBox(height: NovaSpace.sm + 2),
+        _choice(
+            context,
+            Icons.dns_rounded,
+            _t('Use MasterDNS', 'استفاده از MasterDNS'),
+            _t('Open Servers to add your provider’s DNS tunnel config.',
+                'برای افزودن کانفیگ تونل DNS ارائه‌دهنده، سرورها را باز کنید.'),
+            onTap: () => widget.onFinish('add')),
         // Deploying a panel, signing in to one, and connecting a VPS used to
         // sit here too. All three asked a brand new user for something they do
         // not have yet (a Cloudflare account, a panel login, a server), and two
@@ -187,9 +243,12 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
         // they live where an owner looks for them: Settings > Cloudflare tools,
         // and the Servers page's own empty state.
         const SizedBox(height: NovaSpace.sm + 2),
-        _choice(context, Icons.add_rounded,
+        _choice(
+            context,
+            Icons.add_rounded,
             _t('Add a config', 'افزودن کانفیگ'),
-            _t('Paste a link or a subscription URL', 'چسباندن لینک یا آدرس اشتراک'),
+            _t('Paste a link or a subscription URL',
+                'چسباندن لینک یا آدرس اشتراک'),
             onTap: () => widget.onFinish('add')),
         const SizedBox(height: NovaSpace.md),
         Center(
@@ -226,8 +285,8 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(title,
-                    style: text.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                    style:
+                        text.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(subtitle,
                     style: text.bodySmall?.copyWith(color: nova.muted)),
@@ -306,7 +365,7 @@ class _GlyphTile extends StatelessWidget {
   }
 }
 
-/// Two dots under the header: which of the two steps this is. Decorative for
+/// Progress dots under the header. Decorative for
 /// assistive tech; the step's own heading carries the meaning.
 class _StepDots extends StatelessWidget {
   const _StepDots({required this.step, required this.count});
@@ -322,7 +381,9 @@ class _StepDots extends StatelessWidget {
         children: <Widget>[
           for (int i = 0; i < count; i++) ...<Widget>[
             AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               width: i == step ? 18 : 6,
               height: 6,

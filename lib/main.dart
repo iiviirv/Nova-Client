@@ -109,6 +109,7 @@ Future<void> main() async {
     // Proxy mode on a phone: no TUN, a loopback SOCKS5/HTTP port instead, so
     // the device keeps its own connection and only an app pointed at the port
     // goes through Nova.
+    proxy.sharedProxyPortProvider = () => settings.proxyPort;
     proxy.proxyPortProvider =
         () => settings.mobileProxyMode ? settings.proxyPort : null;
     // Sharing that port with the rest of the network is a separate, deliberate

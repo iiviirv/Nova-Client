@@ -130,6 +130,29 @@ void main() {
   bool hasLoopbackInbound() => (started!['inbounds'] as List<dynamic>)
       .any((dynamic i) => (i as Map)['type'] == 'mixed');
 
+  for (final bool proxyMode in <bool>[false, true]) {
+    test('LAN authentication keeps app probes private, proxyMode=$proxyMode', () async {
+      installEngine(listeningEngine);
+      final c = controller(proxyPort: proxyMode ? 3080 : null)
+        ..sharedProxyPortProvider = (() => 3080)
+        ..proxyShareProvider = () => (onLan: true, user: 'nova', pass: 'test');
+      await c.connect();
+      expect(started, isNotNull, reason: '${c.lastError}');
+      final inbounds = (started!['inbounds'] as List).cast<Map>();
+      expect(inbounds.where((i) => i['type'] == 'tun').length, proxyMode ? 0 : 1);
+      final shared = inbounds.singleWhere((i) => i['listen'] == '0.0.0.0');
+      expect(shared['listen_port'], 3080);
+      expect(shared['users'], [{'username': 'nova', 'password': 'test'}]);
+      final internal = inbounds.singleWhere((i) => i['tag'] == 'nova-private');
+      expect(internal['listen'], '127.0.0.1');
+      expect(internal.containsKey('users'), isFalse);
+      expect(internal['listen_port'], isNot(3080));
+      c.debugSetStateForTest(ProxyConnectionState.connected);
+      expect(c.proxyUri, 'PROXY 127.0.0.1:${internal['listen_port']}');
+      await c.disconnect();
+    });
+  }
+
   test('full-device mode takes this app out of its own tunnel', () async {
     installEngine(listeningEngine);
     final SingboxProxyController c = controller();

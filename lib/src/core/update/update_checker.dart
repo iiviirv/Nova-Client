@@ -14,7 +14,7 @@ const String kNovaReleaseTag = 'v1.25.0';
 /// Settings' About footer. They mirror pubspec.yaml's `version:` (a test pins
 /// them to it, because they sat at 0.3.3 (82) through five releases).
 const String kNovaVersion = '1.25.0';
-const String kNovaBuild = '155';
+const String kNovaBuild = '157';
 
 /// The public repo whose releases the app updates from.
 const String kNovaRepo = 'IRNova/Nova-Client';

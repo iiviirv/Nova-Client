@@ -487,6 +487,13 @@ class SingboxProxyController extends ProxyController {
   /// the whole device with a TUN, or null for the ordinary full-device tunnel.
   int? Function()? proxyPortProvider;
 
+  int Function()? sharedProxyPortProvider;
+  int? _privateProxyPort;
+  int? _sharedProxyPort;
+
+  @override
+  int? get sharedProxyPort => _state.isActive ? _sharedProxyPort : null;
+
   /// Whether the proxy port should be reachable from the local network, and
   /// with what credentials.
   ///
@@ -517,10 +524,11 @@ class SingboxProxyController extends ProxyController {
   /// can reach, which is noise; sharing without credentials is a decision the
   /// user is allowed to make, and the UI is where they are warned about it.
   List<({String user, String pass})> _shareUsers() {
-    if (proxyPortProvider?.call() == null) return const <({String user, String pass})>[];
     final ({bool onLan, String user, String pass})? share =
         proxyShareProvider?.call();
-    if (share == null || !share.onLan) return const <({String user, String pass})>[];
+    if (share == null || !share.onLan) {
+      return const <({String user, String pass})>[];
+    }
     if (share.user.isEmpty || share.pass.isEmpty) {
       return const <({String user, String pass})>[];
     }
@@ -532,6 +540,7 @@ class SingboxProxyController extends ProxyController {
     if (!_state.isActive) return null;
     final int? proxyMode = proxyPortProvider?.call();
     if (proxyMode != null) return proxyMode;
+    if (_sharedProxyPort != null) return _sharedProxyPort;
     // Per-app routing: the loopback inbound exists beside the TUN purely so the
     // app can reach its own tunnel. Reporting it here is what points the
     // dashboard's IP and country probes through it instead of out the user's
@@ -546,7 +555,8 @@ class SingboxProxyController extends ProxyController {
   /// own probes at the local proxy so they go where the user's traffic goes.
   @override
   String? get proxyUri {
-    final int? port = localProxyPort;
+    final int? port =
+        _state.isActive ? (_privateProxyPort ?? localProxyPort) : null;
     return port == null ? null : 'PROXY 127.0.0.1:$port';
   }
 
@@ -1033,13 +1043,37 @@ class SingboxProxyController extends ProxyController {
   /// Translates a [ProxyProfile] into a sing-box config document: parse the
   /// share link into a [ProxyNode], then build the full config (TUN inbound,
   /// DNS, per-protocol outbound, rule-based routing). A profile that already
-  /// holds a full sing-box JSON config is passed through unchanged.
+  /// holds a full sing-box JSON config keeps its routes and outbounds; explicit
+  /// LAN sharing adds the shared and private listeners.
   ///
   /// Throws [FormatException] when the link can't be parsed.
   Future<String> _buildSingboxConfig(ProxyProfile profile) async {
+    final bool shareOnLan = proxyShareProvider?.call().onLan ?? false;
+    final int? mixedPort = proxyPortProvider?.call() ??
+        (shareOnLan
+            ? (sharedProxyPortProvider?.call() ?? kDefaultLocalProxyPort)
+            : (_perAppActive ? kDefaultLocalProxyPort : null));
+    _sharedProxyPort = shareOnLan ? mixedPort : null;
+    _privateProxyPort = null;
+    if (shareOnLan) {
+      do {
+        _privateProxyPort = await AetherTunnel.freeLoopbackPort();
+      } while (_privateProxyPort == mixedPort);
+    }
     final String trimmed = profile.uri.trim();
     if (profile.kind == ProxyKind.singboxConfig || trimmed.startsWith('{')) {
-      return trimmed;
+      if (!shareOnLan) return trimmed;
+      final config = (jsonDecode(trimmed) as Map).cast<String, dynamic>();
+      config['inbounds'] = <dynamic>[
+        ...?config['inbounds'] as List<dynamic>?,
+        ...SingboxConfig.inbounds(SingboxRouteOptions(
+          mixedInboundPort: mixedPort,
+          mixedInboundOnLan: true,
+          mixedInboundUsers: _shareUsers(),
+          privateProxyPort: _privateProxyPort,
+        )),
+      ];
+      return jsonEncode(config);
     }
     // Resolves single links directly and subscriptions by fetching + expanding
     // them, so a subscription profile (empty uri, URL in subscriptionUrl) can
@@ -1185,16 +1219,12 @@ class SingboxProxyController extends ProxyController {
       // has no way to ask its own tunnel anything. With this the config carries
       // both inbounds and the dashboard's probes have a way in. See
       // SingboxRouteOptions.tunWithLocalProxy.
-      mixedInboundPort: proxyPortProvider?.call() ??
-          (_perAppActive ? kDefaultLocalProxyPort : null),
-      // Only ever wide when the user asked, and only when the port is the one
-      // they asked about: the per-app inbound above exists so Nova can query
-      // its own tunnel, and sharing that on the network is not what anyone
-      // turned on.
-      mixedInboundOnLan: proxyPortProvider?.call() != null &&
-          (proxyShareProvider?.call().onLan ?? false),
+      mixedInboundPort: mixedPort,
+      privateProxyPort: _privateProxyPort,
+      mixedInboundOnLan: shareOnLan,
       mixedInboundUsers: _shareUsers(),
-      tunWithLocalProxy: proxyPortProvider?.call() == null && _perAppActive,
+      tunWithLocalProxy:
+          proxyPortProvider?.call() == null && (_perAppActive || shareOnLan),
     );
     // Per-ISP optimization: detect the phone's carrier and fold in the DPI-best
     // uTLS fingerprint + fragmentation for it. Best-effort and time-boxed - any
@@ -1955,7 +1985,8 @@ class SingboxProxyController extends ProxyController {
     ];
     for (int attempt = 0; attempt < 2; attempt++) {
       final HttpClient client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 4);
+        ..connectionTimeout = const Duration(seconds: 4)
+        ..findProxy = (_) => proxyUri ?? 'DIRECT';
       try {
         for (final String url in urls) {
           try {

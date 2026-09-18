@@ -43,6 +43,7 @@ class SingboxRouteOptions {
     this.bypassFragmentMask,
     this.tunInterfaceName,
     this.mixedInboundPort,
+    this.privateProxyPort,
     this.mixedInboundOnLan = false,
     this.mixedInboundUsers = const <({String user, String pass})>[],
     this.includePackages = const <String>[],
@@ -59,6 +60,10 @@ class SingboxRouteOptions {
   /// It also means no VPN slot is taken: another VPN can be running at the same
   /// time, which a full-device tunnel makes impossible.
   final int? mixedInboundPort;
+
+  /// A separate loopback listener for app probes and the desktop system proxy.
+  /// LAN authentication must not lock these clients out.
+  final int? privateProxyPort;
 
   /// Whether the proxy port is reachable from the local network rather than
   /// only from this device.
@@ -257,6 +262,7 @@ class SingboxRouteOptions {
     String? bypassFragmentMask,
     String? tunInterfaceName,
     int? mixedInboundPort,
+    int? privateProxyPort,
     bool? mixedInboundOnLan,
     List<({String user, String pass})>? mixedInboundUsers,
     List<String>? includePackages,
@@ -290,6 +296,7 @@ class SingboxRouteOptions {
         bypassFragmentMask: bypassFragmentMask ?? this.bypassFragmentMask,
         tunInterfaceName: tunInterfaceName ?? this.tunInterfaceName,
         mixedInboundPort: mixedInboundPort ?? this.mixedInboundPort,
+        privateProxyPort: privateProxyPort ?? this.privateProxyPort,
         mixedInboundOnLan: mixedInboundOnLan ?? this.mixedInboundOnLan,
         mixedInboundUsers: mixedInboundUsers ?? this.mixedInboundUsers,
         includePackages: includePackages ?? this.includePackages,
@@ -1143,16 +1150,22 @@ class SingboxConfig {
   /// The inbound list, for tests. Building a whole config to read one field
   /// makes the test about everything else that could change in a config.
   static List<Map<String, dynamic>> inboundsForTest(SingboxRouteOptions o) =>
-      _inbounds(o);
+      inbounds(o);
+
+  static List<Map<String, dynamic>> inbounds(SingboxRouteOptions o) => _inbounds(o);
 
   static List<Map<String, dynamic>> _inbounds(SingboxRouteOptions o) {
-    if (o.mixedInboundPort == null) {
-      return <Map<String, dynamic>>[_tunInbound(o)];
-    }
-    if (o.tunWithLocalProxy) {
-      return <Map<String, dynamic>>[_tunInbound(o), _mixedInbound(o)];
-    }
-    return <Map<String, dynamic>>[_mixedInbound(o)];
+    return <Map<String, dynamic>>[
+      if (o.mixedInboundPort == null || o.tunWithLocalProxy) _tunInbound(o),
+      if (o.mixedInboundPort != null) _mixedInbound(o),
+      if (o.privateProxyPort != null)
+        <String, dynamic>{
+          'type': 'mixed',
+          'tag': 'nova-private',
+          'listen': '127.0.0.1',
+          'listen_port': o.privateProxyPort,
+        },
+    ];
   }
 
   static Map<String, dynamic> _mixedInbound(SingboxRouteOptions o) =>

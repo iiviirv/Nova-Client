@@ -13,7 +13,8 @@ import 'package:nova_client/src/features/vps/vps_controller.dart';
 import 'package:nova_client/src/theme/theme_controller.dart';
 
 void main() {
-  testWidgets('first run shows onboarding, then the how-to-start step', (tester) async {
+  testWidgets('first run shows onboarding, then the how-to-start step',
+      (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = await SharedPreferences.getInstance();
     final theme = ThemeController()..attachPrefs(prefs);
@@ -46,7 +47,16 @@ void main() {
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Three ways to get connected'), findsOneWidget);
+    expect(find.text('Free VPN servers'), findsOneWidget);
+    expect(find.text('Aether'), findsOneWidget);
+    expect(find.text('MasterDNS'), findsOneWidget);
+    await tester.ensureVisible(find.text('Choose how to start'));
+    await tester.tap(find.text('Choose how to start'));
+    await tester.pumpAndSettle();
     expect(find.text('How would you like to start?'), findsOneWidget);
+    expect(find.text('Set up Aether'), findsOneWidget);
+    expect(find.text('Use MasterDNS'), findsOneWidget);
     expect(find.text('Use the free servers'), findsOneWidget);
     expect(find.text('Add a config'), findsOneWidget);
     // The panel-owner entries were removed from first run on purpose; they

@@ -268,10 +268,13 @@ abstract class ProxyController extends ChangeNotifier {
   /// dashboard shows it so a user knows how to reach the proxy.
   int? get localProxyPort => null;
 
-  /// True when the OS system proxy currently points at [localProxyPort].
+  /// LAN listener in the running configuration, independent of pending settings.
+  int? get sharedProxyPort => null;
+
+  /// True when the OS system proxy currently points at Nova.
   bool get systemProxyOn => false;
 
-  /// Sets or clears the OS system proxy for [localProxyPort]. Returns whether
+  /// Sets or clears the OS system proxy for Nova. Returns whether
   /// it took effect (macOS asks for admin approval; a declined prompt is a
   /// false here, not a silent nothing).
   Future<bool> setSystemProxy(bool on) async => false;

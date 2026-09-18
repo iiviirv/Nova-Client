@@ -34,17 +34,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// proxy-mode switch.
 
 class _StaticProxy extends ProxyController {
-  _StaticProxy(this._state, {this.profile, this.localPort});
+  _StaticProxy(this._state, {this.profile, this.localPort, this.sharedPort, this.proxyMode = true});
 
   final ProxyConnectionState _state;
   final ProxyProfile? profile;
   final int? localPort;
+  final int? sharedPort;
+  final bool proxyMode;
+
+  @override
+  int? get sharedProxyPort => sharedPort;
 
   @override
   int? get localProxyPort => localPort;
 
   @override
-  bool get isProxyMode => localPort != null;
+  bool get isProxyMode => proxyMode && localPort != null;
 
   @override
   ProxyConnectionState get state => _state;
@@ -152,6 +157,17 @@ Finder get _passField => find.byKey(const ValueKey<String>('proxySharePass'));
 
 void main() {
   group('Settings: share switch', () {
+    testWidgets('sharing remains available with the full-device tunnel on',
+        (WidgetTester tester) async {
+      await _pump(tester, const RoutingScreen(),
+          prefs: <String, Object>{'nova.desktop.tun': true});
+      expect(find.text(_en.routeShare), findsOneWidget);
+      await tester.tap(find.text(_en.routeShare));
+      await tester.pumpAndSettle();
+      expect(find.text(_en.routeShareConfirmTitle), findsOneWidget);
+      await _teardown(tester);
+    });
+
     testWidgets('off by default, and no login fields while off',
         (WidgetTester tester) async {
       final SettingsController settings =
@@ -308,7 +324,7 @@ void main() {
     }
 
     Future<void> pumpConnected(WidgetTester tester,
-        {bool shareOn = true}) async {
+        {bool shareOn = true, bool tunMode = false}) async {
       final ProxyProfile sub = _sub();
       await _pump(
         tester,
@@ -316,11 +332,21 @@ void main() {
         prefs: <String, Object>{'nova.proxy.shareOnLan': shareOn},
         size: const Size(400, 2000),
         proxy: _StaticProxy(ProxyConnectionState.connected,
-            profile: sub, localPort: 2080),
+            profile: sub, localPort: 2080, sharedPort: tunMode ? 2080 : null, proxyMode: !tunMode),
         profiles: <ProxyProfile>[sub],
       );
       await tester.pump();
     }
+
+    testWidgets('TUN sharing shows its live address after settings are disabled',
+        (WidgetTester tester) async {
+      fakeNetwork(<String>['192.168.1.42'], (_) => true);
+      await pumpConnected(tester, tunMode: true, shareOn: false);
+      expect(find.text('192.168.1.42:2080'), findsOneWidget);
+      expect(find.text(_en.routeShare), findsOneWidget);
+      expect(find.text(_en.routeSysProxy), findsNothing);
+      await _teardown(tester);
+    });
 
     testWidgets('shared and open: the LAN address and an open warning',
         (WidgetTester tester) async {

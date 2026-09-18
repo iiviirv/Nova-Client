@@ -67,8 +67,7 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
   /// blocked, it was ours: the core was started before the tunnel device and
   /// died about ten seconds later. With that fixed the tester confirmed all
   /// three protocols, and asked for the fast one back on the main screen.
-  static const AetherOptions _options =
-      AetherOptions(mode: AetherMode.wg);
+  static const AetherOptions _options = AetherOptions(mode: AetherMode.wg);
 
   bool get _busy => _progress != null || _connecting;
 
@@ -96,10 +95,7 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
       });
     } catch (e) {
       found = AetherFindResult(
-          endpoint: null,
-          error: '$e',
-          attempts: 0,
-          rejected: const <String>[]);
+          endpoint: null, error: '$e', attempts: 0, rejected: const <String>[]);
     }
     if (!mounted) return;
     if (_search.cancelled) {
@@ -149,8 +145,8 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[scope.profiles, scope.proxy]),
       builder: (BuildContext context, _) {
-        final bool have = scope.profiles.profiles
-            .any(AetherQuickSetupCard.isWorkingAether);
+        final bool have =
+            scope.profiles.profiles.any(AetherQuickSetupCard.isWorkingAether);
         // Gone once the job is done, so the main screen does not carry a
         // permanent advertisement for something the user already has. Gone
         // while a tunnel is up for the same reason: another way out is an
@@ -160,7 +156,7 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
         }
         if (!_search.available) return const SizedBox.shrink();
         return Padding(
-          padding: const EdgeInsets.only(top: NovaSpace.md),
+          padding: const EdgeInsets.symmetric(vertical: NovaSpace.md),
           child: NovaCard(child: _body(context)),
         );
       },

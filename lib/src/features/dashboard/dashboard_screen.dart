@@ -387,8 +387,8 @@ class _TunModeCard extends StatelessWidget {
 /// On desktop it also shows whether the OS system proxy points at it and offers
 /// to set or clear that (macOS asks for admin approval). A phone has no such
 /// setting, so there the card stops at the address, which is what you paste
-/// into the one app you want to send through Nova. Hidden in TUN mode, where
-/// there is nothing to point at.
+/// into an app you want to send through Nova. TUN mode also shows the card
+/// when the running connection has a shared LAN listener.
 class _ProxyModeCard extends StatelessWidget {
   const _ProxyModeCard();
 
@@ -399,11 +399,12 @@ class _ProxyModeCard extends StatelessWidget {
       listenable: Listenable.merge(<Listenable>[scope.proxy, scope.settings]),
       builder: (context, _) {
         final ProxyController proxy = scope.proxy;
-        final int? port = proxy.localProxyPort;
-        // Only in real proxy mode. Per-app routing opens the same port purely so
-        // the app can ask its own tunnel where it exits, and telling someone to
-        // point apps at it there would be wrong: their app list is what routes.
-        if (port == null || !proxy.isProxyMode || !proxy.state.isActive) {
+        final int? port = proxy.sharedProxyPort ?? proxy.localProxyPort;
+        // Per-app routing alone exposes no user-facing proxy. LAN sharing is
+        // independent of TUN mode and reflects the running configuration.
+        if (port == null ||
+            (!proxy.isProxyMode && proxy.sharedProxyPort == null) ||
+            !proxy.state.isActive) {
           return const SizedBox.shrink();
         }
         final NovaStrings s = NovaStrings.of(context);
@@ -413,7 +414,8 @@ class _ProxyModeCard extends StatelessWidget {
         final bool sys = proxy.systemProxyOn;
         // A phone has no system-proxy setting to point at this, so the button
         // and its status line are desktop only.
-        final bool hasSystemProxy = !Platform.isAndroid && !Platform.isIOS;
+        final bool hasSystemProxy =
+            proxy.isProxyMode && !Platform.isAndroid && !Platform.isIOS;
         return Padding(
           padding: const EdgeInsets.only(bottom: NovaSpace.md),
           child: NovaCard(
@@ -429,11 +431,14 @@ class _ProxyModeCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(s.proxyModeTitle,
+                          Text(
+                              proxy.isProxyMode
+                                  ? s.proxyModeTitle
+                                  : s.routeShare,
                               style: text.titleSmall
                                   ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 2),
-                          Text(s.proxyModeLocal,
+                          Text(proxy.isProxyMode ? s.proxyModeLocal : s.routeShareSub,
                               style: text.bodySmall?.copyWith(color: nova.muted)),
                         ],
                       ),
@@ -444,8 +449,9 @@ class _ProxyModeCard extends StatelessWidget {
                 // The address on its own line, one tap to copy.
                 _CopyableAddress(addr),
                 const SizedBox(height: NovaSpace.sm),
-                Text(s.proxyModeHint,
-                    style: text.bodySmall?.copyWith(color: nova.muted)),
+                if (proxy.isProxyMode)
+                  Text(s.proxyModeHint,
+                      style: text.bodySmall?.copyWith(color: nova.muted)),
                 _SharedAddress(
                   port: port,
                   shareOn: scope.settings.proxyShareOnLan,

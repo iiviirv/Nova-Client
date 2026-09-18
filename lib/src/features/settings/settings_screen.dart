@@ -15,6 +15,7 @@ import '../../widgets/nova_logo.dart';
 import '../../widgets/nova_pill.dart';
 import '../../widgets/nova_scope.dart';
 import '../logs/log_screen.dart';
+import '../onboarding/connection_guide.dart';
 import '../apps/per_app_screen.dart';
 import '../panel/open_panel.dart';
 import '../radar/radar_screen.dart';
@@ -67,6 +68,18 @@ class SettingsScreen extends StatelessWidget {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: <Widget>[
+                        _NavRow(
+                          icon: Icons.explore_rounded,
+                          color: nova.cyan,
+                          title:
+                              s.isFarsi ? 'راهنمای اتصال' : 'Connection guide',
+                          subtitle: s.isFarsi
+                              ? 'سرورهای رایگان، Aether و MasterDNS'
+                              : 'Free VPN, Aether and MasterDNS',
+                          onTap: () =>
+                              _push(context, const ConnectionGuideScreen()),
+                        ),
+                        _div(nova.border),
                         _NavRow(
                           icon: Icons.alt_route_rounded,
                           color: nova.violet,
@@ -173,8 +186,7 @@ class SettingsScreen extends StatelessWidget {
                           options: <Widget>[
                             _PillTarget(
                               selected: theme.themeMode == ThemeMode.system,
-                              onTap: () =>
-                                  theme.setThemeMode(ThemeMode.system),
+                              onTap: () => theme.setThemeMode(ThemeMode.system),
                               child: NovaPill(
                                 label: s.modeSystem,
                                 icon: Icons.brightness_auto_rounded,
@@ -190,14 +202,12 @@ class SettingsScreen extends StatelessWidget {
                                 label: s.modeDark,
                                 icon: Icons.dark_mode_rounded,
                                 selected: theme.themeMode == ThemeMode.dark,
-                                onTap: () =>
-                                    theme.setThemeMode(ThemeMode.dark),
+                                onTap: () => theme.setThemeMode(ThemeMode.dark),
                               ),
                             ),
                             _PillTarget(
                               selected: theme.themeMode == ThemeMode.light,
-                              onTap: () =>
-                                  theme.setThemeMode(ThemeMode.light),
+                              onTap: () => theme.setThemeMode(ThemeMode.light),
                               child: NovaPill(
                                 label: s.modeLight,
                                 icon: Icons.light_mode_rounded,
@@ -218,8 +228,7 @@ class SettingsScreen extends StatelessWidget {
                           options: <Widget>[
                             _PillTarget(
                               selected: !theme.isFarsi,
-                              onTap: () =>
-                                  theme.setLocale(const Locale('en')),
+                              onTap: () => theme.setLocale(const Locale('en')),
                               child: NovaPill(
                                 label: 'English',
                                 selected: !theme.isFarsi,
@@ -229,8 +238,7 @@ class SettingsScreen extends StatelessWidget {
                             ),
                             _PillTarget(
                               selected: theme.isFarsi,
-                              onTap: () =>
-                                  theme.setLocale(const Locale('fa')),
+                              onTap: () => theme.setLocale(const Locale('fa')),
                               child: NovaPill(
                                 label: 'فارسی',
                                 selected: theme.isFarsi,
@@ -320,7 +328,6 @@ class SettingsScreen extends StatelessWidget {
       MaterialPageRoute<void>(builder: (_) => screen),
     );
   }
-
 }
 
 /// A group: an eyebrow over the card. The eyebrow is uppercased and tracked in

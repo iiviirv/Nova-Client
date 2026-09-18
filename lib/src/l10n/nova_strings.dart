@@ -1348,11 +1348,11 @@ class NovaStrings {
         'same time.',
     'route.proxyPort': 'Local proxy port',
     'route.proxyPortHelp':
-        'The port apps point at in proxy mode. Change it if another program '
+        'The port used by proxy apps and LAN sharing. Change it if another program '
         'already uses 2080. Applies on the next connect.',
     'route.share': 'Share with other devices',
     'route.shareSub':
-        'Lets a TV or another computer on the same network use this proxy.',
+        'Share the active connection with devices on the same network, in tunnel or proxy mode.',
     'route.shareConfirmTitle': 'Share this proxy with the network?',
     'route.shareConfirmBody':
         'Anything that can reach port {port} on this device will be able to '
@@ -2408,12 +2408,11 @@ class NovaStrings {
         '\u2066VPN\u2069 دیگر هم می‌تواند هم‌زمان روشن باشد.',
     'route.proxyPort': 'پورت پروکسی محلی',
     'route.proxyPortHelp':
-        'پورتی که برنامه‌ها در حالت پروکسی به آن وصل می‌شوند. اگر برنامه‌ی '
+        'پورت اتصال برنامه‌ها و اشتراک در شبکهٔ محلی. اگر برنامه‌ی '
         'دیگری \u2066۲۰۸۰\u2069 را گرفته باشد عوضش کنید. از اتصال بعدی اعمال می‌شود.',
     'route.share': 'اشتراک با دستگاه‌های دیگر',
     'route.shareSub':
-        'تلویزیون یا کامپیوتر دیگری که در همین شبکه است می‌تواند از این '
-        'پروکسی استفاده کند.',
+        'اشتراک اتصال با دستگاه‌های همین شبکه، در هر دو حالت تونل و پروکسی.',
     'route.shareConfirmTitle': 'این پروکسی با شبکه به اشتراک گذاشته شود؟',
     'route.shareConfirmBody':
         'هر چیزی که به پورت \u2066{port}\u2069 این دستگاه برسد می‌تواند '

@@ -76,6 +76,12 @@ class DesktopProxyController extends ProxyController {
   /// of those needs to be able to move Nova rather than uninstall it. Changing
   /// it takes effect on the next connect.
   int _socksPort;
+  int? _privateProxyPort;
+  int? _sharedProxyPort;
+
+  @override
+  int? get sharedProxyPort => _state.isActive ? _sharedProxyPort : null;
+  int get _systemProxyPort => _privateProxyPort ?? socksPort;
   int get socksPort => _socksPort;
   set socksPort(int port) {
     final int p = port.clamp(1, 65535);
@@ -112,7 +118,7 @@ class DesktopProxyController extends ProxyController {
   /// mobile), so no explicit proxy is needed. Only advertised while connected.
   @override
   String? get proxyUri => (_state.isActive && !tunMode)
-      ? 'PROXY 127.0.0.1:$socksPort'
+      ? 'PROXY 127.0.0.1:$_systemProxyPort'
       : null;
 
   Process? _process;
@@ -215,7 +221,7 @@ class DesktopProxyController extends ProxyController {
       autoSystemProxyProvider?.call() ?? manageSystemProxy;
 
   @override
-  int? get localProxyPort => tunMode ? null : socksPort;
+  int? get localProxyPort => tunMode ? sharedProxyPort : socksPort;
 
   /// Whether the local proxy should be shared with the network, and with what
   /// credentials. Null, or onLan false, keeps it to this machine.
@@ -796,33 +802,28 @@ class DesktopProxyController extends ProxyController {
         };
       }
     }
-    // System-proxy mode swaps the builder's TUN inbound for a local `mixed`
-    // (SOCKS+HTTP) inbound so the core runs unprivileged. TUN mode keeps the
-    // builder's `tun` inbound (auto_route) untouched so sing-box routes the
-    // whole device once it is running elevated.
-    if (!tunMode) {
-      final ({bool onLan, String user, String pass})? share =
-          proxyShareProvider?.call();
-      final bool onLan = share?.onLan ?? false;
-      final bool authed =
-          onLan && share!.user.isNotEmpty && share.pass.isNotEmpty;
-      cfg['inbounds'] = <Map<String, dynamic>>[
-        <String, dynamic>{
-          'type': 'mixed',
-          'tag': 'in',
-          // Loopback unless the user deliberately asked to share this with the
-          // rest of their network. Binding every interface turns this machine
-          // into an open relay for anything that can reach the port.
-          'listen': onLan ? '0.0.0.0' : '127.0.0.1',
-          'listen_port': socksPort,
-          if (authed)
-            'users': <Map<String, String>>[
-              <String, String>{
-                'username': share.user,
-                'password': share.pass,
-              },
-            ],
-        },
+    final share = proxyShareProvider?.call();
+    final bool onLan = share?.onLan ?? false;
+    _sharedProxyPort = onLan ? socksPort : null;
+    _privateProxyPort = null;
+    if (onLan) {
+      do {
+        _privateProxyPort = await AetherTunnel.freeLoopbackPort();
+      } while (_privateProxyPort == socksPort);
+    }
+    if (!tunMode || onLan) {
+      final inbounds = SingboxConfig.inbounds(SingboxRouteOptions(
+        mixedInboundPort: socksPort,
+        mixedInboundOnLan: onLan,
+        privateProxyPort: _privateProxyPort,
+        mixedInboundUsers:
+            onLan && share!.user.isNotEmpty && share.pass.isNotEmpty
+                ? [(user: share.user, pass: share.pass)]
+                : const [],
+      ));
+      cfg['inbounds'] = <dynamic>[
+        if (tunMode) ...cfg['inbounds'] as List<dynamic>,
+        ...inbounds,
       ];
     }
     final Map<String, dynamic> experimental =
@@ -2360,11 +2361,13 @@ class DesktopProxyController extends ProxyController {
           // mixed inbound answers both), so apps that only honour the web
           // proxy settings (many Electron and CLI tools) are covered too.
           final String q = _shArg(s);
-          cmds.add('networksetup -setsocksfirewallproxy $q 127.0.0.1 $socksPort');
+          cmds.add(
+              'networksetup -setsocksfirewallproxy $q 127.0.0.1 $_systemProxyPort');
           cmds.add('networksetup -setsocksfirewallproxystate $q on');
-          cmds.add('networksetup -setwebproxy $q 127.0.0.1 $socksPort');
+          cmds.add('networksetup -setwebproxy $q 127.0.0.1 $_systemProxyPort');
           cmds.add('networksetup -setwebproxystate $q on');
-          cmds.add('networksetup -setsecurewebproxy $q 127.0.0.1 $socksPort');
+          cmds.add(
+              'networksetup -setsecurewebproxy $q 127.0.0.1 $_systemProxyPort');
           cmds.add('networksetup -setsecurewebproxystate $q on');
         } else {
           final String q = _shArg(s);
@@ -2400,7 +2403,15 @@ class DesktopProxyController extends ProxyController {
         // which cannot tunnel HTTPS or resolve names remotely, so pages fail to
         // load. A bare host:port is an HTTP proxy and the mixed inbound speaks
         // HTTP CONNECT, so HTTPS works.
-        await Process.run('reg', <String>['add', key, '/v', 'ProxyServer', '/d', '127.0.0.1:$socksPort', '/f']);
+        await Process.run('reg', <String>[
+          'add',
+          key,
+          '/v',
+          'ProxyServer',
+          '/d',
+          '127.0.0.1:$_systemProxyPort',
+          '/f'
+        ]);
         // Keep localhost/intranet direct so loopback and LAN still resolve.
         await Process.run('reg', <String>['add', key, '/v', 'ProxyOverride', '/d', '<local>', '/f']);
       } else {
@@ -2428,7 +2439,7 @@ class DesktopProxyController extends ProxyController {
     try {
       final SharedPreferences p = await SharedPreferences.getInstance();
       if (on) {
-        await p.setInt(_kProxyOwnedPort, socksPort);
+        await p.setInt(_kProxyOwnedPort, _systemProxyPort);
       } else {
         await p.remove(_kProxyOwnedPort);
       }
