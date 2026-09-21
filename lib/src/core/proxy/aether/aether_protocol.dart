@@ -30,17 +30,21 @@ class AetherReply {
   /// to show, not a crash.
   static AetherReply parse(String? raw) {
     if (raw == null || raw.trim().isEmpty) {
-      return const AetherReply._(false, 'the core returned nothing', <String, dynamic>{});
+      return const AetherReply._(
+          false, 'the core returned nothing', <String, dynamic>{});
     }
     Object? decoded;
     try {
       decoded = jsonDecode(raw);
     } catch (_) {
-      return AetherReply._(false, 'the core returned something that is not JSON',
+      return AetherReply._(
+          false,
+          'the core returned something that is not JSON',
           <String, dynamic>{'raw': raw});
     }
     if (decoded is! Map) {
-      return const AetherReply._(false, 'the core returned a bare value', <String, dynamic>{});
+      return const AetherReply._(
+          false, 'the core returned a bare value', <String, dynamic>{});
     }
     final Map<String, dynamic> m = decoded.cast<String, dynamic>();
     final bool ok = m['ok'] == true;
@@ -127,10 +131,12 @@ class AetherPayloads {
   /// gateway is found but will not carry traffic, scanning again without
   /// excluding it tends to return the same one, which is why a user ends up
   /// running the scan by hand over and over.
-  static String scan(AetherOptions o, {List<String> excluded = const <String>[]}) =>
+  static String scan(AetherOptions o,
+          {List<String> excluded = const <String>[]}) =>
       jsonEncode(<String, dynamic>{
         'transport': _transport(o),
         'mode': o.mode.name,
+        ..._fragment(o),
         'ip': o.ip.name,
         if (o.noize != null) 'profile': o.noize!.name,
         if (excluded.isNotEmpty) 'excluded': excluded,
@@ -146,10 +152,10 @@ class AetherPayloads {
   ///
   /// [socks] is the local address to serve on.
   ///
-  /// Note what is NOT sent: the core's tunnel payload has no mode or ip field.
-  /// Those belong to the search. Sending them is harmless (unknown fields are
-  /// ignored) but misleading to read, since it suggests a tunnel re-decides
-  /// something it does not.
+  /// HTTP/2 and fragment fields require Nova's patched core. Upstream's
+  /// original FFI maps both h2 and h3 to MASQUE and reads process-wide CLI
+  /// environment variables instead; merely sending those strings is not
+  /// sufficient. See tool/core/aether-h2-fragment.patch.
   static String tunnel(AetherOptions o,
           {required String endpoint, required String socks}) =>
       jsonEncode(<String, dynamic>{
@@ -163,6 +169,7 @@ class AetherPayloads {
         //
         // The scan has always carried mode. Dropping it here was wrong.
         'mode': o.mode.name,
+        ..._fragment(o),
         if (o.noize != null) 'profile': o.noize!.name,
         'socks': socks,
       });
@@ -188,6 +195,15 @@ class AetherPayloads {
   /// identity itself because only it knows its own container path. It needs the
   /// transport to do that, and taking it from here keeps one answer to what the
   /// transport is rather than a second opinion in Swift.
+  static Map<String, dynamic> _fragment(AetherOptions o) =>
+      o.mode == AetherMode.masque && o.transport == AetherTransport.h2
+          ? <String, dynamic>{
+              'fragment': o.fragment,
+              'fragment_size': o.effectiveFragmentSize,
+              'fragment_delay': o.effectiveFragmentDelay,
+            }
+          : const <String, dynamic>{};
+
   static String transportOf(AetherOptions o) => _transport(o);
 
   static String _transport(AetherOptions o) {
@@ -228,9 +244,8 @@ class AetherEndpoint {
       if (host.isEmpty) return null;
       // An IPv6 literal needs brackets before a port can be appended, or the
       // colons of the address run into the colon of the port.
-      final String shown = host.contains(':') && !host.startsWith('[')
-          ? '[$host]'
-          : host;
+      final String shown =
+          host.contains(':') && !host.startsWith('[') ? '[$host]' : host;
       return '$shown:$port';
     }
     return null;

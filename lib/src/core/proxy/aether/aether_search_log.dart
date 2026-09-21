@@ -17,7 +17,9 @@ abstract final class AetherSearchLog {
   /// the second is what a working platform had set differently.
   static String settings(AetherOptions o) =>
       'mode=${o.mode.name}, transport=${o.transport.name}, ip=${o.ip.name}, '
-      'scan=${o.scan.name}, noize=${o.noize?.name ?? 'auto'}';
+      'scan=${o.scan.name}, noize=${o.noize?.name ?? 'auto'}, '
+      'fragment=${o.fragment}, size=${o.effectiveFragmentSize}, '
+      'delay=${o.effectiveFragmentDelay}ms';
 
   /// Which platform produced the line, so logs from two devices can be told
   /// apart once they are pasted into the same thread.
@@ -111,14 +113,16 @@ abstract final class AetherSearchLog {
     if (text == null) return '';
     String out = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     // Anything shaped like a key, wherever it sits in the sentence.
-    out = out.replaceAll(
-        RegExp(r'\b[A-Za-z0-9+/]{32,}={0,2}\b'), '<hidden>');
+    out = out.replaceAll(RegExp(r'\b[A-Za-z0-9+/]{32,}={0,2}\b'), '<hidden>');
     out = out.replaceAllMapped(
-        RegExp(r'("?)(\w*(?:key|secret|token|licen[cs]e|pass|auth)\w*)\1'
+        RegExp(
+            r'("?)(\w*(?:key|secret|token|licen[cs]e|pass|auth)\w*)\1'
             r'\s*[:=]\s*"?([^",}\s]+)"?',
             caseSensitive: false),
         (Match m) => '${m[2]}=<hidden>');
-    return out.length <= maxError ? out : '${out.substring(0, maxError - 3)}...';
+    return out.length <= maxError
+        ? out
+        : '${out.substring(0, maxError - 3)}...';
   }
 
   /// Longest core-supplied message kept. Long enough to diagnose, short enough

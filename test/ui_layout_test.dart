@@ -381,6 +381,31 @@ void main() {
       expect(tester.takeException(), isNull);
     }
 
+    for (final locale in [const Locale('en'), const Locale('fa')]) {
+      testWidgets(
+          'fragment fields fit at 320dp and 2x text in ${locale.languageCode}',
+          (tester) async {
+        final profile = ProxyProfile(
+            id: 'fragment',
+            name: 'HTTP2',
+            kind: ProxyKind.aether,
+            uri:
+                'aether://1.2.3.4:443?protocol=masque&transport=h2&fragment=1&fragment_size=18-30&fragment_delay=3-8',
+            updatedAt: DateTime(2026));
+        await _pump(tester, AetherEditorScreen(existing: profile),
+            locale: locale, textScale: 2, themeMode: ThemeMode.light);
+        final field =
+            find.byKey(const ValueKey<String>('aether-fragment-delay'));
+        await tester.scrollUntilVisible(field, 200,
+            scrollable: find.byType(Scrollable).first);
+        expect(field, findsOneWidget);
+        expect(tester.widget<TextField>(field).controller!.text, '3-8');
+        expect(tester.takeException(), isNull);
+        await scrollThrough(tester);
+        await _teardown(tester);
+      });
+    }
+
     testWidgets('lays out at 320dp and 2x text', (WidgetTester tester) async {
       await _pump(tester, const AetherEditorScreen(), textScale: 2.0);
       await scrollThrough(tester);

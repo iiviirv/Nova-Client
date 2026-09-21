@@ -30,8 +30,8 @@ class AetherGatewayFinder {
       AetherOptions options, List<String> excluded) scan;
 
   /// Opens a real tunnel to one endpoint and reports whether traffic moved.
-  final Future<AetherJobStatus> Function(
-      AetherOptions options, String endpoint) verify;
+  final Future<AetherJobStatus> Function(AetherOptions options, String endpoint)
+      verify;
 
   /// How many gateways to try before giving up. Four because each attempt costs
   /// a scan and a real tunnel, and a user watching a spinner has a limit.
@@ -47,7 +47,8 @@ class AetherGatewayFinder {
   Future<AetherFindResult> find(AetherOptions options) async {
     String? lastError;
     for (int i = 0; i < attempts; i++) {
-      final AetherJobStatus found = await scan(options, List<String>.of(rejected));
+      final AetherJobStatus found =
+          await scan(options, List<String>.of(rejected));
       if (found.state != AetherJobState.done) {
         // A scan that found nothing will not find something on a retry with one
         // more address excluded, so this stops rather than burning the budget.
@@ -59,8 +60,7 @@ class AetherGatewayFinder {
       }
       // Normalised, not stringified. The core returns an object here, and
       // toString on it yields something no later call accepts.
-      final String? endpoint =
-          AetherEndpoint.parse(found.result?['endpoint']);
+      final String? endpoint = AetherEndpoint.parse(found.result?['endpoint']);
       if (endpoint == null || endpoint.isEmpty) {
         return AetherFindResult(
             endpoint: null,
@@ -79,7 +79,8 @@ class AetherGatewayFinder {
       // Same mistake as the nested job envelope, one level up: the outer
       // success is about whether the question was answered, not what the
       // answer was.
-      if (proof.state == AetherJobState.done && proof.result?['reachable'] != false) {
+      if (proof.state == AetherJobState.done &&
+          proof.result?['reachable'] != false) {
         if (!verified.contains(endpoint)) verified.add(endpoint);
         return AetherFindResult(
             endpoint: endpoint,
@@ -107,10 +108,14 @@ class AetherFindResult {
     required this.attempts,
     required this.rejected,
     this.error,
+    this.options,
   });
 
   /// The working gateway, or null when none was found.
   final String? endpoint;
+
+  /// The settings that actually proved the endpoint, including fallback.
+  final AetherOptions? options;
 
   /// Why not, when [endpoint] is null.
   final String? error;

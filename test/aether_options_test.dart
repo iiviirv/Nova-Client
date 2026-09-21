@@ -18,9 +18,21 @@ void main() {
 
     test('HTTP/2 with ClientHello fragmentation', () {
       const AetherOptions o = AetherOptions(
-          transport: AetherTransport.h2, fragment: true, scan: AetherScan.turbo);
-      expect(o.toCliArgs(),
-          <String>['--masque', '--scan', 'turbo', '-4', '--h2', '--fragment']);
+          transport: AetherTransport.h2,
+          fragment: true,
+          scan: AetherScan.turbo);
+      expect(o.toCliArgs(), <String>[
+        '--masque',
+        '--scan',
+        'turbo',
+        '-4',
+        '--h2',
+        '--fragment',
+        '--fragment-size',
+        '16-32',
+        '--fragment-delay',
+        '2-10'
+      ]);
     });
 
     test('fragment is dropped when the transport cannot carry it', () {
@@ -40,8 +52,10 @@ void main() {
           wiwInner: '188.114.96.1:2408');
       final List<String> a = o.toCliArgs();
       expect(a.first, '--gool');
-      expect(a, containsAllInOrder(<String>['--wiw-outer', '162.159.192.1:2408']));
-      expect(a, containsAllInOrder(<String>['--wiw-inner', '188.114.96.1:2408']));
+      expect(
+          a, containsAllInOrder(<String>['--wiw-outer', '162.159.192.1:2408']));
+      expect(
+          a, containsAllInOrder(<String>['--wiw-inner', '188.114.96.1:2408']));
     });
 
     test('no obfuscation flag is sent when none was chosen', () {
@@ -49,8 +63,7 @@ void main() {
       // modes. Duplicating those defaults here would mean maintaining them in
       // two places and drifting when the binary changes them.
       expect(const AetherOptions().toCliArgs().contains('--noize'), isFalse);
-      expect(
-          const AetherOptions(noize: AetherNoize.gfw).toCliArgs(),
+      expect(const AetherOptions(noize: AetherNoize.gfw).toCliArgs(),
           containsAllInOrder(<String>['--noize', 'gfw']));
     });
   });
@@ -63,8 +76,7 @@ void main() {
     const String masque =
         'aether://162.159.198.1:443?protocol=masque&scan=balanced'
         '&noize=balanced&ip=v4&transport=h3#masque%20add%20test';
-    const String wg =
-        'aether://162.159.195.150:908?protocol=wg&scan=balanced'
+    const String wg = 'aether://162.159.195.150:908?protocol=wg&scan=balanced'
         '&noize=balanced&ip=v4#wire%20add%20test';
     const String gool =
         'aether://?protocol=gool&scan=balanced&noize=balanced&ip=v4'
@@ -93,7 +105,8 @@ void main() {
     test('a gool link has no authority and names both hops', () {
       final AetherConfig c = AetherConfig.parse(gool)!;
       expect(c.options.mode, AetherMode.gool);
-      expect(c.gateway, isNull, reason: 'gool scans, the hops are in the query');
+      expect(c.gateway, isNull,
+          reason: 'gool scans, the hops are in the query');
       expect(c.options.wiwOuter, '162.159.195.16:864');
       expect(c.options.wiwInner, '162.159.192.1:2408');
     });
@@ -130,7 +143,8 @@ void main() {
 
   group('a bad value never reaches the binary', () {
     test('an unknown mode falls back instead of being passed through', () {
-      final AetherOptions o = AetherOptions.fromQuery('protocol=wormhole&scan=turbo');
+      final AetherOptions o =
+          AetherOptions.fromQuery('protocol=wormhole&scan=turbo');
       expect(o.mode, AetherMode.masque);
       expect(o.toCliArgs().contains('wormhole'), isFalse,
           reason: 'the binary exits on an unknown flag value, and the user '
@@ -138,7 +152,8 @@ void main() {
     });
 
     test('an unknown scan or obfuscation value falls back', () {
-      final AetherOptions o = AetherOptions.fromQuery('scan=ludicrous&noize=plaid');
+      final AetherOptions o =
+          AetherOptions.fromQuery('scan=ludicrous&noize=plaid');
       expect(o.scan, AetherScan.balanced);
       expect(o.noize, AetherNoize.firewall);
       expect(o.toCliArgs().join(' ').contains('ludicrous'), isFalse);
@@ -150,11 +165,30 @@ void main() {
       // name is not a real flag value, this fails without anyone remembering
       // to add a case.
       const Set<String> accepted = <String>{
-        '--masque', '--wg', '--gool', '--scan', '--noize', '--peer',
-        '--wiw-outer', '--wiw-inner', '--h2', '--fragment', '--dns',
-        '-4', '-6', '--dual',
-        'turbo', 'balanced', 'thorough', 'stealth', 'ironclad',
-        'off', 'light', 'firewall', 'gfw', 'aggressive',
+        '--masque',
+        '--wg',
+        '--gool',
+        '--scan',
+        '--noize',
+        '--peer',
+        '--wiw-outer',
+        '--wiw-inner',
+        '--h2',
+        '--fragment',
+        '--dns',
+        '-4',
+        '-6',
+        '--dual',
+        'turbo',
+        'balanced',
+        'thorough',
+        'stealth',
+        'ironclad',
+        'off',
+        'light',
+        'firewall',
+        'gfw',
+        'aggressive',
       };
       for (final AetherMode m in AetherMode.values) {
         for (final AetherScan s in AetherScan.values) {
@@ -197,8 +231,7 @@ void _loopPrevention() {
         '162.159.192.1', // gool inner
       ];
       for (final String ip in seen) {
-        final String slash24 =
-            '${ip.substring(0, ip.lastIndexOf('.'))}.0/24';
+        final String slash24 = '${ip.substring(0, ip.lastIndexOf('.'))}.0/24';
         expect(kAetherDirectCidrs.contains(slash24), isTrue,
             reason: '$ip would be captured by the tunnel and loop');
       }

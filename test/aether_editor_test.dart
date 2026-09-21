@@ -111,8 +111,10 @@ late ProfilesController profiles;
 Future<void> _open(
   WidgetTester tester, {
   AetherGatewaySearch? search,
+
   /// Profiles already on the list, for the duplicate-name check.
   List<ProxyProfile> seed = const <ProxyProfile>[],
+
   /// The config being edited, when this is an edit rather than a new one.
   ProxyProfile? existing,
 }) async {
@@ -203,8 +205,8 @@ Future<void> _findGateway(WidgetTester tester, _FakeSearch search,
     {String endpoint = '188.114.97.3:2408'}) async {
   await tester.tap(find.text('Find a gateway now'));
   await tester.pump();
-  search.finish(
-      AetherFindResult(endpoint: endpoint, attempts: 1, rejected: const <String>[]));
+  search.finish(AetherFindResult(
+      endpoint: endpoint, attempts: 1, rejected: const <String>[]));
   await tester.pumpAndSettle();
 }
 
@@ -226,6 +228,71 @@ ProxyProfile _aether(String id, String name, String link) => ProxyProfile(
     );
 
 void main() {
+  testWidgets('manual fragment ranges validate and survive saving',
+      (tester) async {
+    final search = _FakeSearch();
+    await _open(tester, search: search);
+    await _advanced(tester);
+    await _choose(tester, 'MASQUE');
+    await _choose(tester, 'HTTP/2');
+    await tester.ensureVisible(find.byType(Switch));
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    final size = find.byKey(const ValueKey<String>('aether-fragment-size'));
+    final delay = find.byKey(const ValueKey<String>('aether-fragment-delay'));
+    expect(size, findsOneWidget);
+    expect(delay, findsOneWidget);
+    await tester.enterText(size, '32-16');
+    await tester.pump();
+    expect(
+        find.text(
+            'Enter a valid number or ascending range within the allowed limits.'),
+        findsOneWidget);
+    final button = tester.widget<NovaButton>(
+        find.widgetWithText(NovaButton, 'Find a gateway now'));
+    expect(button.onPressed, isNull);
+    await tester.enterText(size, '20-40');
+    await tester.enterText(delay, '4-12');
+    await _findGateway(tester, search);
+    expect(search.asked!.fragment, isTrue);
+    expect(search.asked!.fragmentSize, '20-40');
+    expect(search.asked!.fragmentDelay, '4-12');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final saved = AetherConfig.parse(
+        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether).uri)!;
+    expect(saved.options.fragmentSize, '20-40');
+    expect(saved.options.fragmentDelay, '4-12');
+  });
+
+  testWidgets('fallback gateway saves the transport that proved it',
+      (tester) async {
+    final search = _FakeSearch();
+    await _open(tester, search: search);
+    await _choose(tester, 'MASQUE');
+    await _choose(tester, 'Find a gateway now');
+    search._done.complete(const AetherFindResult(
+        endpoint: '1.2.3.4:443',
+        attempts: 2,
+        rejected: [],
+        options: AetherOptions(
+            transport: AetherTransport.h2,
+            fragment: true,
+            fragmentSize: '18-26',
+            fragmentDelay: '3-8')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save'));
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final saved = AetherConfig.parse(
+        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether).uri)!;
+    expect(saved.options.transport, AetherTransport.h2);
+    expect(saved.options.fragment, isTrue);
+    expect(saved.options.fragmentSize, '18-26');
+    expect(saved.options.fragmentDelay, '3-8');
+    expect(saved.options.peer, '1.2.3.4:443');
+  });
+
   testWidgets('the transport is offered for MASQUE and nowhere else',
       (WidgetTester tester) async {
     await _open(tester);
@@ -352,7 +419,8 @@ void main() {
         reason: 'a search that found nothing leaves nothing to save');
   });
 
-  testWidgets('a verified gateway that a later change invalidates locks Save '
+  testWidgets(
+      'a verified gateway that a later change invalidates locks Save '
       'again', (WidgetTester tester) async {
     final _FakeSearch search = _FakeSearch();
     await _open(tester, search: search);
@@ -366,7 +434,8 @@ void main() {
     expect(_saveEnabled(tester), isFalse);
   });
 
-  testWidgets('a new config is named after its protocol, numbered past a '
+  testWidgets(
+      'a new config is named after its protocol, numbered past a '
       'name already taken', (WidgetTester tester) async {
     await _open(tester, seed: <ProxyProfile>[
       _aether('a', 'WireGuard', 'aether://1.1.1.1:443?protocol=wg'),
@@ -408,7 +477,8 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
-    expect(profiles.profiles.where((ProxyProfile p) => p.kind == ProxyKind.aether),
+    expect(
+        profiles.profiles.where((ProxyProfile p) => p.kind == ProxyKind.aether),
         hasLength(1),
         reason: 'editing replaces the config, it does not add a second one');
     final ProxyProfile after = profiles.profiles
@@ -424,11 +494,9 @@ void main() {
     await _open(tester, search: search);
     await _advanced(tester);
 
-    await tester.enterText(
-        find.byType(TextField).last, '162.159.198.1:443');
+    await tester.enterText(find.byType(TextField).last, '162.159.198.1:443');
     await tester.pump();
-    expect(_saveEnabled(tester), isFalse,
-        reason: 'typed is not proven');
+    expect(_saveEnabled(tester), isFalse, reason: 'typed is not proven');
     expect(find.textContaining('Nova has not checked this address'),
         findsOneWidget);
 
@@ -497,8 +565,8 @@ void main() {
     expect(_saveEnabled(tester), isTrue,
         reason: 'the link already says where it dials, and the only way to '
             'verify a gateway would rewrite the link it came in as');
-    expect(find.textContaining('two hops written into the link'),
-        findsOneWidget);
+    expect(
+        find.textContaining('two hops written into the link'), findsOneWidget);
     // Opened at the depth that shows the gateway, because a config carrying
     // something Simple does not show must not open on a screen that hides it.
     expect(find.text('Address and port'), findsOneWidget);
@@ -510,7 +578,8 @@ void main() {
     final String link = profiles.profiles
         .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether)
         .uri;
-    expect(link, const AetherConfig(options: _pinnedHops, name: 'Tehran').toLink(),
+    expect(
+        link, const AetherConfig(options: _pinnedHops, name: 'Tehran').toLink(),
         reason: 'the format is byte-compatible with another client, so a '
             'config that changes on its way through here stops importing '
             'back into the app it came from');
@@ -637,7 +706,8 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('the sweep changes glyph when the search starts proving an '
+  testWidgets(
+      'the sweep changes glyph when the search starts proving an '
       'address', (WidgetTester tester) async {
     final _FakeSearch search = _FakeSearch();
     await _open(tester, search: search);

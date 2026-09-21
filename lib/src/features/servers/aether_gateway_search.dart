@@ -25,6 +25,7 @@ class AetherSearchProgress {
     required this.attempt,
     required this.verifying,
     required this.ruledOut,
+    this.usingFallback = false,
   });
 
   /// Which gateway this is, counting from one.
@@ -36,6 +37,7 @@ class AetherSearchProgress {
 
   /// How many addresses answered a probe but carried nothing.
   final int ruledOut;
+  final bool usingFallback;
 }
 
 /// Runs a gateway search on behalf of the editor.
@@ -128,7 +130,8 @@ class AetherCoreSearch implements AetherGatewaySearch {
     List<String> excludedFirst = const <String>[],
   }) async {
     _cancelled = false;
-    _log('start on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}'
+    _log(
+        'start on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}'
         '${excludedFirst.isEmpty ? '' : ', skipping ${excludedFirst.length}'}');
     final AetherCore core = AetherCore.open();
     _core = core;
@@ -142,7 +145,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     if (opened.state != AetherJobState.done) {
       _log(
           'identity failed after ${idClock.elapsedMilliseconds}ms: '
-          '${AetherSearchLog.scrub(opened.error) }',
+          '${AetherSearchLog.scrub(opened.error)}',
           level: NovaLogLevel.error);
       return AetherFindResult(
           endpoint: null,
@@ -171,11 +174,12 @@ class AetherCoreSearch implements AetherGatewaySearch {
             verifying: false,
             ruledOut: finder.rejected.length));
         final Stopwatch clock = Stopwatch()..start();
-        final AetherJobStatus found = await _await(
-            core, core.scanStart(identity, o, excluded: excluded));
+        final AetherJobStatus found =
+            await _await(core, core.scanStart(identity, o, excluded: excluded));
         final String where =
             AetherEndpoint.parse(found.result?['endpoint']) ?? 'nothing';
-        _log('scan $attempt took ${clock.elapsedMilliseconds}ms, '
+        _log(
+            'scan $attempt took ${clock.elapsedMilliseconds}ms, '
             'excluded ${excluded.length}: ${found.state.name}, $where'
             '${found.error == null ? '' : ', ${AetherSearchLog.scrub(found.error)}'}',
             level: found.state == AetherJobState.done
@@ -225,7 +229,8 @@ class AetherCoreSearch implements AetherGatewaySearch {
     // this line, Stop on a search made every later Check report a perfectly
     // good address as unhealthy for the life of the screen.
     _cancelled = false;
-    _log('checking ${endpoint.trim()} on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}');
+    _log(
+        'checking ${endpoint.trim()} on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}');
     final AetherCore core = AetherCore.open();
     final Directory dir = await getApplicationSupportDirectory();
     final AetherJobStatus opened = await _await(
@@ -266,8 +271,8 @@ class AetherCoreSearch implements AetherGatewaySearch {
   ///
   /// A scratch port, never the one a live tunnel serves on, so proving an
   /// address cannot collide with a connection the user is already using.
-  Future<AetherJobStatus> _prove(AetherCore core, int identity,
-      AetherOptions o, String endpoint, int port) async {
+  Future<AetherJobStatus> _prove(AetherCore core, int identity, AetherOptions o,
+      String endpoint, int port) async {
     final Stopwatch clock = Stopwatch()..start();
     int? job;
     try {
@@ -284,8 +289,10 @@ class AetherCoreSearch implements AetherGatewaySearch {
         // untrackable, so the search stops here instead of leaking one WARP
         // session per attempt.
         _cancelled = true;
-        _log('the core started a tunnel without a job id, so it cannot be '
-            'stopped; abandoning the search', level: NovaLogLevel.error);
+        _log(
+            'the core started a tunnel without a job id, so it cannot be '
+            'stopped; abandoning the search',
+            level: NovaLogLevel.error);
         return _proved(clock, endpoint, false,
             error: 'the core started no job for the tunnel');
       }
@@ -320,6 +327,9 @@ class AetherCoreSearch implements AetherGatewaySearch {
       if (job != null) {
         try {
           core.jobCancel(job);
+          while (core.jobPoll(job).isRunning) {
+            await Future<void>.delayed(pollEvery);
+          }
         } catch (_) {
           // A tunnel that has already gone is not a failure to stop.
         }
@@ -380,10 +390,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     _job = job;
     try {
       while (true) {
-        if (_cancelled) {
-          return const AetherJobStatus(AetherJobState.failed,
-              error: 'cancelled');
-        }
+        if (_cancelled) core.jobCancel(job);
         final AetherJobStatus s = core.jobPoll(job);
         if (!s.isRunning) return s;
         await Future<void>.delayed(pollEvery);
@@ -430,5 +437,95 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final int port = s.port;
     await s.close();
     return port;
+  }
+}
+
+/// Tries HTTP/2 with ClientHello fragmentation after a failed MASQUE search,
+/// or cancels the first attempt after 90 seconds before starting the fallback.
+/// Awaiting cancellation prevents the old scan from surviving the timeout.
+class AetherAdaptiveSearch implements AetherGatewaySearch {
+  AetherAdaptiveSearch({
+    AetherGatewaySearch Function()? createSearch,
+    this.fallbackAfter = const Duration(seconds: 90),
+  }) : _createSearch = createSearch ?? AetherCoreSearch.new;
+
+  final AetherGatewaySearch Function() _createSearch;
+  final Duration fallbackAfter;
+  AetherGatewaySearch? _active;
+  bool _cancelled = false;
+  int _generation = 0;
+  @override
+  bool get cancelled => _cancelled;
+  @override
+  bool get available => (_active ??= _createSearch()).available;
+  @override
+  void cancel() {
+    _cancelled = true;
+    _generation++;
+    _active?.cancel();
+  }
+
+  @override
+  Future<bool> verifyAddress(AetherOptions options, String endpoint) {
+    _active?.cancel();
+    _generation++;
+    _cancelled = false;
+    return (_active = _createSearch()).verifyAddress(options, endpoint);
+  }
+
+  @override
+  Future<AetherFindResult> run(
+      AetherOptions options, ValueChanged<AetherSearchProgress> onProgress,
+      {List<String> excludedFirst = const <String>[]}) async {
+    _active?.cancel();
+    _cancelled = false;
+    final int generation = ++_generation;
+    final bool eligible = options.mode == AetherMode.masque &&
+        (options.transport != AetherTransport.h2 || !options.fragment);
+    final AetherGatewaySearch first = _active = _createSearch();
+    bool timedOut = false;
+    final Timer? timer = eligible
+        ? Timer(fallbackAfter, () {
+            timedOut = true;
+            first.cancel();
+          })
+        : null;
+    late AetherFindResult result;
+    try {
+      result =
+          await first.run(options, onProgress, excludedFirst: excludedFirst);
+    } finally {
+      timer?.cancel();
+    }
+    if (_cancelled || generation != _generation) {
+      return AetherFindResult(
+          endpoint: null,
+          attempts: result.attempts,
+          rejected: result.rejected,
+          error: 'cancelled');
+    }
+    if (!eligible || (result.ok && !timedOut)) return result;
+    final AetherOptions fallback =
+        options.copyWith(transport: AetherTransport.h2, fragment: true);
+    final AetherGatewaySearch second = _active = _createSearch();
+    void report(AetherSearchProgress p) => onProgress(AetherSearchProgress(
+        attempt: p.attempt,
+        verifying: p.verifying,
+        ruledOut: p.ruledOut,
+        usingFallback: true));
+    report(
+        const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
+    // A gateway rejected on QUIC may work over TCP. Do not carry those
+    // exclusions into a different transport.
+    final AetherFindResult found = await second.run(fallback, report);
+    return AetherFindResult(
+        endpoint:
+            _cancelled || generation != _generation ? null : found.endpoint,
+        attempts: result.attempts + found.attempts,
+        rejected: found.rejected,
+        error: found.error,
+        options: found.ok && !_cancelled && generation == _generation
+            ? fallback
+            : null);
   }
 }

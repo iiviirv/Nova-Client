@@ -132,6 +132,9 @@ class _AetherProgressLinesState extends State<AetherProgressLines> {
                   style: text.bodySmall?.copyWith(color: nova.text),
                 ),
               ),
+              if (p.usingFallback)
+                Text(s.aetherH2Fallback,
+                    style: text.bodySmall?.copyWith(color: nova.muted)),
               if (p.ruledOut > 0)
                 Text(s.aetherRuledOut(p.ruledOut),
                     style: text.bodySmall?.copyWith(color: nova.muted)),
@@ -205,8 +208,8 @@ class _PhaseSweepState extends State<_PhaseSweep>
             turns: _c,
             child: CustomPaint(
               size: const Size.square(_size),
-              painter: _SweepPainter(
-                  nova.cyan, nova.cyan.withValues(alpha: 0.16)),
+              painter:
+                  _SweepPainter(nova.cyan, nova.cyan.withValues(alpha: 0.16)),
             ),
           ),
           AnimatedSwitcher(

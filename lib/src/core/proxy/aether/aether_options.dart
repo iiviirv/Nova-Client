@@ -50,6 +50,8 @@ class AetherOptions {
     this.wiwOuter,
     this.wiwInner,
     this.fragment = false,
+    this.fragmentSize = '16-32',
+    this.fragmentDelay = '2-10',
     this.dns,
   });
 
@@ -73,6 +75,25 @@ class AetherOptions {
 
   /// Fragment the TLS ClientHello. Only meaningful on the HTTP/2 transport.
   final bool fragment;
+  final String fragmentSize;
+  final String fragmentDelay;
+
+  static bool validFragmentRange(String value, {required bool delay}) {
+    if (!RegExp(r'^\d+(?:-\d+)?$').hasMatch(value)) return false;
+    final List<int?> parts = value.split('-').map(int.tryParse).toList();
+    final int? lo = parts.first;
+    final int? hi = parts.last;
+    return lo != null &&
+        hi != null &&
+        lo >= (delay ? 0 : 1) &&
+        hi >= lo &&
+        hi <= (delay ? 1000 : 16384);
+  }
+
+  String get effectiveFragmentSize =>
+      validFragmentRange(fragmentSize, delay: false) ? fragmentSize : '16-32';
+  String get effectiveFragmentDelay =>
+      validFragmentRange(fragmentDelay, delay: true) ? fragmentDelay : '2-10';
 
   /// Resolvers used inside the tunnel.
   final String? dns;
@@ -82,7 +103,8 @@ class AetherOptions {
   /// per 20 MB against 0.37 for HTTP/2, on hardware far faster than the phones
   /// this has to run on. The device tier decides the default elsewhere; this
   /// just answers the question.
-  bool get isQuic => mode == AetherMode.masque && transport == AetherTransport.h3;
+  bool get isQuic =>
+      mode == AetherMode.masque && transport == AetherTransport.h3;
 
   /// The command-line arguments for this config, excluding `--bind`, which is
   /// the caller's to choose because it owns the port.
@@ -105,17 +127,41 @@ class AetherOptions {
       a.add('--h2');
       // The binary rejects --fragment outside the HTTP/2 transport, so it is
       // gated here rather than trusted to the caller.
-      if (fragment) a.add('--fragment');
+      if (fragment) {
+        a.addAll(<String>[
+          '--fragment',
+          '--fragment-size',
+          effectiveFragmentSize,
+          '--fragment-delay',
+          effectiveFragmentDelay
+        ]);
+      }
     }
-    if (noize != null) a..add('--noize')..add(noize!.name);
-    if (peer != null && peer!.isNotEmpty) a..add('--peer')..add(peer!);
+    if (noize != null) {
+      a
+        ..add('--noize')
+        ..add(noize!.name);
+    }
+    if (peer != null && peer!.isNotEmpty) {
+      a
+        ..add('--peer')
+        ..add(peer!);
+    }
     if (wiwOuter != null && wiwOuter!.isNotEmpty) {
-      a..add('--wiw-outer')..add(wiwOuter!);
+      a
+        ..add('--wiw-outer')
+        ..add(wiwOuter!);
     }
     if (wiwInner != null && wiwInner!.isNotEmpty) {
-      a..add('--wiw-inner')..add(wiwInner!);
+      a
+        ..add('--wiw-inner')
+        ..add(wiwInner!);
     }
-    if (dns != null && dns!.isNotEmpty) a..add('--dns')..add(dns!);
+    if (dns != null && dns!.isNotEmpty) {
+      a
+        ..add('--dns')
+        ..add(dns!);
+    }
     return a;
   }
 
@@ -140,7 +186,13 @@ class AetherOptions {
       p.add('inner=${Uri.encodeComponent(wiwInner!)}');
     }
     if (fragment) p.add('fragment=1');
-    if (dns != null && dns!.isNotEmpty) p.add('dns=${Uri.encodeComponent(dns!)}');
+    if (fragmentSize != '16-32') p.add('fragment_size=$effectiveFragmentSize');
+    if (fragmentDelay != '2-10') {
+      p.add('fragment_delay=$effectiveFragmentDelay');
+    }
+    if (dns != null && dns!.isNotEmpty) {
+      p.add('dns=${Uri.encodeComponent(dns!)}');
+    }
     return p.join('&');
   }
 
@@ -164,11 +216,13 @@ class AetherOptions {
       }
       return fallback;
     }
+
     String? nonEmpty(String? v) => (v == null || v.isEmpty) ? null : v;
     return AetherOptions(
       // 'protocol' is the key the other clients write; 'mode' is accepted too
       // because Nova's own first cut used it before the real format was known.
-      mode: pick(AetherMode.values, q['protocol'] ?? q['mode'], AetherMode.masque),
+      mode: pick(
+          AetherMode.values, q['protocol'] ?? q['mode'], AetherMode.masque),
       transport:
           pick(AetherTransport.values, q['transport'], AetherTransport.h3),
       ip: pick(AetherIpMode.values, q['ip'], AetherIpMode.v4),
@@ -180,6 +234,8 @@ class AetherOptions {
       wiwOuter: nonEmpty(q['outer']),
       wiwInner: nonEmpty(q['inner']),
       fragment: q['fragment'] == '1' || q['fragment'] == 'true',
+      fragmentSize: q['fragment_size'] ?? '16-32',
+      fragmentDelay: q['fragment_delay'] ?? '2-10',
       dns: nonEmpty(q['dns']),
     );
   }
@@ -194,6 +250,8 @@ class AetherOptions {
     String? wiwOuter,
     String? wiwInner,
     bool? fragment,
+    String? fragmentSize,
+    String? fragmentDelay,
     String? dns,
   }) =>
       AetherOptions(
@@ -206,6 +264,8 @@ class AetherOptions {
         wiwOuter: wiwOuter ?? this.wiwOuter,
         wiwInner: wiwInner ?? this.wiwInner,
         fragment: fragment ?? this.fragment,
+        fragmentSize: fragmentSize ?? this.fragmentSize,
+        fragmentDelay: fragmentDelay ?? this.fragmentDelay,
         dns: dns ?? this.dns,
       );
 }

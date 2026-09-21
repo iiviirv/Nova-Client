@@ -110,6 +110,12 @@ class NovaStrings {
   String get aetherTransportH3Sub => t('aether.transportH3Sub');
   String get aetherTransportH2Sub => t('aether.transportH2Sub');
   String get aetherFragment => t('aether.fragment');
+  String get aetherFragmentSize => t('aether.fragmentSize');
+  String get aetherFragmentDelay => t('aether.fragmentDelay');
+  String get aetherFragmentSizeHint => t('aether.fragmentSizeHint');
+  String get aetherFragmentDelayHint => t('aether.fragmentDelayHint');
+  String get aetherFragmentInvalid => t('aether.fragmentInvalid');
+  String get aetherH2Fallback => t('aether.h2Fallback');
   String get aetherFragmentSub => t('aether.fragmentSub');
   String get aetherScanMode => t('aether.scanMode');
   String get aetherScanTurbo => t('aether.scanTurbo');
@@ -1101,6 +1107,12 @@ class NovaStrings {
         'TCP. Slower to open, cheaper to run, and it survives a network that '
             'blocks QUIC.',
     'aether.fragment': 'Split the TLS hello',
+    'aether.fragmentSize': 'Fragment size (bytes)',
+    'aether.fragmentDelay': 'Fragment delay (ms)',
+    'aether.fragmentSizeHint': 'A number or range, such as 16-32. Allowed: 1 to 16384.',
+    'aether.fragmentDelayHint': 'A number or range, such as 2-10. Allowed: 0 to 1000.',
+    'aether.fragmentInvalid': 'Enter a valid number or ascending range within the allowed limits.',
+    'aether.h2Fallback': 'Trying HTTP/2 with TLS fragmentation…',
     'aether.fragmentSub':
         'Sends the handshake in pieces so a filter cannot match it in a single '
             'packet. HTTP/2 only.',
@@ -2162,6 +2174,12 @@ class NovaStrings {
         '\u2066TCP\u2069. دیرتر باز می‌شود، کم‌مصرف‌تر است و روی شبکه‌ای که '
             '\u2066QUIC\u2069 را می‌بندد هم کار می‌کند.',
     'aether.fragment': 'تکه‌تکه کردن پیام \u2066TLS Hello\u2069',
+    'aether.fragmentSize': 'اندازهٔ فرگمنت (بایت)',
+    'aether.fragmentDelay': 'تأخیر فرگمنت (میلی‌ثانیه)',
+    'aether.fragmentSizeHint': 'یک عدد یا بازه، مثل 16-32. محدودهٔ مجاز: ۱ تا ۱۶۳۸۴.',
+    'aether.fragmentDelayHint': 'یک عدد یا بازه، مثل 2-10. محدودهٔ مجاز: ۰ تا ۱۰۰۰.',
+    'aether.fragmentInvalid': 'یک عدد یا بازهٔ صعودی در محدودهٔ مجاز وارد کنید.',
+    'aether.h2Fallback': 'در حال امتحان HTTP/2 همراه فرگمنت TLS…',
     'aether.fragmentSub':
         'دست‌دهی را تکه‌تکه می‌فرستد تا فیلتر نتواند آن را در یک بسته تشخیص '
             'دهد. فقط روی \u2066HTTP/2\u2069.',

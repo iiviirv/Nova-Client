@@ -64,6 +64,19 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   AetherNoize? _noize;
 
   bool _fragment = false;
+  final TextEditingController _fragmentSize =
+      TextEditingController(text: '16-32');
+  final TextEditingController _fragmentDelay =
+      TextEditingController(text: '2-10');
+
+  bool get _fragmentValid =>
+      !_fragment ||
+      _mode != AetherMode.masque ||
+      _transport != AetherTransport.h2 ||
+      (AetherOptions.validFragmentRange(_fragmentSize.text.trim(),
+              delay: false) &&
+          AetherOptions.validFragmentRange(_fragmentDelay.text.trim(),
+              delay: true));
 
   /// Resolvers from an imported link. Nothing on this screen edits them, so
   /// they are carried rather than dropped on the way back out.
@@ -102,7 +115,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// an address that is no longer on screen.
   int _checkToken = 0;
 
-  late final AetherGatewaySearch _search = widget.search ?? AetherCoreSearch();
+  late final AetherGatewaySearch _search =
+      widget.search ?? AetherAdaptiveSearch();
 
   AetherSearchProgress? _progress;
   AetherFindResult? _result;
@@ -128,7 +142,10 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   }
 
   bool get _canSave =>
-      !_searching && !_checking && (_verified != null || _hasHops);
+      _fragmentValid &&
+      !_searching &&
+      !_checking &&
+      (_verified != null || _hasHops);
 
   @override
   void initState() {
@@ -147,6 +164,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     _scan = o.scan;
     _noize = o.noize;
     _fragment = o.fragment;
+    _fragmentSize.text = o.effectiveFragmentSize;
+    _fragmentDelay.text = o.effectiveFragmentDelay;
     _dns = o.dns;
     _wiwOuter = o.wiwOuter;
     _wiwInner = o.wiwInner;
@@ -174,6 +193,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     _search.cancel();
     _name.dispose();
     _address.dispose();
+    _fragmentSize.dispose();
+    _fragmentDelay.dispose();
     super.dispose();
   }
 
@@ -184,6 +205,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       o.scan == AetherScan.balanced &&
       o.noize == null &&
       !o.fragment &&
+      o.fragmentSize == '16-32' &&
+      o.fragmentDelay == '2-10' &&
       (o.wiwOuter ?? '').isEmpty &&
       (o.wiwInner ?? '').isEmpty;
 
@@ -218,6 +241,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
         _scan = AetherScan.balanced;
         _noize = null;
         _fragment = false;
+        _fragmentSize.text = '16-32';
+        _fragmentDelay.text = '2-10';
       });
 
   void _pickMode(AetherMode m) => _set(() {
@@ -233,6 +258,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
 
   void _stop() {
     _search.cancel();
+    _checkToken++;
     setState(() {
       _progress = null;
       _result = null;
@@ -264,6 +290,8 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       fragment: _fragment &&
           _mode == AetherMode.masque &&
           _transport == AetherTransport.h2,
+      fragmentSize: _fragmentSize.text.trim(),
+      fragmentDelay: _fragmentDelay.text.trim(),
       dns: _dns,
     );
   }
@@ -275,6 +303,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   /// never pick theirs. This gives that address the same proof, and costs a
   /// fraction of a search because there is one candidate.
   Future<void> _check() async {
+    if (!_fragmentValid) return;
     final String address = _address.text.trim();
     if (address.isEmpty) return;
     final int token = ++_checkToken;
@@ -303,12 +332,13 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   }
 
   Future<void> _find() async {
+    if (!_fragmentValid) return;
     // Whatever is in the field now is what a replacement search should skip.
     // gool included: the core's scan returns one endpoint for it in the same
     // shape as the other two, and verifying with that address alone succeeds
     // because the core finds the inner hop itself.
     final String previous = _address.text.trim();
-    _checkToken++;
+    final int token = ++_checkToken;
     setState(() {
       _checking = false;
       _checkFailed = false;
@@ -323,7 +353,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       found = await _search.run(
         _options(withPeer: false),
         (AetherSearchProgress p) {
-          if (mounted && _searching) setState(() => _progress = p);
+          if (mounted && token == _checkToken && _searching) {
+            setState(() => _progress = p);
+          }
         },
         excludedFirst: previous.isEmpty ? const <String>[] : <String>[previous],
       );
@@ -336,7 +368,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
           attempts: _progress?.attempt ?? 0,
           rejected: const <String>[]);
     }
-    if (!mounted) return;
+    if (!mounted || token != _checkToken) return;
     if (_search.cancelled) {
       setState(() {
         _progress = null;
@@ -350,6 +382,14 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       // A verified gateway is kept, so the config saves with an address that
       // has been proven rather than one that merely answered a probe.
       if (found.endpoint != null) {
+        final AetherOptions? used = found.options;
+        if (used != null) {
+          _transport = used.transport;
+          _fragment = used.fragment;
+          _fragmentSize.text = used.effectiveFragmentSize;
+          _fragmentDelay.text = used.effectiveFragmentDelay;
+          _advanced = true;
+        }
         _address.text = found.endpoint!;
         _verified = found.endpoint;
         // One verified gateway is what this config dials now, and the core
@@ -494,6 +534,12 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                               value: _fragment,
                               onChanged: (bool v) => _set(() => _fragment = v),
                             ),
+                            if (_fragment) ...<Widget>[
+                              const SizedBox(height: NovaSpace.sm),
+                              _fragmentField(s, delay: false),
+                              const SizedBox(height: NovaSpace.sm),
+                              _fragmentField(s, delay: true),
+                            ],
                           ],
                         ],
                       ),
@@ -591,7 +637,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
               icon: Icons.verified_outlined,
               variant: NovaButtonVariant.ghost,
               loading: _checking,
-              onPressed: _checking ? null : _check,
+              onPressed: _checking || !_fragmentValid ? null : _check,
             ),
           ],
           if (_advanced) ...<Widget>[
@@ -628,7 +674,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                 label: _verified != null ? s.aetherFindAgain : s.aetherFindNow,
                 icon: Icons.radar_rounded,
                 variant: NovaButtonVariant.secondary,
-                onPressed: _find,
+                onPressed: _fragmentValid ? _find : null,
               ),
             const SizedBox(height: NovaSpace.sm),
             const AetherWaitHint(),
@@ -722,6 +768,29 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
           ),
         ],
       );
+
+  Widget _fragmentField(NovaStrings s, {required bool delay}) {
+    final TextEditingController controller =
+        delay ? _fragmentDelay : _fragmentSize;
+    final bool valid =
+        AetherOptions.validFragmentRange(controller.text.trim(), delay: delay);
+    return TextField(
+      key: ValueKey<String>(
+          delay ? 'aether-fragment-delay' : 'aether-fragment-size'),
+      controller: controller,
+      textDirection: TextDirection.ltr,
+      autocorrect: false,
+      onChanged: (_) => _set(() {}),
+      decoration: InputDecoration(
+        labelText: delay ? s.aetherFragmentDelay : s.aetherFragmentSize,
+        helperText:
+            delay ? s.aetherFragmentDelayHint : s.aetherFragmentSizeHint,
+        helperMaxLines: 3,
+        errorText: valid ? null : s.aetherFragmentInvalid,
+        errorMaxLines: 3,
+      ),
+    );
+  }
 
   Widget _pill(String label, bool selected, VoidCallback onTap) =>
       NovaPill(label: label, selected: selected, onTap: onTap);
