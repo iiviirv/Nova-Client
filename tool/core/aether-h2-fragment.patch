@@ -1,0 +1,371 @@
+diff --git a/aether/src/api.rs b/aether/src/api.rs
+index d39cc8c..ea30914 100644
+--- a/aether/src/api.rs
++++ b/aether/src/api.rs
+@@ -349,6 +349,8 @@ impl Endpoint {
+ 
+ #[derive(Debug, Clone)]
+ pub struct ScanRequest {
++    pub http2: bool,
++    pub fragment: crate::fragment::FragmentConfig,
+     pub transport: Transport,
+     pub mode: String,
+     pub ip: prober::IpScan,
+@@ -363,6 +365,8 @@ impl ScanRequest {
+     pub fn for_transport(transport: Transport) -> Self {
+         Self {
+             transport,
++            http2: false,
++            fragment: crate::fragment::FragmentConfig::disabled(),
+             mode: "balanced".to_string(),
+             ip: prober::IpScan::V4,
+             ports: transport.default_ports(),
+@@ -398,6 +402,8 @@ pub async fn scan(
+     match request.transport {
+         Transport::Masque => {
+             let probe = prober::MasqueProbe {
++                http2: request.http2,
++                fragment: request.fragment,
+                 sni: consts::CONNECT_SNI.to_string(),
+                 authority: quic::default_authority().to_string(),
+                 path: quic::default_path().to_string(),
+@@ -448,6 +454,8 @@ fn wg_local_v4(identity: &Identity) -> Result<Ipv4Addr> {
+ 
+ #[derive(Debug, Clone)]
+ pub struct TunnelSpec {
++    pub http2: bool,
++    pub fragment: crate::fragment::FragmentConfig,
+     pub transport: Transport,
+     pub socks: SocketAddr,
+     pub http: Option<SocketAddr>,
+@@ -461,6 +469,8 @@ impl TunnelSpec {
+     pub fn for_transport(transport: Transport) -> Self {
+         Self {
+             transport,
++            http2: false,
++            fragment: crate::fragment::FragmentConfig::disabled(),
+             socks: SocketAddr::from(([127, 0, 0, 1], 1819)),
+             http: None,
+             ech: None,
+@@ -507,7 +517,7 @@ pub async fn verify_endpoint(
+ ) -> Result<bool> {
+     match spec.transport {
+         Transport::Masque => {
+-            let attempt = async { Ok(crate::quick_verify_masque_peer(identity, peer).await) };
++            let attempt = async { Ok(crate::quick_verify_masque_peer_with_transport(identity, peer, spec.http2, spec.fragment).await) };
+             guard(cancel, attempt).await
+         }
+         Transport::WireGuard => {
+@@ -549,7 +559,7 @@ pub async fn connect(
+ 
+     match spec.transport {
+         Transport::Masque => {
+-            let attempt = crate::run_masque_tunnel(identity, peer, spec.ech.clone(), spec.socks);
++            let attempt = crate::run_masque_tunnel_with_transport(identity, peer, spec.ech.clone(), spec.socks, spec.http2, spec.fragment);
+             guard(cancel, attempt).await
+         }
+         Transport::WireGuard => {
+diff --git a/aether/src/ffi.rs b/aether/src/ffi.rs
+index 77e5deb..8e6d688 100644
+--- a/aether/src/ffi.rs
++++ b/aether/src/ffi.rs
+@@ -130,7 +130,10 @@ where
+     );
+ 
+     runtime.spawn(async move {
+-        let outcome = AssertUnwindSafe(work(cancel)).catch_unwind().await;
++        let outcome = tokio::select! {
++            result = AssertUnwindSafe(work(cancel.clone())).catch_unwind() => result,
++            _ = cancel.wait() => Ok(Err("cancelled".to_string())),
++        };
+         let reply = match outcome {
+             Ok(Ok(value)) => ok_value(value),
+             Ok(Err(message)) => error_value(message),
+@@ -210,6 +213,12 @@ struct OpenPayload {
+ 
+ #[derive(serde::Deserialize)]
+ struct ScanPayload {
++    #[serde(default)]
++    fragment: bool,
++    #[serde(default)]
++    fragment_size: Option<String>,
++    #[serde(default)]
++    fragment_delay: Option<String>,
+     #[serde(default)]
+     transport: Option<String>,
+     #[serde(default)]
+@@ -228,6 +237,12 @@ struct ScanPayload {
+ 
+ #[derive(serde::Deserialize)]
+ struct TunnelPayload {
++    #[serde(default)]
++    fragment: bool,
++    #[serde(default)]
++    fragment_size: Option<String>,
++    #[serde(default)]
++    fragment_delay: Option<String>,
+     peer: String,
+     #[serde(default)]
+     transport: Option<String>,
+@@ -258,7 +273,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
+ 
+ #[no_mangle]
+ pub extern "C" fn aether_version() -> *mut c_char {
+-    respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION")})))
++    respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION"), "nova_h2_fragment": 1})))
+ }
+ 
+ #[no_mangle]
+@@ -374,6 +389,8 @@ pub extern "C" fn aether_scan_start(identity: u64, payload: *const c_char) -> *m
+         let transport = transport_of(&payload.transport);
+ 
+         let mut request = api::ScanRequest::for_transport(transport);
++        request.http2 = payload.transport.as_deref() == Some("h2");
++        request.fragment = fragment_options(request.http2 && payload.fragment, payload.fragment_size.as_deref(), payload.fragment_delay.as_deref())?;
+         if let Some(profile) = &payload.profile {
+             request = request.with_profile(profile);
+         }
+@@ -414,6 +431,8 @@ pub extern "C" fn aether_scan_start(identity: u64, payload: *const c_char) -> *m
+ fn tunnel_spec_of(payload: &TunnelPayload) -> std::result::Result<api::TunnelSpec, String> {
+     let transport = transport_of(&payload.transport);
+     let mut spec = api::TunnelSpec::for_transport(transport);
++    spec.http2 = payload.transport.as_deref() == Some("h2");
++    spec.fragment = fragment_options(spec.http2 && payload.fragment, payload.fragment_size.as_deref(), payload.fragment_delay.as_deref())?;
+ 
+     if let Some(profile) = &payload.profile {
+         spec = spec.with_profile(profile);
+@@ -785,3 +804,49 @@ mod tests {
+         assert_eq!(reply["ok"], json!(false));
+     }
+ }
++
++// Ranges are validated before launching a job, not silently replaced.
++fn fragment_options(enabled: bool, size: Option<&str>, delay: Option<&str>) -> std::result::Result<crate::fragment::FragmentConfig, String> {
++    fn range(raw: &str, min: u64, max: u64) -> std::result::Result<(u64, u64), String> {
++        let parts: Vec<&str> = raw.split('-').collect();
++        if parts.is_empty() || parts.len() > 2 { return Err("invalid fragment range".into()); }
++        let lo = parts[0].trim().parse::<u64>().map_err(|_| "invalid fragment range")?;
++        let hi = parts.last().unwrap().trim().parse::<u64>().map_err(|_| "invalid fragment range")?;
++        if lo < min || hi > max || lo > hi { return Err("fragment range out of bounds".into()); }
++        Ok((lo, hi))
++    }
++    let (size_min, size_max) = range(size.unwrap_or("16-32"), 1, 16384)?;
++    let (delay_min_ms, delay_max_ms) = range(delay.unwrap_or("2-10"), 0, 1000)?;
++    Ok(crate::fragment::FragmentConfig { enabled, size_min: size_min as usize, size_max: size_max as usize, delay_min_ms, delay_max_ms })
++}
++
++#[cfg(test)]
++mod nova_fragment_tests {
++    use super::*;
++    #[test]
++    fn nova_h2_options_reach_tunnel_spec_and_do_not_change_h3() {
++        let payload: TunnelPayload = serde_json::from_value(json!({
++            "peer":"127.0.0.1:443", "transport":"h2", "fragment":true,
++            "fragment_size":"17-23", "fragment_delay":"3-7"
++        })).unwrap();
++        let spec = tunnel_spec_of(&payload).unwrap();
++        assert!(spec.http2 && spec.fragment.enabled);
++        assert_eq!((spec.fragment.size_min,spec.fragment.size_max),(17,23));
++        assert_eq!((spec.fragment.delay_min_ms,spec.fragment.delay_max_ms),(3,7));
++        let h3: TunnelPayload = serde_json::from_value(json!({"peer":"127.0.0.1:443", "transport":"h3", "fragment":true})).unwrap();
++        let other = tunnel_spec_of(&h3).unwrap();
++        assert!(!other.http2 && !other.fragment.enabled);
++        assert!(spec.http2 && spec.fragment.enabled);
++    }
++    #[test]
++    fn nova_fragment_ranges_reject_invalid_values_and_keep_defaults() {
++        let c = fragment_options(true,None,None).unwrap();
++        assert_eq!((c.size_min,c.size_max,c.delay_min_ms,c.delay_max_ms),(16,32,2,10));
++        for v in ["0","32-16","1-16385","junk","1-2-3"] {
++            assert!(fragment_options(true,Some(v),None).is_err());
++        }
++        assert!(fragment_options(true,None,Some("1001")).is_err());
++        let c = fragment_options(true,Some("4"),Some("0")).unwrap();
++        assert_eq!((c.size_min,c.size_max,c.delay_max_ms),(4,4,0));
++    }
++}
+diff --git a/aether/src/fragment.rs b/aether/src/fragment.rs
+index 65c45c0..a9f0c4c 100644
+--- a/aether/src/fragment.rs
++++ b/aether/src/fragment.rs
+@@ -181,3 +181,27 @@ where
+         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+     }
+ }
++
++#[cfg(test)]
++mod nova_wire_tests {
++    use super::*;
++    use tokio::io::AsyncWriteExt;
++    #[derive(Default)]
++    struct Recorder(Vec<Vec<u8>>);
++    impl AsyncWrite for Recorder {
++        fn poll_write(mut self: Pin<&mut Self>, _: &mut Context<'_>, b: &[u8]) -> Poll<io::Result<usize>> {
++            self.0.push(b.to_vec()); Poll::Ready(Ok(b.len()))
++        }
++        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
++        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
++    }
++    #[tokio::test]
++    async fn nova_custom_fragment_size_and_delay_affect_writes() {
++        let cfg = FragmentConfig { enabled:true, size_min:4, size_max:4, delay_min_ms:20, delay_max_ms:20 };
++        let mut stream = FragmentingStream::new(Recorder::default(),cfg);
++        let start = std::time::Instant::now();
++        stream.write_all(b"abcdefghijkl").await.unwrap();
++        assert_eq!(stream.inner.0,vec![b"abcd".to_vec(),b"efgh".to_vec(),b"ijkl".to_vec()]);
++        assert!(start.elapsed() >= Duration::from_millis(40));
++    }
++}
+diff --git a/aether/src/lib.rs b/aether/src/lib.rs
+index bbf436e..b761e31 100644
+--- a/aether/src/lib.rs
++++ b/aether/src/lib.rs
+@@ -796,6 +796,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
+             log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip verification)");
+             let mode = prober::ScanMode::parse(&mode_str);
+             let probe = prober::MasqueProbe {
++                http2: masque_h2::enabled(),
++                fragment: fragment::FragmentConfig::from_env(),
+                 sni: consts::CONNECT_SNI.to_string(),
+                 authority: quic::default_authority().to_string(),
+                 path: quic::default_path().to_string(),
+@@ -948,6 +950,8 @@ async fn hunt_masque_peer(
+     log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip + data-plane verification)");
+     let mode = prober::ScanMode::parse(mode_str);
+     let probe = prober::MasqueProbe {
++                http2: masque_h2::enabled(),
++                fragment: fragment::FragmentConfig::from_env(),
+         sni: consts::CONNECT_SNI.to_string(),
+         authority: quic::default_authority().to_string(),
+         path: quic::default_path().to_string(),
+@@ -976,6 +980,10 @@ fn lastconn_path(config_path: &str) -> String {
+ }
+ 
+ async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr) -> bool {
++    quick_verify_masque_peer_with_transport(identity, peer, masque_h2::enabled(), fragment::FragmentConfig::from_env()).await
++}
++
++async fn quick_verify_masque_peer_with_transport(identity: &account::Identity, peer: SocketAddr, http2: bool, fragment: fragment::FragmentConfig) -> bool {
+     let vp = quic::VerifyParams {
+         peer,
+         sni: consts::CONNECT_SNI.to_string(),
+@@ -989,8 +997,9 @@ async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr
+         local_ipv4: parse_local_v4(&identity.ipv4),
+     };
+ 
+-    if masque_h2::enabled() {
++    if http2 {
+         let cfg = masque_h2::H2TunnelConfig {
++            fragment,
+             peer: masque_h2::h2_peer(peer),
+             sni: consts::CONNECT_SNI.to_string(),
+             authority: quic::default_authority().to_string(),
+@@ -1142,6 +1151,10 @@ async fn run_masque_tunnel(
+     ech: Option<Vec<u8>>,
+     listen: SocketAddr,
+ ) -> Result<()> {
++    run_masque_tunnel_with_transport(identity, peer, ech, listen, masque_h2::enabled(), fragment::FragmentConfig::from_env()).await
++}
++
++async fn run_masque_tunnel_with_transport(identity: &account::Identity, peer: SocketAddr, ech: Option<Vec<u8>>, listen: SocketAddr, http2: bool, fragment: fragment::FragmentConfig) -> Result<()> {
+     let (chans, internals) = quic::channels();
+ 
+     let cfg = quic::TunnelConfig {
+@@ -1186,8 +1199,9 @@ async fn run_masque_tunnel(
+ 
+     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+ 
+-    let tunnel_task = if masque_h2::enabled() {
++    let tunnel_task = if http2 {
+         let h2cfg = masque_h2::H2TunnelConfig {
++            fragment,
+             peer: masque_h2::h2_peer(peer),
+             sni: consts::CONNECT_SNI.to_string(),
+             authority: quic::default_authority().to_string(),
+diff --git a/aether/src/masque_h2.rs b/aether/src/masque_h2.rs
+index aa84a10..a4b4ea2 100644
+--- a/aether/src/masque_h2.rs
++++ b/aether/src/masque_h2.rs
+@@ -69,6 +69,7 @@ fn h2_builder() -> h2::client::Builder {
+ }
+ 
+ pub struct H2TunnelConfig {
++    pub fragment: FragmentConfig,
+     pub peer: SocketAddr,
+     pub sni: String,
+     pub authority: String,
+@@ -227,7 +228,7 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
+         let tls_config = build_tls(cfg)?;
+         let tcp = dial(cfg.peer).await?;
+         let _ = tcp.set_nodelay(true);
+-        let fragment = FragmentingStream::new(tcp, FragmentConfig::from_env());
++        let fragment = FragmentingStream::new(tcp, cfg.fragment);
+         let tls = tokio_boring::connect(tls_config, &cfg.sni, fragment)
+             .await
+             .map_err(|e| AetherError::Tls(format!("h2 tls handshake: {e}")))?;
+@@ -341,7 +342,7 @@ pub async fn run(
+     let tcp = dial(cfg.peer).await?;
+     let _ = tcp.set_nodelay(true);
+ 
+-    let frag_cfg = FragmentConfig::from_env();
++    let frag_cfg = cfg.fragment;
+     if frag_cfg.enabled {
+         log_or_debug(quiet, format!(
+             "[h2] fragmenting client hello: size={}..{} delay={}..{}ms",
+diff --git a/aether/src/prober.rs b/aether/src/prober.rs
+index 6e5a92f..6b95588 100644
+--- a/aether/src/prober.rs
++++ b/aether/src/prober.rs
+@@ -230,6 +230,8 @@ struct Strategy {
+ 
+ #[derive(Clone)]
+ pub struct MasqueProbe {
++    pub http2: bool,
++    pub fragment: crate::fragment::FragmentConfig,
+     pub sni: String,
+     pub authority: String,
+     pub path: String,
+@@ -370,6 +372,8 @@ async fn verify_one(
+ ) -> Option<ProbeResult> {
+     if ironclad {
+         let params = crate::tunnelping::MasquePingParams {
++            http2: probe.http2,
++            fragment: probe.fragment,
+             peer: SocketAddr::new(ip, port),
+             sni: probe.sni.clone(),
+             authority: probe.authority.clone(),
+@@ -393,8 +397,9 @@ async fn verify_one(
+         };
+     }
+ 
+-    if crate::masque_h2::enabled() {
++    if probe.http2 {
+         let cfg = crate::masque_h2::H2TunnelConfig {
++            fragment: probe.fragment,
+             peer: SocketAddr::new(ip, port),
+             sni: probe.sni.clone(),
+             authority: probe.authority.clone(),
+diff --git a/aether/src/tunnelping.rs b/aether/src/tunnelping.rs
+index c28640c..22a4cf7 100644
+--- a/aether/src/tunnelping.rs
++++ b/aether/src/tunnelping.rs
+@@ -91,6 +91,8 @@ fn http_status_code(status_line: &str) -> Option<u16> {
+ }
+ 
+ pub struct MasquePingParams {
++    pub http2: bool,
++    pub fragment: crate::fragment::FragmentConfig,
+     pub peer: SocketAddr,
+     pub sni: String,
+     pub authority: String,
+@@ -122,8 +124,9 @@ pub async fn masque_http_ping(p: &MasquePingParams, timeout: Duration) -> Result
+ 
+         let (ready_tx, ready_rx) = oneshot::channel();
+ 
+-        let tunnel_task = if masque_h2::enabled() {
++        let tunnel_task = if p.http2 {
+             let h2cfg = masque_h2::H2TunnelConfig {
++                fragment: p.fragment,
+                 peer: masque_h2::h2_peer(p.peer),
+                 sni: p.sni.clone(),
+                 authority: p.authority.clone(),
