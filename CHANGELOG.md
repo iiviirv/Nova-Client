@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.25.1 (QA, 2026-09-21)
+
+- Fixed MASQUE HTTP/2 selection and Split TLS settings reaching the native engine.
+- Added editable TLS fragment sizes and delays, preserved in saved configurations.
+- Gateway discovery retries with HTTP/2 and Split TLS after 90 seconds without a result, or immediately after an earlier search failure.
+- Improved cancellation when restarting gateway discovery.
+- This QA build requires field testing on restricted networks before public release.
+
 ## v1.25.0 (2026-09-18)
 
 - Added a first-run connection guide for Free VPN servers, Aether and MasterDNS.
