@@ -29,6 +29,7 @@ env:
   # with nothing more useful than "symbol not found".
   AETHER_COMMIT: 311b573352bb67e494895ff67d20b002d075116a
   NDK_VERSION: r26d
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
 
 jobs:
   build:
@@ -51,6 +52,16 @@ jobs:
           repository: CluvexStudio/Aether
           ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
           persist-credentials: false
+
+      - name: Check out Nova core patches
+        uses: actions/checkout@v4
+        with:
+          path: nova-integration
+          persist-credentials: false
+
+      - name: Apply per-job HTTP2 and fragment settings
+        shell: bash
+        run: git apply nova-integration/tool/core/aether-h2-fragment.patch
 
       - name: Say what was actually checked out
         run: |
@@ -158,12 +169,27 @@ jobs:
           ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
           persist-credentials: false
 
+      - name: Check out Nova core patches
+        uses: actions/checkout@v4
+        with:
+          path: nova-integration
+          persist-credentials: false
+
+      - name: Apply per-job HTTP2 and fragment settings
+        shell: bash
+        run: git apply nova-integration/tool/core/aether-h2-fragment.patch
+
       - name: Confirm quiche came with it
         shell: bash
         run: test -d quiche || { echo "quiche is missing from the checkout"; exit 1; }
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Test HTTP2 and fragmentation
+        if: runner.os == 'Linux'
+        working-directory: aether
+        run: cargo test --lib nova_
 
       - name: Add targets
         shell: bash
@@ -268,6 +294,16 @@ jobs:
           repository: CluvexStudio/Aether
           ref: ${{ github.event.inputs.ref || env.AETHER_COMMIT }}
           persist-credentials: false
+
+      - name: Check out Nova core patches
+        uses: actions/checkout@v4
+        with:
+          path: nova-integration
+          persist-credentials: false
+
+      - name: Apply per-job HTTP2 and fragment settings
+        shell: bash
+        run: git apply nova-integration/tool/core/aether-h2-fragment.patch
 
       - name: Confirm quiche came with it
         run: test -d quiche || { echo "quiche is missing from the checkout"; exit 1; }
