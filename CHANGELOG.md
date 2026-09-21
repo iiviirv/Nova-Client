@@ -2,6 +2,8 @@
 
 ## v1.25.1 (QA, 2026-09-21)
 
+- QA build 159 adds gateway-check stage timings and native tunnel failure details to App logs.
+
 - Fixed MASQUE HTTP/2 selection and Split TLS settings reaching the native engine.
 - Added editable TLS fragment sizes and delays, preserved in saved configurations.
 - Gateway discovery retries with HTTP/2 and Split TLS after 90 seconds without a result, or immediately after an earlier search failure.

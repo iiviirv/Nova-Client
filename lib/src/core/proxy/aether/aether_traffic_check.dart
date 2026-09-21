@@ -91,6 +91,7 @@ abstract final class AetherTrafficCheck {
     Duration budget = const Duration(seconds: 20),
     bool Function()? abort,
     Uri? target,
+    void Function(String stage)? onStage,
   }) async {
     final Stopwatch clock = Stopwatch()..start();
     // A budget that has already been spent is zero, not negative. A caller that
@@ -114,7 +115,7 @@ abstract final class AetherTrafficCheck {
       });
     }
     try {
-      return await _run(socksPort, to, clock, live).timeout(limit,
+      return await _run(socksPort, to, clock, live, onStage).timeout(limit,
           onTimeout: () {
         live.close();
         return AetherTrafficProof(
@@ -131,9 +132,10 @@ abstract final class AetherTrafficCheck {
     }
   }
 
-  static Future<AetherTrafficProof> _run(
-      int socksPort, Uri to, Stopwatch clock, _Live live) async {
+  static Future<AetherTrafficProof> _run(int socksPort, Uri to, Stopwatch clock,
+      _Live live, void Function(String stage)? onStage) async {
     final int port = to.hasPort ? to.port : (to.scheme == 'https' ? 443 : 80);
+    onStage?.call('opening local SOCKS connection');
     final RawSocket raw = await RawSocket.connect('127.0.0.1', socksPort);
     final _Wire wire = _Wire(raw);
     live.attach(wire);
@@ -141,6 +143,7 @@ abstract final class AetherTrafficCheck {
       // Greeting: SOCKS5, one method, no authentication. The tunnel serves a
       // loopback port for this process alone, so there is nothing to
       // authenticate to.
+      onStage?.call('waiting for SOCKS greeting');
       wire.write(<int>[0x05, 0x01, 0x00]);
       final List<int>? hello = await wire.take(2);
       if (hello == null || hello[0] != 0x05 || hello[1] != 0x00) {
@@ -150,6 +153,7 @@ abstract final class AetherTrafficCheck {
       // CONNECT by name rather than address, so the far end resolves it. A
       // client that resolved first would be asking the local resolver a
       // question the tunnel exists to avoid asking.
+      onStage?.call('waiting for SOCKS destination connection');
       final List<int> name = utf8.encode(to.host);
       wire.write(<int>[
         0x05,
@@ -180,7 +184,11 @@ abstract final class AetherTrafficCheck {
         return _failed(clock, 'the tunnel sent a reply that made no sense');
       }
 
-      if (to.scheme == 'https') await wire.upgrade(to.host);
+      if (to.scheme == 'https') {
+        onStage?.call('negotiating HTTPS through the tunnel');
+        await wire.upgrade(to.host);
+      }
+      onStage?.call('waiting for WARP trace response');
 
       wire.write(utf8.encode('GET ${to.path} HTTP/1.1\r\n'
           'Host: ${to.host}\r\n'

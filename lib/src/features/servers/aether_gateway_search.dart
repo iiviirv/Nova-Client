@@ -134,6 +134,8 @@ class AetherCoreSearch implements AetherGatewaySearch {
         'start on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}'
         '${excludedFirst.isEmpty ? '' : ', skipping ${excludedFirst.length}'}');
     final AetherCore core = AetherCore.open();
+    _log(
+        'engine ${AetherSearchLog.scrub(core.version())}, proof budget ${proofBudget.inSeconds}s');
     _core = core;
 
     // A path prefix, not a directory: the core appends the transport, so this
@@ -232,6 +234,8 @@ class AetherCoreSearch implements AetherGatewaySearch {
     _log(
         'checking ${endpoint.trim()} on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}');
     final AetherCore core = AetherCore.open();
+    _log(
+        'engine ${AetherSearchLog.scrub(core.version())}, proof budget ${proofBudget.inSeconds}s');
     final Directory dir = await getApplicationSupportDirectory();
     final AetherJobStatus opened = await _await(
         core, core.identityOpen(options, base: '${dir.path}/aether'));
@@ -276,6 +280,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final Stopwatch clock = Stopwatch()..start();
     int? job;
     try {
+      _log('starting tunnel to $endpoint');
       final AetherReply started = core.tunnelStart(identity, o,
           endpoint: endpoint, socks: '127.0.0.1:$port');
       if (!started.ok) {
@@ -309,8 +314,19 @@ class AetherCoreSearch implements AetherGatewaySearch {
                 ? (core.jobPoll(job).error ?? 'the tunnel gave up')
                 : 'the tunnel never started serving');
       }
+      _log('tunnel SOCKS listener ready after ${clock.elapsedMilliseconds}ms');
       final AetherTrafficProof proof = await AetherTrafficCheck.through(port,
-          budget: proofBudget - clock.elapsed, abort: () => _cancelled);
+          budget: proofBudget - clock.elapsed,
+          abort: () => _cancelled,
+          onStage: (String stage) =>
+              _log('proof +${clock.elapsedMilliseconds}ms: $stage'));
+      final AetherJobStatus status = core.jobPoll(job);
+      if (status.isFailed) {
+        _log(
+            'native tunnel failed during proof: ${AetherSearchLog.scrub(status.error)}',
+            level: NovaLogLevel.warn);
+      }
+
       // The exit address is only recorded when the traffic actually went
       // through WARP. When it did not, that field is not a Cloudflare exit at
       // all, it is the user's own address, and this line ends up in a log they
