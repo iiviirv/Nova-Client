@@ -101,7 +101,7 @@ void main() {
     expect(ready, isTrue, reason: log.toString());
 
     Future<({int status, String body})> fetch(int proxyPort,
-        {String? password, bool connect = false}) async {
+        {String? password, bool connect = false, bool expectChallenge = false}) async {
       final socket = await Socket.connect('127.0.0.1', proxyPort);
       final chunks = <int>[];
       final done = Completer<void>();
@@ -109,6 +109,11 @@ void main() {
       socket.listen((data) {
         chunks.addAll(data);
         final received = utf8.decode(chunks);
+        // Keep the challenge connection open until its response has arrived.
+        // A close immediately after rejection can race TCP delivery in CI.
+        if (expectChallenge && received.contains('\r\n\r\n') && !done.isCompleted) {
+          done.complete();
+        }
         if (connect && !sentInsideTunnel &&
             received.startsWith('HTTP/1.1 200') && received.contains('\r\n\r\n')) {
           sentInsideTunnel = true;
@@ -127,6 +132,7 @@ void main() {
           request.write(
               'Proxy-Authorization: Basic ${base64Encode(utf8.encode('nova:$password'))}\r\n');
         }
+        if (expectChallenge) request.write('Proxy-Connection: keep-alive\r\n');
         request.write('\r\n');
         socket.write(request.toString());
         await socket.flush();
@@ -143,10 +149,10 @@ void main() {
       }
     }
 
-    expect((await fetch(port)).status, 407);
-    expect((await fetch(port, password: 'wrong')).status, 407);
-    expect((await fetch(port, connect: true)).status, 407);
-    expect((await fetch(port, password: 'wrong', connect: true)).status, 407);
+    expect((await fetch(port, expectChallenge: true)).status, 407);
+    expect((await fetch(port, password: 'wrong', expectChallenge: true)).status, 407);
+    expect((await fetch(port, connect: true, expectChallenge: true)).status, 407);
+    expect((await fetch(port, password: 'wrong', connect: true, expectChallenge: true)).status, 407);
     expect(forwarded, 0);
     expect(await fetch(port, password: 'secret'),
         (status: 200, body: 'selected-vpn'));
