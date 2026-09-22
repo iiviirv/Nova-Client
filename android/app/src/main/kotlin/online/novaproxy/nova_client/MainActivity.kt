@@ -229,6 +229,8 @@ class MainActivity : FlutterActivity() {
         if (proxyPort != null) {
             intent.putExtra(NovaVpnService.EXTRA_PROXY_PORT, proxyPort)
         }
+        // Status polling must see this request, not the previous tunnel.
+        NovaProxyBridge.emitState("connecting")
         startService(intent)
     }
 

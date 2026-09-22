@@ -28,6 +28,7 @@ import 'aether/aether_gateway_finder.dart';
 import 'singbox/share_link.dart';
 import 'singbox/share_link_builder.dart';
 import 'aether/aether_first_connection.dart';
+import 'aether/aether_platform_ready.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
@@ -962,6 +963,11 @@ class SingboxProxyController extends ProxyController {
       _pendingMasterDnsJson = null;
       await AetherTunnel.stop();
       _stopMasterDns();
+      try {
+        await _control.invokeMethod<void>('stop');
+      } catch (_) {
+        // Preserve the startup error if the host also cannot stop.
+      }
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();
@@ -1613,39 +1619,12 @@ class SingboxProxyController extends ProxyController {
   /// up, and the direct rule for the WARP ranges carries it out and back.
   _PendingAether? _pendingAether;
 
-  /// Waits for the tunnel device to actually exist.
-  ///
-  /// The platform's `start` returns once the service has been asked to run, not
-  /// once it is routing, and the gap is a few seconds. Measured on an emulator:
-  /// the call returned at 11:04:22 and tun0 appeared at 11:04:26, so a core
-  /// started on the call's return still got a socket from the old routing and
-  /// still died. Waiting on the call was the first attempt at this fix and it
-  /// did not work; waiting on the device is the fix.
-  ///
-  /// Returns as soon as a tunnel interface is up, and gives up after a few
-  /// seconds rather than blocking the connect. Proxy mode has no such device
-  /// and no such problem, so it falls straight through the timeout.
-  Future<void> _awaitTunnelDevice() async {
-    final DateTime deadline = DateTime.now().add(const Duration(seconds: 8));
-    while (DateTime.now().isBefore(deadline)) {
-      try {
-        final List<NetworkInterface> ifs = await NetworkInterface.list(
-            includeLoopback: false, type: InternetAddressType.IPv4);
-        if (ifs.any(_isTunnelDevice)) return;
-      } catch (_) {
-        // Listing interfaces is a best effort; a refusal is not a reason to
-        // hold up the connect.
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    }
-  }
-
-  /// The tunnel device, by the names the platforms give it.
-  static bool _isTunnelDevice(NetworkInterface i) {
-    final String n = i.name.toLowerCase();
-    return n.startsWith('tun') || n.startsWith('utun');
-  }
+  /// Android reports connected only after openTun and core startup finish.
+  /// Interface enumeration can be denied on Android, so it cannot prove that
+  /// the device is ready. Starting on that exception races the new route.
+  Future<void> _awaitTunnelDevice() => waitForAetherPlatform(
+        () => _control.invokeMethod<String>('status'),
+      );
 
   /// Brings up the deferred Aether tunnel, now that the tunnel device exists.
   ///
