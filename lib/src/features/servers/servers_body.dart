@@ -18,6 +18,7 @@ import '../../theme/nova_semantics.dart';
 import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_pill.dart';
+import '../../widgets/nova_segmented_tabs.dart';
 import '../../core/util/format.dart';
 import '../../core/proxy/health_store.dart';
 import '../../core/proxy/list_freshness.dart';
@@ -118,7 +119,10 @@ class _ServersBodyState extends State<ServersBody> {
     return ListenableBuilder(
       listenable: profiles,
       builder: (context, _) {
-        final List<ProxyProfile> all = profiles.profiles;
+        final s = NovaStrings.of(context);
+        final List<ProxyProfile> all = profiles.profiles
+            .where((p) => p.isFreeOption == profiles.freeTab)
+            .toList();
         for (final ProxyProfile profile in all) {
           _scheduleProfileMetadata(profiles, profile);
         }
@@ -128,12 +132,12 @@ class _ServersBodyState extends State<ServersBody> {
         // that read as "deleting my AWG config deleted my subscriptions".
         // Treat a stale filter as All.
         final ProxyKind? filter =
-            (_filter != null && all.any((p) => p.kind == _filter))
+            (!profiles.freeTab && _filter != null && all.any((p) => p.kind == _filter))
                 ? _filter
                 : null;
         final List<ProxyProfile> shown = all.where((p) {
           if (filter != null && p.kind != filter) return false;
-          if (_query.isEmpty) return true;
+          if (profiles.freeTab || _query.isEmpty) return true;
           return p.name.toLowerCase().contains(_query.toLowerCase());
         }).toList();
         // Pinned first, and otherwise the order the user already knows. A
@@ -144,18 +148,37 @@ class _ServersBodyState extends State<ServersBody> {
           return a.pinned ? -1 : 1;
         });
 
-        if (all.isEmpty) {
-          return _EmptyState(compact: widget.compact);
-        }
-
         final List<ProxyKind> kinds = all.map((p) => p.kind).toSet().toList();
 
         final List<Widget> children = <Widget>[
-          if (!widget.compact) ...<Widget>[
-            _SearchField(onChanged: (v) => setState(() => _query = v)),
+          NovaSegmentedTabs(
+            segments: <NovaSegment>[
+              NovaSegment(label: s.t('servers.freeTab')),
+              NovaSegment(label: s.t('servers.subscriptionsTab')),
+            ],
+            selected: profiles.freeTab ? 0 : 1,
+            onChanged: (index) {
+              setState(() {
+                _query = '';
+                _filter = null;
+              });
+              profiles.selectTab(index == 0);
+            },
+          ),
+          const SizedBox(height: NovaSpace.md),
+          if (profiles.freeTab) ...<Widget>[
+            Text(s.t('servers.freeHint'),
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: NovaSpace.md),
+          ],
+          if (all.isEmpty) _EmptyState(compact: true),
+          if (!widget.compact && !profiles.freeTab) ...<Widget>[
+            _SearchField(
+                key: ValueKey(profiles.freeTab),
+                onChanged: (v) => setState(() => _query = v)),
             const SizedBox(height: NovaSpace.sm),
           ],
-          if (kinds.length > 1) ...<Widget>[
+          if (!profiles.freeTab && kinds.length > 1) ...<Widget>[
             _FilterChips(
               kinds: kinds,
               selected: filter,
@@ -272,7 +295,7 @@ class _ServersBodyState extends State<ServersBody> {
       ),
     );
     if (ok != true) return;
-    if (p.isBuiltIn) return;
+    if (p.isFreeOption) return;
     profiles.remove(p.id);
   }
 
@@ -330,7 +353,7 @@ class _ServersBodyState extends State<ServersBody> {
 }
 
 class _SearchField extends StatelessWidget {
-  const _SearchField({required this.onChanged});
+  const _SearchField({super.key, required this.onChanged});
   final ValueChanged<String> onChanged;
 
   @override
@@ -511,7 +534,10 @@ class _ServerRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(profile.name,
+                      Text(
+                          profile.isBuiltIn
+                              ? s.t('servers.novaFreeName')
+                              : profile.name,
                           maxLines: 1,
                           style: text.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w600),
@@ -610,9 +636,8 @@ class _ServerRow extends StatelessWidget {
                         leading: Icon(profile.pinned
                             ? Icons.push_pin_rounded
                             : Icons.push_pin_outlined),
-                        title: Text(profile.pinned
-                            ? s.serversUnpin
-                            : s.serversPin),
+                        title: Text(
+                            profile.pinned ? s.serversUnpin : s.serversPin),
                       ),
                     ),
                     PopupMenuItem<String>(
@@ -665,7 +690,7 @@ class _ServerRow extends StatelessWidget {
                     // one entry a person who has nothing else can always fall
                     // back to, including the person who deleted everything by
                     // accident, so removing them is not an option Nova offers.
-                    if (!profile.isBuiltIn)
+                    if (!profile.isFreeOption)
                       PopupMenuItem<String>(
                         value: 'delete',
                         child: ListTile(
@@ -709,12 +734,10 @@ class _LatencyReadout extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textDirection: TextDirection.ltr,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: c,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures()
-                    ],
-                  )),
+                color: c,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              )),
         ),
       ],
     );
@@ -873,8 +896,7 @@ Future<void> showAddServerDialog(BuildContext context,
   // to its editor rather than straight into a profile. The connect path reads
   // only the link form, and the engine's formats cannot carry resolvers, so
   // the person has to see what is missing before it saves.
-  final MasterDnsConfig? pastedDns =
-      MasterDnsConfig.parseText(prefill ?? '');
+  final MasterDnsConfig? pastedDns = MasterDnsConfig.parseText(prefill ?? '');
   if (pastedDns != null) {
     await _openMasterDnsEditor(context, pastedDns);
     return;
@@ -1196,11 +1218,11 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                     // MasterDNS is absent for the same reason: it has its own
                     // editor, and a pasted link is recognised by its scheme.
                     if (k != ProxyKind.aether && k != ProxyKind.masterdns)
-                    NovaPill(
-                      label: k.label,
-                      selected: _kind == k,
-                      onTap: () => setState(() => _kind = k),
-                    ),
+                      NovaPill(
+                        label: k.label,
+                        selected: _kind == k,
+                        onTap: () => setState(() => _kind = k),
+                      ),
                 ],
               ),
             ),
@@ -1230,7 +1252,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
             // else made a profile that could never connect (and a big enough
             // paste could take the app down later).
             final bool awg = _kind == ProxyKind.awg ||
-                (AwgConfig.looksLikeConf(uri) && _detectKind(uri) == ProxyKind.awg);
+                (AwgConfig.looksLikeConf(uri) &&
+                    _detectKind(uri) == ProxyKind.awg);
             if (awg && uri.isNotEmpty) {
               if (!AwgConfig.looksLikeConf(uri)) {
                 _notConf(s);
@@ -1343,7 +1366,8 @@ Future<void> showAddConfigSheet(BuildContext context) async {
                   subtitle: s.serversScanQrSub,
                   onTap: () async {
                     Navigator.pop(sheetCtx);
-                    final String? code = await Navigator.of(context).push<String>(
+                    final String? code =
+                        await Navigator.of(context).push<String>(
                       MaterialPageRoute<String>(
                           builder: (_) => const QrScanScreen()),
                     );

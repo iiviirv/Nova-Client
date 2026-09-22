@@ -17,6 +17,7 @@ import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
+import 'aether/aether_first_connection.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_tunnel.dart';
 import 'masterdns/masterdns_config.dart';
@@ -248,10 +249,12 @@ class DesktopProxyController extends ProxyController {
     notifyListeners();
   }
 
+  final AetherFirstConnection _firstAetherConnection = AetherFirstConnection();
+
   @override
   Future<void> connect() async {
     if (_state.isActive || _state.isBusy) return;
-    final profile = _active;
+    ProxyProfile? profile = _active;
     if (profile == null) {
       _fail('Select a config first');
       return;
@@ -267,6 +270,17 @@ class DesktopProxyController extends ProxyController {
     if (!_healing) _autoHealTried = false;
     _setState(ProxyConnectionState.connecting);
     try {
+      final prepared = await _firstAetherConnection.prepare(profile);
+      if (prepared == null || _active?.id != profile.id ||
+          _state != ProxyConnectionState.connecting) {
+        return;
+      }
+      if (!identical(prepared, profile)) {
+        await persistProfile?.call(prepared);
+        if (_state != ProxyConnectionState.connecting || _active?.id != profile.id) return;
+        _active = prepared;
+        profile = prepared;
+      }
       final String config = await _buildConfig(profile);
       final String binary = await _ensureBinary();
       // Ask the bundled core what it can run, the way the Android host asks
@@ -506,7 +520,7 @@ class DesktopProxyController extends ProxyController {
       };
 
   Future<void> _verifyAutoConnectivity() async {
-    final ProxyProfile? profile = _active;
+    ProxyProfile? profile = _active;
     if (profile == null || !profile.isSubscription) return;
     for (int attempt = 0; attempt < 7; attempt++) {
       await Future<void>.delayed(_probeBackoff(attempt));
@@ -581,6 +595,7 @@ class DesktopProxyController extends ProxyController {
 
   @override
   Future<void> disconnect() async {
+    _firstAetherConnection.cancel();
     if (_state == ProxyConnectionState.disconnected) return;
     // A real user disconnect clears the heal guard so the next session can heal
     // again; the heal's own reconnect (which disconnects first) must not.
@@ -2821,6 +2836,7 @@ class DesktopProxyController extends ProxyController {
 
   @override
   void dispose() {
+    _firstAetherConnection.cancel();
     // A measuring core still running when the app closes must not outlive it.
     _measureProcess?.kill();
     _measureProcess = null;

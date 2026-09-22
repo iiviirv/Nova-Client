@@ -1928,7 +1928,7 @@ class SingboxConfig {
         // the proxy isn't ready while the core is still starting, so a proxied
         // rule-set fetch deadlocks service start and the tunnel hangs on
         // "Connecting". Direct + direct-DNS resolution is self-contained.
-        'download_detour': 'direct',
+        'http_client': <String, dynamic>{'domain_resolver': _defaultDomainResolver},
       };
 
   /// The server/SNI/WS-host domains the proxy outbounds dial. These must resolve

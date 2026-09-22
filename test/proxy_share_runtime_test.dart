@@ -120,14 +120,15 @@ void main() {
         if (!done.isCompleted) done.complete();
       });
       try {
-        socket.write(connect
+        final request = StringBuffer(connect
             ? 'CONNECT nova-test.invalid:443 HTTP/1.1\r\nHost: nova-test.invalid:443\r\n'
             : 'GET http://nova-test.invalid/check HTTP/1.1\r\nHost: nova-test.invalid\r\nConnection: close\r\n');
         if (password != null) {
-          socket.write(
+          request.write(
               'Proxy-Authorization: Basic ${base64Encode(utf8.encode('nova:$password'))}\r\n');
         }
-        socket.write('\r\n');
+        request.write('\r\n');
+        socket.write(request.toString());
         await socket.flush();
         await done.future.timeout(const Duration(seconds: 3));
         final response = utf8.decode(chunks);

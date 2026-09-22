@@ -33,7 +33,10 @@ ZIP=/tmp/Nova-macOS-arm64-b$B.zip
 DMG=/tmp/Nova-macOS-arm64-b$B.dmg
 
 echo "############ build macOS ############"
-flutter build macos --release 2>&1 | tail -5
+if ! flutter build macos --release 2>&1 | tail -20; then
+  echo "!! macOS build failed; refusing to package an older app"
+  exit 1
+fi
 APP="$PROJ/build/macos/Build/Products/Release/nova_client.app"
 if [[ ! -d "$APP" ]]; then echo "!! macOS app not produced"; exit 1; fi
 # Bundle the cores for BOTH architectures. The Flutter app bundle is universal

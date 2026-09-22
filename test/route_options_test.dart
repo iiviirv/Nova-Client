@@ -79,7 +79,8 @@ void main() {
         (cfg['route'] as Map)['rule_set'] as List<dynamic>;
     expect(sets, isNotEmpty);
     for (final dynamic rs in sets) {
-      expect((rs as Map)['download_detour'], 'direct');
+      expect(((rs as Map)['http_client'] as Map)['domain_resolver'],
+          {'server': 'local'});
     }
 
     final List<dynamic> dnsRules = (cfg['dns'] as Map)['rules'] as List<dynamic>;

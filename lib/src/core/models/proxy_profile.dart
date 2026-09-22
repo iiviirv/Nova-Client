@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../proxy/singbox/awg_config.dart';
+import '../proxy/aether/aether_options.dart';
 
 /// The proxy protocols Nova Proxy speaks (mirrors the Nova Worker: VLESS,
 /// Trojan, Shadowsocks over WebSocket/gRPC/XHTTP) plus the subscription and
@@ -155,6 +156,8 @@ class ProxyProfile {
   /// someone who has just deleted everything else.
   bool get isBuiltIn => id == kFreeProfileId;
 
+  bool get isFreeOption => isBuiltIn || kFreeAetherIds.contains(id);
+
   /// Drop any server from this subscription whose traffic is not encrypted (see
   /// [ProxyNode.isEncrypted]). Set on the free list Nova ships, where the whole
   /// promise is that someone can install the app, press Connect and be safe
@@ -230,9 +233,9 @@ class ProxyProfile {
           ? this.bypassCipherSuites
           : bypassCipherSuites as List<String>?,
       telegramProxy: telegramProxy ?? this.telegramProxy,
-        telegramProxyWeb: telegramProxyWeb ?? this.telegramProxyWeb,
-        hardenTlsUserSet: hardenTlsUserSet ?? this.hardenTlsUserSet,
-        bypassFragmentMask: bypassFragmentMask == _unset
+      telegramProxyWeb: telegramProxyWeb ?? this.telegramProxyWeb,
+      hardenTlsUserSet: hardenTlsUserSet ?? this.hardenTlsUserSet,
+      bypassFragmentMask: bypassFragmentMask == _unset
           ? this.bypassFragmentMask
           : bypassFragmentMask as String?,
     );
@@ -330,7 +333,8 @@ const String kFreeSubUrlLegacy =
 /// seeded once, and removing it is a decision the user gets to keep.
 const String kFreeProfileId = 'nova-free';
 
-ProxyProfile buildFreeProfile({String name = 'Nova free servers'}) => ProxyProfile(
+ProxyProfile buildFreeProfile({String name = 'Nova free servers'}) =>
+    ProxyProfile(
       id: kFreeProfileId,
       name: name,
       kind: ProxyKind.subscription,
@@ -340,3 +344,26 @@ ProxyProfile buildFreeProfile({String name = 'Nova free servers'}) => ProxyProfi
       hardenTls: true,
       encryptedOnly: true,
     );
+
+/// Stable IDs separate Nova defaults from user-created Aether profiles.
+const List<String> kFreeAetherIds = <String>[
+  'nova-free-wg',
+  'nova-free-gool',
+  'nova-free-masque',
+];
+
+List<ProxyProfile> buildFreeAetherProfiles() => <ProxyProfile>[
+      for (final entry in <(String, String, AetherMode)>[
+        (kFreeAetherIds[0], 'WireGuard', AetherMode.wg),
+        (kFreeAetherIds[1], 'Gool', AetherMode.gool),
+        (kFreeAetherIds[2], 'MASQUE', AetherMode.masque),
+      ])
+        ProxyProfile(
+          id: entry.$1,
+          name: entry.$2,
+          kind: ProxyKind.aether,
+          uri: AetherConfig(
+                  options: AetherOptions(mode: entry.$3), name: entry.$2)
+              .toLink(),
+        ),
+    ];

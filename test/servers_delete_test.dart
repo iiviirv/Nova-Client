@@ -69,7 +69,8 @@ Future<ProfilesController> _pumpServers(
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final ThemeController theme = ThemeController()..attachPrefs(prefs);
   final ProfilesController profileCtl = ProfilesController()
-    ..attachPrefs(prefs);
+    ..attachPrefs(prefs)
+    ..selectTab(false);
   for (final ProxyProfile p in profiles) {
     profileCtl.add(p);
   }
@@ -112,6 +113,23 @@ Future<void> _teardown(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Free tab separates defaults from user Aether and remembers switching', (tester) async {
+    final profiles = await _pumpServers(tester, [_aether('mine', 'My tunnel')]);
+    expect(find.text('My tunnel'), findsOneWidget);
+    expect(find.text('MASQUE'), findsNothing);
+    await tester.enterText(find.byType(TextField).first, 'My tunnel');
+    profiles.selectTab(true);
+    await tester.pumpAndSettle();
+    expect(find.text('MASQUE'), findsOneWidget);
+    expect(find.text('Gool'), findsOneWidget);
+    expect(find.text('My tunnel'), findsNothing);
+    expect(profiles.freeTab, isTrue);
+    await tester.tap(find.text('Subscriptions'));
+    await tester.pumpAndSettle();
+    expect(find.text('My tunnel'), findsOneWidget);
+    expect(profiles.freeTab, isFalse);
+    await _teardown(tester);
+  });
   group('Servers list delete', () {
     testWidgets(
         'deleting the only AmneziaWG config while filtered to AmneziaWG '
@@ -139,7 +157,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Only the WG profile is gone from the controller...
-      expect(profiles.profiles.map((p) => p.id), <String>['s1', 's2']);
+      expect(profiles.profiles.where((p) => !p.isFreeOption).map((p) => p.id), <String>['s1', 's2']);
       // ...and the subscriptions are visible again: the stale filter
       // collapsed to All instead of hiding everything.
       expect(find.text('Germany sub'), findsOneWidget);
@@ -159,7 +177,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(profiles.profiles.length, 2);
+      expect(profiles.profiles.where((p) => !p.isFreeOption).length, 2);
       await _teardown(tester);
     });
 
@@ -211,7 +229,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('not a WireGuard/AmneziaWG config'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget, reason: 'dialog stays open');
-      expect(profiles.profiles.length, 1);
+      expect(profiles.profiles.where((p) => !p.isFreeOption).length, 1);
       await _teardown(tester);
     });
 
@@ -226,7 +244,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('need PrivateKey, Address, PublicKey, Endpoint'),
           findsOneWidget);
-      expect(profiles.profiles.length, 1);
+      expect(profiles.profiles.where((p) => !p.isFreeOption).length, 1);
       await _teardown(tester);
     });
 
@@ -238,7 +256,7 @@ void main() {
       await tester.enterText(find.byType(TextField).last, _awg('w', 'w').uri);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
-      expect(profiles.profiles.length, 2);
+      expect(profiles.profiles.where((p) => !p.isFreeOption).length, 2);
       expect(profiles.profiles.last.kind, ProxyKind.awg);
       await _teardown(tester);
     });
@@ -259,15 +277,15 @@ void main() {
       // Deep-link import lands before SharedPreferences resolved.
       c.add(_sub('s2', 'Deep-linked sub'));
       c.setActive('s2');
-      expect(c.profiles.length, 1);
+      expect(c.profiles.where((p) => !p.isFreeOption).length, 1);
 
       c.attachPrefs(prefs);
-      expect(c.profiles.map((p) => p.id), <String>['s1', 's2']);
+      expect(c.profiles.where((p) => !p.isFreeOption).map((p) => p.id), <String>['s1', 's2']);
       expect(c.activeId, 's2');
       // And it was persisted, so the next launch has both.
       expect(
         ProxyProfile.decodeList(prefs.getString('nova.profiles')!)
-            .map((p) => p.id),
+            .where((p) => !p.isFreeOption).map((p) => p.id),
         <String>['s1', 's2'],
       );
     });
@@ -284,10 +302,10 @@ void main() {
       final ProfilesController c = ProfilesController();
       c.remove('w1');
       c.attachPrefs(prefs);
-      expect(c.profiles.map((p) => p.id), <String>['s1']);
+      expect(c.profiles.where((p) => !p.isFreeOption).map((p) => p.id), <String>['s1']);
       expect(
         ProxyProfile.decodeList(prefs.getString('nova.profiles')!)
-            .map((p) => p.id),
+            .where((p) => !p.isFreeOption).map((p) => p.id),
         <String>['s1'],
       );
     });

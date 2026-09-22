@@ -141,6 +141,7 @@ Future<_StaleProxy> _pumpShell(
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final ProfilesController profiles = ProfilesController()..attachPrefs(prefs);
   profiles.add(profile);
+  profiles.setActive(profile.id);
   final _StaleProxy proxy = _StaleProxy(profile);
   final RelayController relay = RelayController();
 

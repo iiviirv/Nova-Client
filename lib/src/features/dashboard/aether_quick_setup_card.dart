@@ -122,18 +122,18 @@ class _AetherQuickSetupCardState extends State<AetherQuickSetupCard> {
 
   Future<void> _saveAndConnect(String endpoint) async {
     final NovaScope scope = NovaScope.of(context);
-    final AetherConfig config = AetherConfig(
-      options: _options.copyWith(peer: endpoint),
-      name: aetherAutoName(_options.mode, scope.profiles.profiles),
-    );
-    final ProxyProfile profile = ProxyProfile(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      name: config.name,
-      kind: ProxyKind.aether,
-      uri: config.toLink(),
-      updatedAt: DateTime.now(),
-    );
-    scope.profiles.add(profile);
+    final existing = scope.profiles.profiles
+        .where((p) => p.id == kFreeAetherIds.first).firstOrNull;
+    final name = existing?.name ?? aetherAutoName(_options.mode, scope.profiles.profiles);
+    final config = AetherConfig(options: _options.copyWith(peer: endpoint), name: name);
+    final profile = existing?.copyWith(uri: config.toLink(), updatedAt: DateTime.now()) ??
+        ProxyProfile(id: kFreeAetherIds.first, name: name, kind: ProxyKind.aether,
+            uri: config.toLink(), updatedAt: DateTime.now());
+    if (existing == null) {
+      scope.profiles.add(profile);
+    } else {
+      scope.profiles.update(profile);
+    }
     scope.profiles.setActive(profile.id);
     scope.proxy.selectProfile(profile);
     await scope.proxy.connect();

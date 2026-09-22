@@ -97,6 +97,7 @@ Future<void> _pump(
   double textScale = 1.0,
   Locale locale = const Locale('en'),
   ThemeMode themeMode = ThemeMode.dark,
+  bool freeTab = false,
   ProxyController? proxy,
   List<ProxyProfile> profiles = const <ProxyProfile>[],
 }) async {
@@ -108,7 +109,8 @@ Future<void> _pump(
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final ThemeController theme = ThemeController()..attachPrefs(prefs);
   final ProfilesController profileCtl = ProfilesController()
-    ..attachPrefs(prefs);
+    ..attachPrefs(prefs)
+    ..selectTab(freeTab);
   for (final ProxyProfile p in profiles) {
     profileCtl.add(p);
   }
@@ -268,6 +270,17 @@ void main() {
   });
 
   group('Servers', () {
+    testWidgets('Free options localize and fit Farsi at 320dp and 2x text', (tester) async {
+      await _pump(tester, const ServersScreen(), freeTab: true,
+          textScale: 2.0, locale: const Locale('fa'), themeMode: ThemeMode.light);
+      expect(find.text('رایگان'), findsOneWidget);
+      expect(find.text('اشتراک‌ها'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('سرورهای رایگان نوا'), 150,
+          scrollable: find.byType(Scrollable).first);
+      expect(find.text('سرورهای رایگان نوا'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _teardown(tester);
+    });
     testWidgets('rows lay out at 320dp and 2x text',
         (WidgetTester tester) async {
       await _pump(tester, const ServersScreen(),

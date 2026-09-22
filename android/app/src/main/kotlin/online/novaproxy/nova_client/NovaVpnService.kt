@@ -40,6 +40,12 @@ import io.nekohasekai.libbox.LocalDNSTransport
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.OverrideOptions
+import io.nekohasekai.libbox.BridgeSession
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.PlatformUser
+import io.nekohasekai.libbox.ShellSession
+import io.nekohasekai.libbox.NeighborUpdateListener
+import io.nekohasekai.libbox.OutboundGroupItemIterator
 import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
@@ -449,6 +455,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun clearLogs() {}
         override fun writeLogs(messageList: LogIterator?) {}
         override fun writeGroups(message: OutboundGroupIterator?) {}
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) {}
         override fun writeConnectionEvents(events: ConnectionEvents?) {}
         override fun setDefaultLogLevel(level: Int) {}
         override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
@@ -478,6 +485,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun disconnected(message: String?) {}
         override fun clearLogs() {}
         override fun writeGroups(message: OutboundGroupIterator?) {}
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) {}
         override fun writeConnectionEvents(events: ConnectionEvents?) {}
         override fun setDefaultLogLevel(level: Int) {}
         override fun initializeClashMode(modeList: StringIterator, currentMode: String) {}
@@ -892,10 +900,30 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun readWIFIState(): WIFIState? = null
 
-    override fun systemCertificates(): StringIterator =
+    fun systemCertificates(): StringIterator =
         StringArray(emptyList<String>().iterator())
 
     override fun clearDNSCache() {}
+
+    override fun cancelNotification(identifier: String?, typeID: Int) {}
+    override fun registerMyInterface(name: String?) {}
+    override fun tailscaleHostname(): String = "Nova"
+    override fun usePlatformBridge(): Boolean = false
+    override fun usePlatformShell(): Boolean = false
+    override fun checkPlatformShell() { throw UnsupportedOperationException("Platform shell") }
+    override fun createBridge(options: BridgeOptions?): BridgeSession =
+        throw UnsupportedOperationException("Platform bridge")
+    override fun lookupSFTPServer(): String = throw UnsupportedOperationException("SFTP server")
+    override fun lookupUser(username: String?): PlatformUser = throw UnsupportedOperationException("Platform user")
+    override fun readSystemSSHHostKey(): String = throw UnsupportedOperationException("SSH host key")
+    override fun openShellSession(user: PlatformUser?, command: String?, environ: StringIterator?,
+                                  term: String?, rows: Int, cols: Int): ShellSession =
+        throw UnsupportedOperationException("Platform shell")
+    override fun startNeighborMonitor(listener: NeighborUpdateListener?) {}
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {}
+    override fun connectSSHAgent(): Int = throw UnsupportedOperationException("SSH agent")
+    override fun triggerNativeCrash() { throw UnsupportedOperationException("Crash requests disabled") }
+
 
     override fun sendNotification(notification: Notification) {}
 

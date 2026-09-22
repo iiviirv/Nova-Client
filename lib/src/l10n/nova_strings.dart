@@ -2033,6 +2033,10 @@ class NovaStrings {
     'node.refresh': 'Refresh',
     'node.measureAll': 'Test all servers through the core',
     'node.measureStop': 'Stop testing',
+    'servers.freeTab': 'Free',
+    'servers.subscriptionsTab': 'Subscriptions',
+    'servers.novaFreeName': 'Nova free servers',
+    'servers.freeHint': 'Choose a free option, then connect. WireGuard, Gool and MASQUE find a gateway on their first connection and save it for next time.',
     'free.searchTitle': 'Finding servers that work',
     'free.searchBody':
         'These are shared servers, so some are always gone. Nova is trying '
@@ -3097,6 +3101,10 @@ class NovaStrings {
     'node.refresh': 'بازخوانی',
     'node.measureAll': 'تست همه سرورها از طریق هسته',
     'node.measureStop': 'توقف تست',
+    'servers.freeTab': 'رایگان',
+    'servers.subscriptionsTab': 'اشتراک‌ها',
+    'servers.novaFreeName': 'سرورهای رایگان نوا',
+    'servers.freeHint': 'یک گزینه رایگان انتخاب کنید و متصل شوید. WireGuard، Gool و MASQUE در اولین اتصال یک گیت‌وی پیدا می‌کنند و برای دفعات بعد نگه می‌دارند.',
     'free.searchTitle': 'در حال یافتن سرورهای سالم',
     'free.searchBody':
         'این سرورها اشتراکی هستند و همیشه تعدادی از آنها از کار افتاده‌اند. '

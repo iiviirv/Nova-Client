@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.26.0 (2026-09-22)
+
+- Separate Free and Subscriptions tabs, with the chosen tab remembered across launches.
+- Built-in WireGuard, Gool and MASQUE profiles discover a verified gateway on first connection and reuse it afterwards. Nova free servers remains the fourth free option, with a Persian name in Persian mode.
+- The one-tap WireGuard shortcut reuses the built-in profile instead of creating a duplicate.
+- Aether 2.0.0, configurable HTTP/2 TLS fragmentation and automatic MASQUE HTTP/2 fallback. TLS authorization recovery keeps a replacement identity only after verified traffic.
+- Updated the connection core to sing-box 1.14.1 and migrated remote rule-set downloads to its HTTP client settings.
+
 ## v1.25.1 (QA, 2026-09-21)
 
 - QA build 160 updates Aether to 2.0.0 and tests a separate MASQUE identity after an HTTP/2 TLS authorization rejection. A replacement is saved only after end-to-end WARP verification; the previous identity is backed up. Recovery attempts have a five-minute cooldown.

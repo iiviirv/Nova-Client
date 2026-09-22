@@ -27,6 +27,7 @@ import '../../features/servers/aether_gateway_search.dart';
 import 'aether/aether_gateway_finder.dart';
 import 'singbox/share_link.dart';
 import 'singbox/share_link_builder.dart';
+import 'aether/aether_first_connection.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
@@ -819,9 +820,11 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
+  final AetherFirstConnection _firstAetherConnection = AetherFirstConnection();
+
   @override
   Future<void> connect() async {
-    final ProxyProfile? profile = _active;
+    ProxyProfile? profile = _active;
     if (profile == null) {
       _lastError = 'No profile selected';
       _state = ProxyConnectionState.error;
@@ -854,6 +857,17 @@ class SingboxProxyController extends ProxyController {
 
     final String config;
     try {
+      final prepared = await _firstAetherConnection.prepare(profile);
+      if (prepared == null || _active?.id != profile.id ||
+          _state != ProxyConnectionState.connecting) {
+        return;
+      }
+      if (!identical(prepared, profile)) {
+        await persistProfile?.call(prepared);
+        if (seq != _opSeq) return;
+        _active = prepared;
+        profile = prepared;
+      }
       config = await _buildSingboxConfig(profile);
     } on FormatException catch (e) {
       _lastError = e.message;
@@ -975,7 +989,9 @@ class SingboxProxyController extends ProxyController {
   void _armWatchdog() {
     _watchdog?.cancel();
     _watchdog = Timer(_connectTimeout, () async {
-      if (_state != ProxyConnectionState.connecting) return;
+      if (_state != ProxyConnectionState.connecting) {
+        return;
+      }
       const String msg = 'The tunnel did not come up in time. The server may be '
           'unreachable, try another config or scan a clean IP in Radar.';
       // Tear the tunnel down for real, do not just relabel it.
@@ -1000,6 +1016,7 @@ class SingboxProxyController extends ProxyController {
 
   @override
   Future<void> disconnect() async {
+    _firstAetherConnection.cancel();
     _watchdog?.cancel();
     _watchdog = null;
     // Invalidate any connect() still resolving its config: it must not send
@@ -2184,6 +2201,7 @@ class SingboxProxyController extends ProxyController {
 
   @override
   void dispose() {
+    _firstAetherConnection.cancel();
     _watchdog?.cancel();
     _eventSub?.cancel();
     _lifecycle?.dispose();

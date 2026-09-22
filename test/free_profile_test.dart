@@ -22,7 +22,7 @@ void main() {
   test('a fresh install starts with the free servers and them selected',
       () async {
     final ProfilesController c = await controller(<String, Object>{});
-    expect(c.profiles.map((ProxyProfile p) => p.id), <String>[kFreeProfileId]);
+    expect(c.profiles.map((ProxyProfile p) => p.id), <String>[kFreeProfileId, ...kFreeAetherIds]);
     expect(c.activeId, kFreeProfileId,
         reason: 'install, press Connect, be online');
   });
@@ -36,7 +36,7 @@ void main() {
       'nova.profiles.active': 'mine',
     });
     expect(c.profiles.map((ProxyProfile p) => p.id),
-        <String>[kFreeProfileId, 'mine']);
+        <String>[kFreeProfileId, 'mine', ...kFreeAetherIds]);
     expect(c.activeId, 'mine',
         reason: 'a built-in appearing must not take over their connection');
   });
@@ -47,7 +47,7 @@ void main() {
     final ProfilesController again = ProfilesController()
       ..attachPrefs(await SharedPreferences.getInstance());
     expect(again.hasFreeProfile, isTrue);
-    expect(again.profiles, hasLength(1),
+    expect(again.profiles, hasLength(4),
         reason: 'seeded once, not once per launch');
   });
 
@@ -103,7 +103,7 @@ void main() {
       expect(c.hasFreeProfile, isTrue,
           reason: 'the one thing someone with nothing can fall back to');
       c.remove('mine');
-      expect(c.profiles.map((ProxyProfile p) => p.id), <String>[kFreeProfileId]);
+      expect(c.profiles.map((ProxyProfile p) => p.id), <String>[kFreeProfileId, ...kFreeAetherIds]);
     });
 
     test('only the built-in list is protected', () {

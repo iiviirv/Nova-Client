@@ -207,6 +207,13 @@ private final class CommandServerHandler: NSObject, NovacoreCommandServerHandler
 
   func serviceStop() throws {}
   func serviceReload() throws {}
+  func connectSSHAgent(_: UnsafeMutablePointer<Int32>?) throws {
+    throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "SSH agent is not supported"])
+  }
+  func triggerNativeCrash() throws {
+    throw NSError(domain: "Nova", code: 6, userInfo: [NSLocalizedDescriptionKey: "Crash requests are disabled"])
+  }
+
   func setSystemProxyEnabled(_: Bool) throws {}
   func writeDebugMessage(_: String?) {}
 }
@@ -222,8 +229,10 @@ extension PacketTunnelProvider: NovacorePlatformInterfaceProtocol {
     settings.mtu = NSNumber(value: options.getMTU())
 
     // DNS (a single boxed server address)
-    if let dnsBox = try? options.getDNSServerAddress(), !dnsBox.value.isEmpty {
-      settings.dnsSettings = NEDNSSettings(servers: [dnsBox.value])
+    if let iterator = try? options.getDNSServerAddress() {
+      var servers: [String] = []
+      while iterator.hasNext() { servers.append(iterator.next()) }
+      if !servers.isEmpty { settings.dnsSettings = NEDNSSettings(servers: servers) }
     }
 
     // IPv4 addresses + default route.
@@ -340,6 +349,38 @@ extension PacketTunnelProvider: NovacorePlatformInterfaceProtocol {
   func usePlatformAutoDetectControl() -> Bool { false }
   func autoDetectControl(_: Int32) throws {}
   func clearDNSCache() {}
+
+  // Optional 1.14 platform services are not exposed by Nova's tunnel.
+  func cancelNotification(_: String?, typeID _: Int32) throws {}
+  func registerMyInterface(_: String?) {}
+  func tailscaleHostname() -> String { "Nova" }
+  func usePlatformBridge() -> Bool { false }
+  func usePlatformShell() -> Bool { false }
+  private func unsupportedPlatformService() -> NSError {
+    NSError(domain: "Nova", code: 6,
+            userInfo: [NSLocalizedDescriptionKey: "Platform service is not supported"])
+  }
+  func checkPlatformShell() throws { throw unsupportedPlatformService() }
+  func createBridge(_: NovacoreBridgeOptions?) throws -> NovacoreBridgeSessionProtocol {
+    throw unsupportedPlatformService()
+  }
+  func lookupSFTPServer(_ error: NSErrorPointer) -> String {
+    error?.pointee = unsupportedPlatformService()
+    return ""
+  }
+  func lookupUser(_: String?) throws -> NovacorePlatformUser { throw unsupportedPlatformService() }
+  func readSystemSSHHostKey(_ error: NSErrorPointer) -> String {
+    error?.pointee = unsupportedPlatformService()
+    return ""
+  }
+  func openShellSession(_: NovacorePlatformUser?, command _: String?,
+                        environ _: NovacoreStringIteratorProtocol?, term _: String?,
+                        rows _: Int32, cols _: Int32) throws -> NovacoreShellSessionProtocol {
+    throw unsupportedPlatformService()
+  }
+  func startNeighborMonitor(_: NovacoreNeighborUpdateListenerProtocol?) throws {}
+  func closeNeighborMonitor(_: NovacoreNeighborUpdateListenerProtocol?) throws {}
+
 
   func startDefaultInterfaceMonitor(_ listener: NovacoreInterfaceUpdateListenerProtocol?) throws {
     guard let listener else { return }

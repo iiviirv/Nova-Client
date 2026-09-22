@@ -13,6 +13,17 @@ class ProfilesController extends ChangeNotifier {
 
   static const String _kProfilesKey = 'nova.profiles';
   static const String _kActiveKey = 'nova.profiles.active';
+  static const String _kTabKey = 'nova.servers.tab';
+  bool _freeTab = true;
+  bool? _tabBeforePrefs;
+  bool get freeTab => _freeTab;
+
+  void selectTab(bool free) {
+    _freeTab = free;
+    if (_prefs == null) _tabBeforePrefs = free;
+    _prefs?.setBool(_kTabKey, free);
+    notifyListeners();
+  }
 
   SharedPreferences? _prefs;
 
@@ -43,6 +54,11 @@ class ProfilesController extends ChangeNotifier {
     _prefs = prefs;
     _load();
     _repointFreeList();
+    if (_tabBeforePrefs != null) {
+      _freeTab = _tabBeforePrefs!;
+      _prefs?.setBool(_kTabKey, _freeTab);
+      _tabBeforePrefs = null;
+    }
     bool replayed = false;
     if (_removedBeforePrefs.isNotEmpty) {
       _profiles.removeWhere((p) => _removedBeforePrefs.contains(p.id));
@@ -79,11 +95,16 @@ class ProfilesController extends ChangeNotifier {
     }
     _pruneBrokenDemos();
     _seedFreeProfile();
+    for (final profile in buildFreeAetherProfiles()) {
+      if (!_profiles.any((p) => p.id == profile.id)) _profiles.add(profile);
+    }
+    _persist();
     final String? savedActive = prefs.getString(_kActiveKey);
     _activeId =
         (savedActive != null && _profiles.any((p) => p.id == savedActive))
             ? savedActive
             : (_profiles.isNotEmpty ? _profiles.first.id : null);
+    _freeTab = prefs.getBool(_kTabKey) ?? (active?.isFreeOption ?? true);
   }
 
   /// Earlier builds seeded two placeholder profiles that can never connect: a
@@ -118,7 +139,6 @@ class ProfilesController extends ChangeNotifier {
     final SharedPreferences? prefs = _prefs;
     if (prefs == null) return;
     if (_profiles.any((ProxyProfile p) => p.id == kFreeProfileId)) return;
-    if (prefs.getBool(kFreeSeededKey) ?? false) return;
     prefs.setBool(kFreeSeededKey, true);
     _profiles.insert(0, buildFreeProfile());
     prefs.setString(_kProfilesKey, ProxyProfile.encodeList(_profiles));
@@ -189,7 +209,7 @@ class ProfilesController extends ChangeNotifier {
     // "install it and press Connect" true, including for the person who has
     // just deleted everything else, so the store refuses here rather than
     // trusting every screen to hide the button.
-    if (id == kFreeProfileId) return;
+    if (id == kFreeProfileId || kFreeAetherIds.contains(id)) return;
     _profiles.removeWhere((p) => p.id == id);
     if (_prefs == null) {
       _removedBeforePrefs.add(id);

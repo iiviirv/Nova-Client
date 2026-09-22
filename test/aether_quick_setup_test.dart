@@ -285,7 +285,7 @@ void main() {
             'No gateway carried traffic: the tunnel did not carry traffic'),
         findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
-    expect(profiles.profiles.any((ProxyProfile p) => p.kind == ProxyKind.aether),
+    expect(profiles.profiles.any(AetherQuickSetupCard.isWorkingAether),
         isFalse,
         reason: 'nothing to save: a config with no gateway is the bug');
   });

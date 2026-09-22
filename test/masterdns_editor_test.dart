@@ -49,7 +49,7 @@ Future<void> _pump(
   SharedPreferences.setMockInitialValues(prefsSeed);
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final ThemeController theme = ThemeController()..attachPrefs(prefs);
-  profiles = ProfilesController()..attachPrefs(prefs);
+  profiles = ProfilesController()..attachPrefs(prefs)..selectTab(false);
   for (final ProxyProfile p in seed) {
     profiles.add(p);
   }
