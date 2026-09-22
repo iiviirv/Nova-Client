@@ -24,10 +24,10 @@ on:
         default: ""
 
 env:
-  # v1.9.0, 2026-09-04. Bump deliberately: read what changed in the FFI first,
+  # v2.0.0, 2026-09-12. Bump deliberately: read what changed in the FFI first,
   # because the Dart binding names these symbols and a rename fails at runtime
   # with nothing more useful than "symbol not found".
-  AETHER_COMMIT: 311b573352bb67e494895ff67d20b002d075116a
+  AETHER_COMMIT: 0e6f6a5218e65ed4cddc68d1a71d9b9633f89e3f
   NDK_VERSION: r26d
   MACOSX_DEPLOYMENT_TARGET: "12.0"
 

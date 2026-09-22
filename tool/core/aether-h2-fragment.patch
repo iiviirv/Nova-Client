@@ -1,8 +1,8 @@
 diff --git a/aether/src/api.rs b/aether/src/api.rs
-index d39cc8c..ea30914 100644
+index fd1f4a6..46bea9d 100644
 --- a/aether/src/api.rs
 +++ b/aether/src/api.rs
-@@ -349,6 +349,8 @@ impl Endpoint {
+@@ -352,6 +352,8 @@ impl Endpoint {
  
  #[derive(Debug, Clone)]
  pub struct ScanRequest {
@@ -11,7 +11,7 @@ index d39cc8c..ea30914 100644
      pub transport: Transport,
      pub mode: String,
      pub ip: prober::IpScan,
-@@ -363,6 +365,8 @@ impl ScanRequest {
+@@ -366,6 +368,8 @@ impl ScanRequest {
      pub fn for_transport(transport: Transport) -> Self {
          Self {
              transport,
@@ -20,7 +20,7 @@ index d39cc8c..ea30914 100644
              mode: "balanced".to_string(),
              ip: prober::IpScan::V4,
              ports: transport.default_ports(),
-@@ -398,6 +402,8 @@ pub async fn scan(
+@@ -397,6 +401,8 @@ pub async fn scan(identity: &Identity, request: &ScanRequest, cancel: &Cancel) -
      match request.transport {
          Transport::Masque => {
              let probe = prober::MasqueProbe {
@@ -29,7 +29,7 @@ index d39cc8c..ea30914 100644
                  sni: consts::CONNECT_SNI.to_string(),
                  authority: quic::default_authority().to_string(),
                  path: quic::default_path().to_string(),
-@@ -448,6 +454,8 @@ fn wg_local_v4(identity: &Identity) -> Result<Ipv4Addr> {
+@@ -447,6 +453,8 @@ fn wg_local_v4(identity: &Identity) -> Result<Ipv4Addr> {
  
  #[derive(Debug, Clone)]
  pub struct TunnelSpec {
@@ -38,7 +38,7 @@ index d39cc8c..ea30914 100644
      pub transport: Transport,
      pub socks: SocketAddr,
      pub http: Option<SocketAddr>,
-@@ -461,6 +469,8 @@ impl TunnelSpec {
+@@ -460,6 +468,8 @@ impl TunnelSpec {
      pub fn for_transport(transport: Transport) -> Self {
          Self {
              transport,
@@ -47,7 +47,7 @@ index d39cc8c..ea30914 100644
              socks: SocketAddr::from(([127, 0, 0, 1], 1819)),
              http: None,
              ech: None,
-@@ -507,7 +517,7 @@ pub async fn verify_endpoint(
+@@ -506,7 +516,7 @@ pub async fn verify_endpoint(
  ) -> Result<bool> {
      match spec.transport {
          Transport::Masque => {
@@ -56,7 +56,7 @@ index d39cc8c..ea30914 100644
              guard(cancel, attempt).await
          }
          Transport::WireGuard => {
-@@ -549,7 +559,7 @@ pub async fn connect(
+@@ -548,7 +558,7 @@ pub async fn connect(
  
      match spec.transport {
          Transport::Masque => {
@@ -66,10 +66,10 @@ index d39cc8c..ea30914 100644
          }
          Transport::WireGuard => {
 diff --git a/aether/src/ffi.rs b/aether/src/ffi.rs
-index 77e5deb..8e6d688 100644
+index c217602..c8d2c50 100644
 --- a/aether/src/ffi.rs
 +++ b/aether/src/ffi.rs
-@@ -130,7 +130,10 @@ where
+@@ -132,7 +132,10 @@ where
      );
  
      runtime.spawn(async move {
@@ -81,7 +81,7 @@ index 77e5deb..8e6d688 100644
          let reply = match outcome {
              Ok(Ok(value)) => ok_value(value),
              Ok(Err(message)) => error_value(message),
-@@ -210,6 +213,12 @@ struct OpenPayload {
+@@ -212,6 +215,12 @@ struct OpenPayload {
  
  #[derive(serde::Deserialize)]
  struct ScanPayload {
@@ -94,7 +94,7 @@ index 77e5deb..8e6d688 100644
      #[serde(default)]
      transport: Option<String>,
      #[serde(default)]
-@@ -228,6 +237,12 @@ struct ScanPayload {
+@@ -230,6 +239,12 @@ struct ScanPayload {
  
  #[derive(serde::Deserialize)]
  struct TunnelPayload {
@@ -107,7 +107,7 @@ index 77e5deb..8e6d688 100644
      peer: String,
      #[serde(default)]
      transport: Option<String>,
-@@ -258,7 +273,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
+@@ -260,7 +275,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
  
  #[no_mangle]
  pub extern "C" fn aether_version() -> *mut c_char {
@@ -116,7 +116,7 @@ index 77e5deb..8e6d688 100644
  }
  
  #[no_mangle]
-@@ -374,6 +389,8 @@ pub extern "C" fn aether_scan_start(identity: u64, payload: *const c_char) -> *m
+@@ -378,6 +393,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
          let transport = transport_of(&payload.transport);
  
          let mut request = api::ScanRequest::for_transport(transport);
@@ -125,7 +125,7 @@ index 77e5deb..8e6d688 100644
          if let Some(profile) = &payload.profile {
              request = request.with_profile(profile);
          }
-@@ -414,6 +431,8 @@ pub extern "C" fn aether_scan_start(identity: u64, payload: *const c_char) -> *m
+@@ -418,6 +435,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
  fn tunnel_spec_of(payload: &TunnelPayload) -> std::result::Result<api::TunnelSpec, String> {
      let transport = transport_of(&payload.transport);
      let mut spec = api::TunnelSpec::for_transport(transport);
@@ -134,7 +134,7 @@ index 77e5deb..8e6d688 100644
  
      if let Some(profile) = &payload.profile {
          spec = spec.with_profile(profile);
-@@ -785,3 +804,49 @@ mod tests {
+@@ -790,3 +809,49 @@ mod tests {
          assert_eq!(reply["ok"], json!(false));
      }
  }
@@ -185,10 +185,10 @@ index 77e5deb..8e6d688 100644
 +    }
 +}
 diff --git a/aether/src/fragment.rs b/aether/src/fragment.rs
-index 65c45c0..a9f0c4c 100644
+index c411986..03a98f8 100644
 --- a/aether/src/fragment.rs
 +++ b/aether/src/fragment.rs
-@@ -181,3 +181,27 @@ where
+@@ -183,3 +183,27 @@ where
          Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
      }
  }
@@ -217,10 +217,10 @@ index 65c45c0..a9f0c4c 100644
 +    }
 +}
 diff --git a/aether/src/lib.rs b/aether/src/lib.rs
-index bbf436e..b761e31 100644
+index 681e2b9..95831e4 100644
 --- a/aether/src/lib.rs
 +++ b/aether/src/lib.rs
-@@ -796,6 +796,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
+@@ -911,6 +911,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
              log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip verification)");
              let mode = prober::ScanMode::parse(&mode_str);
              let probe = prober::MasqueProbe {
@@ -229,8 +229,8 @@ index bbf436e..b761e31 100644
                  sni: consts::CONNECT_SNI.to_string(),
                  authority: quic::default_authority().to_string(),
                  path: quic::default_path().to_string(),
-@@ -948,6 +950,8 @@ async fn hunt_masque_peer(
-     log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip + data-plane verification)");
+@@ -1079,6 +1081,8 @@ async fn hunt_masque_peer(
+     );
      let mode = prober::ScanMode::parse(mode_str);
      let probe = prober::MasqueProbe {
 +                http2: masque_h2::enabled(),
@@ -238,7 +238,7 @@ index bbf436e..b761e31 100644
          sni: consts::CONNECT_SNI.to_string(),
          authority: quic::default_authority().to_string(),
          path: quic::default_path().to_string(),
-@@ -976,6 +980,10 @@ fn lastconn_path(config_path: &str) -> String {
+@@ -1106,6 +1110,10 @@ fn lastconn_path(config_path: &str) -> String {
  }
  
  async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr) -> bool {
@@ -249,7 +249,7 @@ index bbf436e..b761e31 100644
      let vp = quic::VerifyParams {
          peer,
          sni: consts::CONNECT_SNI.to_string(),
-@@ -989,8 +997,9 @@ async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr
+@@ -1119,8 +1127,9 @@ async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr
          local_ipv4: parse_local_v4(&identity.ipv4),
      };
  
@@ -260,30 +260,60 @@ index bbf436e..b761e31 100644
              peer: masque_h2::h2_peer(peer),
              sni: consts::CONNECT_SNI.to_string(),
              authority: quic::default_authority().to_string(),
-@@ -1142,6 +1151,10 @@ async fn run_masque_tunnel(
+@@ -1283,6 +1292,7 @@ async fn establish_masque(
+     peer: SocketAddr,
+     ech: Option<Vec<u8>>,
+     h2: bool,
++    fragment: fragment::FragmentConfig,
+     mtu: usize,
+     datagram: usize,
+     version_bait: bool,
+@@ -1319,6 +1329,7 @@ async fn establish_masque(
+ 
+     let tunnel_task = if h2 {
+         let h2cfg = masque_h2::H2TunnelConfig {
++            fragment,
+             peer,
+             sni: consts::CONNECT_SNI.to_string(),
+             authority: quic::default_authority().to_string(),
+@@ -1395,7 +1406,10 @@ async fn run_masque_tunnel(
      ech: Option<Vec<u8>>,
      listen: SocketAddr,
  ) -> Result<()> {
+-    let h2 = masque_h2::enabled();
 +    run_masque_tunnel_with_transport(identity, peer, ech, listen, masque_h2::enabled(), fragment::FragmentConfig::from_env()).await
 +}
 +
-+async fn run_masque_tunnel_with_transport(identity: &account::Identity, peer: SocketAddr, ech: Option<Vec<u8>>, listen: SocketAddr, http2: bool, fragment: fragment::FragmentConfig) -> Result<()> {
-     let (chans, internals) = quic::channels();
++async fn run_masque_tunnel_with_transport(identity: &account::Identity, peer: SocketAddr, ech: Option<Vec<u8>>, listen: SocketAddr, h2: bool, fragment: fragment::FragmentConfig) -> Result<()> {
+     let dial = if h2 { masque_h2::h2_peer(peer) } else { peer };
  
-     let cfg = quic::TunnelConfig {
-@@ -1186,8 +1199,9 @@ async fn run_masque_tunnel(
- 
-     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
- 
--    let tunnel_task = if masque_h2::enabled() {
-+    let tunnel_task = if http2 {
-         let h2cfg = masque_h2::H2TunnelConfig {
-+            fragment,
-             peer: masque_h2::h2_peer(peer),
-             sni: consts::CONNECT_SNI.to_string(),
-             authority: quic::default_authority().to_string(),
+     let mut hop = establish_masque(
+@@ -1403,6 +1417,7 @@ async fn run_masque_tunnel(
+         dial,
+         ech,
+         h2,
++        fragment,
+         masque_tunnel_mtu(),
+         quic::MAX_DATAGRAM_SIZE,
+         true,
+@@ -1562,6 +1577,7 @@ async fn run_masque_in_masque(
+         peer,
+         ech,
+         h2,
++        fragment::FragmentConfig::from_env(),
+         outer_mtu,
+         quic::MAX_DATAGRAM_SIZE,
+         true,
+@@ -1600,6 +1616,7 @@ async fn run_masque_in_masque(
+             forwarder,
+             None,
+             h2,
++            fragment::FragmentConfig::from_env(),
+             inner_mtu,
+             inner_datagram,
+             false,
 diff --git a/aether/src/masque_h2.rs b/aether/src/masque_h2.rs
-index aa84a10..a4b4ea2 100644
+index 66c6343..264339a 100644
 --- a/aether/src/masque_h2.rs
 +++ b/aether/src/masque_h2.rs
 @@ -69,6 +69,7 @@ fn h2_builder() -> h2::client::Builder {
@@ -294,7 +324,7 @@ index aa84a10..a4b4ea2 100644
      pub peer: SocketAddr,
      pub sni: String,
      pub authority: String,
-@@ -227,7 +228,7 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
+@@ -232,7 +233,7 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
          let tls_config = build_tls(cfg)?;
          let tcp = dial(cfg.peer).await?;
          let _ = tcp.set_nodelay(true);
@@ -303,20 +333,20 @@ index aa84a10..a4b4ea2 100644
          let tls = tokio_boring::connect(tls_config, &cfg.sni, fragment)
              .await
              .map_err(|e| AetherError::Tls(format!("h2 tls handshake: {e}")))?;
-@@ -341,7 +342,7 @@ pub async fn run(
+@@ -342,7 +343,7 @@ pub async fn run(
      let tcp = dial(cfg.peer).await?;
      let _ = tcp.set_nodelay(true);
  
 -    let frag_cfg = FragmentConfig::from_env();
 +    let frag_cfg = cfg.fragment;
      if frag_cfg.enabled {
-         log_or_debug(quiet, format!(
-             "[h2] fragmenting client hello: size={}..{} delay={}..{}ms",
+         log_or_debug(
+             quiet,
 diff --git a/aether/src/prober.rs b/aether/src/prober.rs
-index 6e5a92f..6b95588 100644
+index 9970b12..0274f38 100644
 --- a/aether/src/prober.rs
 +++ b/aether/src/prober.rs
-@@ -230,6 +230,8 @@ struct Strategy {
+@@ -235,6 +235,8 @@ struct Strategy {
  
  #[derive(Clone)]
  pub struct MasqueProbe {
@@ -325,7 +355,7 @@ index 6e5a92f..6b95588 100644
      pub sni: String,
      pub authority: String,
      pub path: String,
-@@ -370,6 +372,8 @@ async fn verify_one(
+@@ -375,6 +377,8 @@ async fn verify_one(
  ) -> Option<ProbeResult> {
      if ironclad {
          let params = crate::tunnelping::MasquePingParams {
@@ -334,7 +364,7 @@ index 6e5a92f..6b95588 100644
              peer: SocketAddr::new(ip, port),
              sni: probe.sni.clone(),
              authority: probe.authority.clone(),
-@@ -393,8 +397,9 @@ async fn verify_one(
+@@ -401,8 +405,9 @@ async fn verify_one(
          };
      }
  
@@ -346,7 +376,7 @@ index 6e5a92f..6b95588 100644
              sni: probe.sni.clone(),
              authority: probe.authority.clone(),
 diff --git a/aether/src/tunnelping.rs b/aether/src/tunnelping.rs
-index c28640c..22a4cf7 100644
+index 7cacc8a..eac99c5 100644
 --- a/aether/src/tunnelping.rs
 +++ b/aether/src/tunnelping.rs
 @@ -91,6 +91,8 @@ fn http_status_code(status_line: &str) -> Option<u16> {
