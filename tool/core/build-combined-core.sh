@@ -73,7 +73,8 @@ go get github.com/enfein/mieru/v3@v3.36.0
 go mod tidy
 
 say "Proving the patched source builds an AmneziaWG endpoint"
-go run -tags "with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_clash_api" ./cmd/internal/awg_probe
+# Match the bundled core: libbox 1.14 uses an internal pprof link on Linux.
+go run -ldflags=-checklinkname=0 -tags "with_gvisor,with_quic,with_wireguard,with_awg,with_utls,with_clash_api" ./cmd/internal/awg_probe
 
 say "Installing the pinned gomobile"
 go install -v github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
