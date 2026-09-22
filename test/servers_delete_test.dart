@@ -21,11 +21,11 @@ import 'package:nova_client/src/widgets/nova_scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Field report: "deleting an AmneziaWG config sometimes deleted one of my
-/// subscriptions". The subscription was never deleted. The Servers list keeps
-/// a kind filter; once the last profile of that kind is removed the chip that
-/// could clear the filter is gone, so every remaining profile was hidden
-/// behind a filter nobody could see. These tests pin the fix, the keyed rows,
-/// the delete confirmation, and the controller's pre-prefs replay.
+/// subscriptions". The subscription was never deleted; a kind filter that
+/// outlived the last profile of its kind hid the rest of the list. That filter
+/// has since been removed from the Servers list, so these tests pin what still
+/// has to hold: a delete removes exactly one profile and leaves the others on
+/// screen, plus the keyed rows, the confirmation, and the pre-prefs replay.
 
 ProxyProfile _sub(String id, String name) => ProxyProfile(
       id: id,
@@ -146,22 +146,24 @@ void main() {
   });
   group('Servers list delete', () {
     testWidgets(
-        'deleting the only AmneziaWG config while filtered to AmneziaWG '
-        'keeps the subscriptions visible', (WidgetTester tester) async {
+        'deleting the only AmneziaWG config keeps the subscriptions visible',
+        (WidgetTester tester) async {
       final ProfilesController profiles = await _pumpServers(tester, <ProxyProfile>[
         _sub('s1', 'Germany sub'),
         _sub('s2', 'Holland sub'),
         _awg('w1', 'Office WG'),
       ]);
 
-      // Filter to AmneziaWG: only the WG row is shown.
-      await tester.tap(find.text('AmneziaWG'));
-      await tester.pumpAndSettle();
+      // Every profile is listed; there is no filter that could be hiding one.
       expect(find.text('Office WG'), findsOneWidget);
-      expect(find.text('Germany sub'), findsNothing);
+      expect(find.text('Germany sub'), findsOneWidget);
 
-      // Open the WG row's overflow menu and pick Delete, then confirm.
-      await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+      // Open the WG row's overflow menu by its row key, so the tap cannot land
+      // on a neighbour's menu, and pick Delete, then confirm.
+      await tester.tap(find.descendant(
+        of: find.byKey(const ValueKey<String>('server-row-w1')),
+        matching: find.byIcon(Icons.more_vert_rounded),
+      ));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete').last);
       await tester.pumpAndSettle();
@@ -172,8 +174,7 @@ void main() {
 
       // Only the WG profile is gone from the controller...
       expect(profiles.profiles.where((p) => !p.isFreeOption).map((p) => p.id), <String>['s1', 's2']);
-      // ...and the subscriptions are visible again: the stale filter
-      // collapsed to All instead of hiding everything.
+      // ...and both subscriptions are still on screen.
       expect(find.text('Germany sub'), findsOneWidget);
       expect(find.text('Holland sub'), findsOneWidget);
       await _teardown(tester);

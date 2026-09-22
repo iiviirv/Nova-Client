@@ -660,8 +660,6 @@ class NovaStrings {
   String get routeTuneTestHint => t('route.tuneTestHint');
 
   // ---- Servers ----
-  String get serversSearch => t('servers.search');
-  String get serversFilterAll => t('servers.filterAll');
   String get serversActions => t('servers.actions');
   String get serversSelect => t('servers.select');
   String get serversPin => t('servers.pin');
@@ -1721,8 +1719,6 @@ class NovaStrings {
         'A specific choice overrides the automatic per-carrier pick. Leave it on Auto unless you are testing.',
     'route.tuneTestHint':
         'Not sure which is fastest? Connect, then run a Speed test in the Stats tab with each option.',
-    'servers.search': 'Search servers',
-    'servers.filterAll': 'All',
     'servers.actions': 'Actions',
     'servers.select': 'Select',
     'servers.pin': 'Keep at the top',
@@ -2792,8 +2788,6 @@ class NovaStrings {
         'انتخاب یک گزینهٔ مشخص، انتخاب خودکار بر اساس اپراتور را کنار می‌گذارد. اگر در حال آزمایش نیستی، روی خودکار بگذار.',
     'route.tuneTestHint':
         'مطمئن نیستی کدام سریع‌تر است؟ وصل شو و در تب آمار با هر گزینه یک تست سرعت بگیر.',
-    'servers.search': 'جستجوی سرورها',
-    'servers.filterAll': 'همه',
     'servers.actions': 'کنش‌ها',
     'servers.select': 'انتخاب',
     'servers.pin': 'همیشه بالای فهرست',

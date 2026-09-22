@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.26.1 (2026-09-22)
+
+- A saved Aether gateway that the current network blocks no longer ends the
+  connection attempt. When the tunnel never opens its local port, Nova looks
+  for another gateway and reconnects, with the same search progress as a first
+  connection and a way to cancel it. Before this, a profile built on Wi-Fi
+  would sit in "checking" for 45 seconds on a mobile carrier that blocks its
+  gateway and then give up, while building a fresh profile on that carrier
+  worked. This covers WireGuard, Gool and MASQUE.
+- macOS keeps the Aether gateway outside the packet tunnel, so the engine owns
+  its own connection and return path, and reports a startup failure instead of
+  ending the attempt without saying why.
+- Clearer first-connection wording for the free profiles, and gateway search
+  progress that reports which stage it is on.
+- Removed the search box and the category row from the Servers list.
+
 ## v1.26.0 (2026-09-22)
 
 - Separate Free and Subscriptions tabs, with the chosen tab remembered across launches.

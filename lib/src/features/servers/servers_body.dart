@@ -36,7 +36,7 @@ import 'node_list_screen.dart';
 /// Home and Servers tabs, so this shared guard prevents duplicate network work.
 final Set<String> _profileMetadataScheduled = <String>{};
 
-/// The scrollable Servers content — search, protocol filters, and the list of
+/// The scrollable Servers content: the list of
 /// configs styled as native server rows (flag/icon, name, protocol badge,
 /// latency + signal bars, selected check). Shared by the Servers tab and the
 /// Home screen's "Configs" segment. With an empty list it shows the native
@@ -53,9 +53,6 @@ class ServersBody extends StatefulWidget {
 }
 
 class _ServersBodyState extends State<ServersBody> {
-  String _query = '';
-  ProxyKind? _filter; // null = All
-
   // Saved VPS panels, so a row backed by a connected VPS gets a "Manage" action
   // that opens its admin panel.
   List<VpsPanel> _vpsPanels = <VpsPanel>[];
@@ -126,20 +123,7 @@ class _ServersBodyState extends State<ServersBody> {
         for (final ProxyProfile profile in all) {
           _scheduleProfileMetadata(profiles, profile);
         }
-        // A filter for a kind that no longer exists (the user filtered to
-        // AmneziaWG, then deleted the only AmneziaWG config) would hide every
-        // remaining profile while the chip that could clear it is gone too:
-        // that read as "deleting my AWG config deleted my subscriptions".
-        // Treat a stale filter as All.
-        final ProxyKind? filter =
-            (!profiles.freeTab && _filter != null && all.any((p) => p.kind == _filter))
-                ? _filter
-                : null;
-        final List<ProxyProfile> shown = all.where((p) {
-          if (filter != null && p.kind != filter) return false;
-          if (profiles.freeTab || _query.isEmpty) return true;
-          return p.name.toLowerCase().contains(_query.toLowerCase());
-        }).toList();
+        final List<ProxyProfile> shown = all.toList();
         // Pinned first, and otherwise the order the user already knows. A
         // stable sort, so unpinned profiles keep the order they were added in
         // rather than being reshuffled every rebuild.
@@ -148,8 +132,6 @@ class _ServersBodyState extends State<ServersBody> {
           return a.pinned ? -1 : 1;
         });
 
-        final List<ProxyKind> kinds = all.map((p) => p.kind).toSet().toList();
-
         final List<Widget> children = <Widget>[
           NovaSegmentedTabs(
             segments: <NovaSegment>[
@@ -157,13 +139,7 @@ class _ServersBodyState extends State<ServersBody> {
               NovaSegment(label: s.t('servers.subscriptionsTab')),
             ],
             selected: profiles.freeTab ? 0 : 1,
-            onChanged: (index) {
-              setState(() {
-                _query = '';
-                _filter = null;
-              });
-              profiles.selectTab(index == 0);
-            },
+            onChanged: (index) => profiles.selectTab(index == 0),
           ),
           const SizedBox(height: NovaSpace.md),
           if (profiles.freeTab) ...<Widget>[
@@ -172,20 +148,6 @@ class _ServersBodyState extends State<ServersBody> {
             const SizedBox(height: NovaSpace.md),
           ],
           if (all.isEmpty) _EmptyState(compact: true),
-          if (!widget.compact && !profiles.freeTab) ...<Widget>[
-            _SearchField(
-                key: ValueKey(profiles.freeTab),
-                onChanged: (v) => setState(() => _query = v)),
-            const SizedBox(height: NovaSpace.sm),
-          ],
-          if (!profiles.freeTab && kinds.length > 1) ...<Widget>[
-            _FilterChips(
-              kinds: kinds,
-              selected: filter,
-              onChanged: (k) => setState(() => _filter = k),
-            ),
-            const SizedBox(height: NovaSpace.xs),
-          ],
           for (final p in shown)
             Padding(
               // Keyed by profile id so a row's State (the open overflow menu,
@@ -349,111 +311,6 @@ class _ServersBodyState extends State<ServersBody> {
     unawaited(ListFreshness.invalidate(p.id));
     _profileMetadataScheduled.remove(p.id);
     _scheduleProfileMetadata(profiles, updated);
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({super.key, required this.onChanged});
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final nova = context.nova;
-    return TextField(
-      onChanged: onChanged,
-      style: Theme.of(context).textTheme.bodyMedium,
-      decoration: InputDecoration(
-        hintText: NovaStrings.of(context).serversSearch,
-        prefixIcon: Icon(Icons.search, color: nova.muted, size: 20),
-        filled: true,
-        fillColor: nova.surface,
-        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-        border: OutlineInputBorder(
-          borderRadius: NovaRadii.tabR,
-          borderSide: BorderSide(color: nova.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: NovaRadii.tabR,
-          borderSide: BorderSide(color: nova.border),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterChips extends StatelessWidget {
-  const _FilterChips({
-    required this.kinds,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final List<ProxyKind> kinds;
-  final ProxyKind? selected;
-  final ValueChanged<ProxyKind?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          _FilterTarget(
-            selected: selected == null,
-            onTap: () => onChanged(null),
-            child: NovaPill(
-              label: NovaStrings.of(context).serversFilterAll,
-              selected: selected == null,
-              onTap: () => onChanged(null),
-            ),
-          ),
-          for (final k in kinds) ...<Widget>[
-            const SizedBox(width: NovaSpace.sm),
-            _FilterTarget(
-              selected: selected == k,
-              onTap: () => onChanged(k),
-              child: NovaPill(
-                label: k.label,
-                selected: selected == k,
-                onTap: () => onChanged(k),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Vertical hit slop and a selected state for a filter pill: the pill is about
-/// 30dp tall, under the touch minimum, and its state is otherwise carried by
-/// colour alone. Vertical only, so two neighbouring pills' targets never touch.
-class _FilterTarget extends StatelessWidget {
-  const _FilterTarget({
-    required this.child,
-    required this.onTap,
-    required this.selected,
-  });
-
-  final Widget child;
-  final VoidCallback onTap;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return MergeSemantics(
-      child: Semantics(
-        selected: selected,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: child,
-          ),
-        ),
-      ),
-    );
   }
 }
 

@@ -459,6 +459,9 @@ class DesktopProxyController extends ProxyController {
       }
     } catch (e) {
       await _cleanup();
+      // See the mobile controller: an Aether tunnel that never opens its port
+      // is a blocked gateway, not a broken config, and it has a remedy.
+      if (await autoReplaceStaleAetherGateway(e)) return;
       _fail(_humanError(e));
     }
   }

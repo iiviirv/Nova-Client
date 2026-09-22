@@ -962,6 +962,11 @@ class SingboxProxyController extends ProxyController {
       } catch (_) {
         // Preserve the startup error if the host also cannot stop.
       }
+      // A gateway this network blocks looks exactly like this: everything
+      // starts, the Aether tunnel never opens its port, and the attempt dies on
+      // the startup deadline. Search for another gateway before calling it an
+      // error, because the config itself is fine.
+      if (await autoReplaceStaleAetherGateway(e)) return;
       _lastError = e is PlatformException ? e.message : e.toString();
       _state = ProxyConnectionState.error;
       notifyListeners();

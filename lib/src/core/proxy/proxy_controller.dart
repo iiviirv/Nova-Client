@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
+import '../logging/nova_log.dart';
+import 'aether/aether_core.dart';
 import 'aether/aether_first_connection.dart';
 import '../../features/servers/aether_gateway_search.dart';
 import 'singbox/proxy_node.dart';
@@ -471,6 +473,61 @@ abstract class ProxyController extends ChangeNotifier {
     selectProfile(prepared);
     await connect();
     return state != ProxyConnectionState.error;
+  }
+
+  /// Set while an automatic gateway replacement is running, so the reconnect it
+  /// performs cannot start a second one if that attempt also fails.
+  bool _autoGatewayRecovery = false;
+
+  /// Answers a connect that died because the Aether tunnel never opened its
+  /// local port. On a saved gateway that is almost always a gateway the current
+  /// network blocks rather than a broken config.
+  ///
+  /// Field report, build 162: a WireGuard profile built on Wi-Fi connected, and
+  /// the same profile on a mobile carrier sat in "checking" for 45 seconds and
+  /// then gave up. Building a second profile on the carrier, which searched
+  /// from scratch, worked. The gateway was the only difference.
+  ///
+  /// The remedy already existed ([replaceAetherGateway]) but was only offered
+  /// after a tunnel that *came up* stopped carrying traffic, so the one failure
+  /// that strands a user on a new network was the one failure with no way out.
+  /// The search reports progress through [gatewaySearch] and the user can
+  /// cancel it, so this is automatic without being silent.
+  ///
+  /// Returns true when a replacement was found and the reconnect succeeded, in
+  /// which case the caller must not report the original error.
+  Future<bool> autoReplaceStaleAetherGateway(Object error) async {
+    final ProxyProfile? profile = activeProfile;
+    if (error is! AetherUnavailable ||
+        profile == null ||
+        profile.kind != ProxyKind.aether ||
+        _autoGatewayRecovery ||
+        gatewaySearchCancelled) {
+      return false;
+    }
+    _autoGatewayRecovery = true;
+    try {
+      NovaLog.instance.write(
+        'The Aether tunnel never opened its local port (${error.reason}), so '
+        'this gateway is not usable on this network. Looking for another one.',
+        level: NovaLogLevel.warn,
+      );
+      final bool ok = await replaceAetherGateway(profile);
+      NovaLog.instance.write(
+        ok
+            ? 'A replacement Aether gateway is carrying traffic.'
+            : 'No other Aether gateway answered on this network either.',
+        level: ok ? NovaLogLevel.info : NovaLogLevel.warn,
+      );
+      return ok;
+    } catch (e) {
+      NovaLog.instance
+          .write('Could not look for another Aether gateway: $e',
+              level: NovaLogLevel.warn);
+      return false;
+    } finally {
+      _autoGatewayRecovery = false;
+    }
   }
 
   Future<void> toggle() {

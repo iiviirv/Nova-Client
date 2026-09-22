@@ -310,13 +310,23 @@ void main() {
       expect(tester.takeException(), isNull);
       await _teardown(tester);
     });
+    testWidgets('the subscriptions list has no search field or kind filter',
+        (WidgetTester tester) async {
+      // Both were removed as clutter. A profile list this short is read, not
+      // searched, and the kind is already on every row's badge.
+      await _pump(tester, const ServersScreen(),
+          profiles: <ProxyProfile>[_subscription(), _single()]);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('All'), findsNothing);
+      await _teardown(tester);
+    });
+
     testWidgets('rows lay out at 320dp and 2x text',
         (WidgetTester tester) async {
       await _pump(tester, const ServersScreen(),
           profiles: <ProxyProfile>[_subscription(), _single()], textScale: 2.0);
       expect(tester.takeException(), isNull);
       expect(find.text('17 nodes'), findsOneWidget);
-      expect(find.text('All'), findsOneWidget);
       await _teardown(tester);
     });
 
@@ -326,7 +336,6 @@ void main() {
           locale: const Locale('fa'),
           themeMode: ThemeMode.light);
       expect(tester.takeException(), isNull);
-      expect(find.text('همه'), findsOneWidget);
       expect(find.text('17 سرور'), findsNothing,
           reason: 'the row uses the shared nodesCount string');
       expect(find.text('17 نود'), findsOneWidget);
