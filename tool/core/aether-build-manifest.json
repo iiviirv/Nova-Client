@@ -1,16 +1,13 @@
 {
-  "upstream_commit": "311b573352bb67e494895ff67d20b002d075116a",
-  "nova_build_commit": "b3f00b0c878b85ece833386ff3c15877ab2fb528",
-  "workflow_run": "https://github.com/iiviirv/Nova-Client/actions/runs/35633755221",
-  "patch_sha256": "c69b224726059668c9cee6189caf5259b314a45e3ff26dcf62f3400441967b0b",
+  "upstream_commit": "0e6f6a5218e65ed4cddc68d1a71d9b9633f89e3f",
+  "nova_build_commit": "91a9e92",
+  "workflow_run": "https://github.com/iiviirv/Nova-Client/actions/runs/35670435674",
+  "patch_sha256": "821a1801f5843947636ae5a7799e36f315afbda98c367aa975b6b82814d7a26c",
+  "scope": "Aether 2.0.0 artifacts listed below; remaining platforms are still building",
   "libraries": {
-    "assets/bin/libaether.dylib": "9106d3887ed77d9de42f076d3d09dfad8420fe2eff84b4f88540f5e17e5441c2",
-    "assets/bin/libaether.so": "37a21fec5616f86516fae9649577e5b356a645a50f4a34a9a912e90c870a9a38",
-    "assets/bin/aether.dll": "4f8de207c069eeb554e57f205e29f775ef65a2d0fd567ec04b5bd4f5412e37a1",
-    "android/app/src/main/jniLibs/arm64-v8a/libaether.so": "bcdbd222b7a081bf5f424ab9fd84e471c01226bc89ad977771a5cf6c4357cddb",
-    "android/app/src/main/jniLibs/armeabi-v7a/libaether.so": "49aa036e147d4b709e78ffeb842372290a217f4b09485baa2280f82944cc462a",
-    "android/app/src/main/jniLibs/x86_64/libaether.so": "c7aaeac95ec4831be0e210f80b624d24b4923f0f3dca109245c326d35e11802c",
-    "ios/Frameworks/Aether.xcframework/ios-arm64/Aether.framework/Aether": "14292463ca803a16c156fa1573aa00f56efddcfe220975e05037c32dd79cecef",
-    "ios/Frameworks/Aether.xcframework/ios-arm64_x86_64-simulator/Aether.framework/Aether": "a62a0d22e3880a24f0119a9bff0a77a400d9176a748cfa9b85a451337bf747ab"
+    "android/app/src/main/jniLibs/arm64-v8a/libaether.so": "4c0c9e828e6e117eb91b5f428272d8fbbb898744453ab94fc22da537dd1a1e7a",
+    "android/app/src/main/jniLibs/armeabi-v7a/libaether.so": "694b5b08c36ae4ec026ebcfce3d64f8ab4d5d4ef41b5c693b1115b646d886c36",
+    "android/app/src/main/jniLibs/x86_64/libaether.so": "ea59edc9727e9c9f8f05b12c349e61799278691e5c9146a15d18ee9f478959cb",
+    "assets/bin/libaether.so": "ea2e86c5d9caa340dc775df2d016b36bd1abdb62c3e0d3d60d3b81bcfd7bf228"
   }
 }
