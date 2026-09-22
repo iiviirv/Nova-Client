@@ -17,10 +17,10 @@
 
 set -euo pipefail
 
-SINGBOX_TAG="v1.13.19"
-SINGBOX_COMMIT="b5ebaa1fc0f2b94256180b95468e73ef53caa27d"
-PATCH_SHA256="eed006f03760bce7b627f988e0e03a73b69392dc93a5f0779ff373570b97ceac"
-NOVAFRAG_PATCH_SHA256="6f1b70fd7eed68ac4b1c2007e75512ebbb70c2d93ee4e1123f59ce29e2833a69"
+SINGBOX_TAG="v1.14.1"
+SINGBOX_COMMIT="1ac1a339cb1223e9c70eae14c44411c75033c02d"
+PATCH_SHA256="67a66eec8d4aa90684abf56c0bc85539882184d6eac968bc12880e4d4120c6a8"
+NOVAFRAG_PATCH_SHA256="f71c750f9b18b0ab3a225d0ab09c4f960a466e600f5ddfa23545c09f5469f843"
 
 # The Android core's tag set plus with_grpc, which the old desktop binaries had
 # and which the desktop config path may rely on for gRPC transports.

@@ -38,9 +38,9 @@ is a configuration key no other protocol uses, such as `jmin`.
 
 | Input | Value |
 | --- | --- |
-| Upstream | `SagerNet/sing-box` tag `v1.13.13` |
-| Upstream commit | `78b2e12fbdd85e6ec956647d6f79cf0bba85c6ba` |
-| Patch | `tool/core/amneziawg.patch`, SHA-256 `067aa9151015bd9687ad838285097f3b68e7dcd68ef214b2a5069d5bedac817b` |
+| Upstream | `SagerNet/sing-box` tag `v1.14.1` |
+| Upstream commit | `1ac1a339cb1223e9c70eae14c44411c75033c02d` |
+| Patch | `tool/core/amneziawg.patch`, SHA-256 `67a66eec8d4aa90684abf56c0bc85539882184d6eac968bc12880e4d4120c6a8` |
 | AmneziaWG module | `github.com/amnezia-vpn/amneziawg-go v0.2.16` (MIT), `h1:XY6HOq/xtqH8ZXMncRWkjFs85EKdN10NLNnw23kTpE0=` |
 | gomobile / gobind | `github.com/sagernet/gomobile` `v0.1.12` |
 | Android NDK | `28.0.13004108` |

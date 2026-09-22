@@ -1,6 +1,6 @@
 diff --git a/cmd/internal/awg_probe/main.go b/cmd/internal/awg_probe/main.go
 new file mode 100644
-index 0000000..4db202e
+index 000000000..4db202e11
 --- /dev/null
 +++ b/cmd/internal/awg_probe/main.go
 @@ -0,0 +1,19 @@
@@ -24,31 +24,31 @@ index 0000000..4db202e
 +	fmt.Println("CheckConfig ok")
 +}
 diff --git a/cmd/internal/build_libbox/main.go b/cmd/internal/build_libbox/main.go
-index c128216..76671f2 100644
+index 5b2d9e28f..871702556 100644
 --- a/cmd/internal/build_libbox/main.go
 +++ b/cmd/internal/build_libbox/main.go
 @@ -63,7 +63,7 @@ func init() {
- 	sharedFlags = append(sharedFlags, "-ldflags", "-X github.com/sagernet/sing-box/constant.Version="+currentTag+" -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid=  -checklinkname=0")
- 	debugFlags = append(debugFlags, "-ldflags", "-X github.com/sagernet/sing-box/constant.Version="+currentTag+" -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0")
+ 	sharedFlags = append(sharedFlags, "-ldflags", build_shared.LinkerFlags(currentTag, false))
+ 	debugFlags = append(debugFlags, "-ldflags", build_shared.LinkerFlags(currentTag, true))
  
--	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "badlinkname", "tfogo_checklinkname0")
-+	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_awg", "with_utls", "with_naive_outbound", "with_clash_api", "badlinkname", "tfogo_checklinkname0")
+-	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "with_usbip", "with_openvpn", "with_openconnect", "badlinkname", "tfogo_checklinkname0")
++	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_awg", "with_utls", "with_naive_outbound", "with_clash_api", "with_usbip", "with_openvpn", "with_openconnect", "badlinkname", "tfogo_checklinkname0")
  	darwinTags = append(darwinTags, "with_dhcp", "grpcnotrace")
  	// memcTags = append(memcTags, "with_tailscale")
  	sharedTags = append(sharedTags, "with_tailscale", "ts_omit_logtail", "ts_omit_ssh", "ts_omit_drive", "ts_omit_taildrop", "ts_omit_webclient", "ts_omit_doctor", "ts_omit_capture", "ts_omit_kube", "ts_omit_aws", "ts_omit_synology", "ts_omit_bird")
 diff --git a/constant/proxy.go b/constant/proxy.go
-index 278a46c..89316ab 100644
+index d42e5d92b..a24d8cc13 100644
 --- a/constant/proxy.go
 +++ b/constant/proxy.go
-@@ -15,6 +15,7 @@ const (
- 	TypeTrojan       = "trojan"
- 	TypeNaive        = "naive"
- 	TypeWireGuard    = "wireguard"
-+	TypeAwg          = "awg"
- 	TypeHysteria     = "hysteria"
- 	TypeTor          = "tor"
- 	TypeSSH          = "ssh"
-@@ -68,6 +69,8 @@ func ProxyDisplayName(proxyType string) string {
+@@ -17,6 +17,7 @@ const (
+ 	TypeTrojan             = "trojan"
+ 	TypeNaive              = "naive"
+ 	TypeWireGuard          = "wireguard"
++	TypeAwg                = "awg"
+ 	TypeHysteria           = "hysteria"
+ 	TypeTor                = "tor"
+ 	TypeSSH                = "ssh"
+@@ -84,6 +85,8 @@ func ProxyDisplayName(proxyType string) string {
  		return "Naive"
  	case TypeWireGuard:
  		return "WireGuard"
@@ -58,46 +58,40 @@ index 278a46c..89316ab 100644
  		return "Hysteria"
  	case TypeTor:
 diff --git a/go.mod b/go.mod
-index 6f8e242..ebf65e3 100644
+index 5f09cf8f4..dad127907 100644
 --- a/go.mod
 +++ b/go.mod
-@@ -1,6 +1,6 @@
- module github.com/sagernet/sing-box
- 
--go 1.24.7
-+go 1.25.0
- 
- require (
- 	github.com/anthropics/anthropic-sdk-go v1.26.0
-@@ -63,11 +63,14 @@ require (
+@@ -82,6 +82,8 @@ require (
  	howett.net/plist v1.0.1
  )
  
 +require gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
 +
  require (
- 	filippo.io/edwards25519 v1.1.0 // indirect
+ 	filippo.io/edwards25519 v1.2.0 // indirect
+ 	filippo.io/hpke v0.4.0 // indirect
+@@ -89,6 +91,7 @@ require (
  	github.com/ajg/form v1.5.1 // indirect
  	github.com/akutz/memconn v0.1.0 // indirect
  	github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa // indirect
-+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
++	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
+ 	github.com/anchore/go-lzo v0.1.0 // indirect
  	github.com/andybalholm/brotli v1.1.0 // indirect
- 	github.com/caddyserver/zerossl v0.1.5 // indirect
- 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+ 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 diff --git a/go.sum b/go.sum
-index 6ab540b..4b93ab0 100644
+index 669bcba5b..da1549003 100644
 --- a/go.sum
 +++ b/go.sum
-@@ -8,6 +8,8 @@ github.com/akutz/memconn v0.1.0 h1:NawI0TORU4hcOMsMr11g7vwlCdkYeLKXBcxWu2W/P8A=
+@@ -20,6 +20,8 @@ github.com/akutz/memconn v0.1.0 h1:NawI0TORU4hcOMsMr11g7vwlCdkYeLKXBcxWu2W/P8A=
  github.com/akutz/memconn v0.1.0/go.mod h1:Jo8rI7m0NieZyLI5e2CDlRdRqRRB4S7Xp77ukDjH+Fw=
  github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa h1:LHTHcTQiSGT7VVbI0o4wBRNQIgn917usHWOd6VAffYI=
  github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa/go.mod h1:cEWa1LVoE5KvSD9ONXsZrj0z6KqySlCCNKHlLzbqAt4=
-+github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814 h1:l2AhBD+sFycU8Im81n/bZORMxW7fWtlZJEuJ4Hh0+z0=
-+github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814/go.mod h1:YoPc6qcOZqD7TXZ1xpedD8Sx3aSKsxN05ZqEFmXDNHk=
++github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828 h1:D8d8gGvwXcTxUIsE4z6F6vjy4/VZddu95vMNtOygh1c=
++github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828/go.mod h1:YoPc6qcOZqD7TXZ1xpedD8Sx3aSKsxN05ZqEFmXDNHk=
+ github.com/anchore/go-lzo v0.1.0 h1:NgAacnzqPeGH49Ky19QKLBZEuFRqtTG9cdaucc3Vncs=
+ github.com/anchore/go-lzo v0.1.0/go.mod h1:3kLx0bve2oN1iDwgM1U5zGku1Tfbdb0No5qp1eL1fIk=
  github.com/andybalholm/brotli v1.1.0 h1:eLKJA0d02Lf0mVpIDgYnqXcUn0GqVmEFny3VuID1U3M=
- github.com/andybalholm/brotli v1.1.0/go.mod h1:sms7XGricyQI9K10gOSf56VKKWS4oLer58Q+mhRPtnY=
- github.com/anthropics/anthropic-sdk-go v1.26.0 h1:oUTzFaUpAevfuELAP1sjL6CQJ9HHAfT7CoSYSac11PY=
-@@ -319,6 +321,8 @@ go.opentelemetry.io/otel/sdk/metric v1.39.0 h1:cXMVVFVgsIf2YL6QkRF4Urbr/aMInf+2W
+@@ -419,6 +421,8 @@ go.opentelemetry.io/otel/sdk/metric v1.39.0 h1:cXMVVFVgsIf2YL6QkRF4Urbr/aMInf+2W
  go.opentelemetry.io/otel/sdk/metric v1.39.0/go.mod h1:xq9HEVH7qeX69/JnwEfp6fVq5wosJsY1mt4lLfYdVew=
  go.opentelemetry.io/otel/trace v1.39.0 h1:2d2vfpEDmCJ5zVYz7ijaJdOF59xLomrvj7bjt6/qCJI=
  go.opentelemetry.io/otel/trace v1.39.0/go.mod h1:88w4/PnZSazkGzz/w84VHpQafiU4EtqqlVdxWy+rNOA=
@@ -106,9 +100,9 @@ index 6ab540b..4b93ab0 100644
  go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
  go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
  go.uber.org/multierr v1.11.0 h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=
-@@ -371,8 +375,8 @@ golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGm
- golang.org/x/tools v0.42.0 h1:uNgphsn75Tdz5Ji2q36v/nsFSfR/9BRFvqhGBaJGd5k=
- golang.org/x/tools v0.42.0/go.mod h1:Ma6lCIwGZvHK6XtgbswSoWroEkhugApmsXyrUmBhfr0=
+@@ -555,8 +559,8 @@ golang.org/x/tools v0.47.0/go.mod h1:dFHnyTvFWY212G+h7ZY4Vsp/K3U4/7W9TyVaAul8uCA
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
  golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 -golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 h1:go1bK/D/BFZV2I8cIQd1NKEZ+0owSTG1fDTci4IqFcE=
 -golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
@@ -117,7 +111,7 @@ index 6ab540b..4b93ab0 100644
  golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 h1:B82qJJgjvYKsXS9jeunTOisW56dUokqW/FOteYJJ/yg=
  golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2/go.mod h1:deeaetjYA+DHMHg+sMSMI58GrEteJUUzzw7en6TJQcI=
  golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10 h1:3GDAcqdIg1ozBNLgPy4SLT84nfcBjr6rhGtXYtrkWLU=
-@@ -390,11 +394,13 @@ google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j
+@@ -588,11 +592,13 @@ google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j
  gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
  gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
  gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0/go.mod h1:WDnlLJ4WF5VGsH/HVa3CI79GS0ol3YnhVnKP89i0kNg=
@@ -130,12 +124,12 @@ index 6ab540b..4b93ab0 100644
  gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 +gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 h1:ze1vwAdliUAr68RQ5NtufWaXaOg8WUO2OACzEV+TNdE=
 +gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489/go.mod h1:10sU+Uh5KKNv1+2x2A0Gvzt8FjD3ASIhorV3YsauXhk=
+ honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
+ honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
  howett.net/plist v1.0.1 h1:37GdZ8tP09Q35o9ych3ehygcsL+HqKSwzctveSlarvM=
- howett.net/plist v1.0.1/go.mod h1:lqaXoTrLY4hg8tnEzNru53gicrbv7rrk+2xJA/7hw9g=
- lukechampine.com/blake3 v1.3.0 h1:sJ3XhFINmHSrYCgl958hscfIa3bw8x4DqMP3u1YvoYE=
 diff --git a/include/awg.go b/include/awg.go
 new file mode 100644
-index 0000000..9e37665
+index 000000000..9e37665cb
 --- /dev/null
 +++ b/include/awg.go
 @@ -0,0 +1,12 @@
@@ -153,7 +147,7 @@ index 0000000..9e37665
 +}
 diff --git a/include/awg_stub.go b/include/awg_stub.go
 new file mode 100644
-index 0000000..8c24fc6
+index 000000000..8c24fc6ff
 --- /dev/null
 +++ b/include/awg_stub.go
 @@ -0,0 +1,20 @@
@@ -178,20 +172,20 @@ index 0000000..8c24fc6
 +	})
 +}
 diff --git a/include/registry.go b/include/registry.go
-index f090845..4b62368 100644
+index 9bb9220c1..6a03484ab 100644
 --- a/include/registry.go
 +++ b/include/registry.go
-@@ -101,6 +101,7 @@ func EndpointRegistry() *endpoint.Registry {
+@@ -111,6 +111,7 @@ func EndpointRegistry() *endpoint.Registry {
  	registry := endpoint.NewRegistry()
  
  	registerWireGuardEndpoint(registry)
 +	registerAwgEndpoint(registry)
+ 	registerOpenConnectEndpoint(registry)
+ 	registerOpenVPNEndpoints(registry)
  	registerTailscaleEndpoint(registry)
- 
- 	return registry
 diff --git a/option/awg.go b/option/awg.go
 new file mode 100644
-index 0000000..910d024
+index 000000000..910d02431
 --- /dev/null
 +++ b/option/awg.go
 @@ -0,0 +1,58 @@
@@ -255,7 +249,7 @@ index 0000000..910d024
 +}
 diff --git a/protocol/awg/endpoint.go b/protocol/awg/endpoint.go
 new file mode 100644
-index 0000000..ef5f793
+index 000000000..ef5f793b0
 --- /dev/null
 +++ b/protocol/awg/endpoint.go
 @@ -0,0 +1,345 @@
@@ -606,7 +600,7 @@ index 0000000..ef5f793
 +}
 diff --git a/transport/awg/bind.go b/transport/awg/bind.go
 new file mode 100644
-index 0000000..ffc2a6a
+index 000000000..ffc2a6a9f
 --- /dev/null
 +++ b/transport/awg/bind.go
 @@ -0,0 +1,224 @@
@@ -836,7 +830,7 @@ index 0000000..ffc2a6a
 +}
 diff --git a/transport/awg/device.go b/transport/awg/device.go
 new file mode 100644
-index 0000000..feb2aa5
+index 000000000..feb2aa545
 --- /dev/null
 +++ b/transport/awg/device.go
 @@ -0,0 +1,134 @@
@@ -976,7 +970,7 @@ index 0000000..feb2aa5
 +}
 diff --git a/transport/awg/tun.go b/transport/awg/tun.go
 new file mode 100644
-index 0000000..be6fdd1
+index 000000000..be6fdd179
 --- /dev/null
 +++ b/transport/awg/tun.go
 @@ -0,0 +1,13 @@
@@ -995,7 +989,7 @@ index 0000000..be6fdd1
 +}
 diff --git a/transport/awg/tun_network.go b/transport/awg/tun_network.go
 new file mode 100644
-index 0000000..307707c
+index 000000000..307707c83
 --- /dev/null
 +++ b/transport/awg/tun_network.go
 @@ -0,0 +1,45 @@
@@ -1046,10 +1040,10 @@ index 0000000..307707c
 +}
 diff --git a/transport/awg/tun_system.go b/transport/awg/tun_system.go
 new file mode 100644
-index 0000000..958a459
+index 000000000..55fd09e85
 --- /dev/null
 +++ b/transport/awg/tun_system.go
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,145 @@
 +package awg
 +
 +import (
@@ -1086,7 +1080,9 @@ index 0000000..958a459
 +	events := make(chan awgTun.Event)
 +
 +	dial, err := dialer.NewDefault(ctx, option.DialerOptions{
-+		BindInterface: name,
++		AbstractDialerOptions: option.AbstractDialerOptions{
++			BindInterface: name,
++		},
 +	})
 +	if err != nil {
 +		return nil, exceptions.Cause(err, "get in-tunnel dialer")

@@ -1,24 +1,24 @@
 diff --git a/common/tls/std_client.go b/common/tls/std_client.go
-index 1611c83..101b55e 100644
+index 80fa6cb28..b3b17ea7f 100644
 --- a/common/tls/std_client.go
 +++ b/common/tls/std_client.go
-@@ -14,6 +14,7 @@ import (
- 
- 	"github.com/sagernet/sing-box/adapter"
- 	"github.com/sagernet/sing-box/common/tlsfragment"
-+	"github.com/sagernet/sing-box/transport/internet/novafrag"
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/sagernet/sing-box/common/tlsspoof"
  	C "github.com/sagernet/sing-box/constant"
  	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing-box/transport/internet/novafrag"
  	E "github.com/sagernet/sing/common/exceptions"
-@@ -27,6 +28,7 @@ type STDClientConfig struct {
- 	fragment              bool
- 	fragmentFallbackDelay time.Duration
+ 	"github.com/sagernet/sing/common/logger"
+ 	"github.com/sagernet/sing/common/ntp"
+@@ -34,6 +35,7 @@ type STDClientConfig struct {
  	recordFragment        bool
+ 	spoof                 string
+ 	spoofMethod           tlsspoof.Method
 +	novaFragment          []novafrag.Stage
  }
  
  func (c *STDClientConfig) ServerName() string {
-@@ -50,6 +52,12 @@ func (c *STDClientConfig) STDConfig() (*STDConfig, error) {
+@@ -75,6 +77,12 @@ func (c *STDClientConfig) STDConfig() (*STDConfig, error) {
  }
  
  func (c *STDClientConfig) Client(conn net.Conn) (Conn, error) {
@@ -28,27 +28,26 @@ index 1611c83..101b55e 100644
 +	if len(c.novaFragment) > 0 {
 +		conn = novafrag.NewConn(conn, c.novaFragment)
 +	}
- 	if c.recordFragment {
+ 	if c.fragment || c.recordFragment {
  		conn = tf.NewConn(conn, c.ctx, c.fragment, c.recordFragment, c.fragmentFallbackDelay)
  	}
-@@ -63,6 +71,7 @@ func (c *STDClientConfig) Clone() Config {
- 		fragment:              c.fragment,
- 		fragmentFallbackDelay: c.fragmentFallbackDelay,
+@@ -98,6 +106,7 @@ func (c *STDClientConfig) Clone() Config {
  		recordFragment:        c.recordFragment,
+ 		spoof:                 c.spoof,
+ 		spoofMethod:           c.spoofMethod,
 +		novaFragment:          c.novaFragment,
  	}
- }
- 
-@@ -198,7 +207,7 @@ func NewSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
- 	} else if len(clientCertificate) > 0 || len(clientKey) > 0 {
- 		return nil, E.New("client certificate and client key must be provided together")
+ 	cloned.SetServerName(cloned.serverName)
+ 	return cloned
+@@ -243,6 +252,7 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
+ 		recordFragment:        options.RecordFragment,
+ 		spoof:                 spoof,
+ 		spoofMethod:           spoofMethod,
++		novaFragment:          buildNovaFragment(options.NovaFragment),
  	}
--	var config Config = &STDClientConfig{ctx, &tlsConfig, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment}
-+	var config Config = &STDClientConfig{ctx, &tlsConfig, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment, buildNovaFragment(options.NovaFragment)}
+ 	config.SetServerName(serverName)
  	if options.ECH != nil && options.ECH.Enabled {
- 		var err error
- 		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options)
-@@ -238,3 +247,16 @@ func verifyPublicKeySHA256(knownHashValues [][]byte, rawCerts [][]byte, timeFunc
+@@ -293,3 +303,16 @@ func VerifyPublicKeySHA256(knownHashValues [][]byte, rawCerts [][]byte) error {
  	}
  	return E.New("unrecognized remote public key: ", base64.StdEncoding.EncodeToString(hashValue[:]))
  }
@@ -66,66 +65,67 @@ index 1611c83..101b55e 100644
 +	return out
 +}
 diff --git a/common/tls/utls_client.go b/common/tls/utls_client.go
-index 941192b..63b5003 100644
+index 16d0352d0..60ac9ac11 100644
 --- a/common/tls/utls_client.go
 +++ b/common/tls/utls_client.go
-@@ -14,6 +14,7 @@ import (
- 
- 	"github.com/sagernet/sing-box/adapter"
- 	"github.com/sagernet/sing-box/common/tlsfragment"
-+	"github.com/sagernet/sing-box/transport/internet/novafrag"
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/sagernet/sing-box/common/tlsspoof"
  	C "github.com/sagernet/sing-box/constant"
  	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing-box/transport/internet/novafrag"
  	"github.com/sagernet/sing/common"
-@@ -32,6 +33,7 @@ type UTLSClientConfig struct {
- 	fragment              bool
- 	fragmentFallbackDelay time.Duration
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 	"github.com/sagernet/sing/common/logger"
+@@ -39,6 +40,7 @@ type UTLSClientConfig struct {
  	recordFragment        bool
+ 	spoof                 string
+ 	spoofMethod           tlsspoof.Method
 +	novaFragment          []novafrag.Stage
  }
  
  func (c *UTLSClientConfig) ServerName() string {
-@@ -58,6 +60,9 @@ func (c *UTLSClientConfig) STDConfig() (*STDConfig, error) {
+@@ -83,6 +85,12 @@ func (c *UTLSClientConfig) STDConfig() (*STDConfig, error) {
  }
  
  func (c *UTLSClientConfig) Client(conn net.Conn) (Conn, error) {
++	// nova_fragment is applied CLOSEST to the wire (innermost), so the exact
++	// record/segment split is the last thing that touches the ClientHello
++	// bytes, matching Xray's finalmask.
 +	if len(c.novaFragment) > 0 {
 +		conn = novafrag.NewConn(conn, c.novaFragment)
 +	}
- 	if c.recordFragment {
+ 	if c.fragment || c.recordFragment {
  		conn = tf.NewConn(conn, c.ctx, c.fragment, c.recordFragment, c.fragmentFallbackDelay)
  	}
-@@ -70,7 +75,7 @@ func (c *UTLSClientConfig) SetSessionIDGenerator(generator func(clientHello []by
- 
- func (c *UTLSClientConfig) Clone() Config {
- 	return &UTLSClientConfig{
--		c.ctx, c.config.Clone(), c.id, c.fragment, c.fragmentFallbackDelay, c.recordFragment,
-+		c.ctx, c.config.Clone(), c.id, c.fragment, c.fragmentFallbackDelay, c.recordFragment, c.novaFragment,
+@@ -111,6 +119,7 @@ func (c *UTLSClientConfig) Clone() Config {
+ 		recordFragment:        c.recordFragment,
+ 		spoof:                 c.spoof,
+ 		spoofMethod:           c.spoofMethod,
++		novaFragment:          c.novaFragment,
  	}
- }
- 
-@@ -255,7 +260,7 @@ func NewUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
- 	if err != nil {
- 		return nil, err
+ 	cloned.SetServerName(cloned.serverName)
+ 	return cloned
+@@ -320,6 +329,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
+ 		recordFragment:        options.RecordFragment,
+ 		spoof:                 spoof,
+ 		spoofMethod:           spoofMethod,
++		novaFragment:          buildNovaFragment(options.NovaFragment),
  	}
--	var config Config = &UTLSClientConfig{ctx, &tlsConfig, id, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment}
-+	var config Config = &UTLSClientConfig{ctx, &tlsConfig, id, options.Fragment, time.Duration(options.FragmentFallbackDelay), options.RecordFragment, buildNovaFragment(options.NovaFragment)}
+ 	config.SetServerName(serverName)
  	if options.ECH != nil && options.ECH.Enabled {
- 		if options.Reality != nil && options.Reality.Enabled {
- 			return nil, E.New("Reality is conflict with ECH")
 diff --git a/option/tls.go b/option/tls.go
-index 60343a1..2bcae62 100644
+index 5c807d676..1c08a052b 100644
 --- a/option/tls.go
 +++ b/option/tls.go
-@@ -114,6 +114,7 @@ type OutboundTLSOptions struct {
- 	Fragment                   bool                                `json:"fragment,omitempty"`
- 	FragmentFallbackDelay      badoption.Duration                  `json:"fragment_fallback_delay,omitempty"`
+@@ -127,6 +127,7 @@ type OutboundTLSOptions struct {
  	RecordFragment             bool                                `json:"record_fragment,omitempty"`
+ 	Spoof                      string                              `json:"spoof,omitempty"`
+ 	SpoofMethod                string                              `json:"spoof_method,omitempty" enum:"wrong-sequence,wrong-checksum,wrong-ack,wrong-md5,wrong-timestamp"`
 +	NovaFragment               []NovaFragmentStage                 `json:"nova_fragment,omitempty"`
  	KernelTx                   bool                                `json:"kernel_tx,omitempty"`
  	KernelRx                   bool                                `json:"kernel_rx,omitempty"`
- 	ECH                        *OutboundECHOptions                 `json:"ech,omitempty"`
-@@ -236,3 +237,12 @@ type OutboundRealityOptions struct {
+ 	HandshakeTimeout           badoption.Duration                  `json:"handshake_timeout,omitempty"`
+@@ -254,3 +255,12 @@ type OutboundRealityOptions struct {
  	PublicKey string `json:"public_key,omitempty"`
  	ShortID   string `json:"short_id,omitempty"`
  }
@@ -140,7 +140,7 @@ index 60343a1..2bcae62 100644
 +}
 diff --git a/transport/internet/novafrag/novafrag.go b/transport/internet/novafrag/novafrag.go
 new file mode 100644
-index 0000000..14457e6
+index 000000000..99a5efcd4
 --- /dev/null
 +++ b/transport/internet/novafrag/novafrag.go
 @@ -0,0 +1,216 @@

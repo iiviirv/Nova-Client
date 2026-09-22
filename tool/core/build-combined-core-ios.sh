@@ -17,10 +17,10 @@
 # independently.
 set -euo pipefail
 
-SINGBOX_TAG="v1.13.19"
-SINGBOX_COMMIT="b5ebaa1fc0f2b94256180b95468e73ef53caa27d"
-PATCH_SHA256="eed006f03760bce7b627f988e0e03a73b69392dc93a5f0779ff373570b97ceac"
-NOVAFRAG_PATCH_SHA256="6f1b70fd7eed68ac4b1c2007e75512ebbb70c2d93ee4e1123f59ce29e2833a69"
+SINGBOX_TAG="v1.14.1"
+SINGBOX_COMMIT="1ac1a339cb1223e9c70eae14c44411c75033c02d"
+PATCH_SHA256="67a66eec8d4aa90684abf56c0bc85539882184d6eac968bc12880e4d4120c6a8"
+NOVAFRAG_PATCH_SHA256="f71c750f9b18b0ab3a225d0ab09c4f960a466e600f5ddfa23545c09f5469f843"
 XRAY_VERSION="${XRAY_VERSION:-v1.260327.0}"
 # MasterDNS, the DNS tunnel engine. Pinned to the commit the desktop and Android
 # engines are built from (tool/build_masterdns.sh), so every platform runs the
@@ -68,7 +68,7 @@ cp -r experimental/libbox experimental/novacore
 find experimental/novacore -name '*.go' -exec sed -i '' \
   -e 's#^package libbox#package novacore#' \
   -e 's#experimental/libbox#experimental/novacore#g' {} +
-printf '1.13.13-nova\n' > .version
+printf '%s-nova\n' "${SINGBOX_TAG#v}" > .version
 
 say "Folding in the Xray wrapper (novaxray) + xray-core $XRAY_VERSION"
 mkdir -p novaxray

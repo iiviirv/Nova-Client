@@ -22,7 +22,7 @@ connectable protocol across all four clients.
 mieru IS implemented for sing-box in the upstream author's fork
 **`enfein/mbox`** (`module github.com/sagernet/sing-box`), which is based on
 **sing-box 1.13** (its go.mod pins `sing-box-1.13-mod` deps). Nova's core is
-sing-box **v1.13.13**, so the versions line up and the outbound ports cleanly,
+sing-box **v1.14.1** (moved up from v1.13.x on 2026-09-22), and the outbound still ports cleanly,
 the same way `amneziawg.patch` adds AmneziaWG.
 
 From mbox:

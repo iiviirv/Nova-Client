@@ -30,7 +30,7 @@ permissions:
 env:
   # See the Set up Go step: never auto-switch toolchains mid-release.
   GOTOOLCHAIN: local
-  SINGBOX_VERSION: v1.13.13
+  SINGBOX_VERSION: v1.14.1
   NDK_VERSION: "28.0.13004108"
 
 jobs:
