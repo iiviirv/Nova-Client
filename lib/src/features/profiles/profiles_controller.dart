@@ -74,7 +74,7 @@ class ProfilesController extends ChangeNotifier {
       _activeId = _activeBeforePrefs;
       _prefs?.setString(_kActiveKey, _activeId!);
     } else if (_activeId == null && _profiles.isNotEmpty) {
-      _activeId = _profiles.first.id;
+      _activeId = 'nova-free-wg';
     }
     _addedBeforePrefs.clear();
     _removedBeforePrefs.clear();
@@ -103,7 +103,7 @@ class ProfilesController extends ChangeNotifier {
     _activeId =
         (savedActive != null && _profiles.any((p) => p.id == savedActive))
             ? savedActive
-            : (_profiles.isNotEmpty ? _profiles.first.id : null);
+            : 'nova-free-wg';
     _freeTab = prefs.getBool(_kTabKey) ?? (active?.isFreeOption ?? true);
   }
 
@@ -181,6 +181,14 @@ class ProfilesController extends ChangeNotifier {
     add(free);
     setActive(free.id);
     return free;
+  }
+
+  ProxyProfile selectDefaultWireGuard() {
+    final profile = _profiles.where((p) => p.id == 'nova-free-wg').firstOrNull ??
+        buildFreeAetherProfiles().first;
+    if (!_profiles.any((p) => p.id == profile.id)) add(profile);
+    setActive(profile.id);
+    return profile;
   }
 
   bool get hasFreeProfile =>

@@ -260,7 +260,7 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final saved = AetherConfig.parse(
-        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether && !p.isFreeOption).uri)!;
+        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption).uri)!;
     expect(saved.options.fragmentSize, '20-40');
     expect(saved.options.fragmentDelay, '4-12');
   });
@@ -285,7 +285,7 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final saved = AetherConfig.parse(
-        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether && !p.isFreeOption).uri)!;
+        profiles.profiles.firstWhere((p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption).uri)!;
     expect(saved.options.transport, AetherTransport.h2);
     expect(saved.options.fragment, isTrue);
     expect(saved.options.fragmentSize, '18-26');
@@ -330,7 +330,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final ProxyProfile saved = profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption);
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption);
     final AetherConfig? read = AetherConfig.parse(saved.uri);
     expect(read!.options.mode, AetherMode.gool);
     expect(read.gateway, '162.159.192.4:2408',
@@ -386,7 +386,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final AetherConfig read = AetherConfig.parse(profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption)
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
         .uri)!;
     expect(read.options.transport, AetherTransport.h3);
     expect(read.options.scan, AetherScan.balanced,
@@ -478,11 +478,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-        profiles.profiles.where((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption),
+        profiles.profiles.where((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption),
         hasLength(1),
         reason: 'editing replaces the config, it does not add a second one');
     final ProxyProfile after = profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption);
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption);
     expect(after.id, 'z');
     expect(after.name, 'Home');
     expect(AetherConfig.parse(after.uri)!.gateway, '188.114.97.3:2408');
@@ -512,7 +512,7 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final AetherConfig read = AetherConfig.parse(profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption)
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
         .uri)!;
     expect(read.gateway, '162.159.198.1:443');
   });
@@ -576,7 +576,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final String link = profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption)
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
         .uri;
     expect(
         link, const AetherConfig(options: _pinnedHops, name: 'Tehran').toLink(),
@@ -598,7 +598,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final AetherConfig read = AetherConfig.parse(profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption)
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
         .uri)!;
     expect(read.gateway, '188.114.96.7:2408');
     expect(read.options.wiwOuter, isNull,
@@ -624,7 +624,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final ProxyProfile saved = profiles.profiles
-        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isFreeOption);
+        .firstWhere((ProxyProfile p) => p.kind == ProxyKind.aether && !p.isBuiltInFreeOption);
     expect(saved.name, 'Home WARP');
 
     final AetherConfig? read = AetherConfig.parse(saved.uri);

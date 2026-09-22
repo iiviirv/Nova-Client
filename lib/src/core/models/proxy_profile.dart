@@ -156,7 +156,9 @@ class ProxyProfile {
   /// someone who has just deleted everything else.
   bool get isBuiltIn => id == kFreeProfileId;
 
-  bool get isFreeOption => isBuiltIn || kFreeAetherIds.contains(id);
+  bool get isFreeOption => isBuiltIn || kind == ProxyKind.aether;
+
+  bool get isBuiltInFreeOption => isBuiltIn || kFreeAetherIds.contains(id);
 
   /// Drop any server from this subscription whose traffic is not encrypted (see
   /// [ProxyNode.isEncrypted]). Set on the free list Nova ships, where the whole

@@ -22,7 +22,7 @@ class NovaOnboarding extends StatefulWidget {
   /// Apply the chosen locale immediately so the rest of the app follows.
   final void Function(String langCode) onPickLanguage;
 
-  /// action: 'free' | 'aether' | 'add' | null (skip).
+  /// action: 'free' | 'add' | null (skip).
   final void Function(String? action) onFinish;
 
   @override
@@ -122,7 +122,7 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
   Widget _guideStep(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          ConnectionGuideContent(isFarsi: _fa),
+          ConnectionGuideContent(isFarsi: _fa, onboarding: true),
           const SizedBox(height: NovaSpace.lg),
           NovaButton(
             label: _t('Choose how to start', 'انتخاب روش شروع'),
@@ -207,41 +207,15 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             style: text.bodySmall?.copyWith(color: nova.muted),
             textAlign: TextAlign.center),
         const SizedBox(height: NovaSpace.xl),
-        // First and highlighted, because it is the only option that needs
-        // nothing from the person reading it: the free servers are already in
-        // the list, so this closes onboarding straight onto a Connect button
-        // that works. Everything below it asks for an account, a server or a
-        // link first.
+        // Free opens the ready-to-use options in the Free tab.
         _choice(
             context,
             Icons.card_giftcard_rounded,
             _t('Use the free servers', 'استفاده از سرورهای رایگان'),
-            _t('No config needed. Select the free list, then tap Connect.',
-                'بدون نیاز به کانفیگ. فهرست رایگان را انتخاب کنید و اتصال را بزنید.'),
+            _t('No config needed. Choose a free option, then tap Connect.',
+                'بدون نیاز به کانفیگ. یک گزینه رایگان را انتخاب کنید و اتصال را بزنید.'),
             highlighted: true,
             onTap: () => widget.onFinish('free')),
-        const SizedBox(height: NovaSpace.sm + 2),
-        _choice(
-            context,
-            Icons.shield_moon_rounded,
-            _t('Set up Aether', 'راه‌اندازی Aether'),
-            _t('Find a WARP gateway from the Home screen.',
-                'از صفحه خانه یک درگاه WARP پیدا کنید.'),
-            onTap: () => widget.onFinish('aether')),
-        const SizedBox(height: NovaSpace.sm + 2),
-        _choice(
-            context,
-            Icons.dns_rounded,
-            _t('Use MasterDNS', 'استفاده از MasterDNS'),
-            _t('Open Servers to add your provider’s DNS tunnel config.',
-                'برای افزودن کانفیگ تونل DNS ارائه‌دهنده، سرورها را باز کنید.'),
-            onTap: () => widget.onFinish('add')),
-        // Deploying a panel, signing in to one, and connecting a VPS used to
-        // sit here too. All three asked a brand new user for something they do
-        // not have yet (a Cloudflare account, a panel login, a server), and two
-        // of them opened the very same screen. They are panel-owner tools and
-        // they live where an owner looks for them: Settings > Cloudflare tools,
-        // and the Servers page's own empty state.
         const SizedBox(height: NovaSpace.sm + 2),
         _choice(
             context,
@@ -250,17 +224,7 @@ class _NovaOnboardingState extends State<NovaOnboarding> {
             _t('Paste a link or a subscription URL',
                 'چسباندن لینک یا آدرس اشتراک'),
             onTap: () => widget.onFinish('add')),
-        const SizedBox(height: NovaSpace.md),
-        Center(
-          child: TextButton(
-            onPressed: () => widget.onFinish(null),
-            style: TextButton.styleFrom(
-              foregroundColor: nova.muted,
-              minimumSize: const Size(44, 44),
-            ),
-            child: Text(_t("I'll do this later", 'بعداً انجام می‌دهم')),
-          ),
-        ),
+
       ],
     );
   }

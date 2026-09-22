@@ -18,11 +18,15 @@ class AetherFirstConnection {
     _search = null;
   }
 
-  Future<ProxyProfile?> prepare(ProxyProfile profile) async {
+  Future<ProxyProfile?> prepare(
+    ProxyProfile profile, {
+    bool replace = false,
+    void Function(AetherSearchProgress)? onProgress,
+  }) async {
     final config = AetherConfig.parse(profile.uri);
     if (profile.kind != ProxyKind.aether ||
         config == null ||
-        (config.gateway?.isNotEmpty ?? false)) {
+        (!replace && (config.gateway?.isNotEmpty ?? false))) {
       return profile;
     }
     cancel();
@@ -30,7 +34,16 @@ class AetherFirstConnection {
     final search = _createSearch();
     _search = search;
     try {
-      final found = await search.run(config.options, (_) {});
+      onProgress?.call(const AetherSearchProgress(
+          attempt: 1, verifying: false, ruledOut: 0));
+      final options = replace
+          ? AetherOptions.fromQuery(config.options.toQuery())
+          : config.options;
+      final found = await search.run(options, (progress) {
+        if (generation == _generation) onProgress?.call(progress);
+      },
+          excludedFirst:
+              replace && config.gateway != null ? [config.gateway!] : const []);
       if (generation != _generation || search.cancelled) return null;
       if (!found.ok) {
         throw FormatException(

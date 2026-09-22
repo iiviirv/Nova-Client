@@ -19,11 +19,11 @@ void main() {
       ..attachPrefs(await SharedPreferences.getInstance());
   }
 
-  test('a fresh install starts with the free servers and them selected',
+  test('a fresh install starts with WireGuard selected',
       () async {
     final ProfilesController c = await controller(<String, Object>{});
     expect(c.profiles.map((ProxyProfile p) => p.id), <String>[kFreeProfileId, ...kFreeAetherIds]);
-    expect(c.activeId, kFreeProfileId,
+    expect(c.activeId, 'nova-free-wg',
         reason: 'install, press Connect, be online');
   });
 

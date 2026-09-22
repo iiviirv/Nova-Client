@@ -50,7 +50,8 @@ void main() {
     expect(again.profiles, hasLength(5));
     expect(again.profiles.firstWhere((p) => p.id == saved.id).uri, saved.uri);
     expect(again.activeId, 'user-wireguard');
-    expect(again.active!.isFreeOption, isFalse);
+    expect(again.active!.isFreeOption, isTrue);
+    expect(again.active!.isBuiltInFreeOption, isFalse);
   });
   test('selected tab persists including a choice before preferences attach', () async {
     SharedPreferences.setMockInitialValues({});
@@ -64,7 +65,10 @@ void main() {
   test('first connect saves endpoint and fallback; next connect does not search', () async {
     final search = Search();
     final first = AetherFirstConnection(createSearch: () => search);
-    final pending = first.prepare(buildFreeAetherProfiles().last);
+    final progress = <AetherSearchProgress>[];
+    final pending = first.prepare(buildFreeAetherProfiles().last, onProgress: progress.add);
+    expect(progress, hasLength(1));
+    expect(progress.single.verifying, isFalse);
     search.result.complete(const AetherFindResult(endpoint: '162.159.198.2:443',
       attempts: 1, rejected: [], options: AetherOptions(transport: AetherTransport.h2, fragment: true)));
     final ready = (await pending)!;

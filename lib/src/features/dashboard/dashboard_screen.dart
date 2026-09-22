@@ -29,7 +29,7 @@ import '../panel/open_panel.dart';
 import '../servers/node_list_screen.dart';
 import '../servers/servers_body.dart';
 import '../tuner/fix_connection_screen.dart';
-import 'aether_quick_setup_card.dart';
+import 'gateway_search_card.dart';
 import 'lan_share_probe.dart';
 
 /// The home screen: a Summary/Configs segmented header, the connect orb with a
@@ -291,10 +291,7 @@ class _SummaryView extends StatelessWidget {
         // everything else when the hero folds into its connected shape.
         const _ConnectHero(),
         const _ConnectionPanel(),
-        // Directly under the hero, because someone with nothing that connects
-        // has one job on this screen and this is it. It removes itself once
-        // they have an Aether config with a gateway.
-        const AetherQuickSetupCard(),
+        const GatewaySearchCard(),
         const _ProxyModeCard(),
         const _ConfigCard(),
         const _TunModeCard(),
@@ -735,6 +732,12 @@ class _ConnectHero extends StatelessWidget {
         proxy: scope.proxy,
         hasProfile: scope.profiles.active != null,
         reachable: scope.connInfo.info.reachable,
+        onToggle: () {
+          if (scope.proxy.activeProfile == null && !scope.proxy.state.isActive) {
+            scope.proxy.selectProfile(scope.profiles.active ?? scope.profiles.selectDefaultWireGuard());
+          }
+          scope.proxy.toggle();
+        },
       ),
     );
   }
@@ -745,9 +748,11 @@ class _ConnectHeroBody extends StatelessWidget {
     required this.proxy,
     required this.hasProfile,
     required this.reachable,
+    required this.onToggle,
   });
 
   final ProxyController proxy;
+  final VoidCallback onToggle;
   final bool hasProfile;
 
   /// Honest reachability: the tunnel can report "connected" while a dead exit
@@ -851,7 +856,7 @@ class _ConnectHeroBody extends StatelessWidget {
           size: orbSize,
           statusText: badge.$2,
           inlineDetail: readout,
-          onTap: hasProfile || connected ? proxy.toggle : null,
+          onTap: onToggle,
         ),
         // The block under the orb collapses rather than vanishing, so the fold
         // reads as the headline moving into the ring, not a cut.

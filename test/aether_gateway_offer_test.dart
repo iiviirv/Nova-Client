@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/models/proxy_profile.dart';
 import 'package:nova_client/src/core/proxy/app_routing.dart';
+import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/proxy_controller.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
@@ -82,7 +83,8 @@ class _StaleProxy extends ProxyController {
   Future<bool> replaceAetherGateway(ProxyProfile profile) {
     replaceCalls++;
     replacedFor = profile;
-    return (pending = Completer<bool>()).future;
+    gatewaySearch.value = (replacing: true, progress: const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
+    return (pending = Completer<bool>()).future.whenComplete(() => gatewaySearch.value = null);
   }
 
   /// What the probe loop does when it gives up.
@@ -228,9 +230,9 @@ void main() {
     expect(proxy.replacedFor?.id, profile.id,
         reason: 'the replacement is for the config that is connected');
     // The search runs for minutes, so the wait has to look like work.
-    expect(find.text('Looking for another gateway. This takes a few minutes.'),
+    expect(find.text('Finding a replacement gateway'),
         findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.byType(LinearProgressIndicator), findsWidgets);
 
     proxy.pending!.complete(true);
     await _snack(tester);

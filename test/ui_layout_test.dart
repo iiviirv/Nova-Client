@@ -13,6 +13,8 @@ import 'package:nova_client/src/features/radar/radar_controller.dart';
 import 'package:nova_client/src/features/relay/relay_controller.dart';
 import 'package:nova_client/src/features/relay/tunnel_controller.dart';
 import 'package:nova_client/src/features/servers/aether_editor_screen.dart';
+import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
+import 'package:nova_client/src/features/dashboard/gateway_search_card.dart';
 import 'package:nova_client/src/features/servers/servers_screen.dart';
 import 'package:nova_client/src/features/settings/settings_controller.dart';
 import 'package:nova_client/src/core/update/update_checker.dart';
@@ -157,6 +159,32 @@ Future<void> _teardown(WidgetTester tester) async {
 }
 
 void main() {
+  for (final language in ['en', 'fa']) {
+    testWidgets('gateway search progress fits and cancels in $language', (tester) async {
+      final proxy = _StaticProxy(ProxyConnectionState.connecting);
+      proxy.gatewaySearch.value = (replacing: false,
+        progress: const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
+      await _pump(tester, const SingleChildScrollView(child: GatewaySearchCard()),
+        proxy: proxy, locale: Locale(language), textScale: 2);
+      expect(find.text(language == 'en' ? 'Finding your first gateway' : 'در حال یافتن اولین درگاه'), findsOneWidget);
+      expect(find.textContaining(language == 'en' ? 'few minutes' : 'چند دقیقه'), findsOneWidget);
+      proxy.gatewaySearch.value = (replacing: true,
+        progress: const AetherSearchProgress(attempt: 2, verifying: true, ruledOut: 1, usingFallback: true));
+      await tester.pump();
+      expect(find.text(language == 'en' ? 'Finding a replacement gateway' : 'در حال یافتن درگاه جایگزین'), findsOneWidget);
+      expect(find.textContaining('HTTP/2'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final cancel = find.byType(TextButton);
+      await tester.ensureVisible(cancel);
+      await tester.tap(cancel);
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(proxy.gatewaySearch.value, isNull);
+      await _teardown(tester);
+      proxy.dispose();
+    });
+  }
+
   group('Dashboard', () {
     testWidgets('idle, with a profile, at 320dp', (WidgetTester tester) async {
       await _pump(tester, const DashboardScreen(),
@@ -169,14 +197,15 @@ void main() {
       await _teardown(tester);
     });
 
-    testWidgets('idle without a profile shows no config card, tools hidden',
+    testWidgets('idle defaults to WireGuard without the WARP promotion',
         (WidgetTester tester) async {
       await _pump(tester, const DashboardScreen());
       expect(tester.takeException(), isNull);
       // The Radar/Deploy/Panel strip is intentionally hidden for now
       // (kShowDashboardTools), and with no profile there is no config card.
       expect(find.text('Radar'), findsNothing);
-      expect(find.text('Single config'), findsNothing);
+      expect(find.text('WireGuard'), findsOneWidget);
+      expect(find.text('Build a WARP tunnel'), findsNothing);
       await _teardown(tester);
     });
 
@@ -318,7 +347,7 @@ void main() {
       await _pump(tester, const SettingsScreen());
       await tester.tap(find.text('Connection guide'));
       await tester.pumpAndSettle();
-      expect(find.text('Three ways to get connected'), findsOneWidget);
+      expect(find.text('Choose your connection'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.text('Connection guide'), findsOneWidget);
@@ -462,7 +491,7 @@ void main() {
       await tester.tap(find.text('Get started'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('Three ways to get connected'), findsOneWidget);
+      expect(find.text('Choose your connection'), findsOneWidget);
       await tester.ensureVisible(find.text('Choose how to start'));
       await tester.tap(find.text('Choose how to start'));
       await tester.pumpAndSettle();

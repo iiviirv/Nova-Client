@@ -23,11 +23,6 @@ import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
-import '../../features/servers/aether_gateway_search.dart';
-import 'aether/aether_gateway_finder.dart';
-import 'singbox/share_link.dart';
-import 'singbox/share_link_builder.dart';
-import 'aether/aether_first_connection.dart';
 import 'aether/aether_platform_ready.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
@@ -821,7 +816,6 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
-  final AetherFirstConnection _firstAetherConnection = AetherFirstConnection();
 
   @override
   Future<void> connect() async {
@@ -858,7 +852,7 @@ class SingboxProxyController extends ProxyController {
 
     final String config;
     try {
-      final prepared = await _firstAetherConnection.prepare(profile);
+      final prepared = await prepareAetherProfile(profile);
       if (prepared == null || _active?.id != profile.id ||
           _state != ProxyConnectionState.connecting) {
         return;
@@ -1022,7 +1016,7 @@ class SingboxProxyController extends ProxyController {
 
   @override
   Future<void> disconnect() async {
-    _firstAetherConnection.cancel();
+    cancelAetherSearch();
     _watchdog?.cancel();
     _watchdog = null;
     // Invalidate any connect() still resolving its config: it must not send
@@ -1827,41 +1821,6 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
-  /// Finds a fresh gateway for an Aether profile and reconnects with it.
-  ///
-  /// Called when the user accepts [ProxyNotice.aetherGatewayStale]. The address
-  /// that just failed is excluded, because a search that does not exclude it
-  /// tends to return it again, which is what made rebuilding a config by hand
-  /// feel like a coin flip.
-  @override
-  Future<bool> replaceAetherGateway(ProxyProfile profile) async {
-    final ProxyNode? node = parseShareLink(profile.uri.trim());
-    if (node == null || node.protocol != NodeProtocol.aether) return false;
-    final String dead =
-        node.server.isEmpty ? '' : '${node.server}:${node.port}';
-    NovaLog.instance.write(
-        'Looking for another Aether gateway'
-        '${dead.isEmpty ? '' : ', skipping $dead'}.');
-    await AetherTunnel.stop();
-    final AetherFindResult found = await AetherCoreSearch()
-        .run(AetherOptions.fromQuery(node.aetherOpts), (_) {},
-            excludedFirst: dead.isEmpty ? const <String>[] : <String>[dead]);
-    if (!found.ok) {
-      NovaLog.instance.write(
-          'No other Aether gateway answered: ${found.error}',
-          level: NovaLogLevel.warn);
-      return false;
-    }
-    final ProxyNode fresh = node.copyWith(
-      server: found.endpoint!.split(':').first,
-      port: int.tryParse(found.endpoint!.split(':').last) ?? node.port,
-    );
-    await persistProfile?.call(profile.copyWith(uri: buildShareLink(fresh)));
-    NovaLog.instance.write('New Aether gateway: ${found.endpoint}.');
-    await reconnect();
-    return true;
-  }
-
   /// After an auto (subscription) tunnel comes up, confirm traffic really flows.
   /// A multi-node profile builds a `urltest` outbound: the core health-checks the
   /// pool and settles on a live node, but the *initial* pick can be a dead exit,
@@ -2180,7 +2139,7 @@ class SingboxProxyController extends ProxyController {
 
   @override
   void dispose() {
-    _firstAetherConnection.cancel();
+    cancelAetherSearch();
     _watchdog?.cancel();
     _eventSub?.cancel();
     _lifecycle?.dispose();

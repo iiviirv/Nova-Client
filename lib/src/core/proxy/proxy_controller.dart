@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/proxy_profile.dart';
+import 'aether/aether_first_connection.dart';
+import '../../features/servers/aether_gateway_search.dart';
 import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 
@@ -237,6 +239,9 @@ enum ProxyNotice {
 }
 
 abstract class ProxyController extends ChangeNotifier {
+  ProxyController({AetherGatewaySearch Function()? gatewaySearchFactory})
+      : _gatewayPreparation = AetherFirstConnection(createSearch: gatewaySearchFactory);
+
   ProxyConnectionState get state;
   TrafficStats get traffic;
   ProxyProfile? get activeProfile;
@@ -250,6 +255,40 @@ abstract class ProxyController extends ChangeNotifier {
   /// a code (not a string) so the message follows the app language. Kept separate
   /// from [lastError] so an informational message doesn't read as a failure.
   final ValueNotifier<ProxyNotice?> notice = ValueNotifier<ProxyNotice?>(null);
+
+  final gatewaySearch = ValueNotifier<({bool replacing, AetherSearchProgress progress})?>(null);
+  final AetherFirstConnection _gatewayPreparation;
+  bool gatewaySearchCancelled = false;
+  int _gatewayGeneration = 0;
+
+  void cancelAetherSearch() {
+    if (gatewaySearch.value != null) gatewaySearchCancelled = true;
+    ++_gatewayGeneration;
+    _gatewayPreparation.cancel();
+    gatewaySearch.value = null;
+  }
+
+  Future<ProxyProfile?> prepareAetherProfile(ProxyProfile profile, {bool replace = false}) async {
+    final generation = ++_gatewayGeneration;
+    gatewaySearchCancelled = false;
+    _gatewayPreparation.cancel();
+    try {
+      return await _gatewayPreparation.prepare(profile, replace: replace, onProgress: (progress) {
+        if (generation == _gatewayGeneration) {
+          gatewaySearch.value = (replacing: replace, progress: progress);
+        }
+      });
+    } finally {
+      if (generation == _gatewayGeneration) gatewaySearch.value = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    cancelAetherSearch();
+    gatewaySearch.dispose();
+    super.dispose();
+  }
 
   /// Live per-node latency the running core measured for the auto-select pool,
   /// keyed by [proxyNodeKey]. This is the only honest health signal for the
@@ -418,12 +457,27 @@ abstract class ProxyController extends ChangeNotifier {
   /// when no other gateway answered either, which is a different fact from the
   /// first failure and worth saying out loud.
   ///
-  /// Declared here rather than only on the sing-box controller so the shell,
-  /// which holds the abstraction, can offer it. Controllers that cannot search
-  /// answer false rather than pretending.
-  Future<bool> replaceAetherGateway(ProxyProfile profile) async => false;
+  /// Shared by mobile and desktop so both retain the verified transport
+  /// settings and report the same search progress.
+  Future<bool> replaceAetherGateway(ProxyProfile profile) async {
+    if (profile.kind != ProxyKind.aether || activeProfile?.id != profile.id) return false;
+    await disconnect();
+    if (activeProfile?.id != profile.id) return false;
+    final prepared = await prepareAetherProfile(profile, replace: true);
+    if (prepared == null || activeProfile?.id != profile.id) return false;
+    final generation = _gatewayGeneration;
+    await persistProfile?.call(prepared);
+    if (generation != _gatewayGeneration || activeProfile?.id != profile.id) return false;
+    selectProfile(prepared);
+    await connect();
+    return state != ProxyConnectionState.error;
+  }
 
   Future<void> toggle() {
+    if (gatewaySearch.value != null) {
+      cancelAetherSearch();
+      return disconnect();
+    }
     return state.isActive ? disconnect() : connect();
   }
 

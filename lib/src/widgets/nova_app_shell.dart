@@ -23,8 +23,7 @@ import 'nova_scope.dart';
 class NovaAppShell extends StatefulWidget {
   const NovaAppShell({super.key, this.startAction});
 
-  /// One-time action picked during onboarding: 'deploy' | 'panel' | 'vps' |
-  /// 'add'.
+  /// One-time action picked during onboarding: 'free' or 'add'.
   final String? startAction;
 
   @override
@@ -140,15 +139,8 @@ class _NovaAppShellState extends State<NovaAppShell> {
     // context may be gone by the time it answers.
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final NovaStrings s = NovaStrings.of(context);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: _ReplacingGatewayNote(text: s.aetherReplacing),
-        // It ends when the search does, not on a timer. Anything shorter would
-        // leave minutes of silence, which is what sent the tester rebuilding
-        // the config by hand.
-        duration: const Duration(minutes: 10),
-      ));
+    messenger.hideCurrentSnackBar();
+    _select(0);
     bool ok;
     try {
       ok = await proxy.replaceAetherGateway(profile);
@@ -160,7 +152,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text(ok ? s.aetherGatewayReplaced : s.aetherNoOtherGateway),
+        content: Text(ok ? s.aetherGatewayReplaced : proxy.gatewaySearchCancelled ? s.aetherScanCancelled : s.aetherNoOtherGateway),
         duration: Duration(seconds: ok ? 4 : 10),
       ));
   }
@@ -184,31 +176,23 @@ class _NovaAppShellState extends State<NovaAppShell> {
     super.initState();
     final String? action = widget.startAction;
     if (action == null) return;
-    if (action == 'aether') return; // Home owns the guided gateway search.
-    if (action == 'free') {
-      // They chose the free servers: they are already in the list (seeded on a
-      // fresh install), so make sure they are the selected one and leave the
-      // user on the dashboard, in front of the Connect button. Anything that
-      // navigates away here would undo the point of the choice.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final scope = NovaScope.of(context);
-        scope.proxy.selectProfile(scope.profiles.addFreeProfile());
-      });
-      return;
-    }
-    // The only other thing onboarding can ask for is "add a config", which is
-    // the Servers tab. The deploy / panel / VPS branches went with their
-    // onboarding entries; both screens are still reached from the Servers empty
-    // state and from Settings > Cloudflare tools.
-    _index = 1; // Servers/Configs
+    _index = 1;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      NovaScope.of(context).profiles.selectTab(action == 'free');
+    });
   }
 
   void _toggleConnect() {
-    final proxy = NovaScope.of(context).proxy;
-    if (proxy.activeProfile == null && !proxy.state.isActive) {
-      setState(() => _index = 1); // nudge to Servers to pick one
+    final scope = NovaScope.of(context);
+    final proxy = scope.proxy;
+    if (proxy.gatewaySearch.value != null) {
+      proxy.cancelAetherSearch();
+      proxy.disconnect();
       return;
+    }
+    if (proxy.activeProfile == null && !proxy.state.isActive) {
+      proxy.selectProfile(scope.profiles.active ?? scope.profiles.selectDefaultWireGuard());
     }
     proxy.toggle();
   }
@@ -544,31 +528,6 @@ class _RailItem extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// The snackbar body while a replacement search runs: a spinner beside the
-/// line, so a wait measured in minutes reads as work rather than a stall.
-class _ReplacingGatewayNote extends StatelessWidget {
-  const _ReplacingGatewayNote({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color fg = DefaultTextStyle.of(context).style.color ??
-        Theme.of(context).colorScheme.onInverseSurface;
-    return Row(
-      children: <Widget>[
-        SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2, color: fg),
-        ),
-        const SizedBox(width: NovaSpace.md),
-        Expanded(child: Text(text)),
-      ],
     );
   }
 }

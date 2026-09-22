@@ -30,7 +30,9 @@ class ConnectionGuideScreen extends StatelessWidget {
 }
 
 class ConnectionGuideContent extends StatelessWidget {
-  const ConnectionGuideContent({super.key, required this.isFarsi});
+  const ConnectionGuideContent(
+      {super.key, required this.isFarsi, this.onboarding = false});
+  final bool onboarding;
   final bool isFarsi;
   String _t(String en, String fa) => isFarsi ? fa : en;
 
@@ -41,7 +43,7 @@ class ConnectionGuideContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(_t('Three ways to get connected', 'سه راه برای اتصال'),
+        Text(_t('Choose your connection', 'روش اتصال را انتخاب کنید'),
             style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: NovaSpace.sm),
         Text(
@@ -74,23 +76,25 @@ class ConnectionGuideContent extends StatelessWidget {
               'Connect through Cloudflare WARP. Nova searches for a reachable gateway and checks that it carries traffic before saving it.',
               'اتصال از طریق WARP کلادفلر. نوا یک درگاه در دسترس پیدا می‌کند و پیش از ذخیره، عبور ترافیک را بررسی می‌کند.'),
           steps: _t(
-              'Use Aether setup on Home, or add an Aether config in Servers.\nKeep the search screen open. Finding a gateway can take a few minutes. If a saved gateway stops working, search again.',
-              'از راه‌اندازی Aether در خانه استفاده کنید یا در سرورها کانفیگ Aether بسازید.\nصفحه جستجو را باز نگه دارید؛ یافتن درگاه ممکن است چند دقیقه طول بکشد. اگر درگاه ذخیره‌شده کار نکرد، دوباره جستجو کنید.'),
+              'In Servers > Free, choose WireGuard, Gool or MASQUE, then tap Connect.\nKeep the search screen open. Finding a gateway can take a few minutes. If a saved gateway stops working, search again.',
+              'در سرورها > رایگان، WireGuard، Gool یا MASQUE را انتخاب کنید و اتصال را بزنید.\nصفحه جستجو را باز نگه دارید؛ یافتن درگاه ممکن است چند دقیقه طول بکشد. اگر درگاه ذخیره‌شده کار نکرد، دوباره جستجو کنید.'),
         ),
-        const SizedBox(height: NovaSpace.md),
-        _route(
-          context,
-          icon: Icons.dns_rounded,
-          color: nova.indigo,
-          title: 'MasterDNS',
-          badge: _t('Bring a config', 'با کانفیگ شخصی'),
-          description: _t(
-              'A tunnel that carries traffic through DNS. It needs a working MasterDNS server and matching settings from its operator. It can be slower than other connection types.',
-              'تونلی که ترافیک را از طریق DNS منتقل می‌کند. به سرور فعال MasterDNS و تنظیمات هماهنگ از مدیر آن نیاز دارد. ممکن است از روش‌های دیگر کندتر باشد.'),
-          steps: _t(
-              'In Servers, add MasterDNS or paste its config.\nCheck the domain, encryption key, method and resolvers with your provider, then save and connect. If it fails, check those values and try reachable resolvers.',
-              'در سرورها MasterDNS را اضافه کنید یا کانفیگ آن را بچسبانید.\nدامنه، کلید رمزگذاری، روش و DNSها را با ارائه‌دهنده بررسی کنید، سپس ذخیره و متصل شوید. اگر وصل نشد، تنظیمات و دسترسی DNSها را بررسی کنید.'),
-        ),
+        if (!onboarding) ...<Widget>[
+          const SizedBox(height: NovaSpace.md),
+          _route(
+            context,
+            icon: Icons.dns_rounded,
+            color: nova.indigo,
+            title: 'MasterDNS',
+            badge: _t('Bring a config', 'با کانفیگ شخصی'),
+            description: _t(
+                'A tunnel that carries traffic through DNS. It needs a working MasterDNS server and matching settings from its operator. It can be slower than other connection types.',
+                'تونلی که ترافیک را از طریق DNS منتقل می‌کند. به سرور فعال MasterDNS و تنظیمات هماهنگ از مدیر آن نیاز دارد. ممکن است از روش‌های دیگر کندتر باشد.'),
+            steps: _t(
+                'In Servers, add MasterDNS or paste its config.\nCheck the domain, encryption key, method and resolvers with your provider, then save and connect. If it fails, check those values and try reachable resolvers.',
+                'در سرورها MasterDNS را اضافه کنید یا کانفیگ آن را بچسبانید.\nدامنه، کلید رمزگذاری، روش و DNSها را با ارائه‌دهنده بررسی کنید، سپس ذخیره و متصل شوید. اگر وصل نشد، تنظیمات و دسترسی DNSها را بررسی کنید.'),
+          ),
+        ],
         const SizedBox(height: NovaSpace.lg),
         Text(_t('Make the connection yours', 'اتصال مناسب خودتان'),
             style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),

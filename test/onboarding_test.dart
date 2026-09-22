@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nova_client/src/app.dart';
 import 'package:nova_client/src/core/proxy/app_routing.dart';
@@ -13,7 +14,8 @@ import 'package:nova_client/src/features/vps/vps_controller.dart';
 import 'package:nova_client/src/theme/theme_controller.dart';
 
 void main() {
-  testWidgets('first run shows onboarding, then the how-to-start step',
+  for (final action in ['free', 'add']) {
+  testWidgets('first run routes $action to its server tab',
       (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = await SharedPreferences.getInstance();
@@ -47,16 +49,16 @@ void main() {
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Three ways to get connected'), findsOneWidget);
+    expect(find.text('Choose your connection'), findsOneWidget);
     expect(find.text('Free VPN servers'), findsOneWidget);
     expect(find.text('Aether'), findsOneWidget);
-    expect(find.text('MasterDNS'), findsOneWidget);
+    expect(find.text('MasterDNS'), findsNothing);
     await tester.ensureVisible(find.text('Choose how to start'));
     await tester.tap(find.text('Choose how to start'));
     await tester.pumpAndSettle();
     expect(find.text('How would you like to start?'), findsOneWidget);
-    expect(find.text('Set up Aether'), findsOneWidget);
-    expect(find.text('Use MasterDNS'), findsOneWidget);
+    expect(find.text('Set up Aether'), findsNothing);
+    expect(find.text('Use MasterDNS'), findsNothing);
     expect(find.text('Use the free servers'), findsOneWidget);
     expect(find.text('Add a config'), findsOneWidget);
     // The panel-owner entries were removed from first run on purpose; they
@@ -64,5 +66,14 @@ void main() {
     expect(find.text('Deploy your own panel'), findsNothing);
     expect(find.text('Import from your panel'), findsNothing);
     expect(find.text('Connect your VPS'), findsNothing);
+    await tester.ensureVisible(find.text(action == 'free' ? 'Use the free servers' : 'Add a config'));
+    await tester.tap(find.text(action == 'free' ? 'Use the free servers' : 'Add a config'));
+    await tester.pumpAndSettle();
+    expect(find.text('Free'), findsOneWidget);
+    expect(find.text('Subscriptions'), findsOneWidget);
+    expect(profiles.freeTab, action == 'free');
+    await tester.pumpWidget(const SizedBox.shrink());
+    proxy.dispose();
   });
+}
 }

@@ -17,7 +17,6 @@ import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
-import 'aether/aether_first_connection.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_tunnel.dart';
 import 'masterdns/masterdns_config.dart';
@@ -249,7 +248,6 @@ class DesktopProxyController extends ProxyController {
     notifyListeners();
   }
 
-  final AetherFirstConnection _firstAetherConnection = AetherFirstConnection();
 
   @override
   Future<void> connect() async {
@@ -270,7 +268,7 @@ class DesktopProxyController extends ProxyController {
     if (!_healing) _autoHealTried = false;
     _setState(ProxyConnectionState.connecting);
     try {
-      final prepared = await _firstAetherConnection.prepare(profile);
+      final prepared = await prepareAetherProfile(profile);
       if (prepared == null || _active?.id != profile.id ||
           _state != ProxyConnectionState.connecting) {
         return;
@@ -595,7 +593,7 @@ class DesktopProxyController extends ProxyController {
 
   @override
   Future<void> disconnect() async {
-    _firstAetherConnection.cancel();
+    cancelAetherSearch();
     if (_state == ProxyConnectionState.disconnected) return;
     // A real user disconnect clears the heal guard so the next session can heal
     // again; the heal's own reconnect (which disconnects first) must not.
@@ -2836,7 +2834,7 @@ class DesktopProxyController extends ProxyController {
 
   @override
   void dispose() {
-    _firstAetherConnection.cancel();
+    cancelAetherSearch();
     // A measuring core still running when the app closes must not outlive it.
     _measureProcess?.kill();
     _measureProcess = null;

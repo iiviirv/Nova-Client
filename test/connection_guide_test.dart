@@ -34,7 +34,7 @@ void main() {
         ));
         await tester.pumpAndSettle();
         expect(
-            find.text(fa ? 'سه راه برای اتصال' : 'Three ways to get connected'),
+            find.text(fa ? 'روش اتصال را انتخاب کنید' : 'Choose your connection'),
             findsOneWidget);
         expect(
             Directionality.of(

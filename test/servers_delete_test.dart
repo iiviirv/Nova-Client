@@ -113,21 +113,35 @@ Future<void> _teardown(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('Free tab separates defaults from user Aether and remembers switching', (tester) async {
+  testWidgets('Free includes user Aether and keeps subscriptions separate', (tester) async {
     final profiles = await _pumpServers(tester, [_aether('mine', 'My tunnel')]);
-    expect(find.text('My tunnel'), findsOneWidget);
-    expect(find.text('MASQUE'), findsNothing);
-    await tester.enterText(find.byType(TextField).first, 'My tunnel');
+    expect(find.text('My tunnel'), findsNothing);
     profiles.selectTab(true);
     await tester.pumpAndSettle();
     expect(find.text('MASQUE'), findsOneWidget);
     expect(find.text('Gool'), findsOneWidget);
-    expect(find.text('My tunnel'), findsNothing);
-    expect(profiles.freeTab, isTrue);
+    expect(find.text('My tunnel'), findsOneWidget);
     await tester.tap(find.text('Subscriptions'));
     await tester.pumpAndSettle();
-    expect(find.text('My tunnel'), findsOneWidget);
+    expect(find.text('My tunnel'), findsNothing);
     expect(profiles.freeTab, isFalse);
+    await _teardown(tester);
+  });
+  testWidgets('a manually added Aether profile can still be deleted from Free', (tester) async {
+    final profiles = await _pumpServers(tester, [_aether('mine', 'My tunnel')]);
+    profiles.selectTab(true);
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey<String>('server-row-mine'));
+    await tester.ensureVisible(row);
+    await tester.tap(find.descendant(of: row, matching: find.byIcon(Icons.more_vert_rounded)));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(profiles.profiles.any((p) => p.id == 'mine'), isFalse);
+    expect(profiles.profiles.where((p) => p.isBuiltInFreeOption), hasLength(4));
     await _teardown(tester);
   });
   group('Servers list delete', () {
@@ -186,9 +200,11 @@ void main() {
       // The generic edit dialog shows a name and a link. An Aether config is
       // neither: it is a set of choices about how a tunnel gets built, and
       // there was no way back to the screen that makes them.
-      await _pumpServers(tester, <ProxyProfile>[_aether('a1', 'Home WARP')]);
+      final c = await _pumpServers(tester, <ProxyProfile>[_aether('a1', 'Home WARP')]);
+      c.selectTab(true);
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+      await tester.tap(find.descendant(of: find.byKey(const ValueKey<String>('server-row-a1')), matching: find.byIcon(Icons.more_vert_rounded)));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Edit').last);
       await tester.pumpAndSettle();

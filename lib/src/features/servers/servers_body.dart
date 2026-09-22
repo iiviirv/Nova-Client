@@ -295,7 +295,7 @@ class _ServersBodyState extends State<ServersBody> {
       ),
     );
     if (ok != true) return;
-    if (p.isFreeOption) return;
+    if (p.isBuiltInFreeOption) return;
     profiles.remove(p.id);
   }
 
@@ -690,7 +690,7 @@ class _ServerRow extends StatelessWidget {
                     // one entry a person who has nothing else can always fall
                     // back to, including the person who deleted everything by
                     // accident, so removing them is not an option Nova offers.
-                    if (!profile.isFreeOption)
+                    if (!profile.isBuiltInFreeOption)
                       PopupMenuItem<String>(
                         value: 'delete',
                         child: ListTile(
