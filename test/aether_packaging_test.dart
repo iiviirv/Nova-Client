@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -69,14 +70,17 @@ void _desktop() {
     // A single-slice dylib loads on the machine that built it and fails on the
     // other kind of Mac, which is the failure you do not see until someone
     // else reports it.
-    final ProcessResult r = Process.runSync(
-        'lipo', <String>['-info', 'assets/bin/libaether.dylib']);
-    if (r.exitCode != 0) {
-      markTestSkipped('lipo is not available here');
-      return;
-    }
-    final String out = r.stdout.toString();
-    expect(out.contains('arm64'), isTrue, reason: out);
-    expect(out.contains('x86_64'), isTrue, reason: out);
+    final bytes = File('assets/bin/libaether.dylib').readAsBytesSync();
+    final data = ByteData.sublistView(bytes);
+    final magic = data.getUint32(0);
+    expect(magic, anyOf(0xcafebabe, 0xcafebabf));
+    final count = data.getUint32(4);
+    final stride = magic == 0xcafebabf ? 32 : 20;
+    expect(bytes.length, greaterThanOrEqualTo(8 + count * stride));
+    final cpus = <int>{
+      for (var i = 0; i < count; i++) data.getUint32(8 + i * stride),
+    };
+    expect(cpus, contains(0x0100000c), reason: 'arm64 slice is missing');
+    expect(cpus, contains(0x01000007), reason: 'x86_64 slice is missing');
   });
 }
