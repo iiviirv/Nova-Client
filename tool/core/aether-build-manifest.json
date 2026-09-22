@@ -3,11 +3,15 @@
   "nova_build_commit": "91a9e92",
   "workflow_run": "https://github.com/iiviirv/Nova-Client/actions/runs/35670435674",
   "patch_sha256": "821a1801f5843947636ae5a7799e36f315afbda98c367aa975b6b82814d7a26c",
-  "scope": "Aether 2.0.0 artifacts listed below; remaining platforms are still building",
   "libraries": {
     "android/app/src/main/jniLibs/arm64-v8a/libaether.so": "4c0c9e828e6e117eb91b5f428272d8fbbb898744453ab94fc22da537dd1a1e7a",
     "android/app/src/main/jniLibs/armeabi-v7a/libaether.so": "694b5b08c36ae4ec026ebcfce3d64f8ab4d5d4ef41b5c693b1115b646d886c36",
     "android/app/src/main/jniLibs/x86_64/libaether.so": "ea59edc9727e9c9f8f05b12c349e61799278691e5c9146a15d18ee9f478959cb",
-    "assets/bin/libaether.so": "ea2e86c5d9caa340dc775df2d016b36bd1abdb62c3e0d3d60d3b81bcfd7bf228"
-  }
+    "assets/bin/libaether.so": "ea2e86c5d9caa340dc775df2d016b36bd1abdb62c3e0d3d60d3b81bcfd7bf228",
+    "assets/bin/libaether.dylib": "303a4eaf06a3fa1faed1ec710386d965bed1bd7d77c754d912ee5ff5510f9d82",
+    "assets/bin/aether.dll": "2e4fb5bd891c499155a3143fd3b1ac5c6bb67e4ad07546010004c0048a079b56",
+    "ios/Frameworks/Aether.xcframework/ios-arm64_x86_64-simulator/Aether.framework/Aether": "cd3080b13d186bf581f9774d10ffe68e278fa0620b584c86c9a08ab72f79c532",
+    "ios/Frameworks/Aether.xcframework/ios-arm64/Aether.framework/Aether": "6536ce2722d0ac3cf84d8a3eb3832c42cd6e2124bc1ab802d6304ca531aa7218"
+  },
+  "ios_metadata_note": "Framework Info.plist version corrected locally to 2.0.0 before signing; CI workflow now derives it from Cargo.toml. Native binaries unchanged."
 }

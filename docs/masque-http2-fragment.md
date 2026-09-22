@@ -123,3 +123,12 @@ not proof that credentials caused the tester's failure.
 The claim that the CLI always refreshes a saved consumer identity was incorrect:
 `adopt_team_profile` only refreshes when a Zero Trust team is configured.
 Engine version alone is also not established as the cause of this TLS alert.
+
+Recovery validation: 106 targeted Flutter tests and static analysis passed.
+Twelve deliberately broken recovery variants were rejected by the tests.
+Aether 2.0.0's native library suite passed 305 tests (three ignored). The
+rebased tunnel path was mutation checked by disabling fragmentation at
+`establish_masque`; the wire probe failed, then passed after restoration.
+The Android arm64 release library loaded successfully in the emulator and
+reported `version: 2.0.0` with `nova_h2_fragment: 1`. This is not an Iranian
+network test.
