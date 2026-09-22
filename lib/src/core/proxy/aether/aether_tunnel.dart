@@ -5,6 +5,7 @@ import '../../logging/nova_log.dart';
 import 'aether_core.dart';
 import 'aether_options.dart';
 import 'aether_protocol.dart';
+import 'aether_startup.dart';
 import 'aether_watchdog.dart';
 
 /// A running Aether tunnel: the thing sing-box forwards into.
@@ -181,11 +182,21 @@ class AetherTunnel {
     // scan there is nothing to wait for it to finish. What matters is that it
     // has not already failed, and that the port is answering before anything is
     // pointed at it.
-    final AetherJobStatus now = core.jobPoll(jobId.toInt());
-    if (now.state == AetherJobState.failed) {
-      throw AetherUnavailable(now.error ?? 'the tunnel failed on startup');
-    }
-    await _awaitPort(socks, timeout);
+    await waitForAetherStartup(
+      poll: () => core.jobPoll(jobId.toInt()),
+      cancel: () => core.jobCancel(jobId.toInt()),
+      timeout: timeout,
+      accepts: () async {
+        try {
+          final socket = await Socket.connect('127.0.0.1', socks,
+              timeout: const Duration(milliseconds: 500));
+          socket.destroy();
+          return true;
+        } catch (_) {
+          return false;
+        }
+      },
+    );
 
     return _live = AetherTunnel._(core, id, jobId.toInt(), socks);
   }
@@ -245,27 +256,6 @@ class AetherTunnel {
           error: 'the core did not answer in time');
     }
     return st;
-  }
-
-  /// Waits for the SOCKS port to accept a connection.
-  ///
-  /// Without this, sing-box is pointed at a port nothing is listening on yet
-  /// and the first connections fail for no reason the user can see. The desktop
-  /// controller learned the same lesson waiting on a port rather than sleeping
-  /// a fixed number of milliseconds.
-  static Future<void> _awaitPort(int port, Duration timeout) async {
-    final DateTime deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      try {
-        final Socket s = await Socket.connect('127.0.0.1', port,
-            timeout: const Duration(milliseconds: 500));
-        s.destroy();
-        return;
-      } catch (_) {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-      }
-    }
-    throw AetherUnavailable('the tunnel never started serving on $port');
   }
 
   /// A free loopback port, asked of the OS rather than picked from a range, so

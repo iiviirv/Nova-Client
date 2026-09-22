@@ -18,6 +18,7 @@ import '../logging/nova_log.dart';
 import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
 import 'aether/aether_options.dart';
+import 'aether/aether_desktop_routes.dart';
 import 'aether/aether_tunnel.dart';
 import 'masterdns/masterdns_config.dart';
 import 'core_features.dart';
@@ -749,11 +750,12 @@ class DesktopProxyController extends ProxyController {
         final Directory support = await getApplicationSupportDirectory();
         _pendingAether = _PendingAether(
           options: AetherOptions.fromQuery(a.aetherOpts),
-          endpoint: '${a.server}:${a.port}',
+          endpoint: '${a.server.contains(':') ? '[${a.server}]' : a.server}:${a.port}',
           identityBase: '${support.path}/aether',
           socksPort: port,
         );
         cfg = SingboxConfig.buildAetherSocksBridgeMap(port, options: opts);
+        if (Platform.isMacOS && tunMode) excludeAetherGateway(cfg, a.server);
       } else if (nodes.length == 1 &&
           nodes.first.protocol == NodeProtocol.masterdns) {
         // A DNS tunnel run by its own engine, which serves it as a local SOCKS

@@ -74,7 +74,11 @@ final class NovaTunnelHost: NSObject {
       stop(result)
 
     case "status":
-      loadManager { mgr in
+      loadManager { mgr, error in
+        if let error {
+          result(FlutterError(code: "load", message: error.localizedDescription, details: nil))
+          return
+        }
         result(Self.name(for: mgr?.connection.status ?? .invalid))
       }
 
@@ -144,7 +148,11 @@ final class NovaTunnelHost: NSObject {
       return
     }
 
-    loadManager { [weak self] existing in
+    loadManager { [weak self] existing, error in
+      if let error {
+        result(FlutterError(code: "load", message: error.localizedDescription, details: nil))
+        return
+      }
       guard let self else { return }
       let mgr = existing ?? NETunnelProviderManager()
       let proto = (mgr.protocolConfiguration as? NETunnelProviderProtocol)
@@ -175,7 +183,11 @@ final class NovaTunnelHost: NSObject {
         }
         // Reload before starting: a manager that was just saved has a stale
         // connection object, and starting it throws.
-        mgr.loadFromPreferences { _ in
+        mgr.loadFromPreferences { error in
+          if let error {
+            result(FlutterError(code: "reload", message: error.localizedDescription, details: nil))
+            return
+          }
           do {
             try mgr.connection.startVPNTunnel()
             self.manager = mgr
@@ -229,20 +241,28 @@ final class NovaTunnelHost: NSObject {
   }
 
   private func stop(_ result: @escaping FlutterResult) {
-    loadManager { mgr in
+    loadManager { mgr, error in
+      if let error {
+        result(FlutterError(code: "load", message: error.localizedDescription, details: nil))
+        return
+      }
       mgr?.connection.stopVPNTunnel()
       result(true)
     }
   }
 
-  private func loadManager(_ done: @escaping (NETunnelProviderManager?) -> Void) {
-    NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+  private func loadManager(_ done: @escaping (NETunnelProviderManager?, Error?) -> Void) {
+    NETunnelProviderManager.loadAllFromPreferences { managers, error in
+      if let error {
+        done(nil, error)
+        return
+      }
       let mine = managers?.first { m in
         (m.protocolConfiguration as? NETunnelProviderProtocol)?
           .providerBundleIdentifier == Self.extensionBundleId
       }
-      self.manager = mine ?? managers?.first
-      done(self.manager)
+      self.manager = mine
+      done(self.manager, nil)
     }
   }
 

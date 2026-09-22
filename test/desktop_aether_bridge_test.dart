@@ -74,6 +74,15 @@ void main() {
     expect((first['ip_cidr'] as List<dynamic>).join(','), contains('188.114.98.'));
   });
 
+  test('macOS TUN excludes the chosen Aether gateway at the OS route', () async {
+    final controller = DesktopProxyController()..tunModeProvider = (() => true);
+    final config = jsonDecode(await controller.buildConfigForTest(
+        aether('aether://162.159.198.36:443?protocol=masque')));
+    final tun = (config['inbounds'] as List).firstWhere((i) => i['type'] == 'tun');
+    expect(tun['route_exclude_address'], Platform.isMacOS ? ['162.159.198.36/32'] : isNull);
+    controller.dispose();
+  });
+
   _wiring();
 
   test('a config with no gateway yet says so instead of building nothing',
