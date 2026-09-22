@@ -2,6 +2,8 @@
 
 ## v1.25.1 (QA, 2026-09-21)
 
+- QA build 160 updates Aether to 2.0.0 and tests a separate MASQUE identity after an HTTP/2 TLS authorization rejection. A replacement is saved only after end-to-end WARP verification; the previous identity is backed up. Recovery attempts have a five-minute cooldown.
+
 - QA build 159 adds gateway-check stage timings and native tunnel failure details to App logs.
 
 - Fixed MASQUE HTTP/2 selection and Split TLS settings reaching the native engine.

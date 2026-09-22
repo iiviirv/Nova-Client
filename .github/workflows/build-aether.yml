@@ -432,6 +432,7 @@ jobs:
             aether/target/aarch64-apple-ios-sim/release/libaether.dylib \
             aether/target/x86_64-apple-ios/release/libaether.dylib
 
+          AETHER_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("aether/Cargo.toml", "rb"))["package"]["version"])')"
           mkframework() {
             local dylib="$1" out="$2" platform="$3"
             rm -rf "$out"
@@ -450,7 +451,7 @@ jobs:
             <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
             <key>CFBundleName</key><string>Aether</string>
             <key>CFBundlePackageType</key><string>FMWK</string>
-            <key>CFBundleShortVersionString</key><string>1.9.0</string>
+            <key>CFBundleShortVersionString</key><string>$AETHER_VERSION</string>
             <key>CFBundleVersion</key><string>1</string>
             <key>MinimumOSVersion</key><string>15.0</string>
             <key>CFBundleSupportedPlatforms</key><array><string>$platform</string></array>

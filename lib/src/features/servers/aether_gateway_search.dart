@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/logging/nova_log.dart';
 import '../../core/proxy/aether/aether_core.dart';
 import '../../core/proxy/aether/aether_gateway_finder.dart';
+import '../../core/proxy/aether/aether_identity_recovery.dart';
 import '../../core/proxy/aether/aether_options.dart';
 import '../../core/proxy/aether/aether_protocol.dart';
 import '../../core/proxy/aether/aether_search_log.dart';
@@ -106,6 +107,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
   AetherCore? _core;
   int? _job;
   bool _cancelled = false;
+  AetherIdentityRecovery _recovery = AetherIdentityRecovery();
 
   @override
   bool get available => AetherCore.available;
@@ -130,6 +132,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     List<String> excludedFirst = const <String>[],
   }) async {
     _cancelled = false;
+    _recovery = AetherIdentityRecovery();
     _log(
         'start on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}'
         '${excludedFirst.isEmpty ? '' : ', skipping ${excludedFirst.length}'}');
@@ -203,7 +206,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
         // was a real hole: the core's tunnel payload requires `peer`, so
         // verification would have been refused outright rather than quietly
         // proving the wrong address.
-        return _prove(core, identity, o, endpoint, port);
+        return _proveWithRecovery(core, identity, o, endpoint, port, opened);
       },
     );
     // Seed what is already known dead, so a replacement search does not offer
@@ -231,6 +234,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     // this line, Stop on a search made every later Check report a perfectly
     // good address as unhealthy for the life of the screen.
     _cancelled = false;
+    _recovery = AetherIdentityRecovery();
     _log(
         'checking ${endpoint.trim()} on ${AetherSearchLog.platform()}: ${AetherSearchLog.settings(options)}');
     final AetherCore core = AetherCore.open();
@@ -251,13 +255,51 @@ class AetherCoreSearch implements AetherGatewaySearch {
     }
 
     final int port = await AetherTunnel.freeLoopbackPort();
-    final AetherJobStatus proof =
-        await _prove(core, handle.toInt(), options, endpoint.trim(), port);
+    final AetherJobStatus proof = await _proveWithRecovery(
+        core, handle.toInt(), options, endpoint.trim(), port, opened);
     // The same two-part answer the finder reads: the state says the check ran,
     // `reachable` says what it concluded. Only an explicit false is a refusal,
     // so a core that does not report the field is still trusted.
     return proof.state == AetherJobState.done &&
         proof.result?['reachable'] != false;
+  }
+
+  Future<AetherJobStatus> _proveWithRecovery(
+      AetherCore core,
+      int identity,
+      AetherOptions options,
+      String endpoint,
+      int port,
+      AetherJobStatus opened) async {
+    final AetherJobStatus proof =
+        await _prove(core, identity, options, endpoint, port);
+    final Object? path = opened.result?['path'];
+    if (options.mode != AetherMode.masque ||
+        options.transport != AetherTransport.h2 ||
+        path is! String ||
+        path.isEmpty) {
+      return proof;
+    }
+    return _recovery.recover(
+      rejected: proof,
+      original: File(path),
+      cancelled: () => _cancelled,
+      log: (String message) => _log(message),
+      provision: (String base) async {
+        final AetherJobStatus fresh =
+            await _await(core, core.identityOpen(options, base: base));
+        final int? handle = _handleOf(fresh.result);
+        final Object? freshPath = fresh.result?['path'];
+        if (fresh.state != AetherJobState.done ||
+            handle == null ||
+            freshPath is! String) {
+          throw StateError('replacement identity was not provisioned');
+        }
+        return AetherRecoveryIdentity(handle, File(freshPath));
+      },
+      prove: (int handle) async => _prove(core, handle, options, endpoint,
+          await AetherTunnel.freeLoopbackPort()),
+    );
   }
 
   /// Proves one gateway carries traffic, on Nova's budget rather than the

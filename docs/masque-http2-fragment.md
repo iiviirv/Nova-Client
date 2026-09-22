@@ -2,8 +2,8 @@
 
 ## Why this needed a native change
 
-The Aether v1.9.0 library pinned at
-`311b573352bb67e494895ff67d20b002d075116a` maps both `h2` and `h3` FFI
+The original Aether v1.9.0 library was pinned at
+`311b573352bb67e494895ff67d20b002d075116a` and maps both `h2` and `h3` FFI
 transport strings to MASQUE. Its actual HTTP/2 selection and ClientHello
 fragmentation originally read CLI environment variables. Nova sent a transport
 string but did not configure those variables, and did not send fragmentation
@@ -96,3 +96,30 @@ No claim is made that fragmentation defeats every network restriction.
 
 These are build and implementation checks. No new public client release was
 published, and there was no physical Windows/Linux VPN or Iranian-network test.
+
+## Aether 2.0.0 and authorization recovery (QA build 160)
+
+The engine is now pinned to upstream v2.0.0 commit
+`0e6f6a5218e65ed4cddc68d1a71d9b9633f89e3f`. Nova's per-job HTTP/2
+and fragment patch is rebased onto the new `establish_masque` path. CLI
+and nested MASQUE callers retain their environment-derived settings. The
+real-library wire probe passes for scan verification and tunnel startup.
+
+Pouyan's build 159 log fails at `await response` with
+`TLSV1_ALERT_ACCESS_DENIED` in 609 ms, before the local SOCKS listener or
+HTTPS traffic proof. This rules out the 20-second proof deadline for that
+attempt, but does not independently establish why the peer rejected it.
+
+After that exact rejection in an HTTP/2 MASQUE gateway check, Nova provisions
+a separate identity in private scratch storage and tests the same endpoint.
+Only explicit successful WARP proof promotes the candidate. A copy of the
+original remains in the private recovery directory. Failed provisioning,
+failed proof, cancellation, or a changed original leaves saved credentials
+untouched. Ordinary timeouts never trigger recovery. Attempts are limited to
+one per search and once per five minutes across searches. No account tokens
+or identity contents are added to logs. This is a bounded recovery experiment,
+not proof that credentials caused the tester's failure.
+
+The claim that the CLI always refreshes a saved consumer identity was incorrect:
+`adopt_team_profile` only refreshes when a Zero Trust team is configured.
+Engine version alone is also not established as the cause of this TLS alert.
