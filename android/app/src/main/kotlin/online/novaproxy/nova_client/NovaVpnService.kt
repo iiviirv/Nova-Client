@@ -496,6 +496,7 @@ class NovaVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     /// anything; it flattens each group and its items' urltest delays into plain
     /// maps for the Dart side, which maps the `node-i` tags back to real servers.
     private inner class GroupHandler : CommandClientHandler {
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) {}
         override fun writeGroups(message: OutboundGroupIterator?) {
             val groups = message ?: return
             val out = ArrayList<Map<String, Any?>>()
