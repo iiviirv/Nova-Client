@@ -192,6 +192,16 @@ class SingboxProxyController extends ProxyController {
   /// of the one the user actually asked for.
   int _opSeq = 0;
 
+  /// The [_opSeq] whose `start` has actually been handed to the host.
+  ///
+  /// Until a connect reaches that point, any `disconnected` the host sends
+  /// belongs to the session being torn down, not to this one. Field log,
+  /// 2026-09-23: a stale `disconnected` landed 2ms after a connect began and
+  /// put the controller back to disconnected while its gateway search was
+  /// still running, so the search finished into a state that made connect()
+  /// discard it. On a phone that reads as "MASQUE never connects".
+  int _startedSeq = -1;
+
   /// Clears a `disconnecting` that the platform never answered (see
   /// [disconnect]).
   Timer? _stopWatchdog;
@@ -313,10 +323,22 @@ class SingboxProxyController extends ProxyController {
         }
       case 'state':
         final ProxyConnectionState prev = _state;
-        _state = ProxyConnectionState.values.firstWhere(
+        final ProxyConnectionState reported =
+            ProxyConnectionState.values.firstWhere(
           (s) => s.name == event['value'],
           orElse: () => _state,
         );
+        // A connect that has not yet handed `start` to the host cannot be the
+        // subject of a terminal event: the host is still finishing the previous
+        // session. Honouring it here overwrites `connecting` and silently
+        // dooms the connect in flight. Once `start` has gone out, the same
+        // event is real and is honoured.
+        final bool staleTerminal = _startedSeq != _opSeq &&
+            _state == ProxyConnectionState.connecting &&
+            (reported == ProxyConnectionState.disconnected ||
+                reported == ProxyConnectionState.disconnecting);
+        if (staleTerminal) return;
+        _state = reported;
         if (_state != prev) NovaLog.instance.write('State: ${_state.name}');
         // Any settled state clears the connect watchdog.
         if (_state != ProxyConnectionState.connecting) {
@@ -919,6 +941,7 @@ class SingboxProxyController extends ProxyController {
         _stopMasterDns();
         return;
       }
+      _startedSeq = seq;
       await _control.invokeMethod<void>('start', <String, dynamic>{
         'configJson': config,
         // Shown in the platform's ongoing VPN notification. Cosmetic only.

@@ -194,6 +194,13 @@ class _NovaAppShellState extends State<NovaAppShell> {
     if (proxy.activeProfile == null && !proxy.state.isActive) {
       proxy.selectProfile(scope.profiles.active ?? scope.profiles.selectDefaultWireGuard());
     }
+    // Connecting from the Servers tab left the user looking at the list while
+    // the gateway search ran on Home, so a search that takes a minute looked
+    // like the button had done nothing. Go where the progress is shown.
+    // Disconnecting stays put: there is nothing to watch, and moving the user
+    // off the list they were reading would be its own annoyance. The condition
+    // is the same one toggle() uses to decide, so the two cannot disagree.
+    if (!proxy.state.isActive) _select(0);
     proxy.toggle();
   }
 

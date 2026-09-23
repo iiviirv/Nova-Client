@@ -39,5 +39,16 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # Xcode 27 refuses to build anything below iOS 15, and some plugin podspecs
+    # still declare 9.0 or 13.0. Nova itself is 15.0 everywhere (the Podfile
+    # platform line above and all three Runner configurations), so raising the
+    # pods to the same floor changes nothing about what Nova supports; it only
+    # stops a dependency's stale podspec from failing the build.
+    target.build_configurations.each do |config|
+      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if current.nil? || current.to_f < 15.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
+    end
   end
 end

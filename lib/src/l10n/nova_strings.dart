@@ -116,6 +116,10 @@ class NovaStrings {
   String get aetherFragmentDelayHint => t('aether.fragmentDelayHint');
   String get aetherFragmentInvalid => t('aether.fragmentInvalid');
   String get aetherH2Fallback => t('aether.h2Fallback');
+
+  /// Why the address number drops back to one when the fallback takes over.
+  /// Without it the count looks like it lost its place.
+  String get aetherH2FallbackRestart => t('aether.h2FallbackRestart');
   String get aetherFragmentSub => t('aether.fragmentSub');
   String get aetherScanMode => t('aether.scanMode');
   String get aetherScanTurbo => t('aether.scanTurbo');
@@ -1110,7 +1114,10 @@ class NovaStrings {
     'aether.fragmentSizeHint': 'A number or range, such as 16-32. Allowed: 1 to 16384.',
     'aether.fragmentDelayHint': 'A number or range, such as 2-10. Allowed: 0 to 1000.',
     'aether.fragmentInvalid': 'Enter a valid number or ascending range within the allowed limits.',
-    'aether.h2Fallback': 'Trying HTTP/2 with TLS fragmentation…',
+    'aether.h2Fallback': 'Now trying HTTP/2 with a split TLS hello',
+    'aether.h2FallbackRestart':
+        'The search is still running. It starts counting addresses from one '
+            'again on this route.',
     'aether.fragmentSub':
         'Sends the handshake in pieces so a filter cannot match it in a single '
             'packet. HTTP/2 only.',
@@ -2179,7 +2186,12 @@ class NovaStrings {
     'aether.fragmentSizeHint': 'یک عدد یا بازه، مثل 16-32. محدودهٔ مجاز: ۱ تا ۱۶۳۸۴.',
     'aether.fragmentDelayHint': 'یک عدد یا بازه، مثل 2-10. محدودهٔ مجاز: ۰ تا ۱۰۰۰.',
     'aether.fragmentInvalid': 'یک عدد یا بازهٔ صعودی در محدودهٔ مجاز وارد کنید.',
-    'aether.h2Fallback': 'در حال امتحان HTTP/2 همراه فرگمنت TLS…',
+    'aether.h2Fallback':
+        'حالا \u2066HTTP/2\u2069 با پیام \u2066TLS Hello\u2069 تکه‌تکه‌شده '
+            'امتحان می‌شود',
+    'aether.h2FallbackRestart':
+        'جست‌وجو هنوز ادامه دارد. شمارش آدرس‌ها روی این مسیر از یک شروع '
+            'می‌شود.',
     'aether.fragmentSub':
         'دست‌دهی را تکه‌تکه می‌فرستد تا فیلتر نتواند آن را در یک بسته تشخیص '
             'دهد. فقط روی \u2066HTTP/2\u2069.',

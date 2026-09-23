@@ -5,6 +5,8 @@ import Aether
 import Novacore
 import Network
 import NetworkExtension
+// os_proc_available_memory: how much this extension has left before iOS kills it.
+import os
 import UserNotifications
 // sing-box 1.13's libbox references UIKit (UIApplication background-task APIs)
 // that 1.12 did not. The extension's own Swift never touches UIKit, but importing
@@ -64,6 +66,18 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     let config = try String(contentsOf: container.appendingPathComponent("config.json"), encoding: .utf8)
 
+    // The bridge for anything this extension needs the user to see. The NE is a
+    // separate process, so it cannot push to the Flutter engine the way
+    // Android's in-process VpnService does; the sink writes to a shared App
+    // Group file the app tails into the Core log (see NovaProxyHost). Created
+    // for every connection rather than only when Xray runs, because the
+    // extension's own diagnostics have to reach the user on an Aether-only
+    // connection too, which is most of them. Each connection starts with a
+    // fresh file so the app's tail offset lines up.
+    let logURL = container.appendingPathComponent("xray.log")
+    try? Data().write(to: logURL)
+    xrayLogSink = XrayLogSink(url: logURL)
+
     // xhttp node: start the Xray core first (from xray.json) so its local SOCKS
     // inbound is up before sing-box bridges the TUN to it. On iOS the extension's
     // own sockets bypass its tunnel, so no socket protector is needed here (unlike
@@ -71,14 +85,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     let xrayURL = container.appendingPathComponent("xray.json")
     if let xrayCfg = try? String(contentsOf: xrayURL, encoding: .utf8),
        !xrayCfg.isEmpty {
-      // Bridge Xray's own log to the app. The NE is a separate process, so it
-      // can't push to the Flutter engine the way Android's in-process VpnService
-      // does; instead the sink writes to a shared App Group file that the app
-      // tails into the Core log (see NovaProxyHost). Start each connection with a
-      // fresh file so the app's tail offset lines up.
-      let logURL = container.appendingPathComponent("xray.log")
-      try? Data().write(to: logURL)
-      xrayLogSink = XrayLogSink(url: logURL)
+      // Xray's own lines join the same bridge, opened above.
       NovaxraySetLogger(xrayLogSink)
       let xerr = NovaxrayStart(xrayCfg)
       if !xerr.isEmpty {
@@ -287,11 +294,58 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   /// offline, so noticing late is expensive, but each check opens a loopback
   /// connection and doing that every second for the life of a connection is
   /// not free either.
+  /// What the extension has left before iOS kills it.
+  ///
+  /// Nova's own config already assumes a roughly 50MB ceiling in three places
+  /// (the urltest pool size and two MTU choices) and nobody had ever measured
+  /// it. The extension holds sing-box, Xray and MasterDNS in one Go runtime, so
+  /// the honest question before adding a fourth core is not "does it work" but
+  /// "how much room is actually left". This answers that from inside the
+  /// process, which is the only place the number is real.
+  private func memoryReport() -> String {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(
+      MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let ok = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+      }
+    } == KERN_SUCCESS
+    let mb = { (bytes: UInt64) in String(format: "%.1fMB", Double(bytes) / 1048576.0) }
+    let used = ok ? mb(info.phys_footprint) : "unknown"
+    return "memory: using \(used), \(mb(UInt64(os_proc_available_memory()))) left before the limit"
+  }
+
+  /// Ticks of the 15s watchdog since the last memory line. Reported once a
+  /// minute rather than every tick, because this log is small and bounded and a
+  /// line every fifteen seconds would push everything else out of it.
+  private var memoryTicks = 0
+
+  private func reportMemoryIfDue() {
+    memoryTicks += 1
+    let low = os_proc_available_memory() < 8 * 1024 * 1024
+    guard low || memoryTicks >= 4 else { return }
+    memoryTicks = 0
+    // Through the app-group sink rather than NSLog. On iOS 27 an extension's
+    // NSLog goes to the unified log, which the device syslog relay no longer
+    // carries, so a reading written that way is invisible to everyone: the
+    // person holding the phone and the maintainer with a cable both. This way
+    // it lands in Settings > Logs, where a tester can read and send it.
+    let line = low
+      ? memoryReport() + " (close to the limit; iOS kills the tunnel rather than slowing it down)"
+      : memoryReport()
+    xrayLogSink?.log(line)
+    NSLog("Nova: %@", line)
+  }
+
   private func armAetherWatchdog() {
     aetherTimer?.cancel()
     let timer = DispatchSource.makeTimerSource(queue: aetherQueue)
     timer.schedule(deadline: .now() + 15, repeating: 15)
-    timer.setEventHandler { [weak self] in self?.checkAether() }
+    timer.setEventHandler { [weak self] in
+      self?.reportMemoryIfDue()
+      self?.checkAether()
+    }
     timer.resume()
     aetherTimer = timer
   }

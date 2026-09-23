@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/models/proxy_profile.dart';
 import 'package:nova_client/src/core/proxy/app_routing.dart';
 import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
+import 'package:nova_client/src/features/servers/aether_search_widgets.dart';
 import 'package:nova_client/src/core/proxy/conn_info_controller.dart';
 import 'package:nova_client/src/core/proxy/proxy_controller.dart';
 import 'package:nova_client/src/features/profiles/profiles_controller.dart';
@@ -229,10 +230,12 @@ void main() {
     expect(proxy.replaceCalls, 1);
     expect(proxy.replacedFor?.id, profile.id,
         reason: 'the replacement is for the config that is connected');
-    // The search runs for minutes, so the wait has to look like work.
+    // The search runs for minutes, so the wait has to look like work. It is
+    // the readout that says so now: a bar that never fills was what the
+    // tester who cancelled a healthy search had been watching.
     expect(find.text('Finding a replacement gateway'),
         findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsWidgets);
+    expect(find.byType(AetherProgressLines), findsOneWidget);
 
     proxy.pending!.complete(true);
     await _snack(tester);

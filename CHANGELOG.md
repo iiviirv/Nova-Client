@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.26.2 (2026-09-23)
+
+- The automatic MASQUE HTTP/2 fallback now runs when you tap Connect on a
+  built-in profile. It was reachable only from the Aether editor, so on the
+  path almost everyone takes a MASQUE search stayed on HTTP/3 however long it
+  took, and the fallback that exists to rescue it on a network that blocks
+  QUIC could never start.
+- A connection started straight after disconnecting is no longer cancelled by
+  the previous session finishing. The host's late "disconnected" was being
+  applied to the new attempt, which ended it before it began.
+- Connecting from the Servers list now moves to Home, where the gateway search
+  reports its progress. Disconnecting stays where you are.
+- The gateway search shows elapsed time, says when it switches to HTTP/2 with
+  a split TLS hello, and explains that the address count starts again there.
+  Finding a gateway can take minutes on a difficult network, and a search that
+  says nothing is hard to tell from one that has stopped.
+- iOS reports how much memory the tunnel has left, in Settings then Logs.
+
 ## v1.26.1 (2026-09-22)
 
 - A saved Aether gateway that the current network blocks no longer ends the

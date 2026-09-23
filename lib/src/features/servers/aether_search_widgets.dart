@@ -111,6 +111,23 @@ class _AetherProgressLinesState extends State<AetherProgressLines> {
     final AetherSearchProgress p = widget.progress;
     final String clock = _clock(_elapsed);
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _progressRow(context, s, nova, text, p, clock),
+        // Below the row, not inside it: the switch to the fallback is a change
+        // of plan, and a fourth muted line tucked under the attempt count was
+        // read as more of the same spinner.
+        if (p.usingFallback) ...<Widget>[
+          const SizedBox(height: NovaSpace.sm),
+          const AetherFallbackNote(),
+        ],
+      ],
+    );
+  }
+
+  Widget _progressRow(BuildContext context, NovaStrings s, NovaColors nova,
+      TextTheme text, AetherSearchProgress p, String clock) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -132,9 +149,6 @@ class _AetherProgressLinesState extends State<AetherProgressLines> {
                   style: text.bodySmall?.copyWith(color: nova.text),
                 ),
               ),
-              if (p.usingFallback)
-                Text(s.aetherH2Fallback,
-                    style: text.bodySmall?.copyWith(color: nova.muted)),
               if (p.ruledOut > 0)
                 Text(s.aetherRuledOut(p.ruledOut),
                     style: text.bodySmall?.copyWith(color: nova.muted)),
@@ -157,6 +171,68 @@ class _AetherProgressLinesState extends State<AetherProgressLines> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The moment the search changes plan, said out loud.
+///
+/// After 90 seconds a MASQUE search is cancelled and started again over HTTP/2
+/// with a split TLS hello. That used to show up as one more grey line under the
+/// attempt count, which is indistinguishable from the spinner that was already
+/// there, and it takes the address number back to one, which on its own reads
+/// as the count losing its place. Both facts go here, tinted and iconed so the
+/// change is visible before it is read, and announced for anyone listening to
+/// the card instead of watching it.
+///
+/// Cyan rather than a warning colour: nothing has gone wrong, this is the
+/// second half of the same search.
+class AetherFallbackNote extends StatelessWidget {
+  const AetherFallbackNote({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final NovaColors nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(NovaSpace.sm),
+        decoration: BoxDecoration(
+          color: nova.cyan.withValues(alpha: 0.10),
+          borderRadius: NovaRadii.smR,
+          border: Border.all(color: nova.cyan.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(Icons.alt_route_rounded, size: 16, color: nova.cyan),
+            ),
+            const SizedBox(width: NovaSpace.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    s.aetherH2Fallback,
+                    style: text.bodySmall
+                        ?.copyWith(color: nova.text, height: 1.35),
+                  ),
+                  Text(
+                    s.aetherH2FallbackRestart,
+                    style: text.bodySmall
+                        ?.copyWith(color: nova.muted, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

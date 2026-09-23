@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../models/proxy_profile.dart';
 import '../../../features/servers/aether_gateway_search.dart';
 import 'aether_options.dart';
@@ -5,10 +7,25 @@ import 'aether_options.dart';
 /// Discovers once, keeping the effective fallback settings with the gateway.
 /// Cancellation invalidates even a result that arrives after the native stop.
 class AetherFirstConnection {
+  /// Defaults to the adaptive search, not the plain core one.
+  ///
+  /// Field log, 2026-09-23: a free MASQUE profile scanned for 120 seconds on
+  /// h3 and never tried the HTTP/2 fallback, because the fallback lives in
+  /// [AetherAdaptiveSearch] and only the Aether editor was building one. The
+  /// path almost everyone takes, tapping Connect on a built-in profile, came
+  /// through here and got a plain [AetherCoreSearch]. So the automatic MASQUE
+  /// HTTP/2 fallback shipped in 1.26.0 could not fire for the users it was
+  /// written for, on the networks it was written for.
   AetherFirstConnection({AetherGatewaySearch Function()? createSearch})
-      : _createSearch = createSearch ?? (() => AetherCoreSearch());
+      : _createSearch = createSearch ?? AetherAdaptiveSearch.new;
 
   final AetherGatewaySearch Function() _createSearch;
+
+  /// Which search this would build. Exposed so a test can prove the wiring,
+  /// which is the part that was wrong, rather than the search's own logic,
+  /// which was already covered and already correct.
+  @visibleForTesting
+  AetherGatewaySearch createSearchForTest() => _createSearch();
   AetherGatewaySearch? _search;
   int _generation = 0;
 
@@ -34,13 +51,19 @@ class AetherFirstConnection {
     final search = _createSearch();
     _search = search;
     try {
-      onProgress?.call(const AetherSearchProgress(
-          attempt: 1, verifying: false, ruledOut: 0));
       final options = replace
           ? AetherOptions.fromQuery(config.options.toQuery())
           : config.options;
+      // Tagged with the protocol from here down, because this is the only layer
+      // that knows it: the search takes options, and the dashboard card takes
+      // progress. A MASQUE search runs far longer than the other two, and the
+      // card cannot say so unless the progress carries which one is running.
+      onProgress?.call(AetherSearchProgress(
+          attempt: 1, verifying: false, ruledOut: 0, mode: options.mode));
       final found = await search.run(options, (progress) {
-        if (generation == _generation) onProgress?.call(progress);
+        if (generation == _generation) {
+          onProgress?.call(progress.withMode(options.mode));
+        }
       },
           excludedFirst:
               replace && config.gateway != null ? [config.gateway!] : const []);

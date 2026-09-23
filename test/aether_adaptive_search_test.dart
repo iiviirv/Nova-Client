@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nova_client/src/core/proxy/aether/aether_first_connection.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_gateway_finder.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_options.dart';
 import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
@@ -37,6 +38,8 @@ class Search implements AetherGatewaySearch {
 }
 
 void main() {
+  _firstConnectionGetsTheFallback();
+
   testWidgets('90 seconds cancels and awaits old work before HTTP2 fallback',
       (tester) async {
     final first = Search(), second = Search();
@@ -132,5 +135,26 @@ void main() {
     expect(calls, 2);
     second.done.complete(success);
     expect((await result).ok, isTrue);
+  });
+}
+
+/// Field log, 2026-09-23, iPhone: a free MASQUE profile scanned for 120 seconds
+/// on h3 and never tried the HTTP/2 fallback.
+///
+///     12:46:53  aether search: start, mode=masque, transport=h3, fragment=false
+///     12:48:54  scan 1 took 120034ms: done
+///
+/// One search, no fallback, despite the fallback being documented at 90s. The
+/// cause was wiring, not logic: AetherAdaptiveSearch holds the fallback and was
+/// only ever built by the Aether editor. Tapping Connect on a built-in profile
+/// goes through AetherFirstConnection, which built a plain AetherCoreSearch. So
+/// the automatic MASQUE HTTP/2 fallback shipped in 1.26.0 could not fire on the
+/// path almost every user takes.
+void _firstConnectionGetsTheFallback() {
+  test('a first connection searches with the fallback, not a plain core search',
+      () {
+    expect(AetherFirstConnection().createSearchForTest(), isA<AetherAdaptiveSearch>(),
+        reason: 'without this the 90s HTTP/2 fallback can never fire for a '
+            'built-in MASQUE profile');
   });
 }

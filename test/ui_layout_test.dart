@@ -13,7 +13,9 @@ import 'package:nova_client/src/features/radar/radar_controller.dart';
 import 'package:nova_client/src/features/relay/relay_controller.dart';
 import 'package:nova_client/src/features/relay/tunnel_controller.dart';
 import 'package:nova_client/src/features/servers/aether_editor_screen.dart';
+import 'package:nova_client/src/core/proxy/aether/aether_options.dart';
 import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
+import 'package:nova_client/src/features/servers/aether_search_widgets.dart';
 import 'package:nova_client/src/features/dashboard/gateway_search_card.dart';
 import 'package:nova_client/src/features/servers/servers_screen.dart';
 import 'package:nova_client/src/features/settings/settings_controller.dart';
@@ -23,6 +25,7 @@ import 'package:nova_client/src/features/vps/vps_controller.dart';
 import 'package:nova_client/src/l10n/nova_strings.dart';
 import 'package:nova_client/src/theme/nova_theme.dart';
 import 'package:nova_client/src/theme/theme_controller.dart';
+import 'package:nova_client/src/widgets/nova_button.dart';
 import 'package:nova_client/src/widgets/nova_scope.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -167,20 +170,90 @@ void main() {
       await _pump(tester, const SingleChildScrollView(child: GatewaySearchCard()),
         proxy: proxy, locale: Locale(language), textScale: 2);
       expect(find.text(language == 'en' ? 'Finding your first gateway' : 'در حال یافتن اولین درگاه'), findsOneWidget);
-      expect(find.textContaining(language == 'en' ? 'few minutes' : 'چند دقیقه'), findsOneWidget);
+      expect(find.byKey(GatewaySearchCard.waitKey), findsOneWidget);
       proxy.gatewaySearch.value = (replacing: true,
         progress: const AetherSearchProgress(attempt: 2, verifying: true, ruledOut: 1, usingFallback: true));
       await tester.pump();
       expect(find.text(language == 'en' ? 'Finding a replacement gateway' : 'در حال یافتن درگاه جایگزین'), findsOneWidget);
       expect(find.textContaining('HTTP/2'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      final cancel = find.byType(TextButton);
+      final cancel = find.byType(NovaButton);
       await tester.ensureVisible(cancel);
       await tester.tap(cancel);
       await tester.pump();
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(AetherProgressLines), findsNothing);
       expect(proxy.gatewaySearch.value, isNull);
       await _teardown(tester);
+      proxy.dispose();
+    });
+
+    // The card used to show an attempt number and nothing else. A tester on an
+    // iPhone read that as a hang and stopped a healthy MASQUE search at 70
+    // seconds, 20 seconds before the automatic fallback would have taken over.
+    // These are the three things that were missing from the screen he watched.
+    testWidgets('a long gateway search shows its clock, its protocol and its '
+        'change of plan in $language', (tester) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      final proxy = _StaticProxy(ProxyConnectionState.connecting);
+      proxy.gatewaySearch.value = (replacing: false,
+        progress: const AetherSearchProgress(
+            attempt: 1, verifying: false, ruledOut: 0, mode: AetherMode.masque));
+      await _pump(tester, const SingleChildScrollView(child: GatewaySearchCard()),
+        proxy: proxy, locale: Locale(language), textScale: 2);
+
+      expect(find.text('00:00'), findsOneWidget,
+          reason: 'the clock starts with the card, not at the first tick');
+
+      final String wait =
+          tester.widget<Text>(find.byKey(GatewaySearchCard.waitKey)).data!;
+      expect(wait, contains('MASQUE'),
+          reason: 'the slow protocol is named, because "it is taking a while" '
+              'is the whole reason this search gets abandoned');
+      // Not the sentence, the promise: QA measured about two minutes on one
+      // network, and a figure on screen turns a three-minute search into a
+      // broken one.
+      expect(wait, isNot(matches(RegExp(r'[0-9۰-۹]'))),
+          reason: 'no duration is promised anywhere in this line');
+
+      await tester.pump(const Duration(seconds: 65));
+      expect(find.text('01:05'), findsOneWidget,
+          reason: 'the wait has a length on screen, which is what the attempt '
+              'number never gave');
+      expect(tester.getSemantics(find.text('01:05')).label, contains('01:05'),
+          reason: 'a bare clock explains itself by ticking, which is nothing '
+              'to someone listening to the card');
+
+      expect(find.byType(AetherFallbackNote), findsNothing);
+      proxy.gatewaySearch.value = (replacing: false,
+        progress: const AetherSearchProgress(
+            attempt: 1,
+            verifying: false,
+            ruledOut: 3,
+            usingFallback: true,
+            mode: AetherMode.masque));
+      await tester.pump();
+
+      expect(find.byType(AetherFallbackNote), findsOneWidget,
+          reason: 'the switch to the fallback is a step of its own, not one '
+              'more grey line under the same spinner');
+      expect(
+          find.descendant(
+              of: find.byType(AetherFallbackNote),
+              matching: find.textContaining('HTTP/2')),
+          findsOneWidget);
+      // Two lines: what changed, and why the address count went back to one.
+      // Without the second the count looks like it lost its place.
+      expect(
+          find.descendant(
+              of: find.byType(AetherFallbackNote), matching: find.byType(Text)),
+          findsNWidgets(2));
+      expect(find.text('01:05'), findsOneWidget,
+          reason: 'the fallback is the second half of the same search, so the '
+              'clock carries on rather than starting again');
+      expect(tester.takeException(), isNull);
+
+      await _teardown(tester);
+      semantics.dispose();
       proxy.dispose();
     });
   }

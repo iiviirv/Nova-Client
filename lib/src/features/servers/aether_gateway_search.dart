@@ -27,6 +27,7 @@ class AetherSearchProgress {
     required this.verifying,
     required this.ruledOut,
     this.usingFallback = false,
+    this.mode,
   });
 
   /// Which gateway this is, counting from one.
@@ -39,6 +40,28 @@ class AetherSearchProgress {
   /// How many addresses answered a probe but carried nothing.
   final int ruledOut;
   final bool usingFallback;
+
+  /// Which protocol this search is sweeping for, when whatever started it knew.
+  ///
+  /// Field report, 2026-09-22: a healthy MASQUE search on an iPhone was stopped
+  /// at 70 seconds because the screen read as hung. QA measured MASQUE at about
+  /// two minutes against 30 to 60 seconds for the other two protocols, so that
+  /// wait was normal, and the cancel landed 20 seconds before the automatic
+  /// HTTP/2 fallback would have taken over. A card that can name the protocol
+  /// can say which of those waits the person is in.
+  ///
+  /// Null when the caller does not know, and then the card keeps to what is
+  /// true of every protocol rather than guessing.
+  final AetherMode? mode;
+
+  /// The same progress, tagged with the protocol the search is running on.
+  AetherSearchProgress withMode(AetherMode mode) => AetherSearchProgress(
+        attempt: attempt,
+        verifying: verifying,
+        ruledOut: ruledOut,
+        usingFallback: usingFallback,
+        mode: mode,
+      );
 }
 
 /// Runs a gateway search on behalf of the editor.
@@ -566,11 +589,14 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
     final AetherOptions fallback =
         options.copyWith(transport: AetherTransport.h2, fragment: true);
     final AetherGatewaySearch second = _active = _createSearch();
+    // The protocol is unchanged by the fallback, which swaps the transport
+    // under it, so it rides through rather than being dropped here.
     void report(AetherSearchProgress p) => onProgress(AetherSearchProgress(
         attempt: p.attempt,
         verifying: p.verifying,
         ruledOut: p.ruledOut,
-        usingFallback: true));
+        usingFallback: true,
+        mode: p.mode));
     report(
         const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
     // A gateway rejected on QUIC may work over TCP. Do not carry those

@@ -12,6 +12,9 @@ import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
 class Search implements AetherGatewaySearch {
   final result = Completer<AetherFindResult>();
   int calls = 0;
+
+  /// Held so a test can push progress back the way a running search does.
+  ValueChanged<AetherSearchProgress>? report;
   @override
   bool get available => true;
   @override
@@ -25,6 +28,7 @@ class Search implements AetherGatewaySearch {
       ValueChanged<AetherSearchProgress> onProgress,
       {List<String> excludedFirst = const []}) {
     calls++;
+    report = onProgress;
     return result.future;
   }
 }
@@ -78,6 +82,40 @@ void main() {
     expect(options.fragment, isTrue);
     expect(await first.prepare(ready), same(ready));
     expect(search.calls, 1);
+  });
+  test('progress says which protocol the search is running on', () async {
+    // The card names the protocol to explain the wait, and the search itself
+    // never knows which one it is on: it takes options, not a protocol. So the
+    // tag is added here, on every update, or the card has nothing to say about
+    // why a MASQUE search runs so much longer than the other two.
+    final search = Search();
+    final first = AetherFirstConnection(createSearch: () => search);
+    final progress = <AetherSearchProgress>[];
+    final pending = first.prepare(buildFreeAetherProfiles().last,
+        onProgress: progress.add);
+    expect(progress.single.mode, AetherMode.masque,
+        reason: 'the first line is drawn before the search has reported '
+            'anything, and that is the line the long wait starts under');
+    search.report!(const AetherSearchProgress(
+        attempt: 2, verifying: true, ruledOut: 1));
+    expect(progress.last.mode, AetherMode.masque,
+        reason: 'every update is tagged on the way past, not just the first');
+    expect(progress.last.attempt, 2,
+        reason: 'tagging must not lose what the search actually said');
+
+    // A quicker protocol must not be described as the slow one.
+    final wgSearch = Search();
+    final wgProgress = <AetherSearchProgress>[];
+    final wgPending = AetherFirstConnection(createSearch: () => wgSearch)
+        .prepare(buildFreeAetherProfiles().first, onProgress: wgProgress.add);
+    expect(wgProgress.single.mode, AetherMode.wg);
+
+    search.result.complete(const AetherFindResult(
+        endpoint: '162.159.198.2:443', attempts: 1, rejected: []));
+    wgSearch.result.complete(const AetherFindResult(
+        endpoint: '162.159.198.2:443', attempts: 1, rejected: []));
+    await pending;
+    await wgPending;
   });
   test('cancel discards a late successful result', () async {
     final search = Search();
