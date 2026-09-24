@@ -253,6 +253,8 @@ class NovaStrings {
   //
   // A Psiphon profile carries no server of the user's, so the whole screen is
   // the one choice below plus a name.
+  String get psiphonAdd => t('psiphon.add');
+  String get psiphonAddSub => t('psiphon.addSub');
   String get psiphonTitle => t('psiphon.title');
   String get psiphonEditTitle => t('psiphon.editTitle');
   String get psiphonIntro => t('psiphon.intro');
@@ -1284,6 +1286,8 @@ class NovaStrings {
     'masterdns.needsText': 'Save waits for a config Nova can read.',
     // Psiphon. Two sentences per mode at most: the screen is one decision and
     // the copy has to stay readable at a 2x text scale on a 320dp phone.
+    'psiphon.add': 'Add a Psiphon connection',
+    'psiphon.addSub': 'No server to enter. Psiphon finds its own.',
     'psiphon.title': 'Psiphon connection',
     'psiphon.editTitle': 'Edit Psiphon connection',
     'psiphon.intro':
@@ -2384,6 +2388,8 @@ class NovaStrings {
     'masterdns.needsText':
         'تا متنی که نوا بتواند بخواند وارد نشود، ذخیره فعال نمی‌شود.',
     // Psiphon. هر اسم لاتین داخل جداکننده‌های دوسویه است.
+    'psiphon.add': 'افزودن اتصال \u2066Psiphon\u2069',
+    'psiphon.addSub': 'سروری وارد نمی‌کنید. \u2066Psiphon\u2069 خودش سرور پیدا می‌کند.',
     'psiphon.title': 'اتصال \u2066Psiphon\u2069',
     'psiphon.editTitle': 'ویرایش اتصال \u2066Psiphon\u2069',
     'psiphon.intro':

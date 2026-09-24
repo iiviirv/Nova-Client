@@ -30,6 +30,7 @@ import '../vps/connect_vps_screen.dart';
 import '../vps/vps_controller.dart';
 import 'aether_editor_screen.dart';
 import 'masterdns_editor_screen.dart';
+import 'psiphon_editor_screen.dart';
 import 'node_list_screen.dart';
 
 /// Probe every profile once per app launch. [ServersBody] exists in both the
@@ -277,6 +278,13 @@ class _ServersBodyState extends State<ServersBody> {
     if (p.kind == ProxyKind.masterdns) {
       await Navigator.of(context).push<void>(MaterialPageRoute<void>(
           builder: (_) => MasterDnsEditorScreen(existing: p)));
+      return;
+    }
+    // And Psiphon: its link records a mode, not an address, so editing it as
+    // text would mean editing a word that has exactly two legal values.
+    if (p.kind == ProxyKind.psiphon) {
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+          builder: (_) => PsiphonEditorScreen(existing: p)));
       return;
     }
     final bool isSub = p.isSubscription;
@@ -1301,6 +1309,21 @@ Future<void> showAddConfigSheet(BuildContext context) async {
                   await Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                         builder: (_) => const MasterDnsEditorScreen()),
+                  );
+                },
+              ),
+              // Psiphon asks for nothing at all: it finds its own servers, so
+              // the entry exists to make a connection, not to collect one.
+              _AddOption(
+                icon: Icons.public_rounded,
+                color: nova.star,
+                title: s.psiphonAdd,
+                subtitle: s.psiphonAddSub,
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const PsiphonEditorScreen()),
                   );
                 },
               ),
