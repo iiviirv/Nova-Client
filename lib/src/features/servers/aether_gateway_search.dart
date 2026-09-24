@@ -176,10 +176,22 @@ class AetherCoreSearch implements AetherGatewaySearch {
     // simply never returns, so waiting the full search budget spends ninety
     // seconds to learn something knowable in fifteen. The same log shows that:
     // 90348ms, cancelled, having never got past this step.
-    final AetherJobStatus opened = await _awaitWithin(
-        core,
-        core.identityOpen(options, base: '${dir.path}/aether'),
-        identityBudget);
+    // Say what is happening rather than going quiet. Past the quick path the
+    // core is working through camouflaged routes, which takes minutes, and a
+    // silent wait that long is indistinguishable from a hang.
+    final Timer slow = Timer(identityQuickPath, () {
+      _log('This network is not answering the usual Cloudflare registration. '
+          'Trying camouflaged routes instead, which can take a few minutes.');
+    });
+    final AetherJobStatus opened;
+    try {
+      opened = await _awaitWithin(
+          core,
+          core.identityOpen(options, base: '${dir.path}/aether'),
+          identityBudget);
+    } finally {
+      slow.cancel();
+    }
     if (opened.state != AetherJobState.done) {
       _log(
           'identity failed after ${idClock.elapsedMilliseconds}ms: '
@@ -194,10 +206,11 @@ class AetherCoreSearch implements AetherGatewaySearch {
       return AetherFindResult(
           endpoint: null,
           error: idClock.elapsed >= identityBudget
-              ? 'This network is blocking the Cloudflare registration WARP '
-                  'needs before it can connect. Connect once on another '
-                  'network, mobile data for example, and this one will work '
-                  'afterwards: the registration is saved and reused.'
+              ? 'This network blocks the Cloudflare registration WARP needs, '
+                  'and the camouflaged routes did not get through either. '
+                  'Connecting once on another network, mobile data for '
+                  'example, registers this device for good: the registration '
+                  'is saved and reused everywhere afterwards.'
               : (opened.error ?? 'the WARP identity could not be opened'),
           attempts: 0,
           rejected: const <String>[]);
@@ -481,9 +494,22 @@ class AetherCoreSearch implements AetherGatewaySearch {
   /// Polls a started job to completion. A start reply that is not ok never had
   /// a job to poll, so it is turned into a failed status rather than polled.
   /// How long registration may take before the network is judged to be
-  /// blocking it. Generous against the sub-two-second answers a working
-  /// network gives, and far short of the search budget.
-  static const Duration identityBudget = Duration(seconds: 15);
+  /// blocking it.
+  ///
+  /// Long on purpose, and this was got wrong once. Registration is not one
+  /// call. The direct one answers in about a second on a working network, and
+  /// when a network blocks it the core retries over a camouflaged route:
+  /// random Cloudflare edge addresses with no DNS lookup, a split client hello
+  /// and four TLS fingerprints, up to twenty attempts each allowed twenty nine
+  /// seconds. That legitimately runs for minutes, and it is the only thing
+  /// that can succeed on a network which blocks the direct call, so cutting it
+  /// short converts "slow but works" into "never works". A field log shows it
+  /// still running when a ninety second cap stopped it.
+  static const Duration identityBudget = Duration(minutes: 3);
+
+  /// When to tell the user the quick path has failed and something slower is
+  /// running. A working network is registered well inside this.
+  static const Duration identityQuickPath = Duration(seconds: 8);
 
   /// [_await] with a deadline. Cancels the job so the core is not left holding
   /// a request that will never answer.

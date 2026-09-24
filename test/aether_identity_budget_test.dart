@@ -21,19 +21,26 @@ import 'package:nova_client/src/features/servers/aether_gateway_search.dart';
 /// short budget, since it either answers in under two seconds or never, and
 /// the failure says what actually failed and what to do about it.
 void main() {
-  test('registration is judged in seconds, not in the search budget', () {
-    expect(AetherCoreSearch.identityBudget.inSeconds, lessThanOrEqualTo(30),
-        reason: 'a blocked network gave no answer in 90 seconds, and a working '
-            'one answers in about one');
-    expect(AetherCoreSearch.identityBudget.inSeconds, greaterThanOrEqualTo(5),
-        reason: 'working networks were measured at 501ms and 1508ms, so the '
-            'budget must leave generous room above that');
+  test('registration is given long enough for the camouflaged route', () {
+    // The core does not make one call. When the direct one is blocked it
+    // retries over random Cloudflare edge addresses with a split client hello
+    // and four TLS fingerprints, up to twenty attempts allowed twenty nine
+    // seconds each. That is the only thing that can succeed on a network which
+    // blocks the direct call, so the budget has to cover it. A first attempt
+    // at this fix used fifteen seconds, which would have killed the workaround
+    // before it started.
+    expect(AetherCoreSearch.identityBudget,
+        greaterThanOrEqualTo(const Duration(minutes: 2)),
+        reason: 'shorter than this cuts off the only route that can work');
   });
 
-  test('it is far shorter than the search it precedes', () {
-    // The search cap is 90 seconds. Spending all of it on a step that cannot
-    // succeed is the bug this fixes.
-    expect(AetherCoreSearch.identityBudget,
-        lessThan(const Duration(seconds: 90)));
+  test('the user is told before the silence gets long', () {
+    expect(AetherCoreSearch.identityQuickPath,
+        lessThan(const Duration(seconds: 30)),
+        reason: 'a working network registers in about a second, so past a few '
+            'seconds something slower is running and saying so is the '
+            'difference between a wait and an apparent hang');
+    expect(AetherCoreSearch.identityQuickPath,
+        lessThan(AetherCoreSearch.identityBudget));
   });
 }

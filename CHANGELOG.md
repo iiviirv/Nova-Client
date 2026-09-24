@@ -10,6 +10,11 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 172: on a network that blocks the Cloudflare registration, Nova now
+  gives the core's camouflaged route the minutes it needs instead of stopping
+  it early, and says what it is doing while it works. That route uses random
+  Cloudflare edge addresses with a split client hello, so on many networks it
+  gets through without changing connection at all.
 - Build 171: when a network blocks the Cloudflare registration WARP makes
   before it can connect, Nova now says so within seconds and tells you the
   remedy, instead of spending 90 seconds and reporting that no gateway was
