@@ -158,7 +158,9 @@ void main() {
     await _save(tester);
 
     expect(_saved, hasLength(1));
-    expect(_saved.single.name, 'Psiphon');
+    expect(_saved.single.name, 'Psiphon Direct',
+        reason: 'the default name says which shape it is, so a list of them '
+            'is tellable apart');
     expect(PsiphonConfig.modeFromLink(_saved.single.uri), PsiphonMode.direct);
   });
 

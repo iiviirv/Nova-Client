@@ -117,10 +117,17 @@ void main() {
       });
       final result = search.run(o, (_) {});
       await tester.pump(const Duration(seconds: 100));
-      expect(first.stopped, isFalse);
+      // These are capped now, like MASQUE, because a WireGuard search used to
+      // run until the core gave up: a tester measured three and a half minutes
+      // and stopped it by hand. Being capped is not the same as falling back,
+      // and what this test is about is that no second search is started.
+      expect(first.stopped, isTrue,
+          reason: 'past the budget the search is given up on');
       first.done.complete(failed);
       await result;
-      expect(calls, 1);
+      expect(calls, 1,
+          reason: 'these protocols have nowhere to fall back to, so there must '
+              'be no second search');
     }
   });
   testWidgets('an early failure starts fallback without wasting 90 seconds',

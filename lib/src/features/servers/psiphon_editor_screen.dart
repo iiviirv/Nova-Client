@@ -74,9 +74,13 @@ class _PsiphonEditorScreenState extends State<PsiphonEditorScreen> {
     super.dispose();
   }
 
+  /// The two shapes behave differently enough that a list of profiles all
+  /// called "Psiphon" tells the user nothing. A tester asked for the mode in
+  /// the name so they can tell them apart at a glance.
   String get _nameOrDefault {
     final String n = _name.text.trim();
-    return n.isEmpty ? 'Psiphon' : n;
+    if (n.isNotEmpty) return n;
+    return _mode == PsiphonMode.throughAether ? 'Psiphon WARP' : 'Psiphon Direct';
   }
 
   void _save() {

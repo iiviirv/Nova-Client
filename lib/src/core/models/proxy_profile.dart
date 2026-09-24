@@ -69,6 +69,14 @@ extension ProxyProfileBadge on ProxyProfile {
   /// subscription's node list. A config that identifies no version, and every
   /// other protocol, is just the protocol name.
   String get badgeLabel {
+    // A chained Psiphon runs on two cores, and which ones it uses is not
+    // guessable from the name. A tester asked to see Aether named alongside
+    // it. This rides on the existing single badge rather than adding a second
+    // chip to every row, the way AmneziaWG already appends its version.
+    if (kind == ProxyKind.psiphon) {
+      final bool chained = uri.trim().toLowerCase().contains('aether');
+      return chained ? '${kind.label} + Aether' : kind.label;
+    }
     if (kind != ProxyKind.awg) return kind.label;
     final String? v = awgVersionLabel(uri.isNotEmpty ? uri : subscriptionUrl);
     return v == null ? kind.label : '${kind.label} ver $v';
@@ -376,7 +384,7 @@ const String kFreePsiphonId = 'nova-free-psiphon';
 
 ProxyProfile buildFreePsiphonProfile() => ProxyProfile(
       id: kFreePsiphonId,
-      name: 'Psiphon',
+      name: 'Psiphon WARP',
       kind: ProxyKind.psiphon,
       uri: 'psiphon://aether',
     );

@@ -10,6 +10,13 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 169: WireGuard and Gool never try fragmentation. It is a MASQUE remedy,
+  and on networks that block fragmented hellos it turned working protocols into
+  failing ones. Every gateway search is also given up on after 90 seconds
+  instead of running until the core stops: one was measured at three and a half
+  minutes. MASQUE still gets 90 seconds on HTTP/3 and 90 more on HTTP/2 with a
+  split hello. Psiphon profiles are named by shape, Psiphon WARP and Psiphon
+  Direct, and a chained one names both cores on its badge.
 - Build 168: Psiphon appears in Free as a ready-made profile that runs through
   WARP, and every Psiphon connection you make lives in Free too. Connecting it
   with no WARP tunnel up works down WireGuard, then Gool, then MASQUE until one

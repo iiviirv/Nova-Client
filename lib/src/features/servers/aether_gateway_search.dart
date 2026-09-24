@@ -563,20 +563,30 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
     final int generation = ++_generation;
     final bool eligible = options.mode == AetherMode.masque &&
         (options.transport != AetherTransport.h2 || !options.fragment);
+    // WireGuard and Gool never try fragmentation. It is a MASQUE remedy: some
+    // Iranian networks block fragmented hellos outright and others pass only
+    // those, so applying it where it was never needed turns a working protocol
+    // into a failing one. A tester watched exactly that happen.
+    final AetherOptions effective = options.mode == AetherMode.masque
+        ? options
+        : options.copyWith(fragment: false);
     final AetherGatewaySearch first = _active = _createSearch();
     bool timedOut = false;
-    final Timer? timer = eligible
-        ? Timer(fallbackAfter, () {
-            timedOut = true;
-            first.cancel();
-          })
-        : null;
+    // Every mode is capped, not only the one that has somewhere to fall back
+    // to. Before this a WireGuard search ran until the core gave up: a tester
+    // watched one go three and a half minutes and stopped it by hand. Ninety
+    // seconds is enough for WireGuard and Gool, which normally answer in tens
+    // of seconds, and it is the point where MASQUE switches transport.
+    final Timer timer = Timer(fallbackAfter, () {
+      timedOut = true;
+      first.cancel();
+    });
     late AetherFindResult result;
     try {
       result =
-          await first.run(options, onProgress, excludedFirst: excludedFirst);
+          await first.run(effective, onProgress, excludedFirst: excludedFirst);
     } finally {
-      timer?.cancel();
+      timer.cancel();
     }
     if (_cancelled || generation != _generation) {
       return AetherFindResult(
@@ -601,7 +611,18 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
         const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
     // A gateway rejected on QUIC may work over TCP. Do not carry those
     // exclusions into a different transport.
-    final AetherFindResult found = await second.run(fallback, report);
+    //
+    // Capped like the first phase. Ninety seconds on HTTP/3 and ninety on
+    // HTTP/2 with a split hello is what a tester found sufficient; past that
+    // the answer is that this network will not give up a gateway today, and
+    // saying so beats a spinner that never ends.
+    final Timer secondTimer = Timer(fallbackAfter, second.cancel);
+    final AetherFindResult found;
+    try {
+      found = await second.run(fallback, report);
+    } finally {
+      secondTimer.cancel();
+    }
     return AetherFindResult(
         endpoint:
             _cancelled || generation != _generation ? null : found.endpoint,

@@ -6,6 +6,7 @@ import 'package:nova_client/src/core/proxy/psiphon/psiphon_config.dart';
 /// profile by default, and put every Psiphon profile in the Free list however
 /// it was made.
 void main() {
+  _namingAndBadge();
   test('the shipped Psiphon profile rides on WARP, not direct', () {
     final ProxyProfile p = buildFreePsiphonProfile();
     expect(p.kind, ProxyKind.psiphon);
@@ -43,5 +44,34 @@ void main() {
       buildFreePsiphonProfile().id,
     };
     expect(ids, hasLength(4));
+  });
+}
+
+/// A tester asked for the two shapes to be tellable apart: named by mode, and
+/// with the cores they run on visible, since a chained Psiphon uses two.
+void _namingAndBadge() {
+  test('the shipped profile says which shape it is', () {
+    expect(buildFreePsiphonProfile().name, 'Psiphon WARP');
+  });
+
+  test('a chained profile names both cores on its badge', () {
+    final ProxyProfile chained = ProxyProfile(
+        id: 'a',
+        name: 'Psiphon WARP',
+        kind: ProxyKind.psiphon,
+        uri: PsiphonConfig.linkFor(PsiphonMode.throughAether));
+    expect(chained.badgeLabel.toLowerCase(), contains('psiphon'));
+    expect(chained.badgeLabel.toLowerCase(), contains('aether'),
+        reason: 'which cores it runs on is not guessable from the name');
+  });
+
+  test('a direct profile names only Psiphon, because that is all it uses', () {
+    final ProxyProfile direct = ProxyProfile(
+        id: 'b',
+        name: 'Psiphon Direct',
+        kind: ProxyKind.psiphon,
+        uri: PsiphonConfig.linkFor(PsiphonMode.direct));
+    expect(direct.badgeLabel.toLowerCase(), contains('psiphon'));
+    expect(direct.badgeLabel.toLowerCase(), isNot(contains('aether')));
   });
 }
