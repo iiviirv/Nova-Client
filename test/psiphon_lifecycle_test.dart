@@ -57,4 +57,17 @@ void main() {
     const String path = 'lib/src/core/proxy/desktop_proxy_controller.dart';
     expect(source(path), contains('_stopPsiphon();'));
   });
+
+  test('a stop started from the notification also stops the engine', () {
+    // The Android notification action tells the service directly and
+    // disconnect() never runs, so the engine in this app's process would keep
+    // going. A tester saw Nova switch off while the key icon stayed and the
+    // system VPN was still up. The host's state event is the one thing every
+    // stop path produces, so the engine is stopped from there too.
+    final String body = methodBody(
+        'lib/src/core/proxy/singbox_proxy_controller.dart', 'void _onEvent(');
+    expect(body, contains('_stopPsiphon();'),
+        reason: 'the host state event is the only thing every stop path '
+            'produces, so the engine has to be stopped from there');
+  });
 }

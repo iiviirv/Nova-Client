@@ -106,7 +106,7 @@ Future<void> main() async {
       return i == -1 ? kFreeAetherIds.length : i;
     }
     aether.sort((ProxyProfile a, ProxyProfile b) => rank(a).compareTo(rank(b)));
-    return aether.map((ProxyProfile p) => p.uri).toList();
+    return aether;
   };
 
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.

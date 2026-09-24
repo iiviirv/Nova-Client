@@ -812,12 +812,18 @@ class DesktopProxyController extends ProxyController {
           // it carries the Aether config to bring up.
           // See the mobile controller: no saved config is required. Psiphon
           // takes whichever WARP tunnel the user already has.
+          // Prefers a carrier that already has a gateway, so a connection does
+          // not pay for a search it has already paid for once.
+          final List<ProxyProfile> carriers =
+              aetherCarriers?.call() ?? const <ProxyProfile>[];
+          final List<ProxyProfile> ready = carriers
+              .where((ProxyProfile p) =>
+                  AetherConfig.parse(p.uri)?.gateway?.isNotEmpty ?? false)
+              .toList();
           final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
-              aetherCarriers
-                  ?.call()
-                  .where((String l) => l.trim().isNotEmpty)
-                  .firstOrNull
-                  ?.trim();
+              (ready.isNotEmpty ? ready.first : carriers.firstOrNull)
+                  ?.uri
+                  .trim();
           if (via == null) {
             throw 'Psiphon needs a WARP tunnel to go out through, and this '
                 'computer has none set up.';

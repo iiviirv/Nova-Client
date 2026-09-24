@@ -356,6 +356,17 @@ class SingboxProxyController extends ProxyController {
                 reported == ProxyConnectionState.disconnecting);
         if (staleTerminal) return;
         _state = reported;
+        // A stop can begin outside this class: the Android notification's
+        // action tells the service directly, and disconnect() never runs. The
+        // Psiphon engine lives in this app's process, so nothing would stop it,
+        // and a tester saw the consequence: Nova went off but the key icon
+        // stayed and the system VPN was still up, because the engine the
+        // service spawned was still holding on. Whoever started the stop, this
+        // event is the one thing every path produces.
+        if (reported == ProxyConnectionState.disconnected ||
+            reported == ProxyConnectionState.disconnecting) {
+          _stopPsiphon();
+        }
         if (_state != prev) NovaLog.instance.write('State: ${_state.name}');
         // Any settled state clears the connect watchdog.
         if (_state != ProxyConnectionState.connecting) {
@@ -379,8 +390,14 @@ class SingboxProxyController extends ProxyController {
         // Just came up: verify real traffic actually flows. A manually pinned
         // exit fails over to the fastest live server; an auto (subscription)
         // exit whose urltest pool led with a dead node gets one clean rebuild.
+        // A chained Psiphon starts after the host reports connected, so a
+        // probe fired here runs before the engine that carries the traffic
+        // exists. It failed, raised "can't get through", and only then did the
+        // connection come up: the tester saw the warning appear before the app
+        // noticed it was connected. Verification waits for the engine.
         if (_state == ProxyConnectionState.connected &&
-            prev != ProxyConnectionState.connected) {
+            prev != ProxyConnectionState.connected &&
+            _pendingPsiphon == null) {
           if (_active?.isSubscription ?? false) {
             if (_active?.pinnedNode != null) {
               unawaited(_verifyPinnedConnectivity());
@@ -1005,6 +1022,11 @@ class SingboxProxyController extends ProxyController {
       // After Aether: a chained Psiphon goes out through that tunnel and
       // cannot start before it exists.
       await _startPsiphon(afterAether: true);
+      if (_psiphonEngine != null &&
+          _state == ProxyConnectionState.connected) {
+        // Now the traffic has somewhere to go, the check means something.
+        unawaited(_verifyPinnedConnectivity());
+      }
       _armWatchdog();
     } catch (e) {
       // A half-started Aether tunnel is worse than none: sing-box would sit
@@ -1623,29 +1645,28 @@ class SingboxProxyController extends ProxyController {
   /// takes about two minutes to find a gateway where the other two take tens
   /// of seconds.
   Future<String?> _resolveAetherCarrier() async {
-    final List<String> all = (aetherCarriers?.call() ?? const <String>[])
-        .where((String l) => l.trim().isNotEmpty)
-        .toList();
-    for (final String link in all) {
-      final AetherConfig? c = AetherConfig.parse(link);
+    final List<ProxyProfile> all =
+        aetherCarriers?.call() ?? const <ProxyProfile>[];
+    for (final ProxyProfile candidate in all) {
+      final AetherConfig? c = AetherConfig.parse(candidate.uri);
       if (c == null) continue;
-      if (c.gateway?.isNotEmpty ?? false) return link.trim();
+      if (c.gateway?.isNotEmpty ?? false) return candidate.uri.trim();
       // No gateway saved: search for one. This is the slow path and the whole
       // reason the order matters.
       NovaLog.instance.write(
           'Psiphon needs a WARP tunnel; looking for a gateway for '
-          '${c.name}');
+          '${candidate.name}');
       try {
-        final ProxyProfile probe = ProxyProfile(
-          id: 'psiphon-carrier',
-          name: c.name,
-          kind: ProxyKind.aether,
-          uri: link.trim(),
-        );
-        final ProxyProfile? found = await prepareAetherProfile(probe);
+        final ProxyProfile? found = await prepareAetherProfile(candidate);
         if (found != null && found.uri.trim().isNotEmpty) {
           final AetherConfig? got = AetherConfig.parse(found.uri);
-          if (got?.gateway?.isNotEmpty ?? false) return found.uri.trim();
+          if (got?.gateway?.isNotEmpty ?? false) {
+            // Save it to the profile it belongs to. Without this every Psiphon
+            // connection searched again from nothing, paying minutes on a slow
+            // network for an answer it had already found once.
+            await persistProfile?.call(found);
+            return found.uri.trim();
+          }
         }
       } catch (_) {
         // This one has nothing to offer; the next might.

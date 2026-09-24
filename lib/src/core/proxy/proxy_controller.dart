@@ -387,7 +387,11 @@ abstract class ProxyController extends ChangeNotifier {
   /// built-in ones connect. It takes the ones that already exist, preferring
   /// whichever has a verified gateway saved, because that is the one most
   /// likely to come up quickly.
-  List<String> Function()? aetherCarriers;
+  /// Profiles rather than links, so a gateway found while bringing one up can
+  /// be saved back to the profile it belongs to. Returning bare links meant
+  /// every Psiphon connection searched from scratch, which on a slow network
+  /// is minutes the user has already paid once.
+  List<ProxyProfile> Function()? aetherCarriers;
 
   /// When the tunnel last became active, used by the dashboard's uptime timer.
   /// Maintained centrally by observing [state] on every notification so the

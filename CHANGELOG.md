@@ -10,6 +10,12 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 170: a gateway found while bringing up WARP for Psiphon is saved to the
+  profile it belongs to, so the next connection does not search again. Stopping
+  from the Android notification now really stops: the engine runs inside the
+  app, so a stop started outside it left the system VPN up. And the "can't get
+  through" warning no longer appears before the connection has finished coming
+  up, because a chained Psiphon was being judged before its engine existed.
 - Build 169: WireGuard and Gool never try fragmentation. It is a MASQUE remedy,
   and on networks that block fragmented hellos it turned working protocols into
   failing ones. Every gateway search is also given up on after 90 seconds
