@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.27.0 (QA, 2026-09-24)
+## v1.27.0 (2026-09-24)
 
 - Adds Psiphon as a connection type. It needs no server: Psiphon finds its own.
   Two modes, direct, or out through a WARP tunnel Nova brings up first, which
@@ -8,8 +8,9 @@
   refuse Iranian addresses will serve it.
 - Not on iPhone or iPad yet. The engine needs its own process and iOS allows
   none, so it has to be built into the tunnel extension first.
-- This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
-  connection has yet been made through Nova itself on any platform.
+- Tested end to end on Android and macOS, over several rounds in Iran. Windows
+  and Linux run the same code and are built the same way, but nobody has yet
+  connected through Psiphon on either, so treat those two as untested.
 - Build 175: the same registration behaviour now runs on Windows, macOS and
   Linux, not just on phones. On iPhone it is deliberately left alone: there the
   tunnel runs in a separate system process that keeps its own copy of the
