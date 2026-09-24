@@ -642,21 +642,33 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
         : options.copyWith(fragment: false);
     final AetherGatewaySearch first = _active = _createSearch();
     bool timedOut = false;
-    // Every mode is capped, not only the one that has somewhere to fall back
-    // to. Before this a WireGuard search ran until the core gave up: a tester
-    // watched one go three and a half minutes and stopped it by hand. Ninety
-    // seconds is enough for WireGuard and Gool, which normally answer in tens
-    // of seconds, and it is the point where MASQUE switches transport.
-    final Timer timer = Timer(fallbackAfter, () {
-      timedOut = true;
-      first.cancel();
-    });
+    // The cap is on the scan, and it starts when the scan does.
+    //
+    // It used to start here, which put registration inside it. On a network
+    // that blocks the direct registration the core spends minutes working
+    // through camouflaged routes, so a ninety second cap reached in the middle
+    // of that cancelled the one thing that could have succeeded, and the user
+    // was told "cancelled" about a step they had never been shown. Registration
+    // has its own budget in AetherCoreSearch; this one waits for the first sign
+    // that scanning has begun.
+    Timer? timer;
+    void startScanCap() {
+      timer ??= Timer(fallbackAfter, () {
+        timedOut = true;
+        first.cancel();
+      });
+    }
+
+    void watched(AetherSearchProgress p) {
+      startScanCap();
+      onProgress(p);
+    }
     late AetherFindResult result;
     try {
       result =
-          await first.run(effective, onProgress, excludedFirst: excludedFirst);
+          await first.run(effective, watched, excludedFirst: excludedFirst);
     } finally {
-      timer.cancel();
+      timer?.cancel();
     }
     if (_cancelled || generation != _generation) {
       return AetherFindResult(

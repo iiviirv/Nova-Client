@@ -10,6 +10,11 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 173: the 90 second cap applies to the gateway scan, not to
+  registration. It was starting before registration finished, so on a network
+  that blocks it the camouflaged routes were cancelled halfway through and the
+  error read "cancelled" about a step that was never shown. Registration now
+  gets its own time and reports what it is doing.
 - Build 172: on a network that blocks the Cloudflare registration, Nova now
   gives the core's camouflaged route the minutes it needs instead of stopping
   it early, and says what it is doing while it works. That route uses random

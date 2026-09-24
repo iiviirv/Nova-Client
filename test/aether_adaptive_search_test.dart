@@ -15,6 +15,7 @@ class Search implements AetherGatewaySearch {
   final done = Completer<AetherFindResult>();
   AetherOptions? options;
   List<String>? excluded;
+  ValueChanged<AetherSearchProgress>? report;
   bool stopped = false;
   @override
   bool get available => true;
@@ -32,6 +33,7 @@ class Search implements AetherGatewaySearch {
       AetherOptions o, ValueChanged<AetherSearchProgress> p,
       {List<String> excludedFirst = const []}) {
     options = o;
+    report = p;
     excluded = excludedFirst;
     return done.future;
   }
@@ -51,6 +53,11 @@ void main() {
         const AetherOptions(fragmentSize: '20-30', fragmentDelay: '4-8'),
         progress.add,
         excludedFirst: ['1.2.3.4:443']);
+    // The cap is on the scan and starts when the scan reports its first
+    // attempt, so registration can run past it on a network that blocks the
+    // direct call. Start a scan here, which is what this test is about.
+    first.report!(const AetherSearchProgress(
+        attempt: 1, verifying: false, ruledOut: 0));
     await tester.pump(const Duration(seconds: 89));
     expect(first.stopped, isFalse);
     expect(calls, 1);
@@ -117,12 +124,13 @@ void main() {
       });
       final result = search.run(o, (_) {});
       await tester.pump(const Duration(seconds: 100));
-      // These are capped now, like MASQUE, because a WireGuard search used to
-      // run until the core gave up: a tester measured three and a half minutes
-      // and stopped it by hand. Being capped is not the same as falling back,
-      // and what this test is about is that no second search is started.
-      expect(first.stopped, isTrue,
-          reason: 'past the budget the search is given up on');
+      // Not cancelled here: the cap is on the scan and starts when the scan
+      // reports its first attempt, which this stub never does. Registration
+      // must be able to run past it, because on a blocking network the core
+      // spends minutes on camouflaged routes and cancelling that removes the
+      // only step that could have succeeded. What this test is about is that
+      // no second search is started for these protocols.
+      expect(first.stopped, isFalse);
       first.done.complete(failed);
       await result;
       expect(calls, 1,
