@@ -57,6 +57,12 @@ jobs:
           Copy-Item assets/bin/masterdns-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
           Copy-Item assets/bin/LICENSE-masterdns.txt -Destination build/windows/x64/runner/Release/ -Force
 
+      # The Psiphon engine, with its GPL-3.0 notice.
+      - name: Bundle the Psiphon engine next to the app
+        run: |
+          Copy-Item assets/bin/psiphon-windows-amd64.exe -Destination build/windows/x64/runner/Release/ -Force
+          Copy-Item assets/bin/LICENSE-psiphon.txt -Destination build/windows/x64/runner/Release/ -Force
+
       # The Aether core, for WARP exits.
       - name: Bundle aether.dll next to the exe
         run: Copy-Item assets/bin/aether.dll -Destination build/windows/x64/runner/Release/ -Force
@@ -123,6 +129,7 @@ jobs:
             'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
             'sing-box-windows-amd64.exe', 'xray-windows-amd64.exe',
             'masterdns-windows-amd64.exe',
+            'psiphon-windows-amd64.exe',
             'wintun.dll', 'libcronet.dll'
           )
           $missing = $need | Where-Object { -not (Test-Path (Join-Path $dir $_)) }

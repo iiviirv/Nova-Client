@@ -68,6 +68,13 @@ jobs:
           cp assets/bin/masterdns-linux-amd64 build/linux/x64/release/bundle/
           cp assets/bin/LICENSE-masterdns.txt build/linux/x64/release/bundle/
 
+      # The Psiphon engine. Built from a pinned commit by tool/build_psiphon.sh;
+      # GPL-3.0 requires its notice to ship beside the binary.
+      - name: Bundle the Psiphon engine next to the app
+        run: |
+          cp assets/bin/psiphon-linux-amd64 build/linux/x64/release/bundle/
+          cp assets/bin/LICENSE-psiphon.txt build/linux/x64/release/bundle/
+
       # libcronet.so is Chromium's network stack, which the core loads lazily
       # from beside itself for NaiveProxy servers. The Linux core is built with
       # purego (see tool/core/build-desktop.sh) so the Go half cross-compiles
@@ -82,7 +89,7 @@ jobs:
         run: cp assets/bin/libaether.so build/linux/x64/release/bundle/
 
       - name: Make the cores executable
-        run: chmod +x build/linux/x64/release/bundle/sing-box-linux-amd64 build/linux/x64/release/bundle/xray-linux-amd64 build/linux/x64/release/bundle/masterdns-linux-amd64
+        run: chmod +x build/linux/x64/release/bundle/sing-box-linux-amd64 build/linux/x64/release/bundle/xray-linux-amd64 build/linux/x64/release/bundle/masterdns-linux-amd64 build/linux/x64/release/bundle/psiphon-linux-amd64
 
       # "It compiled" is not "it runs", and nobody here has a Linux desktop to
       # find that out on. So the runner proves it: the cores execute, and the
@@ -97,6 +104,7 @@ jobs:
           ./sing-box-linux-amd64 version
           ./xray-linux-amd64 -version | head -2
           ./masterdns-linux-amd64 -version | head -1
+          ./psiphon-linux-amd64 -version | head -1
           echo "--- the app starts and stays up ---"
           sudo apt-get install -y xvfb >/dev/null
           xvfb-run -a ./nova_client > /tmp/nova-run.log 2>&1 &

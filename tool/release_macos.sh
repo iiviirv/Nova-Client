@@ -90,6 +90,20 @@ done
 # MIT requires the notice to ship with the binary.
 cp "$PROJ/assets/bin/LICENSE-masterdns.txt" "$APP/Contents/Resources/LICENSE-masterdns.txt"
 
+# Fourth core, the Psiphon engine. Required for the same reason MasterDNS is:
+# the add menu offers Psiphon and every connect would fail without it. Built by
+# tool/build_psiphon.sh from the pinned commit in that script.
+for a in arm64 amd64; do
+  src="$PROJ/assets/bin/psiphon-macos-$a"
+  if [[ ! -f "$src" ]]; then
+    echo "!! missing $src; run tool/build_psiphon.sh"; exit 1
+  fi
+  cp "$src" "$APP/Contents/Resources/psiphon-macos-$a"
+  echo "psiphon engine bundled ($a): $(ls -lh "$APP/Contents/Resources/psiphon-macos-$a" | awk '{print $5}')"
+done
+# GPL-3.0 requires the notice to ship with the binary.
+cp "$PROJ/assets/bin/LICENSE-psiphon.txt" "$APP/Contents/Resources/LICENSE-psiphon.txt"
+
 echo "--- sign (Developer ID + hardened runtime, inside-out) ---"
 # Sign EVERY nested framework/dylib, not a hardcoded list: a plugin framework
 # (e.g. flutter_secure_storage_macos) left with its build-time signature fails
