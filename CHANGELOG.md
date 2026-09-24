@@ -10,6 +10,11 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 171: when a network blocks the Cloudflare registration WARP makes
+  before it can connect, Nova now says so within seconds and tells you the
+  remedy, instead of spending 90 seconds and reporting that no gateway was
+  found. The registration is made once and reused, so connecting on another
+  network, mobile data for example, makes the blocking one work afterwards.
 - Build 170: a gateway found while bringing up WARP for Psiphon is saved to the
   profile it belongs to, so the next connection does not search again. Stopping
   from the Android notification now really stops: the engine runs inside the

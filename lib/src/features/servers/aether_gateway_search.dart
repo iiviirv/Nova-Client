@@ -168,16 +168,37 @@ class AetherCoreSearch implements AetherGatewaySearch {
     // becomes aether-masque (and aether-masque-lastconn) beside it.
     final Directory dir = await getApplicationSupportDirectory();
     final Stopwatch idClock = Stopwatch()..start();
-    final AetherJobStatus opened = await _await(
-        core, core.identityOpen(options, base: '${dir.path}/aether'));
+    // Registration gets its own, much shorter budget than the search.
+    //
+    // It is one call to Cloudflare and it normally answers in well under two
+    // seconds: a field log shows 501ms and 1508ms on working networks. When a
+    // network blocks it there is no partial progress and no slow path, it
+    // simply never returns, so waiting the full search budget spends ninety
+    // seconds to learn something knowable in fifteen. The same log shows that:
+    // 90348ms, cancelled, having never got past this step.
+    final AetherJobStatus opened = await _awaitWithin(
+        core,
+        core.identityOpen(options, base: '${dir.path}/aether'),
+        identityBudget);
     if (opened.state != AetherJobState.done) {
       _log(
           'identity failed after ${idClock.elapsedMilliseconds}ms: '
           '${AetherSearchLog.scrub(opened.error)}',
           level: NovaLogLevel.error);
+      // Naming the step matters, because the remedy is specific and not
+      // guessable. A registration made on any network is saved and reused
+      // everywhere afterwards, which is why a tester found that connecting
+      // once on mobile data made the blocking Wi-Fi work from then on. Before
+      // this the failure was reported as "no gateway found", which points at
+      // the wrong thing entirely.
       return AetherFindResult(
           endpoint: null,
-          error: opened.error ?? 'the WARP identity could not be opened',
+          error: idClock.elapsed >= identityBudget
+              ? 'This network is blocking the Cloudflare registration WARP '
+                  'needs before it can connect. Connect once on another '
+                  'network, mobile data for example, and this one will work '
+                  'afterwards: the registration is saved and reused.'
+              : (opened.error ?? 'the WARP identity could not be opened'),
           attempts: 0,
           rejected: const <String>[]);
     }
@@ -459,6 +480,29 @@ class AetherCoreSearch implements AetherGatewaySearch {
 
   /// Polls a started job to completion. A start reply that is not ok never had
   /// a job to poll, so it is turned into a failed status rather than polled.
+  /// How long registration may take before the network is judged to be
+  /// blocking it. Generous against the sub-two-second answers a working
+  /// network gives, and far short of the search budget.
+  static const Duration identityBudget = Duration(seconds: 15);
+
+  /// [_await] with a deadline. Cancels the job so the core is not left holding
+  /// a request that will never answer.
+  Future<AetherJobStatus> _awaitWithin(
+      AetherCore core, AetherReply started, Duration budget) async {
+    final int? job = started.ok ? _asInt(started['job']) : null;
+    try {
+      return await _await(core, started).timeout(budget);
+    } on TimeoutException {
+      if (job != null) {
+        try {
+          core.jobCancel(job);
+        } catch (_) {}
+      }
+      return const AetherJobStatus(AetherJobState.failed,
+          error: 'timed out');
+    }
+  }
+
   Future<AetherJobStatus> _await(AetherCore core, AetherReply started) async {
     if (!started.ok) {
       return AetherJobStatus(AetherJobState.failed, error: started.error);
