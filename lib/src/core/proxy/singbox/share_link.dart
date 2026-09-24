@@ -1,5 +1,6 @@
 import '../aether/aether_options.dart';
 import '../masterdns/masterdns_config.dart';
+import '../psiphon/psiphon_config.dart';
 import 'dart:convert';
 
 import 'awg_config.dart';
@@ -61,6 +62,7 @@ ProxyNode? parseShareLink(String raw) {
       'aether' => _parseAether(input),
       // MasterDNS: a DNS tunnel run by its own engine. No server to dial.
       'masterdns' => _parseMasterDns(input),
+      'psiphon' => _parsePsiphon(input),
       // An http(s) proxy link. Gated on userinfo so a plain subscription URL
       // (which never has `user:pass@`) is NOT mistaken for a proxy.
       'http' || 'https' =>
@@ -640,6 +642,23 @@ ProxyNode? _parseMasterDns(String input) {
     port: 0,
     tag: c.name,
     masterDnsConf: input.trim(),
+  );
+}
+
+/// A `psiphon://` link.
+///
+/// There is no address in it. Psiphon supplies its own servers, so the node
+/// carries no server and no port, and the link holds one thing: whether to
+/// dial out through an Aether tunnel. The node exists so the list has a row.
+ProxyNode? _parsePsiphon(String input) {
+  final PsiphonMode? mode = PsiphonConfig.modeFromLink(input);
+  if (mode == null) return null;
+  return ProxyNode(
+    protocol: NodeProtocol.psiphon,
+    server: '',
+    port: 0,
+    tag: mode == PsiphonMode.throughAether ? 'Psiphon via Aether' : 'Psiphon',
+    psiphonConf: input.trim(),
   );
 }
 

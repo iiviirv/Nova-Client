@@ -543,6 +543,61 @@ class SingboxConfig {
     };
   }
 
+  /// sing-box forwarding into the Psiphon engine's local SOCKS proxy.
+  ///
+  /// Same shape as the MasterDNS bridge and for the same reason: the engine is
+  /// a separate process serving loopback, and sing-box is the thing the device
+  /// actually routes through.
+  static Map<String, dynamic> buildPsiphonSocksBridgeMap(
+    int socksPort, {
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? enginePath,
+  }) {
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+      }),
+      'inbounds': _inbounds(options),
+      'outbounds': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': socksPort,
+          'version': '5',
+        },
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      'route': _routeForPsiphon(options, enginePath: enginePath),
+    };
+  }
+
+  static Map<String, dynamic> _routeForPsiphon(SingboxRouteOptions o,
+      {String? enginePath}) {
+    // QUIC is blocked, as it is for MasterDNS. Psiphon's local SOCKS carries
+    // TCP; a UDP association is not something Nova configures, so HTTP/3 would
+    // hang rather than fail cleanly. Blocking it is what makes browsers and
+    // video apps fall back to TCP instead of stalling.
+    final Map<String, dynamic> route = _route(o);
+    if (enginePath != null && enginePath.isNotEmpty) {
+      // The engine's own connections must leave the machine directly. In full
+      // device mode every packet is routed into the tunnel sing-box provides,
+      // and the engine is the thing that tunnel is made of: without this its
+      // dials to Psiphon's servers are routed into itself and nothing ever
+      // connects. This rule goes ahead of sniff and the DNS hijack, or it
+      // never gets a chance to match.
+      (route['rules'] as List<dynamic>).insert(0, <String, dynamic>{
+        'process_path': <String>[enginePath],
+        'outbound': 'direct',
+      });
+      route['find_process'] = true;
+    }
+    return route;
+  }
+
   static Map<String, dynamic> _routeForMasterDns(SingboxRouteOptions o,
       {String? enginePath}) {
     // QUIC stays blocked. The engine's SOCKS proxy carries UDP only to port 53
@@ -1330,6 +1385,7 @@ class SingboxConfig {
       // the gateway itself is that core's business, not the outbound's.
       case NodeProtocol.aether:
       case NodeProtocol.masterdns:
+      case NodeProtocol.psiphon:
         o['version'] = '5';
       case NodeProtocol.vless:
         o['uuid'] = n.uuid;

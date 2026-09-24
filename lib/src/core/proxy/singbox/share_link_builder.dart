@@ -29,6 +29,7 @@ String buildShareLink(ProxyNode node) {
     // rather than being rebuilt from parts and drifting.
     // MasterDNS shares as the link it arrived as, kept whole on the node.
     NodeProtocol.masterdns => node.masterDnsConf ?? '',
+    NodeProtocol.psiphon => node.psiphonConf ?? '',
     NodeProtocol.aether => AetherConfig(
           options: AetherOptions.fromQuery(node.aetherOpts,
               peer: node.server.isEmpty ? null : '${node.server}:${node.port}'),

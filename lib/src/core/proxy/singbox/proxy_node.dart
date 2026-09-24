@@ -52,6 +52,11 @@ enum NodeProtocol {
   /// domain, purely so two configs are told apart and the list has something to
   /// show; the settings live in [ProxyNode.masterDnsConf].
   masterdns,
+
+  /// The Psiphon engine, which like MasterDNS serves a local SOCKS port the
+  /// core forwards into. It carries no server of the user's, so the node has
+  /// nothing to dial and exists only so the list has something to show.
+  psiphon,
 }
 
 extension NodeProtocolName on NodeProtocol {
@@ -75,6 +80,7 @@ extension NodeProtocolName on NodeProtocol {
         // Same reason as Aether: the core forwards into the local port the
         // MasterDNS engine serves.
         NodeProtocol.masterdns => 'socks',
+        NodeProtocol.psiphon => 'socks',
       };
 
   /// UDP-native protocols (QUIC / WireGuard). These carry UDP end to end, so
@@ -132,6 +138,7 @@ extension NodeProtocolName on NodeProtocol {
         NodeProtocol.mieru => 'mieru',
         NodeProtocol.aether => 'Aether',
         NodeProtocol.masterdns => 'MasterDNS',
+        NodeProtocol.psiphon => 'Psiphon',
       };
 }
 
@@ -171,6 +178,7 @@ class ProxyNode {
     this.fragmentMask,
     this.aetherOpts,
     this.masterDnsConf,
+    this.psiphonConf,
   });
 
   /// Build an AmneziaWG node from a raw `awg-quick` `.conf`. The peer endpoint
@@ -267,6 +275,11 @@ class ProxyNode {
   /// and the link re-shares exactly as it arrived.
   final String? masterDnsConf;
 
+  /// Psiphon settings, as the `psiphon://` link that carries them. That link
+  /// holds one thing, whether to dial out through an Aether tunnel, because
+  /// Psiphon supplies its own servers.
+  final String? psiphonConf;
+
   bool get isReality =>
       (realityPublicKey != null && realityPublicKey!.isNotEmpty);
 
@@ -339,6 +352,7 @@ class ProxyNode {
     String? fragmentMask,
     String? aetherOpts,
     String? masterDnsConf,
+    String? psiphonConf,
     String? fingerprint,
     String? awgConf,
   }) {
@@ -374,6 +388,7 @@ class ProxyNode {
       fragmentMask: fragmentMask ?? this.fragmentMask,
       aetherOpts: aetherOpts ?? this.aetherOpts,
       masterDnsConf: masterDnsConf ?? this.masterDnsConf,
+      psiphonConf: psiphonConf ?? this.psiphonConf,
       fingerprint: fingerprint ?? this.fingerprint,
     );
   }

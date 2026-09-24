@@ -138,6 +138,11 @@ Future<NodeProbeResult> _probe(
       // own tests, which is what opening its local port signals.
       return const NodeProbeResult.untestable(
           'MasterDNS is measured by its own engine, not by a probe');
+    case NodeProtocol.psiphon:
+      // Psiphon picks its own servers, so there is no address here to probe.
+      // Whether it works is only known once its engine reports a tunnel.
+      return const NodeProbeResult.untestable(
+          'Psiphon is measured by its own engine, not by a probe');
     case NodeProtocol.awg:
       // A WireGuard handshake initiation is authenticated with the peer's
       // static keys; without completing the noise handshake there is nothing
@@ -486,6 +491,7 @@ List<int>? _requestHeader(ProxyNode n) {
     // No probe header: nothing here dials an Aether gateway directly.
     case NodeProtocol.aether:
     case NodeProtocol.masterdns:
+    case NodeProtocol.psiphon:
       return null;
     case NodeProtocol.vless:
       final Uint8List? uuid = _uuidBytes(n.uuid);
