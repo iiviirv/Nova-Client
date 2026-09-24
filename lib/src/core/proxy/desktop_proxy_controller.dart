@@ -21,6 +21,9 @@ import 'aether/aether_options.dart';
 import 'aether/aether_desktop_routes.dart';
 import 'aether/aether_tunnel.dart';
 import 'masterdns/masterdns_config.dart';
+import 'singbox/share_link.dart';
+import 'psiphon/psiphon_config.dart';
+import 'psiphon/psiphon_engine.dart';
 import 'core_features.dart';
 import 'measure_runner.dart';
 import 'proxy_controller.dart';
@@ -46,6 +49,16 @@ class _PendingMasterDns {
 
   final MasterDnsConfig config;
   final int port;
+}
+
+class _PendingPsiphon {
+  const _PendingPsiphon({required this.mode, required this.port, this.via});
+
+  final PsiphonMode mode;
+  final int port;
+
+  /// The `aether://` config this rides on, for [PsiphonMode.throughAether].
+  final String? via;
 }
 
 /// What [DesktopProxyController._pendingAether] remembers between building the
@@ -148,6 +161,8 @@ class DesktopProxyController extends ProxyController {
   /// with. Null when the connection has nothing to do with MasterDNS.
   Process? _masterDnsProcess;
   _PendingMasterDns? _pendingMasterDns;
+  _PendingPsiphon? _pendingPsiphon;
+  PsiphonEngine? _psiphonEngine;
   bool _masterDnsExited = false;
 
   /// Stable node key -> the panel-given name, rebuilt on every connect, so the
@@ -450,6 +465,11 @@ class DesktopProxyController extends ProxyController {
       }
       // Now, and not before sing-box: see [_pendingAether].
       await _startPendingAether();
+      // After Aether, because a chained Psiphon dials out through that tunnel
+      // and cannot start before it exists. sing-box is already pointed at
+      // Psiphon's port and will fail to reach it until this returns, which is
+      // harmless: it retries, and the first request only waits.
+      await _startPendingPsiphon();
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
       // Auto (subscription) post-connect health check, proxy mode only (a TUN
@@ -777,6 +797,54 @@ class DesktopProxyController extends ProxyController {
             // Only full-device mode routes this process's own packets, so only
             // there does it need excluding. See the bridge for why.
             enginePath: tunMode ? await _ensureMasterDnsBinary() : null);
+      } else if (nodes.length == 1 &&
+          nodes.first.protocol == NodeProtocol.psiphon) {
+        // Psiphon runs as its own engine and serves a local SOCKS port the core
+        // forwards into. Nothing here dials a server: Psiphon finds its own.
+        final String conf = nodes.first.psiphonConf ?? '';
+        final PsiphonMode? mode = PsiphonConfig.modeFromLink(conf);
+        if (mode == null) throw 'This Psiphon config could not be read.';
+        final int port = await AetherTunnel.freeLoopbackPort();
+
+        if (mode == PsiphonMode.throughAether) {
+          // One active profile means the tunnel Psiphon rides on cannot be a
+          // separate connection the user made. This profile brings it up, so
+          // it carries the Aether config to bring up.
+          final String? via = PsiphonConfig.aetherLinkFrom(conf);
+          if (via == null) {
+            throw 'This Psiphon profile is set to run through WARP but has no '
+                'WARP config saved. Open it and choose one.';
+          }
+          final ProxyNode? a = parseShareLink(via);
+          if (a == null || a.protocol != NodeProtocol.aether) {
+            throw 'The WARP config this Psiphon profile runs through could '
+                'not be read.';
+          }
+          if (a.server.isEmpty) {
+            throw 'The WARP config this Psiphon profile runs through has no '
+                'gateway yet. Open it and search for one.';
+          }
+          final int aetherPort = await AetherTunnel.freeLoopbackPort();
+          final Directory support = await getApplicationSupportDirectory();
+          _pendingAether = _PendingAether(
+            options: AetherOptions.fromQuery(a.aetherOpts),
+            endpoint:
+                '${a.server.contains(':') ? '[${a.server}]' : a.server}:${a.port}',
+            identityBase: '${support.path}/aether',
+            socksPort: aetherPort,
+          );
+        }
+
+        _pendingPsiphon = _PendingPsiphon(
+          mode: mode,
+          port: port,
+          via: PsiphonConfig.aetherLinkFrom(conf),
+        );
+        cfg = SingboxConfig.buildPsiphonSocksBridgeMap(port,
+            options: opts,
+            // Only full-device mode routes this process's own packets, so only
+            // there does the engine need excluding. See the bridge for why.
+            enginePath: tunMode ? await _ensurePsiphonBinary() : null);
       } else if (nodes.length == 1) {
         cfg = SingboxConfig.buildMap(nodes.first, options: opts);
       } else {
@@ -1275,6 +1343,85 @@ class DesktopProxyController extends ProxyController {
     _xrayProcess = null;
     _pendingXrayConfig = null;
     _stopMasterDns();
+    _stopPsiphon();
+  }
+
+  // ---- fourth core: Psiphon ----
+
+  String _psiphonAssetName() {
+    final String arch = _arch();
+    if (Platform.isMacOS) return 'psiphon-macos-$arch';
+    if (Platform.isWindows) return 'psiphon-windows-$arch.exe';
+    return 'psiphon-linux-$arch';
+  }
+
+  /// Stages the engine into app-support, as Xray and MasterDNS are. The staged
+  /// path is also what full-device mode excludes by process, so it has to be
+  /// the path the engine actually runs from.
+  Future<String?> _ensurePsiphonBinary() async {
+    final File src = _findBundledCore(_psiphonAssetName());
+    if (!src.existsSync()) return null;
+    final Directory dir = await getApplicationSupportDirectory();
+    final String exe = Platform.isWindows ? 'psiphon.exe' : 'psiphon';
+    final File out = File('${dir.path}/$exe');
+    if (!out.existsSync() || out.lengthSync() != src.lengthSync()) {
+      await src.copy(out.path);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', <String>['+x', out.path]);
+      }
+      await _unquarantine(out.path);
+    }
+    return out.path;
+  }
+
+  Future<void> _startPendingPsiphon() async {
+    final _PendingPsiphon? p = _pendingPsiphon;
+    _pendingPsiphon = null;
+    if (p == null) return;
+
+    final String? bin = await _ensurePsiphonBinary();
+    if (bin == null) {
+      throw 'This build has no Psiphon engine for '
+          '${Platform.operatingSystem} yet.';
+    }
+    final Directory support = await getApplicationSupportDirectory();
+    final Directory state = Directory('${support.path}/psiphon')
+      ..createSync(recursive: true);
+
+    int? upstream;
+    if (p.mode == PsiphonMode.throughAether) {
+      // The tunnel Psiphon rides on is the one started a moment ago. Reading
+      // the port off the live tunnel rather than assuming it means a tunnel
+      // that failed to come up produces a clear error here instead of a
+      // Psiphon that quietly dials direct and hands the user the Iranian exit
+      // they were trying to leave.
+      final int? port = AetherTunnel.live?.socksPort;
+      if (port == null) {
+        throw 'The WARP tunnel this Psiphon profile runs through did not '
+            'start, so there is nothing for it to go out through.';
+      }
+      upstream = port;
+    }
+
+    _psiphonEngine = await PsiphonEngine.start(
+      binary: bin,
+      config: PsiphonConfig(
+        socksPort: p.port,
+        dataDir: state.path,
+        mode: p.mode,
+        upstreamSocksPort: upstream,
+        clientPlatform: Platform.operatingSystem,
+      ),
+      workDir: support,
+      log: (String line) => NovaLog.instance.writeCore('psiphon: $line'),
+    );
+  }
+
+  void _stopPsiphon() {
+    final PsiphonEngine? e = _psiphonEngine;
+    _psiphonEngine = null;
+    _pendingPsiphon = null;
+    unawaited(e?.stop() ?? Future<void>.value());
   }
 
   // ---- third core: MasterDNS ----

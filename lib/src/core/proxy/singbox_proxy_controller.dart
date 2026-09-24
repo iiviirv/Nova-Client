@@ -28,6 +28,9 @@ import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
 import 'masterdns/masterdns_config.dart';
+import 'singbox/share_link.dart';
+import 'psiphon/psiphon_config.dart';
+import 'psiphon/psiphon_engine.dart';
 import 'xray/xray_config.dart';
 
 /// Phase-3 xhttp/Xray path, ON: the Android libbox.aar is the combined
@@ -114,6 +117,17 @@ class _PendingMasterDns {
 
   final MasterDnsConfig config;
   final int port;
+}
+
+class _PendingPsiphon {
+  const _PendingPsiphon({required this.mode, required this.port, this.via});
+
+  final PsiphonMode mode;
+  final int port;
+
+  /// The `psiphon://` link, which for a chained profile also carries the
+  /// `aether://` config the tunnel rides on.
+  final String? via;
 }
 
 /// What [SingboxProxyController._pendingAether] remembers between building the
@@ -238,6 +252,8 @@ class SingboxProxyController extends ProxyController {
   /// process cannot hold two Go runtimes.
   Process? _masterDnsProcess;
   _PendingMasterDns? _pendingMasterDns;
+  _PendingPsiphon? _pendingPsiphon;
+  PsiphonEngine? _psiphonEngine;
   bool _masterDnsExited = false;
 
   /// iOS only: the engine's settings, for the Network Extension to start it.
@@ -971,6 +987,9 @@ class SingboxProxyController extends ProxyController {
       _pendingAetherJson = null;
       _pendingMasterDnsJson = null;
       await _startPendingAether();
+      // After Aether: a chained Psiphon goes out through that tunnel and
+      // cannot start before it exists.
+      await _startPsiphon();
       _armWatchdog();
     } catch (e) {
       // A half-started Aether tunnel is worse than none: sing-box would sit
@@ -980,6 +999,7 @@ class SingboxProxyController extends ProxyController {
       _pendingMasterDnsJson = null;
       await AetherTunnel.stop();
       _stopMasterDns();
+      _stopPsiphon();
       try {
         await _control.invokeMethod<void>('stop');
       } catch (_) {
@@ -1382,6 +1402,15 @@ class SingboxProxyController extends ProxyController {
     // A MasterDNS exit: a DNS tunnel run by its own engine, which serves it as
     // a local SOCKS port for sing-box to forward into.
     _masterDnsActive = false;
+    if (nodes.length == 1 && nodes.first.protocol == NodeProtocol.psiphon) {
+      final String psi = await _buildPsiphonConfig(nodes.first, tuned);
+      if (Platform.isAndroid) {
+        final String base = await _extractRuleSets();
+        return psi.replaceAll(SingboxConfig.ruleSetBaseToken, base);
+      }
+      return psi;
+    }
+
     if (nodes.length == 1 && nodes.first.protocol == NodeProtocol.masterdns) {
       final String mdns = await _buildMasterDnsConfig(nodes.first, tuned);
       if (Platform.isAndroid) {
@@ -1487,6 +1516,122 @@ class SingboxProxyController extends ProxyController {
     }
     return const JsonEncoder.withIndent('  ')
         .convert(SingboxConfig.buildMasterDnsSocksBridgeMap(port, options: o));
+  }
+
+  /// The config for a Psiphon exit, and the engine settings that go with it.
+  ///
+  /// Same shape as [_buildMasterDnsConfig]: the engine serves a local SOCKS
+  /// port and sing-box forwards into it. The app takes itself out of the
+  /// tunnel for the same reason too, and that reason is not obvious. In full
+  /// device mode Android routes every packet from every app into the tunnel,
+  /// including this app's, and the engine runs inside this app. Without the
+  /// exclusion the engine's own dials to Psiphon's servers are routed into the
+  /// tunnel the engine is supposed to be building, and nothing connects.
+  Future<String> _buildPsiphonConfig(
+      ProxyNode node, SingboxRouteOptions options) async {
+    final String conf = node.psiphonConf ?? '';
+    final PsiphonMode? mode = PsiphonConfig.modeFromLink(conf);
+    if (mode == null) {
+      throw StateError('This Psiphon config could not be read.');
+    }
+    final int port = await AetherTunnel.freeLoopbackPort();
+
+    if (mode == PsiphonMode.throughAether) {
+      // Nova has one active profile, so the tunnel Psiphon rides on cannot be
+      // a separate connection the user made. This profile brings it up, and
+      // therefore carries the config to bring up.
+      final String? via = PsiphonConfig.aetherLinkFrom(conf);
+      if (via == null) {
+        throw StateError('This Psiphon profile is set to run through WARP but '
+            'has no WARP config saved. Open it and choose one.');
+      }
+      final ProxyNode? a = parseShareLink(via);
+      if (a == null || a.protocol != NodeProtocol.aether) {
+        throw StateError(
+            'The WARP config this Psiphon profile runs through could not be '
+            'read.');
+      }
+      // Reuses the Aether path already there, so the tunnel is brought up the
+      // same way a plain Aether profile brings it up, gateway checks included.
+      await _buildAetherConfig(a, options);
+    }
+
+    if (Platform.isIOS) {
+      throw StateError(
+          'Psiphon is not available on iPhone or iPad in this build yet.');
+    }
+
+    _pendingPsiphon = _PendingPsiphon(mode: mode, port: port, via: conf);
+
+    SingboxRouteOptions o = options;
+    if (proxyPortProvider?.call() == null) {
+      final List<String> allowed = <String>[
+        for (final String p in o.includePackages)
+          if (p != _selfPackage) p,
+      ];
+      o = allowed.isNotEmpty
+          ? o.copyWith(includePackages: allowed)
+          : o.copyWith(
+              includePackages: const <String>[],
+              excludePackages: <String>{...o.excludePackages, _selfPackage}
+                  .toList(),
+            );
+      o = o.copyWith(
+        mixedInboundPort: o.mixedInboundPort ?? kDefaultLocalProxyPort,
+        tunWithLocalProxy: true,
+      );
+    }
+    return const JsonEncoder.withIndent('  ')
+        .convert(SingboxConfig.buildPsiphonSocksBridgeMap(port, options: o));
+  }
+
+  /// Starts the Psiphon engine and waits until it reports a tunnel.
+  Future<void> _startPsiphon() async {
+    final _PendingPsiphon? p = _pendingPsiphon;
+    _pendingPsiphon = null;
+    if (p == null) return;
+    final String? libDir =
+        await _control.invokeMethod<String>('nativeLibraryDir');
+    final File bin = File('${libDir ?? ''}/libpsiphon.so');
+    if (!bin.existsSync()) {
+      throw StateError('This build has no Psiphon engine for this device.');
+    }
+    final Directory support = await getApplicationSupportDirectory();
+    final Directory state = Directory('${support.path}/psiphon')
+      ..createSync(recursive: true);
+
+    int? upstream;
+    if (p.mode == PsiphonMode.throughAether) {
+      // Read off the live tunnel rather than assumed: a tunnel that failed to
+      // come up gives a clear error here instead of a Psiphon that quietly
+      // dials direct and hands back the Iranian exit the user was leaving.
+      final int? port = AetherTunnel.live?.socksPort;
+      if (port == null) {
+        throw StateError('The WARP tunnel this Psiphon profile runs through '
+            'did not start, so there is nothing for it to go out through.');
+      }
+      upstream = port;
+    }
+
+    _psiphonEngine = await PsiphonEngine.start(
+      binary: bin.path,
+      config: PsiphonConfig(
+        socksPort: p.port,
+        dataDir: state.path,
+        mode: p.mode,
+        upstreamSocksPort: upstream,
+        clientPlatform: Platform.operatingSystem,
+      ),
+      workDir: support,
+      log: (String line) => NovaLog.instance.writeCore('psiphon: $line'),
+    );
+  }
+
+  void _stopPsiphon() {
+    final PsiphonEngine? e = _psiphonEngine;
+    _psiphonEngine = null;
+    _pendingPsiphon = null;
+    unawaited(e?.stop() ?? Future<void>.value());
   }
 
   /// Starts the MasterDNS engine and waits until it is actually carrying

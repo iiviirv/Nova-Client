@@ -164,8 +164,31 @@ class PsiphonConfig {
   /// mean a profile that stops working when that port is taken.
   static const String scheme = 'psiphon';
 
-  static String linkFor(PsiphonMode mode) =>
-      mode == PsiphonMode.throughAether ? '$scheme://aether' : '$scheme://direct';
+  /// [viaAetherLink] is the `aether://` config the tunnel rides on, carried
+  /// inside the link rather than looked up elsewhere.
+  ///
+  /// Nova has exactly one active profile, so "through Aether" cannot mean an
+  /// Aether profile the user connected separately: that cannot exist at the
+  /// same time as this one. The Psiphon profile brings the tunnel up itself,
+  /// which means it has to know which gateway and settings to use. Keeping
+  /// that inside the link makes the profile self-contained, re-shareable, and
+  /// independent of whatever else is in the user's list.
+  static String linkFor(PsiphonMode mode, {String? viaAetherLink}) {
+    if (mode != PsiphonMode.throughAether) return '$scheme://direct';
+    final String? via = viaAetherLink?.trim();
+    if (via == null || via.isEmpty) return '$scheme://aether';
+    return '$scheme://aether?via=${Uri.encodeQueryComponent(via)}';
+  }
+
+  /// The `aether://` config a chained link rides on, or null when it carries
+  /// none. A chained profile without one cannot bring a tunnel up.
+  static String? aetherLinkFrom(String link) {
+    final Uri? u = Uri.tryParse(link.trim());
+    if (u == null || u.scheme.toLowerCase() != scheme) return null;
+    final String? via = u.queryParameters['via'];
+    if (via == null || via.trim().isEmpty) return null;
+    return via.trim();
+  }
 
   /// The mode a stored link asks for, or null when the link is not one of ours.
   ///
