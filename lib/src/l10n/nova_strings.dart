@@ -249,6 +249,29 @@ class NovaStrings {
   String get masterdnsNeedsResolvers => t('masterdns.needsResolvers');
   String get masterdnsNeedsText => t('masterdns.needsText');
 
+  // ---- Psiphon editor ----
+  //
+  // A Psiphon profile carries no server of the user's, so the whole screen is
+  // the one choice below plus a name.
+  String get psiphonTitle => t('psiphon.title');
+  String get psiphonEditTitle => t('psiphon.editTitle');
+  String get psiphonIntro => t('psiphon.intro');
+  String get psiphonName => t('psiphon.name');
+  String get psiphonNameHint => t('psiphon.nameHint');
+  String get psiphonMode => t('psiphon.mode');
+  String get psiphonDirect => t('psiphon.direct');
+  String get psiphonDirectSub => t('psiphon.directSub');
+  String get psiphonAether => t('psiphon.aether');
+  String get psiphonAetherSub => t('psiphon.aetherSub');
+
+  /// What the chained mode costs, said where it is chosen. It is one connect
+  /// with two layers, so there is nothing for the user to do first, but there
+  /// is more to wait for.
+  String get psiphonAetherSlower => t('psiphon.aetherSlower');
+
+  /// Said before the first connect, not after three minutes of silence.
+  String get psiphonSlow => t('psiphon.slow');
+
   // ---- Radar ----
   /// Short label for a clean IP's latency variance in the results list.
   String get radarJitter => t('radar.jitter');
@@ -1259,6 +1282,32 @@ class NovaStrings {
             'set the method to None.',
     'masterdns.needsResolvers': 'Save waits for at least one resolver.',
     'masterdns.needsText': 'Save waits for a config Nova can read.',
+    // Psiphon. Two sentences per mode at most: the screen is one decision and
+    // the copy has to stay readable at a 2x text scale on a 320dp phone.
+    'psiphon.title': 'Psiphon connection',
+    'psiphon.editTitle': 'Edit Psiphon connection',
+    'psiphon.intro':
+        'Psiphon brings its own servers, so there is nothing to paste here. '
+            'The only thing to choose is how it gets out.',
+    'psiphon.name': 'Name',
+    'psiphon.nameHint': 'Psiphon',
+    'psiphon.mode': 'How it gets out',
+    'psiphon.direct': 'Direct',
+    'psiphon.directSub':
+        'Psiphon finds its own way to its network. Use this when Aether '
+            'cannot get through at all.',
+    'psiphon.aether': 'Through Aether',
+    'psiphon.aetherSub':
+        'Nova brings up a WARP tunnel and sends Psiphon out through it. WARP '
+            'is fast but comes out looking Iranian, and the sites that refuse '
+            'that will serve the exit Psiphon gives.',
+    'psiphon.aetherSlower':
+        'Slower to start than direct: the tunnel comes up first, then Psiphon '
+            'goes out through it.',
+    'psiphon.slow':
+        'Psiphon can take up to about three minutes to find a way in, and '
+            'Nova waits that long before it gives up. A slow start here is '
+            'normal, not a sign it has stopped.',
     'node.bypassAllBlocked':
         'Every server here reads as blocked, which usually means this network '
             'blocks the worker domain. The SNI-block bypass is now on for this '
@@ -2334,6 +2383,33 @@ class NovaStrings {
         'تا دست‌کم یک ریزالور وارد نشود، ذخیره فعال نمی‌شود.',
     'masterdns.needsText':
         'تا متنی که نوا بتواند بخواند وارد نشود، ذخیره فعال نمی‌شود.',
+    // Psiphon. هر اسم لاتین داخل جداکننده‌های دوسویه است.
+    'psiphon.title': 'اتصال \u2066Psiphon\u2069',
+    'psiphon.editTitle': 'ویرایش اتصال \u2066Psiphon\u2069',
+    'psiphon.intro':
+        '\u2066Psiphon\u2069 سرورهای خودش را دارد، پس چیزی برای وارد کردن '
+            'نیست. تنها چیزی که انتخاب می‌کنید این است که از کدام راه بیرون '
+            'برود.',
+    'psiphon.name': 'نام',
+    'psiphon.nameHint': 'Psiphon',
+    'psiphon.mode': 'راه خروج',
+    'psiphon.direct': 'مستقیم',
+    'psiphon.directSub':
+        '\u2066Psiphon\u2069 خودش راهش را به شبکه‌ی خودش پیدا می‌کند. وقتی '
+            '\u2066Aether\u2069 اصلا بالا نمی‌آید، این را انتخاب کنید.',
+    'psiphon.aether': 'از داخل \u2066Aether\u2069',
+    'psiphon.aetherSub':
+        'نوا یک تونل \u2066WARP\u2069 بالا می‌آورد و \u2066Psiphon\u2069 را '
+            'از داخل آن بیرون می‌فرستد. \u2066WARP\u2069 سریع است اما '
+            'خروجی‌اش ایران دیده می‌شود، و سایت‌هایی که آن را نمی‌پذیرند '
+            'خروجی \u2066Psiphon\u2069 را می‌پذیرند.',
+    'psiphon.aetherSlower':
+        'دیرتر از حالت مستقیم وصل می‌شود، چون اول تونل بالا می‌آید و بعد '
+            '\u2066Psiphon\u2069 از داخل آن بیرون می‌رود.',
+    'psiphon.slow':
+        'پیدا کردن راه ورود برای \u2066Psiphon\u2069 تا حدود سه دقیقه طول '
+            'می‌کشد و نوا هم همین‌قدر صبر می‌کند. کند شروع شدن اینجا عادی است، '
+            'نه نشانه‌ی اینکه کار متوقف شده.',
     'node.bypassAllBlocked':
         'همه‌ی سرورهای اینجا مسدود دیده می‌شوند که معمولا یعنی این شبکه دامنه‌ی '
             'ورکر را می‌بندد. دور زدن مسدودی \u2066SNI\u2069 برای این اشتراک '

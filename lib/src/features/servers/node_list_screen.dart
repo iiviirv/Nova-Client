@@ -1642,6 +1642,10 @@ class _ProtoBadge extends StatelessWidget {
         NodeProtocol.awg => nova.success,
         NodeProtocol.aether => nova.violet,
         NodeProtocol.masterdns => nova.indigo,
+        // Added with the Psiphon editor: the enum gained this value when the
+        // core learned Psiphon, and this switch was the one place that was not
+        // updated with it, which the analyzer had been calling an error since.
+        NodeProtocol.psiphon => nova.info,
         NodeProtocol.socks => nova.muted,
         NodeProtocol.http => nova.muted,
         NodeProtocol.naive => nova.info,
