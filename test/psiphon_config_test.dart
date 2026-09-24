@@ -132,4 +132,39 @@ void main() {
           isNot(contains('1081')));
     });
   });
+
+  group('the Aether config a chained profile rides on', () {
+    const String aether = 'aether://188.114.97.3:2408?protocol=wg&scan=balanced';
+
+    test('travels inside the link, so the profile is self-contained', () {
+      final String link =
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
+      expect(PsiphonConfig.modeFromLink(link), PsiphonMode.throughAether);
+      expect(PsiphonConfig.aetherLinkFrom(link), aether,
+          reason: 'Nova has one active profile, so the tunnel this rides on '
+              'cannot be a separate connection the user made; this profile '
+              'has to know which gateway to bring up');
+    });
+
+    test('survives the query characters an aether link contains', () {
+      final String link =
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
+      expect(link, contains('%'), reason: 'the inner link must be encoded');
+      expect(PsiphonConfig.aetherLinkFrom(link), contains('protocol=wg'));
+      expect(PsiphonConfig.aetherLinkFrom(link), contains('scan=balanced'));
+    });
+
+    test('direct mode carries none', () {
+      expect(
+          PsiphonConfig.aetherLinkFrom(
+              PsiphonConfig.linkFor(PsiphonMode.direct, viaAetherLink: aether)),
+          isNull);
+    });
+
+    test('a chained link with no config is readable but carries nothing', () {
+      expect(PsiphonConfig.modeFromLink('psiphon://aether'),
+          PsiphonMode.throughAether);
+      expect(PsiphonConfig.aetherLinkFrom('psiphon://aether'), isNull);
+    });
+  });
 }

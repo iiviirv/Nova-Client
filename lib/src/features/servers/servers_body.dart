@@ -1314,7 +1314,15 @@ Future<void> showAddConfigSheet(BuildContext context) async {
               ),
               // Psiphon asks for nothing at all: it finds its own servers, so
               // the entry exists to make a connection, not to collect one.
-              _AddOption(
+              //
+              // Hidden on iOS, where it cannot work. The engine needs its own
+              // process and iOS allows none, so it has to be compiled into the
+              // Network Extension the way MasterDNS is, and that is not done.
+              // Offering a profile that always fails at connect is worse than
+              // not offering it: the user cannot tell an unfinished feature
+              // from a broken one.
+              if (!Platform.isIOS)
+                _AddOption(
                 icon: Icons.public_rounded,
                 color: nova.star,
                 title: s.psiphonAdd,

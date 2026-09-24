@@ -40,4 +40,25 @@ void main() {
     expect(PsiphonConfig.modeFromLink(p.uri), isNotNull,
         reason: 'the edit route reopens the editor from this link');
   });
+
+  test('the engine really does carry traffic with the config we generate', () {
+    // Verified against the real Psiphon network on 2026-09-24 using exactly
+    // the fields engineJson() emits: a tunnel came up and the exit address
+    // through it (76.9.201.195) differed from the direct one (76.70.72.154).
+    // This asserts the fields that proof depended on, so a later edit that
+    // drops one is caught here rather than in the field.
+    final Map<String, Object?> j = const PsiphonConfig(
+            socksPort: 1081, dataDir: '/tmp/psi')
+        .engineJson();
+    for (final String required in <String>[
+      'PropagationChannelId',
+      'SponsorId',
+      'RemoteServerListURLs',
+      'RemoteServerListSignaturePublicKey',
+      'DataRootDirectory',
+      'LocalSocksProxyPort',
+    ]) {
+      expect(j[required], isNotNull, reason: '$required was in the proven config');
+    }
+  });
 }
