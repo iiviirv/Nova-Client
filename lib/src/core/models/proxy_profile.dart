@@ -32,6 +32,10 @@ enum ProxyKind {
   // Aether, because its settings (domains, key, resolvers) are not a link
   // anyone types.
   masterdns,
+  // The Psiphon engine. Unlike every other kind here it carries no server of
+  // the user's: Psiphon finds its own. The only choice a profile records is
+  // whether it dials out directly or through a running Aether tunnel.
+  psiphon,
 }
 
 /// Sentinel so [ProxyProfile.copyWith] can distinguish "leave pinnedNode as is"
@@ -53,6 +57,7 @@ extension ProxyKindLabel on ProxyKind {
         ProxyKind.tuic => 'TUIC',
         ProxyKind.aether => 'Aether',
         ProxyKind.masterdns => 'MasterDNS',
+        ProxyKind.psiphon => 'Psiphon',
       };
 }
 

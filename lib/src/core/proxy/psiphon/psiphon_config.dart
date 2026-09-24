@@ -157,5 +157,28 @@ class PsiphonConfig {
     };
   }
 
+  /// How a Psiphon profile is stored.
+  ///
+  /// Only the mode is persisted. The local port and the state directory are
+  /// decided at connect time, and writing a port into a saved profile would
+  /// mean a profile that stops working when that port is taken.
+  static const String scheme = 'psiphon';
+
+  static String linkFor(PsiphonMode mode) =>
+      mode == PsiphonMode.throughAether ? '$scheme://aether' : '$scheme://direct';
+
+  /// The mode a stored link asks for, or null when the link is not one of ours.
+  ///
+  /// An unrecognised host is read as direct rather than refused. A profile that
+  /// will not open at all is worse than one that opens in the safer of the two
+  /// modes, and direct is the one that works without a tunnel already running.
+  static PsiphonMode? modeFromLink(String link) {
+    final Uri? u = Uri.tryParse(link.trim());
+    if (u == null || u.scheme.toLowerCase() != scheme) return null;
+    final String where = (u.host.isNotEmpty ? u.host : u.path.replaceAll('/', ''))
+        .toLowerCase();
+    return where == 'aether' ? PsiphonMode.throughAether : PsiphonMode.direct;
+  }
+
   String toJsonText() => const JsonEncoder.withIndent('  ').convert(engineJson());
 }

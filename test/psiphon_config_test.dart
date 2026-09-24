@@ -106,4 +106,30 @@ void main() {
           isNotNull);
     });
   });
+
+  group('how a profile stores it', () {
+    test('the mode round-trips', () {
+      for (final PsiphonMode m in PsiphonMode.values) {
+        expect(PsiphonConfig.modeFromLink(PsiphonConfig.linkFor(m)), m);
+      }
+    });
+
+    test('a link from another scheme is not ours', () {
+      expect(PsiphonConfig.modeFromLink('vless://x@h:443'), isNull);
+      expect(PsiphonConfig.modeFromLink('not a link'), isNull);
+    });
+
+    test('an unrecognised mode opens as direct rather than refusing', () {
+      expect(PsiphonConfig.modeFromLink('psiphon://somethingelse'),
+          PsiphonMode.direct,
+          reason: 'a profile that will not open at all is worse than one that '
+              'opens in the mode that works without a tunnel already running');
+    });
+
+    test('no port is written into the stored link', () {
+      // A saved port is a profile that breaks when that port is taken.
+      expect(PsiphonConfig.linkFor(PsiphonMode.throughAether),
+          isNot(contains('1081')));
+    });
+  });
 }
