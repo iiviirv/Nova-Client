@@ -10,6 +10,10 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 175: the same registration behaviour now runs on Windows, macOS and
+  Linux, not just on phones. On iPhone it is deliberately left alone: there the
+  tunnel runs in a separate system process that keeps its own copy of the
+  registration, so taking one from the app would save it where nothing reads it.
 - Build 174: whenever you are connected through anything that works, a free
   server or your own, Nova quietly takes the Cloudflare registration WARP needs
   if it does not have one yet. The call goes through the tunnel that is already

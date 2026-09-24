@@ -17,6 +17,7 @@ import '../cleanip/clean_ip_store.dart';
 import '../logging/nova_log.dart';
 import '../update/update_checker.dart';
 import '../models/proxy_profile.dart';
+import 'aether/aether_registration.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_desktop_routes.dart';
 import 'aether/aether_tunnel.dart';
@@ -472,6 +473,11 @@ class DesktopProxyController extends ProxyController {
       await _startPendingPsiphon();
       _startTrafficPolling();
       _setState(ProxyConnectionState.connected);
+      // Some tunnel is now carrying traffic, whatever kind. If WARP has never
+      // been registered, take the registration through it: the call that some
+      // networks block goes through the tunnel and succeeds, and is reused
+      // everywhere afterwards. Same hook as the mobile core, same rules.
+      unawaited(AetherRegistration.afterConnect(_active));
       // Auto (subscription) post-connect health check, proxy mode only (a TUN
       // rebuild would re-prompt for admin). Mirrors the mobile core.
       if (!_healing && !tunMode && (_active?.isSubscription ?? false)) {

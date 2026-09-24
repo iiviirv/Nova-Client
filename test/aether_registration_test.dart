@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nova_client/src/core/models/proxy_profile.dart';
 import 'package:nova_client/src/core/proxy/aether/aether_registration.dart';
 
 /// A tester's suggestion, and the clean answer to a problem that had no clean
@@ -65,5 +66,36 @@ void main() {
     File('${dir.path}/masterdns.json').writeAsStringSync('{}');
     File('${dir.path}/aetherish').writeAsStringSync('x');
     expect(AetherRegistration.have(base()), isFalse);
+  });
+
+  group('what afterConnect refuses to do', () {
+    test('iOS is skipped, because the extension owns the path', () {
+      expect(AetherRegistration.ownsRegistration(iOS: true), isFalse);
+      expect(AetherRegistration.ownsRegistration(iOS: false), isTrue);
+    });
+
+    test('an Aether profile is skipped', () {
+      expect(AetherRegistration.isAetherLink('aether://x?mode=wg'), isTrue);
+      expect(AetherRegistration.isAetherLink('  AETHER://x  '), isTrue);
+      expect(AetherRegistration.isAetherLink('vless://x'), isFalse);
+      expect(AetherRegistration.isAetherLink('psiphon://aether'), isFalse);
+      expect(AetherRegistration.isAetherLink(null), isFalse);
+    });
+
+    test('on iOS it reports the skip rather than attempting', () async {
+      final ProxyProfile p = ProxyProfile(
+          id: 'a', name: 'a', kind: ProxyKind.vless, uri: 'vless://x');
+      expect(await AetherRegistration.afterConnect(p, iOS: true),
+          AetherRegistrationSkip.iosExtension);
+      // Same profile, not iOS: the guard is what stopped it, not the profile.
+      expect(await AetherRegistration.afterConnect(p, iOS: false), isNull);
+    });
+
+    test('an Aether profile reports its own skip', () async {
+      final ProxyProfile p = ProxyProfile(
+          id: 'a', name: 'a', kind: ProxyKind.aether, uri: 'aether://x');
+      expect(await AetherRegistration.afterConnect(p, iOS: false),
+          AetherRegistrationSkip.aetherProfile);
+    });
   });
 }

@@ -403,7 +403,7 @@ class SingboxProxyController extends ProxyController {
           // that some networks block goes through the tunnel and succeeds, and
           // the registration is saved and reused everywhere afterwards. Costs
           // one request, and only ever happens once.
-          unawaited(_registerWarpOpportunistically());
+          unawaited(AetherRegistration.afterConnect(_active));
         }
         if (_state == ProxyConnectionState.connected &&
             prev != ProxyConnectionState.connected &&
@@ -1570,24 +1570,6 @@ class SingboxProxyController extends ProxyController {
     }
     return const JsonEncoder.withIndent('  ')
         .convert(SingboxConfig.buildMasterDnsSocksBridgeMap(port, options: o));
-  }
-
-  /// Takes the WARP registration while another tunnel is up, if there is none.
-  ///
-  /// Skipped for Aether profiles: those already register as part of connecting,
-  /// and one is plainly not blocked if it just connected.
-  Future<void> _registerWarpOpportunistically() async {
-    try {
-      if (_isAetherProfile(_active ?? ProxyProfile(
-          id: '', name: '', kind: ProxyKind.vless, uri: ''))) {
-        return;
-      }
-      final Directory support = await getApplicationSupportDirectory();
-      await AetherRegistration.ensure(
-          base: AetherRegistration.baseIn(support));
-    } catch (_) {
-      // Nobody asked for this; a failure is not the user's to see.
-    }
   }
 
   /// The config for a Psiphon exit, and the engine settings that go with it.

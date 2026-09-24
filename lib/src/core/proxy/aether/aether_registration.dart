@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 import '../../logging/nova_log.dart';
+import '../../models/proxy_profile.dart';
 import 'aether_core.dart';
 import 'aether_options.dart';
 import 'aether_protocol.dart';
@@ -21,6 +24,20 @@ import 'aether_protocol.dart';
 ///
 /// This makes the failure self-healing rather than something the user has to
 /// be told about and act on.
+/// Why a connect did not lead to a registration attempt.
+///
+/// Returned rather than kept private so a test can observe the decision. The
+/// first version of this only checked that no file appeared, which passed
+/// whether or not the iOS guard was there, because the path lookup throws in a
+/// test process and the throw is swallowed by design.
+enum AetherRegistrationSkip {
+  /// iOS, where the extension owns the registration path.
+  iosExtension,
+
+  /// An Aether profile, which registers as part of connecting.
+  aetherProfile,
+}
+
 abstract final class AetherRegistration {
   /// The path prefix the core is given. It appends the transport, so this
   /// becomes `aether-wg` and `aether-masque` beside it.
@@ -32,6 +49,44 @@ abstract final class AetherRegistration {
     AetherMode.wg,
     AetherMode.masque,
   ];
+
+  /// Whether a registration taken in this process is one the tunnel will read.
+  ///
+  /// False on iOS, and this is not a limitation to route around here. There
+  /// the tunnel belongs to the Network Extension, and the extension builds the
+  /// identity path from its own container because only it knows that path (see
+  /// `_buildAetherConfig`). A registration taken in the app process would be
+  /// written into the app's container, where nothing ever looks: the call
+  /// spent, a file saved, and WARP still asking for a registration on the next
+  /// connect. Doing this on iOS means asking the extension to take one, which
+  /// is work on that side of the boundary.
+  ///
+  /// [iOS] exists so this decision can be tested off an iPhone.
+  static bool ownsRegistration({bool? iOS}) => !(iOS ?? Platform.isIOS);
+
+  /// Whether a profile is an Aether one, which is skipped: those register as
+  /// part of connecting, and one that just connected is plainly not blocked.
+  static bool isAetherLink(String? uri) =>
+      (uri ?? '').trim().toLowerCase().startsWith('aether://');
+
+  /// The single entry point both controllers call when a tunnel comes up.
+  ///
+  /// Lives here rather than in each controller so the rules about what to skip
+  /// are written once and tested once, instead of drifting apart between the
+  /// mobile and desktop copies the way `_stopPsiphon` did.
+  /// Returns the reason it did nothing, or null when it made an attempt.
+  static Future<AetherRegistrationSkip?> afterConnect(ProxyProfile? active,
+      {bool? iOS}) async {
+    if (!ownsRegistration(iOS: iOS)) return AetherRegistrationSkip.iosExtension;
+    if (isAetherLink(active?.uri)) return AetherRegistrationSkip.aetherProfile;
+    try {
+      final Directory support = await getApplicationSupportDirectory();
+      await ensure(base: baseIn(support));
+    } catch (_) {
+      // Nobody asked for this; a failure is not the user's to see.
+    }
+    return null;
+  }
 
   /// True when at least one registration already exists, so there is nothing
   /// to do and no reason to spend a call.
