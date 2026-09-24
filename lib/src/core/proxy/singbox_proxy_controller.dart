@@ -263,6 +263,7 @@ class SingboxProxyController extends ProxyController {
   /// True while a full-device MasterDNS connection has taken this app out of
   /// its own tunnel. See [_buildMasterDnsConfig] for why it has to.
   bool _masterDnsActive = false;
+  bool _psiphonActive = false;
 
   /// This app's package, as the tunnel's app lists name it.
   static const String _selfPackage = 'online.novaproxy.nova_client';
@@ -546,9 +547,15 @@ class SingboxProxyController extends ProxyController {
   }
 
   /// True whenever this app is outside its own tunnel, for whatever reason.
-  /// Per-app routing puts it there, and so does a MasterDNS connection; either
-  /// way the app needs the loopback inbound to reach its own tunnel.
-  bool get _selfExcluded => _perAppActive || _masterDnsActive;
+  /// Per-app routing puts it there, and so do MasterDNS and Psiphon, which run
+  /// their engines inside this app and must dial out rather than into the
+  /// tunnel they are building. Either way the app needs the loopback inbound
+  /// to reach its own tunnel, or its own probes go out over the bare network
+  /// and the dashboard reports the user's real address as the exit. A tester
+  /// on a Psiphon over WARP connection saw exactly that: the address shown
+  /// disagreed with what a website reported.
+  bool get _selfExcluded =>
+      _perAppActive || _masterDnsActive || _psiphonActive;
 
   @override
   bool get isProxyMode => proxyPortProvider?.call() != null;
@@ -1416,6 +1423,7 @@ class SingboxProxyController extends ProxyController {
     // A MasterDNS exit: a DNS tunnel run by its own engine, which serves it as
     // a local SOCKS port for sing-box to forward into.
     _masterDnsActive = false;
+    _psiphonActive = false;
     if (nodes.length == 1 && nodes.first.protocol == NodeProtocol.psiphon) {
       final String psi = await _buildPsiphonConfig(nodes.first, tuned);
       if (Platform.isAndroid) {
@@ -1559,7 +1567,7 @@ class SingboxProxyController extends ProxyController {
       // has to work out of the box: it takes whichever WARP tunnel the user
       // already has, preferring one with a gateway already verified.
       final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
-          _firstAetherCarrier();
+          await _resolveAetherCarrier();
       if (via == null) {
         throw StateError('Psiphon needs a WARP tunnel to go out through, and '
             'this device has none set up.');
@@ -1584,6 +1592,7 @@ class SingboxProxyController extends ProxyController {
 
     SingboxRouteOptions o = options;
     if (proxyPortProvider?.call() == null) {
+      _psiphonActive = true;
       final List<String> allowed = <String>[
         for (final String p in o.includePackages)
           if (p != _selfPackage) p,
@@ -1604,13 +1613,43 @@ class SingboxProxyController extends ProxyController {
         .convert(SingboxConfig.buildPsiphonSocksBridgeMap(port, options: o));
   }
 
-  /// The WARP config a chained Psiphon should ride on, or null if there is
-  /// none. Ordered by the app so a verified gateway comes first.
-  String? _firstAetherCarrier() {
-    final List<String>? all = aetherCarriers?.call();
-    if (all == null) return null;
+  /// The WARP config a chained Psiphon should ride on.
+  ///
+  /// Tries each candidate in turn, WireGuard then Gool then MASQUE, and
+  /// returns the first that has a gateway, searching for one where the profile
+  /// has none saved yet. A tester asked for exactly this: rather than refusing
+  /// when nothing is connected, work down the list until something answers,
+  /// then carry Psiphon over it. The order is also fastest first, since MASQUE
+  /// takes about two minutes to find a gateway where the other two take tens
+  /// of seconds.
+  Future<String?> _resolveAetherCarrier() async {
+    final List<String> all = (aetherCarriers?.call() ?? const <String>[])
+        .where((String l) => l.trim().isNotEmpty)
+        .toList();
     for (final String link in all) {
-      if (link.trim().isNotEmpty) return link.trim();
+      final AetherConfig? c = AetherConfig.parse(link);
+      if (c == null) continue;
+      if (c.gateway?.isNotEmpty ?? false) return link.trim();
+      // No gateway saved: search for one. This is the slow path and the whole
+      // reason the order matters.
+      NovaLog.instance.write(
+          'Psiphon needs a WARP tunnel; looking for a gateway for '
+          '${c.name}');
+      try {
+        final ProxyProfile probe = ProxyProfile(
+          id: 'psiphon-carrier',
+          name: c.name,
+          kind: ProxyKind.aether,
+          uri: link.trim(),
+        );
+        final ProxyProfile? found = await prepareAetherProfile(probe);
+        if (found != null && found.uri.trim().isNotEmpty) {
+          final AetherConfig? got = AetherConfig.parse(found.uri);
+          if (got?.gateway?.isNotEmpty ?? false) return found.uri.trim();
+        }
+      } catch (_) {
+        // This one has nothing to offer; the next might.
+      }
     }
     return null;
   }
@@ -1755,6 +1794,7 @@ class SingboxProxyController extends ProxyController {
     _masterDnsProcess = null;
     _pendingMasterDns = null;
     _masterDnsActive = false;
+    _psiphonActive = false;
   }
 
   /// Brings the Aether tunnel up and returns the config that forwards into it.

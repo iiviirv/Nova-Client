@@ -98,6 +98,10 @@ class ProfilesController extends ChangeNotifier {
     for (final profile in buildFreeAetherProfiles()) {
       if (!_profiles.any((p) => p.id == profile.id)) _profiles.add(profile);
     }
+    // After the WARP profiles, because it rides on one of them and reads that
+    // way in the list.
+    final ProxyProfile psiphon = buildFreePsiphonProfile();
+    if (!_profiles.any((p) => p.id == psiphon.id)) _profiles.add(psiphon);
     _persist();
     final String? savedActive = prefs.getString(_kActiveKey);
     _activeId =

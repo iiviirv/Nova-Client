@@ -35,11 +35,11 @@ class Search implements AetherGatewaySearch {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test('four defaults survive reload and keep saved gateways and user profiles', () async {
+  test('five defaults survive reload and keep saved gateways and user profiles', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final c = ProfilesController(prefs: prefs);
-    expect(c.profiles.where((p) => p.isFreeOption), hasLength(4));
+    expect(c.profiles.where((p) => p.isFreeOption), hasLength(5));
     final defaults = c.profiles.where((p) => p.kind == ProxyKind.aether).toList();
     expect(defaults.map((p) => AetherConfig.parse(p.uri)!.options.mode),
       [AetherMode.wg, AetherMode.gool, AetherMode.masque]);
@@ -51,7 +51,7 @@ void main() {
     c.setActive('user-wireguard');
     for (final p in defaults) { c.remove(p.id); }
     final again = ProfilesController(prefs: prefs);
-    expect(again.profiles, hasLength(5));
+    expect(again.profiles, hasLength(6));
     expect(again.profiles.firstWhere((p) => p.id == saved.id).uri, saved.uri);
     expect(again.activeId, 'user-wireguard');
     expect(again.active!.isFreeOption, isTrue);

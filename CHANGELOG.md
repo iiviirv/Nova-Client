@@ -10,6 +10,12 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 168: Psiphon appears in Free as a ready-made profile that runs through
+  WARP, and every Psiphon connection you make lives in Free too. Connecting it
+  with no WARP tunnel up works down WireGuard, then Gool, then MASQUE until one
+  finds a gateway, instead of refusing. And the address on the dashboard is the
+  one you are actually leaving from: it was reading the device's own address,
+  because the app steps outside its tunnel while the engine runs.
 - Build 167: a Psiphon through WARP profile no longer asks you to nominate a
   WARP config. It uses a WARP tunnel you already have, preferring one whose
   gateway is already verified. Requiring a saved config was the wrong model,

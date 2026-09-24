@@ -106,8 +106,12 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
+/// Psiphon profiles the editor created. The built-in one is excluded: Nova
+/// now ships a Psiphon through WARP profile in the Free list, and these tests
+/// are about what the screen saves, not what the app seeds.
 List<ProxyProfile> get _saved => profiles.profiles
-    .where((ProxyProfile p) => p.kind == ProxyKind.psiphon)
+    .where((ProxyProfile p) =>
+        p.kind == ProxyKind.psiphon && p.id != kFreePsiphonId)
     .toList();
 
 Future<void> _tapText(WidgetTester tester, String label) async {

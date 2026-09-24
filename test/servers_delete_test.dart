@@ -141,7 +141,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
     await tester.pumpAndSettle();
     expect(profiles.profiles.any((p) => p.id == 'mine'), isFalse);
-    expect(profiles.profiles.where((p) => p.isBuiltInFreeOption), hasLength(4));
+    expect(profiles.profiles.where((p) => p.isBuiltInFreeOption), hasLength(5));
     await _teardown(tester);
   });
   group('Servers list delete', () {

@@ -26,7 +26,6 @@ import 'src/features/relay/tunnel_controller.dart';
 import 'src/features/settings/settings_controller.dart';
 import 'src/features/vps/vps_controller.dart';
 import 'src/theme/theme_controller.dart';
-import 'src/core/proxy/aether/aether_options.dart';
 import 'src/core/models/proxy_profile.dart';
 
 Future<void> main() async {
@@ -98,14 +97,16 @@ Future<void> main() async {
     final List<ProxyProfile> aether = profiles.profiles
         .where((ProxyProfile p) => p.kind == ProxyKind.aether)
         .toList();
-    bool hasGateway(ProxyProfile p) =>
-        AetherConfig.parse(p.uri)?.gateway?.isNotEmpty ?? false;
-    return <String>[
-      for (final ProxyProfile p in aether)
-        if (hasGateway(p)) p.uri,
-      for (final ProxyProfile p in aether)
-        if (!hasGateway(p)) p.uri,
-    ];
+    // WireGuard, then Gool, then MASQUE, then anything the user added. That is
+    // the order a tester asked for and it is also fastest first: WireGuard and
+    // Gool find a gateway in tens of seconds where MASQUE takes about two
+    // minutes, so trying MASQUE early would make the common case feel broken.
+    int rank(ProxyProfile p) {
+      final int i = kFreeAetherIds.indexOf(p.id);
+      return i == -1 ? kFreeAetherIds.length : i;
+    }
+    aether.sort((ProxyProfile a, ProxyProfile b) => rank(a).compareTo(rank(b)));
+    return aether.map((ProxyProfile p) => p.uri).toList();
   };
 
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.

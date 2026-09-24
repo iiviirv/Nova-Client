@@ -161,9 +161,15 @@ class ProxyProfile {
   /// someone who has just deleted everything else.
   bool get isBuiltIn => id == kFreeProfileId;
 
-  bool get isFreeOption => isBuiltIn || kind == ProxyKind.aether;
+  // Psiphon joins Aether in the Free list however it was made. Neither carries
+  // a server of the user's: Aether builds its own tunnel and Psiphon finds its
+  // own servers, so neither belongs under Subscriptions, which is where things
+  // someone gave you live.
+  bool get isFreeOption =>
+      isBuiltIn || kind == ProxyKind.aether || kind == ProxyKind.psiphon;
 
-  bool get isBuiltInFreeOption => isBuiltIn || kFreeAetherIds.contains(id);
+  bool get isBuiltInFreeOption =>
+      isBuiltIn || kFreeAetherIds.contains(id) || id == kFreePsiphonId;
 
   /// Drop any server from this subscription whose traffic is not encrypted (see
   /// [ProxyNode.isEncrypted]). Set on the free list Nova ships, where the whole
@@ -358,6 +364,22 @@ const List<String> kFreeAetherIds = <String>[
   'nova-free-gool',
   'nova-free-masque',
 ];
+
+/// The built-in Psiphon exit, which rides on whichever WARP tunnel works.
+///
+/// Psiphon does not reach its own network from inside Iran: a tester saw it
+/// sit at zero tunnels for minutes on two carriers. Carried by WARP it
+/// connects, and the exit address is then outside Iran, which is the point.
+/// So the shipped profile is the chained one; a direct profile is something
+/// the user can still make, but it is not what is offered by default.
+const String kFreePsiphonId = 'nova-free-psiphon';
+
+ProxyProfile buildFreePsiphonProfile() => ProxyProfile(
+      id: kFreePsiphonId,
+      name: 'Psiphon',
+      kind: ProxyKind.psiphon,
+      uri: 'psiphon://aether',
+    );
 
 List<ProxyProfile> buildFreeAetherProfiles() => <ProxyProfile>[
       for (final entry in <(String, String, AetherMode)>[
