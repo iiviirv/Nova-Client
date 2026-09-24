@@ -947,6 +947,13 @@ class SingboxProxyController extends ProxyController {
       // that does not wait for it would report success over a tunnel that
       // carries nothing. It sits outside the tunnel either way, so starting it
       // before the device exists changes nothing about where its traffic goes.
+      // Psiphon in direct mode joins MasterDNS here, before the host, for the
+      // reason written above it.
+      await _startPsiphon(afterAether: false);
+      if (seq != _opSeq) {
+        _stopPsiphon();
+        return;
+      }
       if (!await _startMasterDns()) {
         if (seq != _opSeq) return;
         _state = ProxyConnectionState.error;
@@ -955,6 +962,7 @@ class SingboxProxyController extends ProxyController {
       }
       if (seq != _opSeq) {
         _stopMasterDns();
+        _stopPsiphon();
         return;
       }
       _startedSeq = seq;
@@ -989,7 +997,7 @@ class SingboxProxyController extends ProxyController {
       await _startPendingAether();
       // After Aether: a chained Psiphon goes out through that tunnel and
       // cannot start before it exists.
-      await _startPsiphon();
+      await _startPsiphon(afterAether: true);
       _armWatchdog();
     } catch (e) {
       // A half-started Aether tunnel is worse than none: sing-box would sit
@@ -1083,6 +1091,12 @@ class SingboxProxyController extends ProxyController {
     await AetherTunnel.stop();
     // The MasterDNS engine never exits by itself, so it has to be told.
     _stopMasterDns();
+    // Nor does Psiphon, and leaving it running is not merely untidy. It keeps
+    // retrying its servers for as long as the app lives, and on a network
+    // where those servers are blocked that traffic competes with everything
+    // else Nova does next: a field log showed an Aether identity that normally
+    // takes 500ms taking 124 seconds with a stranded engine still running.
+    _stopPsiphon();
     try {
       await _control.invokeMethod<void>('stop');
       // The host answers a stop with a `disconnected` state event (Android
@@ -1586,10 +1600,18 @@ class SingboxProxyController extends ProxyController {
   }
 
   /// Starts the Psiphon engine and waits until it reports a tunnel.
-  Future<void> _startPsiphon() async {
+  ///
+  /// [afterAether] selects the phase. A direct engine starts before the host
+  /// does, the way MasterDNS does and for the same reason: the host reports
+  /// `connected` as soon as its tunnel exists, so an engine started after that
+  /// leaves the app claiming success over a proxy that rejects every request.
+  /// A chained engine cannot start that early, because it dials out through
+  /// the Aether tunnel and that tunnel needs the device the host creates.
+  Future<void> _startPsiphon({required bool afterAether}) async {
     final _PendingPsiphon? p = _pendingPsiphon;
-    _pendingPsiphon = null;
     if (p == null) return;
+    if ((p.mode == PsiphonMode.throughAether) != afterAether) return;
+    _pendingPsiphon = null;
     final String? libDir =
         await _control.invokeMethod<String>('nativeLibraryDir');
     final File bin = File('${libDir ?? ''}/libpsiphon.so');

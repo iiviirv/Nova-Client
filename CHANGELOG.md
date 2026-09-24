@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.27.0 (QA, 2026-09-24)
+
+- Adds Psiphon as a connection type. It needs no server: Psiphon finds its own.
+  Two modes, direct, or out through a WARP tunnel Nova brings up first, which
+  keeps WARP's speed while the exit address sits outside Iran, so services that
+  refuse Iranian addresses will serve it.
+- Not on iPhone or iPad yet. The engine needs its own process and iOS allows
+  none, so it has to be built into the tunnel extension first.
+- This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
+  connection has yet been made through Nova itself on any platform.
+- Build 166 fixes two faults found in build 165. Psiphon was never stopped when
+  you disconnected, so the engine kept retrying its servers for as long as the
+  app was open. On a network where those servers are blocked that starved
+  everything else: WireGuard and Gool stopped finding gateways, because an
+  Aether identity that takes half a second was taking two minutes. And a direct
+  Psiphon connection now waits for a real tunnel before reporting connected,
+  rather than reporting success over a proxy that rejects every request.
+
 ## v1.26.2 (2026-09-23)
 
 - The automatic MASQUE HTTP/2 fallback now runs when you tap Connect on a
