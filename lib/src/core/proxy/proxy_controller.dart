@@ -377,6 +377,18 @@ abstract class ProxyController extends ChangeNotifier {
   /// the change would live only in memory and the UI would look out of sync.
   Future<void> Function(ProxyProfile profile)? persistProfile;
 
+  /// The WARP configs a Psiphon profile may ride on, best first.
+  ///
+  /// Psiphon does not connect from inside Iran on its own: a tester saw it
+  /// reach `count 0` after minutes on two carriers. It only works carried by a
+  /// tunnel that already reaches out. So a chained profile does not ask the
+  /// user to nominate a WARP config, which was the wrong model and produced
+  /// "this profile has no WARP config saved" on a device where all three
+  /// built-in ones connect. It takes the ones that already exist, preferring
+  /// whichever has a verified gateway saved, because that is the one most
+  /// likely to come up quickly.
+  List<String> Function()? aetherCarriers;
+
   /// When the tunnel last became active, used by the dashboard's uptime timer.
   /// Maintained centrally by observing [state] on every notification so the
   /// per-platform implementations don't each have to track it.

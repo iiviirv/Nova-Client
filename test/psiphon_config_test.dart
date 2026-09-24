@@ -9,6 +9,7 @@ import 'package:nova_client/src/core/proxy/psiphon/psiphon_config.dart';
 /// and sanctioned services refuse it; Psiphon alone is slow or blocked when
 /// dialled from inside.
 void main() {
+  _carrierModel();
   PsiphonConfig direct() => const PsiphonConfig(
       socksPort: 1081, dataDir: '/tmp/psi');
 
@@ -165,6 +166,31 @@ void main() {
       expect(PsiphonConfig.modeFromLink('psiphon://aether'),
           PsiphonMode.throughAether);
       expect(PsiphonConfig.aetherLinkFrom('psiphon://aether'), isNull);
+    });
+  });
+}
+
+/// Field report from Iran, build 166: creating a Psiphon through WARP profile
+/// and tapping Connect gave "this Psiphon profile is set to run through WARP
+/// but has no WARP config saved", on a device where all three built-in WARP
+/// profiles connect fine. Requiring the user to nominate one was the wrong
+/// model. Psiphon does not reach its network from inside Iran unaided, so a
+/// chained profile has to work out of the box.
+void _carrierModel() {
+  group('a chained profile does not require a saved WARP config', () {
+    test('a link with no config is still a valid chained profile', () {
+      const String link = 'psiphon://aether';
+      expect(PsiphonConfig.modeFromLink(link), PsiphonMode.throughAether,
+          reason: 'this is what the editor writes, and it must remain usable');
+      expect(PsiphonConfig.aetherLinkFrom(link), isNull,
+          reason: 'the controller supplies the carrier, not the profile');
+    });
+
+    test('a saved config still wins when one is present', () {
+      const String aether = 'aether://188.114.97.3:2408?protocol=wg';
+      final String link =
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
+      expect(PsiphonConfig.aetherLinkFrom(link), aether);
     });
   });
 }

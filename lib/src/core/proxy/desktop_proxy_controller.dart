@@ -810,10 +810,17 @@ class DesktopProxyController extends ProxyController {
           // One active profile means the tunnel Psiphon rides on cannot be a
           // separate connection the user made. This profile brings it up, so
           // it carries the Aether config to bring up.
-          final String? via = PsiphonConfig.aetherLinkFrom(conf);
+          // See the mobile controller: no saved config is required. Psiphon
+          // takes whichever WARP tunnel the user already has.
+          final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
+              aetherCarriers
+                  ?.call()
+                  .where((String l) => l.trim().isNotEmpty)
+                  .firstOrNull
+                  ?.trim();
           if (via == null) {
-            throw 'This Psiphon profile is set to run through WARP but has no '
-                'WARP config saved. Open it and choose one.';
+            throw 'Psiphon needs a WARP tunnel to go out through, and this '
+                'computer has none set up.';
           }
           final ProxyNode? a = parseShareLink(via);
           if (a == null || a.protocol != NodeProtocol.aether) {

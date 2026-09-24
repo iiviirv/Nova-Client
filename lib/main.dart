@@ -26,6 +26,8 @@ import 'src/features/relay/tunnel_controller.dart';
 import 'src/features/settings/settings_controller.dart';
 import 'src/features/vps/vps_controller.dart';
 import 'src/theme/theme_controller.dart';
+import 'src/core/proxy/aether/aether_options.dart';
+import 'src/core/models/proxy_profile.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +90,23 @@ Future<void> main() async {
   // Let the controller persist a profile it mutates itself (clearing a dead
   // pinned exit during auto-failover) so the Servers list reflects the switch.
   proxy.persistProfile = (profile) async => profiles.update(profile);
+
+  // Which WARP tunnels a Psiphon profile may ride on. Ones with a gateway
+  // already verified come first: they connect in seconds instead of minutes,
+  // and Psiphon has its own long wait after that.
+  proxy.aetherCarriers = () {
+    final List<ProxyProfile> aether = profiles.profiles
+        .where((ProxyProfile p) => p.kind == ProxyKind.aether)
+        .toList();
+    bool hasGateway(ProxyProfile p) =>
+        AetherConfig.parse(p.uri)?.gateway?.isNotEmpty ?? false;
+    return <String>[
+      for (final ProxyProfile p in aether)
+        if (hasGateway(p)) p.uri,
+      for (final ProxyProfile p in aether)
+        if (!hasGateway(p)) p.uri,
+    ];
+  };
 
   // Desktop can run a whole-device TUN (elevated) instead of a system proxy.
   if (proxy is DesktopProxyController) {

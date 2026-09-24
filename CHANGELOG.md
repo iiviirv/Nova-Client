@@ -10,6 +10,10 @@
   none, so it has to be built into the tunnel extension first.
 - This is a QA build. Psiphon has been proven to carry traffic on macOS, but no
   connection has yet been made through Nova itself on any platform.
+- Build 167: a Psiphon through WARP profile no longer asks you to nominate a
+  WARP config. It uses a WARP tunnel you already have, preferring one whose
+  gateway is already verified. Requiring a saved config was the wrong model,
+  and it failed on devices where all three built-in WARP profiles connect.
 - Build 166 fixes two faults found in build 165. Psiphon was never stopped when
   you disconnected, so the engine kept retrying its servers for as long as the
   app was open. On a network where those servers are blocked that starved

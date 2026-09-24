@@ -1554,10 +1554,15 @@ class SingboxProxyController extends ProxyController {
       // Nova has one active profile, so the tunnel Psiphon rides on cannot be
       // a separate connection the user made. This profile brings it up, and
       // therefore carries the config to bring up.
-      final String? via = PsiphonConfig.aetherLinkFrom(conf);
+      // A config saved on the profile wins, but none is required. Psiphon does
+      // not reach its network from inside Iran unaided, so a chained profile
+      // has to work out of the box: it takes whichever WARP tunnel the user
+      // already has, preferring one with a gateway already verified.
+      final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
+          _firstAetherCarrier();
       if (via == null) {
-        throw StateError('This Psiphon profile is set to run through WARP but '
-            'has no WARP config saved. Open it and choose one.');
+        throw StateError('Psiphon needs a WARP tunnel to go out through, and '
+            'this device has none set up.');
       }
       final ProxyNode? a = parseShareLink(via);
       if (a == null || a.protocol != NodeProtocol.aether) {
@@ -1597,6 +1602,17 @@ class SingboxProxyController extends ProxyController {
     }
     return const JsonEncoder.withIndent('  ')
         .convert(SingboxConfig.buildPsiphonSocksBridgeMap(port, options: o));
+  }
+
+  /// The WARP config a chained Psiphon should ride on, or null if there is
+  /// none. Ordered by the app so a verified gateway comes first.
+  String? _firstAetherCarrier() {
+    final List<String>? all = aetherCarriers?.call();
+    if (all == null) return null;
+    for (final String link in all) {
+      if (link.trim().isNotEmpty) return link.trim();
+    }
+    return null;
   }
 
   /// Starts the Psiphon engine and waits until it reports a tunnel.
