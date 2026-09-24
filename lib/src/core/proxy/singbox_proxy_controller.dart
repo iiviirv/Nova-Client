@@ -24,6 +24,7 @@ import 'singbox/proxy_node.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
 import 'aether/aether_platform_ready.dart';
+import 'aether/aether_registration.dart';
 import 'aether/aether_options.dart';
 import 'aether/aether_protocol.dart';
 import 'aether/aether_tunnel.dart';
@@ -395,6 +396,15 @@ class SingboxProxyController extends ProxyController {
         // exists. It failed, raised "can't get through", and only then did the
         // connection come up: the tester saw the warning appear before the app
         // noticed it was connected. Verification waits for the engine.
+        if (_state == ProxyConnectionState.connected &&
+            prev != ProxyConnectionState.connected) {
+          // Some tunnel is now carrying traffic, whatever kind. If WARP has
+          // never been registered, take the registration through it: the call
+          // that some networks block goes through the tunnel and succeeds, and
+          // the registration is saved and reused everywhere afterwards. Costs
+          // one request, and only ever happens once.
+          unawaited(_registerWarpOpportunistically());
+        }
         if (_state == ProxyConnectionState.connected &&
             prev != ProxyConnectionState.connected &&
             _pendingPsiphon == null) {
@@ -1560,6 +1570,24 @@ class SingboxProxyController extends ProxyController {
     }
     return const JsonEncoder.withIndent('  ')
         .convert(SingboxConfig.buildMasterDnsSocksBridgeMap(port, options: o));
+  }
+
+  /// Takes the WARP registration while another tunnel is up, if there is none.
+  ///
+  /// Skipped for Aether profiles: those already register as part of connecting,
+  /// and one is plainly not blocked if it just connected.
+  Future<void> _registerWarpOpportunistically() async {
+    try {
+      if (_isAetherProfile(_active ?? ProxyProfile(
+          id: '', name: '', kind: ProxyKind.vless, uri: ''))) {
+        return;
+      }
+      final Directory support = await getApplicationSupportDirectory();
+      await AetherRegistration.ensure(
+          base: AetherRegistration.baseIn(support));
+    } catch (_) {
+      // Nobody asked for this; a failure is not the user's to see.
+    }
   }
 
   /// The config for a Psiphon exit, and the engine settings that go with it.

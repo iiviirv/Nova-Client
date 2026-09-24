@@ -46,3 +46,7 @@ android/app/libs/libxray.aar
 # reason as the iOS one: over GitHub's 100MB limit, rebuilt with
 # tool/core/build-combined-core-ios.sh macos)
 macos/Frameworks/Novacore.xcframework/
+
+# Psiphon engine binaries: built reproducibly by tool/build_psiphon.sh, not committed
+assets/bin/psiphon-*
+android/app/src/main/jniLibs/*/libpsiphon.so
