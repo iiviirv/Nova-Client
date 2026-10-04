@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.28.0 (2026-10-04)
+
+- Adds ECH, which hides the server name by encrypting it instead of splitting
+  it up. Turn it on per server list, next to the existing bypass. It is for
+  Cloudflare servers, which is what the free list and Nova Proxy configs are,
+  on the networks where the old bypass stopped working. It needs no DNS lookup,
+  so it still works where that lookup is blocked.
+- The old bypass is unchanged and still the right choice on networks where it
+  works. The two are separate switches because the two networks need different
+  answers.
+- Credits and licences, under Settings. Nova is built on work other people did
+  and now says so, with each core's licence and a link to its source.
+
 ## v1.27.0 (2026-09-24)
 
 - Adds Psiphon as a connection type. It needs no server: Psiphon finds its own.

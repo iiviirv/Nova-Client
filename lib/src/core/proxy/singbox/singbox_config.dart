@@ -16,6 +16,31 @@ const int kDefaultUrlTestTimeoutSec = 5;
 const int kDefaultUrlTestIntervalSec = 180;
 const int kDefaultUrlTestToleranceMs = 50;
 
+/// Cloudflare's published ECH config list, as a PEM body.
+///
+/// Baked in rather than resolved, deliberately. sing-box's own path fetches
+/// it from the server name's HTTPS DNS record, and that fails in both ways
+/// that matter here: a host with no HTTPS record answers NXDOMAIN and the
+/// connection dies (measured against the free list), and the lookup wants
+/// UDP 53, which is exactly what the MCI firewall now blocks to Cloudflare.
+/// A connection whose whole purpose is surviving that network cannot depend
+/// on a query that network drops.
+///
+/// Every Cloudflare zone publishes this same key: ir.innovio.ae and
+/// cloudflare-ech.com returned byte-identical values on 2026-10-04. Cloudflare
+/// rotates it, so [AetherEchKey.refresh] replaces this at runtime over DoH on
+/// 443 when it can, and this is the floor it falls back to.
+const String kCloudflareEchConfig =
+    'AEX+DQBBrwAgACB3V6T2X69/mCGQn8NhU8fkBpvDcuxha8C+xpuUHFRPGQAEAAEAAQAS'
+    'Y2xvdWRmbGFyZS1lY2guY29tAAA=';
+
+/// The PEM block sing-box wants in `tls.ech.config`.
+List<String> echConfigPem(String base64Config) => <String>[
+      '-----BEGIN ECH CONFIGS-----',
+      base64Config,
+      '-----END ECH CONFIGS-----',
+    ];
+
 class SingboxRouteOptions {
   const SingboxRouteOptions({
     this.mode = SingboxMode.rule,
@@ -37,6 +62,8 @@ class SingboxRouteOptions {
     this.autoOptimizeCarrier = false,
     this.verboseCoreLog = false,
     this.hardenTls = false,
+    this.ech = false,
+    this.echConfig = kCloudflareEchConfig,
     this.hardenPacketFragment = true,
     this.bypassFingerprint,
     this.bypassCipherSuites,
@@ -208,6 +235,14 @@ class SingboxRouteOptions {
   /// it failed to carry traffic, and the user can force it either way.
   final bool hardenTls;
 
+  /// Hide the SNI with Encrypted Client Hello rather than fragmenting it.
+  /// See [ProxyProfile.echSni] for why this exists and when it helps.
+  final bool ech;
+
+  /// The Cloudflare ECH config list to use, so a rotated key can be supplied
+  /// at connect time instead of waiting for an app release.
+  final String echConfig;
+
   /// Whether the SNI-block bypass includes the TCP-segment fragment stage (the
   /// recipe's second stage) on top of the TLS-record split.
   ///
@@ -256,6 +291,8 @@ class SingboxRouteOptions {
     bool? autoOptimizeCarrier,
     bool? verboseCoreLog,
     bool? hardenTls,
+    bool? ech,
+    String? echConfig,
     bool? hardenPacketFragment,
     String? bypassFingerprint,
     List<String>? bypassCipherSuites,
@@ -289,6 +326,8 @@ class SingboxRouteOptions {
         autoOptimizeCarrier: autoOptimizeCarrier ?? this.autoOptimizeCarrier,
         verboseCoreLog: verboseCoreLog ?? this.verboseCoreLog,
         hardenTls: hardenTls ?? this.hardenTls,
+        ech: ech ?? this.ech,
+        echConfig: echConfig ?? this.echConfig,
         hardenPacketFragment:
             hardenPacketFragment ?? this.hardenPacketFragment,
         bypassFingerprint: bypassFingerprint ?? this.bypassFingerprint,
@@ -682,7 +721,9 @@ class SingboxConfig {
               hy2Up: options.hy2UpMbps,
               hy2Down: options.hy2DownMbps,
               fingerprintOverride: options.fingerprintOverride,
-              hardenPacketFragment: options.hardenPacketFragment),
+              hardenPacketFragment: options.hardenPacketFragment,
+              ech: options.ech,
+              echConfig: options.echConfig),
         <String, dynamic>{'type': 'direct', 'tag': 'direct'},
         <String, dynamic>{'type': 'block', 'tag': 'block'},
         // NB: no 'dns' outbound — it was removed in sing-box 1.13 (Android's
@@ -1116,7 +1157,9 @@ class SingboxConfig {
             hy2Up: options.hy2UpMbps,
             hy2Down: options.hy2DownMbps,
             fingerprintOverride: options.fingerprintOverride,
-            hardenPacketFragment: options.hardenPacketFragment));
+            hardenPacketFragment: options.hardenPacketFragment,
+            ech: options.ech,
+            echConfig: options.echConfig));
       }
     }
     return <String, dynamic>{
@@ -1373,6 +1416,8 @@ class SingboxConfig {
     int hy2Down = 0,
     String? fingerprintOverride,
     bool hardenPacketFragment = true,
+    bool ech = false,
+    String echConfig = kCloudflareEchConfig,
   }) {
     final Map<String, dynamic> o = <String, dynamic>{
       'type': n.protocol.singboxType,
@@ -1451,7 +1496,9 @@ class SingboxConfig {
       o['tls'] = _tls(n,
           fragment: fragment,
           fingerprintOverride: fingerprintOverride,
-          hardenPacketFragment: hardenPacketFragment);
+          hardenPacketFragment: hardenPacketFragment,
+          ech: ech,
+          echConfig: echConfig);
     }
     // QUIC-native protocols (Hysteria2/TUIC) carry no ws/grpc transport, and
     // naive's transport is fixed by the protocol (HTTP/2 over TLS): a `type=tcp`
@@ -1477,7 +1524,15 @@ class SingboxConfig {
     bool fragment = true,
     String? fingerprintOverride,
     bool hardenPacketFragment = true,
+    bool ech = false,
+    String echConfig = kCloudflareEchConfig,
   }) {
+    // ECH replaces fragmentation rather than joining it. Fragmentation splits
+    // the handshake so the filter cannot match the name; ECH encrypts the name
+    // so there is nothing to match. Doing both costs the latency of the split
+    // for no added hiding, and on the MCI firewall the split is now what gets
+    // the connection dropped.
+    if (ech) fragment = false;
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
@@ -1612,6 +1667,11 @@ class SingboxConfig {
           'public_key': n.realityPublicKey,
           if (n.realityShortId != null && n.realityShortId!.isNotEmpty)
             'short_id': n.realityShortId,
+        },
+      if (ech)
+        'ech': <String, dynamic>{
+          'enabled': true,
+          'config': echConfigPem(echConfig),
         },
       'utls': <String, dynamic>{'enabled': true, 'fingerprint': fingerprint},
     };

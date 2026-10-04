@@ -632,6 +632,30 @@ class _NodeListScreenState extends State<NodeListScreen> {
     }
   }
 
+  /// Turn ECH on or off by hand.
+  ///
+  /// Separate from the SNI bypass rather than folded into it, because the two
+  /// hide the name in incompatible ways and the right one depends on the
+  /// network: fragmentation splits the handshake and is now fully blocked on
+  /// the MCI firewall, while ECH encrypts the name and still gets through.
+  /// ECH only works where the server's zone accepts it, measured working on
+  /// novaproxy.online and rejected on some other Cloudflare hosts, so it stays
+  /// a decision per profile.
+  Future<void> _setEch(bool on) async {
+    final scope = NovaScope.of(context);
+    final profile = _profile;
+    if (profile == null || profile.echSni == on) return;
+    NovaLog.instance.write(
+        'You turned ECH ${on ? 'on' : 'off'} for "${profile.name}"');
+    final updated = profile.copyWith(echSni: on);
+    scope.profiles.update(updated);
+    if (mounted) setState(() {});
+    if (scope.proxy.activeProfile?.id == profile.id) {
+      scope.proxy.selectProfile(updated);
+      if (scope.proxy.state.isActive) await scope.proxy.reconnect();
+    }
+  }
+
   /// Works out where a node really is, when that is knowable at all.
   ///
   /// The address a panel hands out is frequently a Cloudflare clean IP, which
@@ -865,6 +889,8 @@ class _NodeListScreenState extends State<NodeListScreen> {
           onEdit: _openBypassEditor,
           note: _bypassSuggested ? s.nodeBypassAllBlocked : null,
         ),
+        const Divider(height: 1),
+        _EchRow(on: _profile?.echSni ?? false, onChanged: _setEch),
         const Divider(height: 1),
       ],
       if (_nodes.length > 6) _searchField(s),
@@ -1197,6 +1223,57 @@ class _BypassRow extends StatelessWidget {
             child: Text(note!,
                 style: text.bodySmall?.copyWith(color: nova.warning)),
           ),
+      ],
+    );
+  }
+}
+
+/// The ECH switch. Deliberately plain: one line saying what it is for, because
+/// the people who need it are being told to turn it on, not discovering it.
+class _EchRow extends StatelessWidget {
+  const _EchRow({required this.on, required this.onChanged});
+  final bool on;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = NovaStrings.of(context);
+    final nova = context.nova;
+    final text = Theme.of(context).textTheme;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+            child: Row(
+              children: <Widget>[
+                NovaIconChip(
+                    icon: Icons.lock_person_rounded,
+                    color: nova.cyan,
+                    size: 36,
+                    radius: 10),
+                const SizedBox(width: NovaSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(s.nodeEchTitle,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      Text(s.nodeEchSub,
+                          style: text.labelSmall?.copyWith(color: nova.muted)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: NovaSpace.md),
+          child: Switch(value: on, onChanged: onChanged),
+        ),
       ],
     );
   }

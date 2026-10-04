@@ -395,6 +395,9 @@ class NovaStrings {
   String get creditsSource => t('credits.source');
   String get setCredits => t('set.credits');
 
+  String get nodeEchTitle => t('node.echTitle');
+  String get nodeEchSub => t('node.echSub');
+
   String get setCommunity => t('set.community');
   String get setRouting => t('set.routing');
   String get routeMobileProxy => t('route.mobileProxy');
@@ -1430,6 +1433,8 @@ class NovaStrings {
     'credits.xray': 'The second core, for exits sing-box cannot run.',
     'credits.source': 'Nova itself is open source. You can read it, build it, and check that the app you installed is the app in the repository.',
     'set.credits': 'Credits and licences',
+    'node.echTitle': 'Encrypted Client Hello (ECH)',
+    'node.echSub': 'Hides the server name instead of splitting it. For Cloudflare servers on networks where the bypass stopped working.',
     'set.community': 'Community',
     'route.mobileProxy': 'Proxy mode',
     'route.mobileProxySub':
@@ -2541,6 +2546,8 @@ class NovaStrings {
     'credits.xray': 'هسته دوم، برای خروجی\u200cهایی که sing-box اجرا نمی\u200cکند.',
     'credits.source': 'خود نوا متن\u200cباز است. می\u200cتوانید آن را بخوانید، بسازید و مطمئن شوید نرم\u200cافزاری که نصب کرده\u200cاید همان چیزی است که در مخزن هست.',
     'set.credits': 'سازندگان و مجوزها',
+    'node.echTitle': 'ECH، پنهان\u200cسازی نام سرور',
+    'node.echSub': 'به جای تکه\u200cتکه کردن، نام سرور را رمز می\u200cکند. برای سرورهای کلادفلر روی شبکه\u200cهایی که روش قبلی دیگر کار نمی\u200cکند.',
     'set.community': 'انجمن',
     'route.mobileProxy': 'حالت پروکسی',
     'route.mobileProxySub':

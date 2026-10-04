@@ -684,7 +684,11 @@ class SingboxProxyController extends ProxyController {
       // matters is anything that changes how a node is DIALLED, so it is
       // measured exactly as it would run: the anti-censorship TLS settings.
       final SingboxRouteOptions opts =
-          routeOptions.copyWith(hardenTls: _active?.hardenTls ?? false);
+          routeOptions.copyWith(
+              hardenTls: _active?.hardenTls ?? false,
+              // Measured exactly as it is dialled: a node that only connects
+              // with ECH must be probed with ECH, or the test reports it dead.
+              ech: _active?.echSni ?? false);
       // xhttp nodes run on the Xray core, reached by the measuring core as
       // local socks exits, exactly as the tunnel's auto pool does. Without
       // this they read "not testable" even though they connect.
@@ -1320,6 +1324,7 @@ class SingboxProxyController extends ProxyController {
       // by the user, applied only to clean-IP fronted nodes. The three overrides
       // are the user's edits from the bypass editor (null = field-tested default).
       hardenTls: profile.hardenTls,
+      ech: profile.echSni,
       bypassFingerprint: profile.bypassFingerprint,
       bypassCipherSuites: profile.bypassCipherSuites,
       bypassFragmentMask: profile.bypassFragmentMask,

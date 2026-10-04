@@ -99,6 +99,7 @@ class ProxyProfile {
     this.pinnedName,
     this.fastNodes = const <String>[],
     this.hardenTls = false,
+    this.echSni = false,
     this.encryptedOnly = false,
     this.bypassFingerprint,
     this.bypassCipherSuites,
@@ -199,6 +200,21 @@ class ProxyProfile {
   /// from the node list. Sticky once on, until the user turns it off.
   final bool hardenTls;
 
+  /// Hide the SNI with Encrypted Client Hello instead of fragmenting it.
+  ///
+  /// Measured 2026-10-04, which is why this exists at all: the ClientHello
+  /// fragmentation the SNI bypass has always used is now fully blocked on the
+  /// MCI firewall (Hamrah Aval, Mokhaberat, Shatel), while ECH still gets
+  /// through. ECH does not split the handshake, it encrypts the name, so there
+  /// is nothing for the filter to read in the first place.
+  ///
+  /// Only useful for servers fronted by Cloudflare, which is what Nova's own
+  /// free list and Nova Proxy configs are. Verified against novaproxy.online,
+  /// cloudflare-ech.com and crypto.cloudflare.com, all of which accept it.
+  /// Hosts that do not publish a usable ECH key answer "server rejected ECH",
+  /// so this is per profile rather than global.
+  final bool echSni;
+
   /// User overrides for the SNI-block bypass, edited from the bypass editor so a
   /// tester can re-tune the anti-DPI recipe when filtering changes. Each is null
   /// to use Nova's field-tested default (`unsafe` fingerprint, [kBypassCipherSuites],
@@ -223,6 +239,7 @@ class ProxyProfile {
     Object? pinnedName = _unset,
     List<String>? fastNodes,
     bool? hardenTls,
+    bool? echSni,
     bool? encryptedOnly,
     Object? bypassFingerprint = _unset,
     Object? bypassCipherSuites = _unset,
@@ -246,6 +263,7 @@ class ProxyProfile {
       fastNodes: fastNodes ?? this.fastNodes,
       pinned: pinned ?? this.pinned,
       hardenTls: hardenTls ?? this.hardenTls,
+      echSni: echSni ?? this.echSni,
       encryptedOnly: encryptedOnly ?? this.encryptedOnly,
       bypassFingerprint: bypassFingerprint == _unset
           ? this.bypassFingerprint
@@ -278,6 +296,7 @@ class ProxyProfile {
         'pinnedName': pinnedName,
         'fastNodes': fastNodes,
         'hardenTls': hardenTls,
+        'echSni': echSni,
         'encryptedOnly': encryptedOnly,
         'bypassFingerprint': bypassFingerprint,
         'bypassCipherSuites': bypassCipherSuites,
@@ -310,6 +329,7 @@ class ProxyProfile {
                 .toList() ??
             const <String>[],
         hardenTls: json['hardenTls'] as bool? ?? false,
+        echSni: json['echSni'] as bool? ?? false,
         encryptedOnly: json['encryptedOnly'] as bool? ?? false,
         bypassFingerprint: json['bypassFingerprint'] as String?,
         bypassCipherSuites: (json['bypassCipherSuites'] as List<dynamic>?)
