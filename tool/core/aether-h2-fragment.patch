@@ -1,5 +1,5 @@
 diff --git a/aether/src/api.rs b/aether/src/api.rs
-index fd1f4a6..46bea9d 100644
+index 8296ce9..b6ccc63 100644
 --- a/aether/src/api.rs
 +++ b/aether/src/api.rs
 @@ -352,6 +352,8 @@ impl Endpoint {
@@ -38,7 +38,7 @@ index fd1f4a6..46bea9d 100644
      pub transport: Transport,
      pub socks: SocketAddr,
      pub http: Option<SocketAddr>,
-@@ -460,6 +468,8 @@ impl TunnelSpec {
+@@ -462,6 +470,8 @@ impl TunnelSpec {
      pub fn for_transport(transport: Transport) -> Self {
          Self {
              transport,
@@ -47,16 +47,25 @@ index fd1f4a6..46bea9d 100644
              socks: SocketAddr::from(([127, 0, 0, 1], 1819)),
              http: None,
              ech: None,
-@@ -506,7 +516,7 @@ pub async fn verify_endpoint(
+@@ -512,9 +522,15 @@ pub async fn verify_endpoint(
  ) -> Result<bool> {
      match spec.transport {
          Transport::Masque => {
--            let attempt = async { Ok(crate::quick_verify_masque_peer(identity, peer).await) };
-+            let attempt = async { Ok(crate::quick_verify_masque_peer_with_transport(identity, peer, spec.http2, spec.fragment).await) };
+-            // The check offers the job's ECH key, as its tunnel would.
++            // The check offers the job's ECH key, as its tunnel would, and the job's own
++            // transport settings, which upstream would otherwise read from the environment.
+             let ech = spec.ech.clone();
+-            let attempt = async { Ok(crate::quick_verify_masque_peer(identity, peer, ech).await) };
++            let attempt = async {
++                Ok(crate::quick_verify_masque_peer_with_transport(
++                    identity, peer, spec.http2, spec.fragment, ech,
++                )
++                .await)
++            };
              guard(cancel, attempt).await
          }
          Transport::WireGuard => {
-@@ -548,7 +558,7 @@ pub async fn connect(
+@@ -556,7 +572,7 @@ pub async fn connect(
  
      match spec.transport {
          Transport::Masque => {
@@ -66,7 +75,7 @@ index fd1f4a6..46bea9d 100644
          }
          Transport::WireGuard => {
 diff --git a/aether/src/ffi.rs b/aether/src/ffi.rs
-index c217602..c8d2c50 100644
+index 0f39fb8..a5d122f 100644
 --- a/aether/src/ffi.rs
 +++ b/aether/src/ffi.rs
 @@ -132,7 +132,10 @@ where
@@ -81,7 +90,7 @@ index c217602..c8d2c50 100644
          let reply = match outcome {
              Ok(Ok(value)) => ok_value(value),
              Ok(Err(message)) => error_value(message),
-@@ -212,6 +215,12 @@ struct OpenPayload {
+@@ -226,6 +229,12 @@ struct OpenPayload {
  
  #[derive(serde::Deserialize)]
  struct ScanPayload {
@@ -94,7 +103,7 @@ index c217602..c8d2c50 100644
      #[serde(default)]
      transport: Option<String>,
      #[serde(default)]
-@@ -230,6 +239,12 @@ struct ScanPayload {
+@@ -244,6 +253,12 @@ struct ScanPayload {
  
  #[derive(serde::Deserialize)]
  struct TunnelPayload {
@@ -107,7 +116,7 @@ index c217602..c8d2c50 100644
      peer: String,
      #[serde(default)]
      transport: Option<String>,
-@@ -260,7 +275,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
+@@ -274,7 +289,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
  
  #[no_mangle]
  pub extern "C" fn aether_version() -> *mut c_char {
@@ -116,7 +125,7 @@ index c217602..c8d2c50 100644
  }
  
  #[no_mangle]
-@@ -378,6 +393,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
+@@ -392,6 +407,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
          let transport = transport_of(&payload.transport);
  
          let mut request = api::ScanRequest::for_transport(transport);
@@ -125,7 +134,7 @@ index c217602..c8d2c50 100644
          if let Some(profile) = &payload.profile {
              request = request.with_profile(profile);
          }
-@@ -418,6 +435,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
+@@ -430,6 +447,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
  fn tunnel_spec_of(payload: &TunnelPayload) -> std::result::Result<api::TunnelSpec, String> {
      let transport = transport_of(&payload.transport);
      let mut spec = api::TunnelSpec::for_transport(transport);
@@ -134,8 +143,8 @@ index c217602..c8d2c50 100644
  
      if let Some(profile) = &payload.profile {
          spec = spec.with_profile(profile);
-@@ -790,3 +809,49 @@ mod tests {
-         assert_eq!(reply["ok"], json!(false));
+@@ -868,3 +887,52 @@ mod tests {
+         assert!(peer.recv_from(&mut packet).is_err());
      }
  }
 +
@@ -151,7 +160,10 @@ index c217602..c8d2c50 100644
 +    }
 +    let (size_min, size_max) = range(size.unwrap_or("16-32"), 1, 16384)?;
 +    let (delay_min_ms, delay_max_ms) = range(delay.unwrap_or("2-10"), 0, 1000)?;
-+    Ok(crate::fragment::FragmentConfig { enabled, size_min: size_min as usize, size_max: size_max as usize, delay_min_ms, delay_max_ms })
++    // sni_split is upstream's targeted split, new in v2.3.0. Left off here so
++    // the rebase changes nothing: it is what upstream defaults to without the
++    // env var, and what Nova shipped before the field existed.
++    Ok(crate::fragment::FragmentConfig { enabled, size_min: size_min as usize, size_max: size_max as usize, delay_min_ms, delay_max_ms, sni_split: false })
 +}
 +
 +#[cfg(test)]
@@ -185,11 +197,11 @@ index c217602..c8d2c50 100644
 +    }
 +}
 diff --git a/aether/src/fragment.rs b/aether/src/fragment.rs
-index c411986..03a98f8 100644
+index 49c179a..56ba62f 100644
 --- a/aether/src/fragment.rs
 +++ b/aether/src/fragment.rs
-@@ -183,3 +183,27 @@ where
-         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+@@ -307,3 +307,27 @@ mod tests {
+         assert!(!FragmentConfig::disabled().sni_split);
      }
  }
 +
@@ -208,7 +220,7 @@ index c411986..03a98f8 100644
 +    }
 +    #[tokio::test]
 +    async fn nova_custom_fragment_size_and_delay_affect_writes() {
-+        let cfg = FragmentConfig { enabled:true, size_min:4, size_max:4, delay_min_ms:20, delay_max_ms:20 };
++        let cfg = FragmentConfig { enabled:true, size_min:4, size_max:4, delay_min_ms:20, delay_max_ms:20, sni_split:false };
 +        let mut stream = FragmentingStream::new(Recorder::default(),cfg);
 +        let start = std::time::Instant::now();
 +        stream.write_all(b"abcdefghijkl").await.unwrap();
@@ -217,10 +229,10 @@ index c411986..03a98f8 100644
 +    }
 +}
 diff --git a/aether/src/lib.rs b/aether/src/lib.rs
-index 681e2b9..95831e4 100644
+index 258a77d..4d85f36 100644
 --- a/aether/src/lib.rs
 +++ b/aether/src/lib.rs
-@@ -911,6 +911,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
+@@ -1103,6 +1103,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
              log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip verification)");
              let mode = prober::ScanMode::parse(&mode_str);
              let probe = prober::MasqueProbe {
@@ -229,7 +241,7 @@ index 681e2b9..95831e4 100644
                  sni: consts::CONNECT_SNI.to_string(),
                  authority: quic::default_authority().to_string(),
                  path: quic::default_path().to_string(),
-@@ -1079,6 +1081,8 @@ async fn hunt_masque_peer(
+@@ -1260,6 +1262,8 @@ async fn hunt_masque_peer(
      );
      let mode = prober::ScanMode::parse(mode_str);
      let probe = prober::MasqueProbe {
@@ -238,18 +250,39 @@ index 681e2b9..95831e4 100644
          sni: consts::CONNECT_SNI.to_string(),
          authority: quic::default_authority().to_string(),
          path: quic::default_path().to_string(),
-@@ -1106,6 +1110,10 @@ fn lastconn_path(config_path: &str) -> String {
- }
+@@ -1296,10 +1300,31 @@ fn lastconn_path(config_path: &str) -> String {
  
- async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr) -> bool {
-+    quick_verify_masque_peer_with_transport(identity, peer, masque_h2::enabled(), fragment::FragmentConfig::from_env()).await
+ /// Whether `peer` serves MASQUE, by a quick check on the carrier the session uses, which
+ /// offers `ech`: the session's key, or that of a job of the library.
++///
++/// Nova's patch adds the per-job transport arguments alongside it. Upstream reads the
++/// HTTP/2 switch and the fragment profile from process-wide environment variables, which
++/// cannot differ between two jobs in one process, and Nova runs them in one process.
+ async fn quick_verify_masque_peer(
+     identity: &account::Identity,
+     peer: SocketAddr,
+     ech: Option<Vec<u8>>,
++) -> bool {
++    quick_verify_masque_peer_with_transport(
++        identity,
++        peer,
++        masque_h2::enabled(),
++        fragment::FragmentConfig::from_env(),
++        ech,
++    )
++    .await
 +}
 +
-+async fn quick_verify_masque_peer_with_transport(identity: &account::Identity, peer: SocketAddr, http2: bool, fragment: fragment::FragmentConfig) -> bool {
++async fn quick_verify_masque_peer_with_transport(
++    identity: &account::Identity,
++    peer: SocketAddr,
++    http2: bool,
++    fragment: fragment::FragmentConfig,
++    ech: Option<Vec<u8>>,
+ ) -> bool {
      let vp = quic::VerifyParams {
          peer,
-         sni: consts::CONNECT_SNI.to_string(),
-@@ -1119,8 +1127,9 @@ async fn quick_verify_masque_peer(identity: &account::Identity, peer: SocketAddr
+@@ -1314,8 +1339,9 @@ async fn quick_verify_masque_peer(
          local_ipv4: parse_local_v4(&identity.ipv4),
      };
  
@@ -260,7 +293,7 @@ index 681e2b9..95831e4 100644
              peer: masque_h2::h2_peer(peer),
              sni: consts::CONNECT_SNI.to_string(),
              authority: quic::default_authority().to_string(),
-@@ -1283,6 +1292,7 @@ async fn establish_masque(
+@@ -1492,6 +1518,7 @@ async fn establish_masque(
      peer: SocketAddr,
      ech: Option<Vec<u8>>,
      h2: bool,
@@ -268,7 +301,7 @@ index 681e2b9..95831e4 100644
      mtu: usize,
      datagram: usize,
      version_bait: bool,
-@@ -1319,6 +1329,7 @@ async fn establish_masque(
+@@ -1528,6 +1555,7 @@ async fn establish_masque(
  
      let tunnel_task = if h2 {
          let h2cfg = masque_h2::H2TunnelConfig {
@@ -276,7 +309,7 @@ index 681e2b9..95831e4 100644
              peer,
              sni: consts::CONNECT_SNI.to_string(),
              authority: quic::default_authority().to_string(),
-@@ -1395,7 +1406,10 @@ async fn run_masque_tunnel(
+@@ -1615,7 +1643,10 @@ async fn run_masque_tunnel(
      ech: Option<Vec<u8>>,
      listen: SocketAddr,
  ) -> Result<()> {
@@ -288,7 +321,7 @@ index 681e2b9..95831e4 100644
      let dial = if h2 { masque_h2::h2_peer(peer) } else { peer };
  
      let mut hop = establish_masque(
-@@ -1403,6 +1417,7 @@ async fn run_masque_tunnel(
+@@ -1623,6 +1654,7 @@ async fn run_masque_tunnel(
          dial,
          ech,
          h2,
@@ -296,7 +329,7 @@ index 681e2b9..95831e4 100644
          masque_tunnel_mtu(),
          quic::MAX_DATAGRAM_SIZE,
          true,
-@@ -1562,6 +1577,7 @@ async fn run_masque_in_masque(
+@@ -1889,6 +1921,7 @@ async fn run_masque_in_masque(
          peer,
          ech,
          h2,
@@ -304,7 +337,7 @@ index 681e2b9..95831e4 100644
          outer_mtu,
          quic::MAX_DATAGRAM_SIZE,
          true,
-@@ -1600,6 +1616,7 @@ async fn run_masque_in_masque(
+@@ -1927,6 +1960,7 @@ async fn run_masque_in_masque(
              forwarder,
              None,
              h2,
@@ -312,11 +345,22 @@ index 681e2b9..95831e4 100644
              inner_mtu,
              inner_datagram,
              false,
+@@ -2898,6 +2932,10 @@ async fn run_gool_tunnel(
+         dial,
+         ech,
+         h2,
++        // gool takes its HTTP/2 switch from the environment just above, so its
++        // fragment profile comes from there too. Nova's per-job settings do not
++        // reach this path yet; it is new in v2.3.0 and nothing here sets them.
++        fragment::FragmentConfig::from_env(),
+         masque_tunnel_mtu(),
+         quic::MAX_DATAGRAM_SIZE,
+         true,
 diff --git a/aether/src/masque_h2.rs b/aether/src/masque_h2.rs
-index 66c6343..264339a 100644
+index 1f37a71..4cfc16d 100644
 --- a/aether/src/masque_h2.rs
 +++ b/aether/src/masque_h2.rs
-@@ -69,6 +69,7 @@ fn h2_builder() -> h2::client::Builder {
+@@ -78,6 +78,7 @@ fn h2_builder() -> h2::client::Builder {
  }
  
  pub struct H2TunnelConfig {
@@ -324,18 +368,20 @@ index 66c6343..264339a 100644
      pub peer: SocketAddr,
      pub sni: String,
      pub authority: String,
-@@ -232,7 +233,7 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
-         let tls_config = build_tls(cfg)?;
-         let tcp = dial(cfg.peer).await?;
-         let _ = tcp.set_nodelay(true);
--        let fragment = FragmentingStream::new(tcp, FragmentConfig::from_env());
-+        let fragment = FragmentingStream::new(tcp, cfg.fragment);
-         let tls = tokio_boring::connect(tls_config, &cfg.sni, fragment)
+@@ -281,7 +282,9 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
+     let data_check = data_check_enabled();
+ 
+     let attempt = async {
+-        let tls = connect_tls(cfg, FragmentConfig::from_env()).await?;
++        // The job's fragment profile, not the process-wide one: upstream's
++        // FragmentConfig::from_env() cannot differ between two jobs in one process.
++        let tls = connect_tls(cfg, cfg.fragment).await?;
+         let (h2, connection) = h2_builder()
+             .handshake(tls)
              .await
-             .map_err(|e| AetherError::Tls(format!("h2 tls handshake: {e}")))?;
-@@ -342,7 +343,7 @@ pub async fn run(
-     let tcp = dial(cfg.peer).await?;
-     let _ = tcp.set_nodelay(true);
+@@ -399,7 +402,7 @@ pub async fn run(
+ 
+     log_or_debug(quiet, format!("[h2] connecting tcp to {}", cfg.peer));
  
 -    let frag_cfg = FragmentConfig::from_env();
 +    let frag_cfg = cfg.fragment;
@@ -343,10 +389,10 @@ index 66c6343..264339a 100644
          log_or_debug(
              quiet,
 diff --git a/aether/src/prober.rs b/aether/src/prober.rs
-index 9970b12..0274f38 100644
+index 3253919..f367ee8 100644
 --- a/aether/src/prober.rs
 +++ b/aether/src/prober.rs
-@@ -235,6 +235,8 @@ struct Strategy {
+@@ -244,6 +244,8 @@ struct Strategy {
  
  #[derive(Clone)]
  pub struct MasqueProbe {
@@ -355,7 +401,7 @@ index 9970b12..0274f38 100644
      pub sni: String,
      pub authority: String,
      pub path: String,
-@@ -375,6 +377,8 @@ async fn verify_one(
+@@ -384,6 +386,8 @@ async fn verify_one(
  ) -> Option<ProbeResult> {
      if ironclad {
          let params = crate::tunnelping::MasquePingParams {
@@ -364,7 +410,7 @@ index 9970b12..0274f38 100644
              peer: SocketAddr::new(ip, port),
              sni: probe.sni.clone(),
              authority: probe.authority.clone(),
-@@ -401,8 +405,9 @@ async fn verify_one(
+@@ -411,8 +415,9 @@ async fn verify_one(
          };
      }
  
@@ -375,8 +421,18 @@ index 9970b12..0274f38 100644
              peer: SocketAddr::new(ip, port),
              sni: probe.sni.clone(),
              authority: probe.authority.clone(),
+@@ -957,6 +962,9 @@ mod tests {
+         let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+         let address = peer.local_addr().unwrap();
+         let probe = |ech: Option<Vec<u8>>| MasqueProbe {
++            // Added by Nova's patch; upstream's test predates them.
++            http2: false,
++            fragment: crate::fragment::FragmentConfig::disabled(),
+             sni: crate::consts::CONNECT_SNI.to_string(),
+             authority: quic::default_authority().to_string(),
+             path: quic::default_path().to_string(),
 diff --git a/aether/src/tunnelping.rs b/aether/src/tunnelping.rs
-index 7cacc8a..eac99c5 100644
+index dc11891..9c2912e 100644
 --- a/aether/src/tunnelping.rs
 +++ b/aether/src/tunnelping.rs
 @@ -91,6 +91,8 @@ fn http_status_code(status_line: &str) -> Option<u16> {
@@ -388,7 +444,7 @@ index 7cacc8a..eac99c5 100644
      pub peer: SocketAddr,
      pub sni: String,
      pub authority: String,
-@@ -122,8 +124,9 @@ pub async fn masque_http_ping(p: &MasquePingParams, timeout: Duration) -> Result
+@@ -124,8 +126,9 @@ pub async fn masque_http_ping(p: &MasquePingParams, timeout: Duration) -> Result
  
          let (ready_tx, ready_rx) = oneshot::channel();
  
