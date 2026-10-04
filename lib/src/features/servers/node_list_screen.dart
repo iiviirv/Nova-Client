@@ -797,8 +797,77 @@ class _NodeListScreenState extends State<NodeListScreen> {
           if (!_loading) ..._actions(s),
         ],
       ),
-      body: body,
+      // The Connect floats over the list rather than ending it, so it is in
+      // reach from anywhere in a two-hundred-row subscription. Only here: when
+      // this screen is the dashboard's Configs tab the big connect button is
+      // already a few pixels below it, and a second one would be noise.
+      body: Stack(
+        children: <Widget>[
+          body,
+          if (!_loading && _error == null && profile != null)
+            Positioned(left: 0, right: 0, bottom: 0, child: _connectBar()),
+        ],
+      ),
     );
+  }
+
+  /// The floating Connect, following the tunnel's state so it never says
+  /// something the connection does not.
+  Widget _connectBar() {
+    final ProxyController proxy = NovaScope.of(context).proxy;
+    return ListenableBuilder(
+      listenable: proxy,
+      builder: (BuildContext context, _) {
+        final ProxyProfile? profile = _profile;
+        if (profile == null) return const SizedBox.shrink();
+        return _ConnectBar(
+          state: proxy.state,
+          connectedHere: proxy.state.isActive &&
+              proxy.activeProfile?.id == profile.id,
+          // The pin reads from the profile, so the name on the button is the
+          // one the user set in this list a moment ago. Null is Auto.
+          exit: profile.pinnedName ?? profile.pinnedNode,
+          onTap: _connectAndGoHome,
+        );
+      },
+    );
+  }
+
+  /// Connect this subscription and leave for the dashboard.
+  ///
+  /// Nothing here re-implements connecting. It selects this profile exactly as
+  /// the Subscriptions row does on the way in, then calls the same controller
+  /// methods the shell's own Connect calls, so the pin the user just set rides
+  /// along on the profile and the exit they chose is the exit that comes up.
+  ///
+  /// The connect is not awaited, and the user does not stay to watch it: a
+  /// gateway search runs for minutes and reports itself on Home, so sitting on
+  /// the list would look exactly like a button that did nothing. This is the
+  /// same reasoning as _toggleConnect in the shell.
+  void _connectAndGoHome() {
+    final scope = NovaScope.of(context);
+    final ProxyProfile? profile = _profile;
+    if (profile == null) return;
+    final bool liveHere = scope.proxy.state.isActive &&
+        scope.proxy.activeProfile?.id == profile.id;
+    // Already up through this subscription, or still settling: the button is
+    // only a way to the dashboard then. Toggling would tear down a working
+    // tunnel from a screen that never offered to, and starting a connect on
+    // top of a teardown is the race that used to leave Nova on "connecting".
+    if (!liveHere && !scope.proxy.state.isBusy) {
+      scope.profiles.setActive(profile.id);
+      scope.proxy.selectProfile(profile);
+      // A live tunnel on some other profile is a hot-swap, the same one
+      // pinning a node does; toggle() reads that live state and would
+      // disconnect instead of switching.
+      unawaited(scope.proxy.state.isActive
+          ? scope.proxy.reconnect()
+          : scope.proxy.toggle());
+    }
+    // Leave this pushed route first, then ask the shell for the dashboard: the
+    // tab underneath is what the user is left looking at.
+    Navigator.of(context).popUntil((Route<dynamic> r) => r.isFirst);
+    scope.profiles.goHome();
   }
 
   /// Refresh and the lightning test. In the app bar when this is its own
@@ -933,10 +1002,13 @@ class _NodeListScreenState extends State<NodeListScreen> {
       // list is the scroll view.
       shrinkWrap: widget.embedded,
       physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
+      // Keep the floating Connect's own space clear, so the last server can
+      // still be scrolled out from under it and tapped.
       padding: EdgeInsets.only(
           bottom: widget.embedded
               ? 0
-              : NovaSpace.xl + MediaQuery.viewPaddingOf(context).bottom),
+              : _ConnectBar.reserveFor(context) +
+                  MediaQuery.viewPaddingOf(context).bottom),
       itemCount: header.length + visible.length,
       itemBuilder: (BuildContext context, int i) {
         if (i < header.length) return header[i];
@@ -1003,6 +1075,197 @@ class _NodeListScreenState extends State<NodeListScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The Connect that floats over the bottom of a pushed server list.
+///
+/// A tester opened a subscription, pinned a server, and then had to go back a
+/// screen and find the connect button in the bottom bar. This is that button,
+/// where the choice was made.
+///
+/// It wears the same gradient the bar's connect control wears
+/// ([NovaConnectVisual]), for the same reason: in Nova, that gradient means
+/// "this starts or carries the tunnel", and a plain filled button would read as
+/// some other kind of action.
+class _ConnectBar extends StatelessWidget {
+  const _ConnectBar({
+    required this.state,
+    required this.connectedHere,
+    required this.exit,
+    required this.onTap,
+  });
+
+  final ProxyConnectionState state;
+
+  /// The tunnel is up, and it is THIS subscription carrying it.
+  final bool connectedHere;
+
+  /// The pinned exit's name, or null when the list is on Auto.
+  final String? exit;
+
+  final VoidCallback onTap;
+
+  /// A comfortable target, and the floor rather than the fixed height: at a
+  /// large text scale the two lines grow and the button grows with them
+  /// instead of clipping them.
+  static const double _minHeight = 54;
+
+  /// What the list has to keep clear underneath itself. Scaled with the text,
+  /// which over-reserves a little at large scales, and that is the safe
+  /// direction: the cost is a gap, the alternative is a row nobody can reach.
+  static double reserveFor(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(_minHeight) + NovaSpace.lg * 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final NovaStrings s = NovaStrings.of(context);
+    final nova = context.nova;
+    final TextTheme text = Theme.of(context).textTheme;
+    final NovaConnectVisual visual = NovaConnectVisual.of(state, nova);
+    final bool connecting = state == ProxyConnectionState.connecting;
+    // A teardown in flight. The button goes quiet for the second it lasts
+    // rather than offering a connect that would race the stop.
+    final bool disabled = state == ProxyConnectionState.disconnecting;
+    final String label = connectedHere
+        ? s.nodeConnectedGoHome
+        : (connecting ? s.connecting : s.connect);
+    final String sub = exit == null ? s.nodeAuto : s.nodeConnectVia(exit!);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // The rows scroll up behind the button; this is the short fade that
+        // keeps them from running into it. Never a tap target, so the row
+        // underneath is still the thing a tap there hits.
+        IgnorePointer(
+          child: Container(
+            height: NovaSpace.lg,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  nova.bg.withValues(alpha: 0),
+                  nova.bg,
+                ],
+              ),
+            ),
+          ),
+        ),
+        ColoredBox(
+          color: nova.bg,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(NovaSpace.lg, 0, NovaSpace.lg,
+                NovaSpace.lg + MediaQuery.viewPaddingOf(context).bottom),
+            child: Center(
+              child: ConstrainedBox(
+                // On a desktop window the list runs the full width; a connect
+                // button a thousand pixels wide would not.
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Opacity(
+                  opacity: disabled ? 0.55 : 1,
+                  child: Semantics(
+                    button: true,
+                    enabled: !disabled,
+                    label: label,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: visual.linear(),
+                        borderRadius: NovaRadii.pillR,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.16)),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: visual.accent.withValues(alpha: 0.26),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                            spreadRadius: -8,
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        borderRadius: NovaRadii.pillR,
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: disabled ? null : onTap,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                                minHeight: _minHeight),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: NovaSpace.lg,
+                                  vertical: NovaSpace.sm),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  _leading(connectedHere, connecting),
+                                  const SizedBox(width: NovaSpace.sm),
+                                  Flexible(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: text.titleSmall?.copyWith(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w700,
+                                                height: 1.2)),
+                                        // What it will come up through. The one
+                                        // thing this screen is for is choosing
+                                        // that, so the button says which choice
+                                        // it is about to act on.
+                                        Text(sub,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: text.labelSmall?.copyWith(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.82),
+                                                height: 1.2)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The power glyph, a spinner while a connect is in flight, or the check that
+  /// marks a tunnel already up through this subscription.
+  Widget _leading(bool connectedHere, bool connecting) {
+    if (connecting) {
+      return const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        ),
+      );
+    }
+    return Icon(
+      connectedHere
+          ? Icons.check_circle_rounded
+          : Icons.power_settings_new_rounded,
+      color: Colors.white,
+      size: 20,
     );
   }
 }

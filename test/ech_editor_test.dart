@@ -245,8 +245,8 @@ void main() {
       fa.echEditTitle,
       fa.echEditIntro,
     ]) {
-      final int open = '⁦'.allMatches(line).length;
-      final int close = '⁩'.allMatches(line).length;
+      final int open = '\u2066'.allMatches(line).length;
+      final int close = '\u2069'.allMatches(line).length;
       expect(open, greaterThan(0), reason: line);
       expect(close, open, reason: line);
     }

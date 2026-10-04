@@ -1024,6 +1024,16 @@ class NovaStrings {
   String get nodeRefresh => t('node.refresh');
   String get nodeMeasureAll => t('node.measureAll');
   String get nodeMeasureStop => t('node.measureStop');
+
+  /// The floating Connect on a pushed server list, when the tunnel is already
+  /// up through this very subscription: the button is a way to the dashboard
+  /// then, not a second connect.
+  String get nodeConnectedGoHome => t('node.connectedGoHome');
+
+  /// Which exit that Connect will come up through, under the label. Named so
+  /// the pin the user just set is visible on the button that honours it.
+  String nodeConnectVia(String name) =>
+      t('node.connectVia').replaceFirst('{name}', name);
   String get freeSearchTitle => t('free.searchTitle');
   String get freeSearchBody => t('free.searchBody');
   String get freeSearchFound => t('free.searchFound');
@@ -2137,6 +2147,8 @@ class NovaStrings {
     'node.refresh': 'Refresh',
     'node.measureAll': 'Test all servers through the core',
     'node.measureStop': 'Stop testing',
+    'node.connectedGoHome': 'Connected, go to the dashboard',
+    'node.connectVia': 'Through {name}',
     'servers.freeTab': 'Free',
     'servers.subscriptionsTab': 'Subscriptions',
     'servers.novaFreeName': 'Nova free servers',
@@ -3262,6 +3274,10 @@ class NovaStrings {
     'node.refresh': 'بازخوانی',
     'node.measureAll': 'تست همه سرورها از طریق هسته',
     'node.measureStop': 'توقف تست',
+    'node.connectedGoHome': 'متصل است، رفتن به داشبورد',
+    // The node's own name, which is almost always a Latin run inside this
+    // Farsi sentence, so it is isolated to keep the line reading correctly.
+    'node.connectVia': 'از طریق \u2066{name}\u2069',
     'servers.freeTab': 'رایگان',
     'servers.subscriptionsTab': 'اشتراک‌ها',
     'servers.novaFreeName': 'سرورهای رایگان نوا',
