@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.28.2 (2026-10-05)
+
+- If the tunnel comes back from a long sleep carrying nothing, Nova rebuilds it
+  instead of leaving you to stop and start it by hand. It only acts after the
+  phone has really been away, gives the network a second chance to answer
+  first, and will not do it twice in a row.
+- When a server list carries no traffic, Nova now tries ECH before the older
+  bypass, since ECH is what still gets through on the networks where splitting
+  the handshake stopped working. If ECH does not help either, the older bypass
+  is tried next, as before.
+
 ## v1.28.1 (2026-10-05)
 
 - Fixes ECH breaking after a few hours. Cloudflare changes the key ECH needs

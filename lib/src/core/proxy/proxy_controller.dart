@@ -215,6 +215,12 @@ enum ProxyNotice {
   /// user can turn it off in the node list.
   sniBypassOn,
 
+  /// Nova turned ECH on by itself, because a clean-IP profile carried no
+  /// traffic and ECH is the first thing to try: it encrypts the server name
+  /// rather than splitting it up, which is what still gets through on the
+  /// networks where splitting stopped working.
+  echOn,
+
   /// The tunnel is up but repeated probes (and one full rebuild) never got any
   /// traffic through: "connected but no internet". Fired once, when the
   /// controller stops trying, so the user learns what to do instead of staring

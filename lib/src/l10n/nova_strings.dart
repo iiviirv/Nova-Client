@@ -58,6 +58,7 @@ class NovaStrings {
   /// Shown when Nova turns on the SNI-block bypass for a subscription because
   /// none of its servers carried traffic.
   String get sniBypassOn => t('notice.sniBypassOn');
+  String get echOn => t('notice.echOn');
 
   // ---- SNI-block bypass (node list switch) ----
   String get nodeBypassTitle => t('node.bypassTitle');
@@ -1094,6 +1095,8 @@ class NovaStrings {
     'notice.pinnedExitGone':
         'The server you had picked is no longer in this subscription, so Nova '
             'auto-selected one. Open the server list to choose again.',
+    'notice.echOn':
+        'That server carried no traffic, so Nova turned on ECH: the server name is encrypted instead of being sent in the open. If this does not help either, Nova will try the older bypass next.',
     'notice.sniBypassOn':
         'None of these servers carried traffic, so Nova turned on the '
             'SNI-block bypass for this subscription and reconnected. You can '
@@ -2207,6 +2210,8 @@ class NovaStrings {
         'سروری که انتخاب کرده بودید دیگر در این اشتراک نیست، پس '
             '\u2066Nova\u2069 به‌صورت خودکار یکی را انتخاب کرد. برای انتخاب '
             'دوباره فهرست سرورها را باز کنید.',
+    'notice.echOn':
+        'آن سرور ترافیکی عبور نداد، برای همین نوا ECH را روشن کرد: نام سرور رمز می\u200cشود به جای اینکه آشکار فرستاده شود. اگر این هم کمک نکرد، نوا بعد از آن روش قبلی را امتحان می\u200cکند.',
     'notice.sniBypassOn':
         'هیچ‌کدام از این سرورها ترافیک عبور ندادند، پس \u2066Nova\u2069 '
             'دور زدن مسدودی \u2066SNI\u2069 را برای این اشتراک روشن کرد و '

@@ -87,6 +87,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
       ProxyNotice.aetherGatewayStale => s.aetherGatewayStale,
       ProxyNotice.pinnedExitGone => s.pinnedExitGone,
       ProxyNotice.sniBypassOn => s.sniBypassOn,
+      ProxyNotice.echOn => s.echOn,
       ProxyNotice.tunnelHasNoInternet => s.tunnelNoInternet,
       ProxyNotice.macExtensionNeedsApproval => s.macExtensionApprove,
     };

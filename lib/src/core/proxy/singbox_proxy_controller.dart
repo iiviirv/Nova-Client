@@ -151,6 +151,19 @@ class _PendingAether {
   final int socksPort;
 }
 
+/// The next rung of the name-hiding ladder for [profile], or null when the
+/// last one has already been tried.
+///
+/// A function rather than three lines inside the escalation, so the rule can be
+/// checked without a tunnel. The first version of this test restated the rule
+/// instead of calling it, which would have passed against any change at all.
+ProxyProfile? nextBypassStep(ProxyProfile profile) {
+  if (profile.hardenTls) return null;
+  return profile.echSni
+      ? profile.copyWith(hardenTls: true, echSni: false)
+      : profile.copyWith(echSni: true, hardenTls: false);
+}
+
 class SingboxProxyController extends ProxyController {
   SingboxProxyController({
     MethodChannel? control,
@@ -187,7 +200,72 @@ class SingboxProxyController extends ProxyController {
     // out a backoff. A phone that has been asleep for hours is the case that
     // kills the core, and the user is now holding it and looking at a
     // connection that carries nothing.
-    if (state == AppLifecycleState.resumed) AetherTunnel.wake();
+    if (background) _leftForeground = DateTime.now();
+    if (state == AppLifecycleState.resumed) {
+      AetherTunnel.wake();
+      unawaited(_recoverAfterSleep());
+    }
+  }
+
+  /// When the phone was last put down, or null if it has not been.
+  DateTime? _leftForeground;
+
+  /// The last time [_recoverAfterSleep] rebuilt the tunnel, so a network that
+  /// is simply down cannot turn every glance at the phone into a reconnect.
+  DateTime? _lastSleepRecovery;
+
+  /// How long the phone must have been away before this bothers to check.
+  /// Glancing at a notification is not the case this is for.
+  @visibleForTesting
+  static const Duration sleepRecoveryAfter = Duration(minutes: 2);
+
+  /// And how often it may act, at most.
+  @visibleForTesting
+  static const Duration sleepRecoveryCooldown = Duration(minutes: 5);
+
+  /// Rebuild the tunnel if it came back from a long sleep carrying nothing.
+  ///
+  /// Reported from the field: after the phone had been put down and picked up
+  /// again, a connection had to be stopped and started by hand before it
+  /// worked. The orb was green the whole time, which is the worst version of
+  /// this: nothing tells the user their tunnel is dead except that nothing
+  /// loads. It was said to affect Aether profiles before, and ECH ones now,
+  /// which is a hint about causes but not one worth guessing from.
+  ///
+  /// So this is deliberately about the symptom rather than any one cause: if
+  /// the tunnel says connected and carries nothing after a real sleep, do what
+  /// the user was doing by hand. Guarded three ways, because a reconnect the
+  /// user did not ask for is only welcome when it is right: the phone must have
+  /// been away a while, the probe gets a second chance (a network takes a
+  /// moment to come back, and acting on the first failure would reconnect every
+  /// time), and it will not act twice inside a cooldown.
+  @visibleForTesting
+  Future<void> recoverAfterSleepForTest() => _recoverAfterSleep();
+
+  Future<void> _recoverAfterSleep() async {
+    if (_state != ProxyConnectionState.connected) return;
+    if (_healing) return;
+    final DateTime? left = _leftForeground;
+    if (left == null || DateTime.now().difference(left) < sleepRecoveryAfter) {
+      return;
+    }
+    final DateTime? last = _lastSleepRecovery;
+    if (last != null &&
+        DateTime.now().difference(last) < sleepRecoveryCooldown) {
+      return;
+    }
+    if (await _probeInternet()) return;
+    // A second chance before acting: the radio is often still coming back.
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (_state != ProxyConnectionState.connected) return;
+    if (await _probeInternet()) return;
+    _lastSleepRecovery = DateTime.now();
+    NovaLog.instance.write(
+      'The tunnel carried nothing after the phone woke up; rebuilding it so '
+      'you do not have to.',
+      level: NovaLogLevel.warn,
+    );
+    await reconnect();
   }
 
   final MethodChannel _control;
@@ -2192,10 +2270,22 @@ class SingboxProxyController extends ProxyController {
     }
   }
 
-  /// Turn on the SNI-block bypass for [profile] and reconnect, if the profile
-  /// is not already hardened and actually contains clean-IP fronted nodes for
-  /// it to act on. Returns false when there was nothing to escalate to.
+  /// Try the next way of hiding the server name and reconnect, if there is one
+  /// left and the profile has clean-IP servers for it to act on. Returns false
+  /// when nothing is left to try.
+  ///
+  /// ECH first, then fragmentation. ECH encrypts the name outright and is what
+  /// still gets through on the networks where fragmentation stopped working;
+  /// fragmentation remains the answer where ECH is refused, which happens on
+  /// Cloudflare hosts whose zone will not accept it. Trying the one most likely
+  /// to work first costs a user one rebuild rather than two.
+  ///
+  /// The two are never both on. They hide the same name in ways that cannot
+  /// both apply, and ECH suppresses fragmentation in the config anyway, so
+  /// leaving the old switch up while turning the new one on would show a bypass
+  /// that was not running.
   Future<bool> _escalateToBypass(ProxyProfile profile, String because) async {
+    // Nothing left: the last rung of the ladder has already been tried.
     if (profile.hardenTls) return false;
     List<ProxyNode> nodes;
     try {
@@ -2204,16 +2294,22 @@ class SingboxProxyController extends ProxyController {
       return false;
     }
     if (!nodes.any((ProxyNode n) => n.isCleanIpFronted)) return false;
-    final ProxyProfile hardened = profile.copyWith(hardenTls: true);
-    _active = hardened;
-    await persistProfile?.call(hardened);
+
+    final ProxyProfile? next = nextBypassStep(profile);
+    if (next == null) return false;
+    final bool toEch = next.echSni;
+    _active = next;
+    await persistProfile?.call(next);
     NovaLog.instance.write(
-      'Turning on the SNI-block bypass for "${profile.name}" ($because): '
-      'Go TLS with the bypass cipher list, TLS-record and TCP fragmentation, '
-      'on its clean-IP servers.',
+      toEch
+          ? 'Turning on ECH for "${profile.name}" ($because): the server name '
+              'is encrypted rather than split up, on its clean-IP servers.'
+          : 'ECH did not get through for "${profile.name}" ($because); '
+              'switching to the SNI-block bypass: Go TLS with the bypass '
+              'cipher list, TLS-record and TCP fragmentation.',
       level: NovaLogLevel.warn,
     );
-    notice.value = ProxyNotice.sniBypassOn;
+    notice.value = toEch ? ProxyNotice.echOn : ProxyNotice.sniBypassOn;
     await reconnect();
     return true;
   }
