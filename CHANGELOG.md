@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.30.0 (2026-10-05)
+
+The first public release since 1.26.2. Everything below it, from 1.27.0 on, is
+in this build; those entries stay as the detailed record of what changed and
+why. The headlines:
+
+- **Psiphon**, as a connection type that needs no server of its own. It can run
+  on its own or out through a WARP tunnel Nova brings up first, which keeps
+  WARP's speed while the exit address sits outside Iran.
+- **ECH**, which hides the server name by encrypting it rather than splitting it
+  up. This is the one that matters on the networks where the older bypass
+  stopped working. It is on by default for Nova's free servers, can be turned on
+  for any Cloudflare-fronted server, and has its own settings page.
+- **IPv6**, now included when Nova scans for clean addresses, on devices that
+  have it. On networks where the IPv4 route has been narrowed, an IPv6 address
+  is one of the few ways back on.
+- **A new WARP core**, which can fetch the registration it needs from behind an
+  encrypted name. A network that blocks that one request is no longer a dead
+  end.
+- **Credits and licences**, under Settings. Nova is built on work other people
+  did and now says so.
+
 ## v1.29.1 (2026-10-05)
 
 - Fixes the ECH switch doing nothing for xhttp servers. Those run on a separate

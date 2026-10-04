@@ -18,6 +18,28 @@ class ProfilesController extends ChangeNotifier {
   bool? _tabBeforePrefs;
   bool get freeTab => _freeTab;
 
+  /// Bumped when something asks to be taken back to the dashboard.
+  ///
+  /// The server list is pushed as its own route from Subscriptions, so a
+  /// Connect there has to both leave that route and move the shell to Home.
+  /// Popping is the caller's business; this is how the shell hears about the
+  /// second half. A counter rather than a flag, so two requests in a row are
+  /// two events and the second is not swallowed.
+  ///
+  /// Here rather than on the scope because this controller already decides
+  /// which tab the Servers page shows, and adding a field to NovaScope would
+  /// mean changing every test that builds one.
+  final ValueNotifier<int> homeRequests = ValueNotifier<int>(0);
+
+  /// Ask the shell to show the dashboard.
+  void goHome() => homeRequests.value++;
+
+  @override
+  void dispose() {
+    homeRequests.dispose();
+    super.dispose();
+  }
+
   void selectTab(bool free) {
     _freeTab = free;
     if (_prefs == null) _tabBeforePrefs = free;

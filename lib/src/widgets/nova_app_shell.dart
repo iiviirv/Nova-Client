@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/models/proxy_profile.dart';
 import '../core/proxy/proxy_controller.dart';
+import '../features/profiles/profiles_controller.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/servers/servers_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -63,6 +64,12 @@ class _NovaAppShellState extends State<NovaAppShell> {
       _noticeSource?.notice.removeListener(_showNotice);
       _noticeSource = proxy;
       proxy.notice.addListener(_showNotice);
+    }
+    final ProfilesController profiles = NovaScope.of(context).profiles;
+    if (!identical(profiles, _homeSource)) {
+      _homeSource?.homeRequests.removeListener(_onHomeRequested);
+      _homeSource = profiles;
+      profiles.homeRequests.addListener(_onHomeRequested);
     }
   }
 
@@ -161,6 +168,7 @@ class _NovaAppShellState extends State<NovaAppShell> {
   @override
   void dispose() {
     _noticeSource?.notice.removeListener(_showNotice);
+    _homeSource?.homeRequests.removeListener(_onHomeRequested);
     _homeReset.dispose();
     super.dispose();
   }
@@ -170,6 +178,15 @@ class _NovaAppShellState extends State<NovaAppShell> {
   void _select(int i) {
     if (i == 0) _homeReset.value++;
     setState(() => _index = i);
+  }
+
+  ProfilesController? _homeSource;
+
+  void _onHomeRequested() {
+    if (!mounted) return;
+    // The request comes from a route that is popping itself; selecting the tab
+    // underneath is safe either way, since IndexedStack keeps them all alive.
+    _select(0);
   }
 
   @override
