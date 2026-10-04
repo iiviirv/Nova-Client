@@ -157,7 +157,13 @@ abstract final class AetherRegistration {
           AetherMode.wg
       ? <AetherOptions>[AetherOptions(mode: mode)]
       : <AetherOptions>[
-          AetherOptions(mode: mode, ech: true),
+          // HTTP/2 for the ECH attempt, not the h3 default. h3 is QUIC over
+          // UDP, and UDP to Cloudflare is blocked on the firewall this is for,
+          // so the one attempt most likely to be needed would be the one least
+          // likely to complete. Both were measured working off that network, so
+          // nothing is lost by preferring the one that also works on it.
+          AetherOptions(
+              mode: mode, transport: AetherTransport.h2, ech: true),
           AetherOptions(mode: mode),
         ];
 

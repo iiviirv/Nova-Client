@@ -47,6 +47,9 @@ void main() {
         AetherRegistration.attemptsForTest(AetherMode.masque);
     expect(masque.map((AetherOptions o) => o.ech), <bool>[true, false],
         reason: 'a failed ECH attempt must not leave WARP unregistered');
+    expect(masque.first.transport, AetherTransport.h2,
+        reason: 'h3 is QUIC over UDP, which the networks this is for block, so '
+            'the ECH attempt must not be the one that cannot complete there');
 
     final List<AetherOptions> wg =
         AetherRegistration.attemptsForTest(AetherMode.wg);
