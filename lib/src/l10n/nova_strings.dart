@@ -384,6 +384,17 @@ class NovaStrings {
   // ---- Settings ----
   String get setGeneral => t('set.general');
   String get setAppearance => t('set.appearance');
+  // ---- Credits ----
+  String get creditsTitle => t('credits.title');
+  String get creditsIntro => t('credits.intro');
+  String get creditsAether => t('credits.aether');
+  String get creditsPattng => t('credits.pattng');
+  String get creditsPsiphon => t('credits.psiphon');
+  String get creditsSingbox => t('credits.singbox');
+  String get creditsXray => t('credits.xray');
+  String get creditsSource => t('credits.source');
+  String get setCredits => t('set.credits');
+
   String get setCommunity => t('set.community');
   String get setRouting => t('set.routing');
   String get routeMobileProxy => t('route.mobileProxy');
@@ -1410,6 +1421,15 @@ class NovaStrings {
     'cf.connect': 'Connect Cloudflare',
     'set.general': 'General',
     'set.appearance': 'Appearance',
+    'credits.title': 'Credits and licences',
+    'credits.intro': 'Nova is built on work other people did. The cores below carry their own licences, and tapping one opens its source.',
+    'credits.aether': 'The WARP core. Every WireGuard, Gool and MASQUE connection in Nova is this engine, including the camouflaged route that gets a registration on networks which block it.',
+    'credits.pattng': 'Their work on ECH and on TLS fingerprinting showed how to reach a blocked SNI without fragmentation, which is where Nova learned the same approach.',
+    'credits.psiphon': 'The Psiphon engine, which finds its own servers. Used on Android, Windows, macOS and Linux.',
+    'credits.singbox': 'The core that carries most protocols, builds the tunnel and applies the routing rules.',
+    'credits.xray': 'The second core, for exits sing-box cannot run.',
+    'credits.source': 'Nova itself is open source. You can read it, build it, and check that the app you installed is the app in the repository.',
+    'set.credits': 'Credits and licences',
     'set.community': 'Community',
     'route.mobileProxy': 'Proxy mode',
     'route.mobileProxySub':
@@ -2512,6 +2532,15 @@ class NovaStrings {
     'cf.connect': 'اتصال به کلودفلر',
     'set.general': 'عمومی',
     'set.appearance': 'ظاهر',
+    'credits.title': 'سازندگان و مجوزها',
+    'credits.intro': 'نوا روی کار دیگران ساخته شده. هسته\u200cهای زیر مجوز خودشان را دارند و با زدن روی هرکدام، سورس آن باز می\u200cشود.',
+    'credits.aether': 'هسته وارپ. هر اتصال وایرگارد، گول و ماسک در نوا همین موتور است، از جمله مسیر استتارشده\u200cای که روی شبکه\u200cهای مسدودکننده کلید می\u200cگیرد.',
+    'credits.pattng': 'کار آنها روی ECH و اثر انگشت TLS نشان داد چطور می\u200cشود بدون فرگمنت به SNI مسدود رسید، و نوا همین روش را از آنجا یاد گرفت.',
+    'credits.psiphon': 'موتور سایفون، که سرورهایش را خودش پیدا می\u200cکند. روی اندروید، ویندوز، مک و لینوکس.',
+    'credits.singbox': 'هسته\u200cای که بیشتر پروتکل\u200cها را حمل می\u200cکند، تانل را می\u200cسازد و قوانین مسیریابی را اعمال می\u200cکند.',
+    'credits.xray': 'هسته دوم، برای خروجی\u200cهایی که sing-box اجرا نمی\u200cکند.',
+    'credits.source': 'خود نوا متن\u200cباز است. می\u200cتوانید آن را بخوانید، بسازید و مطمئن شوید نرم\u200cافزاری که نصب کرده\u200cاید همان چیزی است که در مخزن هست.',
+    'set.credits': 'سازندگان و مجوزها',
     'set.community': 'انجمن',
     'route.mobileProxy': 'حالت پروکسی',
     'route.mobileProxySub':

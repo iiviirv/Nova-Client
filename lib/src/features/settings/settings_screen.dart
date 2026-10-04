@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/proxy/app_routing.dart';
 import '../../core/update/update_checker.dart';
 import '../../l10n/nova_strings.dart';
+import 'credits_screen.dart';
 import '../../theme/nova_radii.dart';
 import '../../theme/nova_theme.dart';
 import '../../theme/theme_controller.dart';
@@ -284,6 +285,15 @@ class SettingsScreen extends StatelessWidget {
                           url: 'https://github.com/IRNova',
                         ),
                         _div(nova.border),
+                        _LinkTile(
+                          icon: Icons.favorite_rounded,
+                          title: s.setCredits,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                                builder: (_) => const CreditsScreen()),
+                          ),
+                        ),
+                        _div(nova.border),
                         const _UpdateCheckTile(),
                       ],
                     ),
@@ -466,17 +476,29 @@ class _PillTarget extends StatelessWidget {
 }
 
 class _LinkTile extends StatelessWidget {
-  const _LinkTile({required this.icon, required this.title, required this.url});
+  const _LinkTile(
+      {required this.icon, required this.title, this.url, this.onTap})
+      : assert(url != null || onTap != null, 'a tile must go somewhere');
   final IconData icon;
   final String title;
-  final String url;
+
+  /// An external address, opened in the system browser.
+  final String? url;
+
+  /// An in-app destination instead. Exactly one of the two is given.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final nova = context.nova;
     return InkWell(
       onTap: () async {
-        final Uri uri = Uri.parse(url);
+        final VoidCallback? go = onTap;
+        if (go != null) {
+          go();
+          return;
+        }
+        final Uri uri = Uri.parse(url!);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
@@ -494,7 +516,12 @@ class _LinkTile extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyMedium),
             ),
             const SizedBox(width: NovaSpace.sm),
-            Icon(Icons.open_in_new_rounded, size: 16, color: nova.muted),
+            Icon(
+                onTap != null
+                    ? Icons.chevron_right_rounded
+                    : Icons.open_in_new_rounded,
+                size: 16,
+                color: nova.muted),
           ],
         ),
       ),
