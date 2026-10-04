@@ -11,9 +11,13 @@
     "assets/bin/libaether.dylib": "e6548d07e6ffdf0431aa44cad1a3596f78db7f3f947d15e56bf8af1ee11181fd",
     "assets/bin/aether.dll": "9616dcf5fbbcf7e31d153c77f3cee0552702aff7d2af011a41c30d006e6a08f4",
     "ios/Frameworks/Aether.xcframework/ios-arm64_x86_64-simulator/Aether.framework/Aether": "2a4837fab253d478dc20478392628ef8696dba448baf78e8f33b5557bb37029f",
-    "ios/Frameworks/Aether.xcframework/ios-arm64/Aether.framework/Aether": "8b79c54c75484b77e1d6c5ae9cbe924e4445e4dca02cf90e4eea0576ff7ffcf1"
+    "ios/Frameworks/Aether.xcframework/ios-arm64/Aether.framework/Aether": "8b79c54c75484b77e1d6c5ae9cbe924e4445e4dca02cf90e4eea0576ff7ffcf1",
+    "android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so": "ee66b768f37c9fc5e8b9a0f926e57400101307c8bdcbc59ff4c07b55f93590e7",
+    "android/app/src/main/jniLibs/armeabi-v7a/libc++_shared.so": "835c589f8199a35f135c960fa36b05ee2682382a6b4218f1a7a354713665135c",
+    "android/app/src/main/jniLibs/x86_64/libc++_shared.so": "69d9c9695dd3bc15440c1e348abb4be2ecb67497095940e5c0f1ce0cfe7b10c6"
   },
   "ios_metadata_note": "The xcframework is gitignored (too large for the repo) and comes from the workflow run above; these hashes are how a local copy is checked against it. The shipped libraries were asked their own version rather than assumed: aether_version returns 2.3.0 with nova_h2_fragment 1, which is the patch being present.",
   "upstream_tag": "v2.3.0",
-  "reported_version": "{\"version\":\"2.3.0\",\"nova_h2_fragment\":1,\"ok\":true}"
+  "reported_version": "{\"version\":\"2.3.0\",\"nova_h2_fragment\":1,\"ok\":true}",
+  "cxx_runtime_note": "The v2.3.0 core links libc++_shared.so, which the v2.0.0 one did not and which Android does not provide. It is taken from NDK 28 rather than the r26d that built the core: the shared C++ runtime is ABI-stable across NDK versions, which is what it is for, and all 11 mangled symbols plus the __cxa_ ones libaether leaves undefined resolve against it. Shipping it is the standard answer; building the core with a static C++ runtime would keep it self-contained like every other engine here and is the better fix if the workflow is touched again."
 }

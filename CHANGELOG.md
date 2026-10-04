@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.28.3 (2026-10-05)
+
+- Fixes every WireGuard, Gool and MASQUE profile failing to start since 1.28.0
+  with "the Aether core is unavailable". The updated core needs a system
+  library that Android does not include and Nova was not shipping, so it could
+  not be loaded at all. It now travels with the app.
+
 ## v1.28.2 (2026-10-05)
 
 - If the tunnel comes back from a long sleep carrying nothing, Nova rebuilds it
