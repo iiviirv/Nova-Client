@@ -24,10 +24,24 @@ on:
         default: ""
 
 env:
-  # v2.0.0, 2026-09-12. Bump deliberately: read what changed in the FFI first,
-  # because the Dart binding names these symbols and a rename fails at runtime
-  # with nothing more useful than "symbol not found".
-  AETHER_COMMIT: 0e6f6a5218e65ed4cddc68d1a71d9b9633f89e3f
+  # v2.3.0, tagged 2026-10. Bump deliberately: read what changed in the FFI
+  # first, because the Dart binding names these symbols and a rename fails at
+  # runtime with nothing more useful than "symbol not found".
+  #
+  # Checked before this bump: the exported symbol set is byte-identical to
+  # v2.0.0's, nineteen names, nothing added and nothing removed, so no Dart
+  # binding changes with it. What did change is the job payloads, which gain an
+  # `ech` boolean. That is the point of the upgrade: the WARP registration can
+  # be fetched behind ECH on networks that block the ordinary one, which is the
+  # fault a tester in Iran hit and the reason build 174 had to work around it
+  # by borrowing someone else's tunnel. `AETHER_ECH_DNS` picks the resolver,
+  # and it must be a tcp:// one here, since UDP to Cloudflare is blocked on the
+  # network this is for.
+  #
+  # Note for anyone following the upstream announcements: v2.2.0 was announced
+  # but its tag and release are gone (the release page 404s), superseded by
+  # v2.3.0. Pinning the tag that exists, not the one that was announced.
+  AETHER_COMMIT: 9411018c0c5b1254670911cf51059c3ca509a937
   NDK_VERSION: r26d
   MACOSX_DEPLOYMENT_TARGET: "12.0"
 
