@@ -100,6 +100,7 @@ class ProxyProfile {
     this.fastNodes = const <String>[],
     this.hardenTls = false,
     this.echSni = false,
+    this.echConfigList,
     this.encryptedOnly = false,
     this.bypassFingerprint,
     this.bypassCipherSuites,
@@ -215,6 +216,12 @@ class ProxyProfile {
   /// so this is per profile rather than global.
   final bool echSni;
 
+  /// Where to look the ECH key up, in the `domain+resolver` form other clients
+  /// use, or null to use Nova's default. Editable because a tester asked to
+  /// paste the setting that works for them elsewhere rather than translate it.
+  /// See [EchSpec], which parses it.
+  final String? echConfigList;
+
   /// User overrides for the SNI-block bypass, edited from the bypass editor so a
   /// tester can re-tune the anti-DPI recipe when filtering changes. Each is null
   /// to use Nova's field-tested default (`unsafe` fingerprint, [kBypassCipherSuites],
@@ -240,6 +247,8 @@ class ProxyProfile {
     List<String>? fastNodes,
     bool? hardenTls,
     bool? echSni,
+    String? echConfigList,
+    bool clearEchConfigList = false,
     bool? encryptedOnly,
     Object? bypassFingerprint = _unset,
     Object? bypassCipherSuites = _unset,
@@ -264,6 +273,8 @@ class ProxyProfile {
       pinned: pinned ?? this.pinned,
       hardenTls: hardenTls ?? this.hardenTls,
       echSni: echSni ?? this.echSni,
+      echConfigList:
+          clearEchConfigList ? null : (echConfigList ?? this.echConfigList),
       encryptedOnly: encryptedOnly ?? this.encryptedOnly,
       bypassFingerprint: bypassFingerprint == _unset
           ? this.bypassFingerprint
@@ -297,6 +308,7 @@ class ProxyProfile {
         'fastNodes': fastNodes,
         'hardenTls': hardenTls,
         'echSni': echSni,
+        if (echConfigList != null) 'echConfigList': echConfigList,
         'encryptedOnly': encryptedOnly,
         'bypassFingerprint': bypassFingerprint,
         'bypassCipherSuites': bypassCipherSuites,
@@ -330,6 +342,7 @@ class ProxyProfile {
             const <String>[],
         hardenTls: json['hardenTls'] as bool? ?? false,
         echSni: json['echSni'] as bool? ?? false,
+        echConfigList: json['echConfigList'] as String?,
         encryptedOnly: json['encryptedOnly'] as bool? ?? false,
         bypassFingerprint: json['bypassFingerprint'] as String?,
         bypassCipherSuites: (json['bypassCipherSuites'] as List<dynamic>?)

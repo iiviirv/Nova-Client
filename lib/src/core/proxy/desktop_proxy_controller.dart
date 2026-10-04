@@ -34,6 +34,7 @@ import 'subscription.dart';
 import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'ech_key.dart';
+import 'ech_spec.dart';
 import 'singbox/singbox_config.dart';
 import 'xray/xray_config.dart';
 
@@ -727,7 +728,7 @@ class DesktopProxyController extends ProxyController {
       // does not degrade: it fails every connection on the profile. Only
       // looked up when ECH is actually on, so nobody else pays for it.
       echConfig: profile.echSni
-          ? await EchKey.current()
+          ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
           : kCloudflareEchConfig,
         // Windows: keep the bypass's TLS-record split but drop its TCP-segment
         // split, whose ACK-wait an unelevated Windows core cannot drive (see

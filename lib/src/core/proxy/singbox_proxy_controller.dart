@@ -22,6 +22,7 @@ import '../../features/cloudflare/doh_resolver.dart';
 import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
 import 'ech_key.dart';
+import 'ech_spec.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
 import 'aether/aether_platform_ready.dart';
@@ -1408,7 +1409,7 @@ class SingboxProxyController extends ProxyController {
       // does not degrade: it fails every connection on the profile. Only
       // looked up when ECH is actually on, so nobody else pays for it.
       echConfig: profile.echSni
-          ? await EchKey.current()
+          ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
           : kCloudflareEchConfig,
       bypassFingerprint: profile.bypassFingerprint,
       bypassCipherSuites: profile.bypassCipherSuites,

@@ -89,6 +89,19 @@ class NovaStrings {
   String get bypassCipherSuites => t('bypass.cipherSuites');
   String get bypassMaskInvalid => t('bypass.maskInvalid');
   String get bypassResetDefaults => t('bypass.reset');
+
+  // ---- ECH lookup editor ----
+  /// The tappable subtitle on the ECH row that opens the editor.
+  String get echEdit => t('ech.edit');
+  String get echEditTitle => t('ech.title');
+  String get echEditIntro => t('ech.intro');
+  String get echLookup => t('ech.lookup');
+
+  /// Heading for the read-only readout under the field, so a typo is visible
+  /// before saving rather than after the next connection.
+  String get echUnderstood => t('ech.understood');
+  String get echDomain => t('ech.domain');
+  String get echResolver => t('ech.resolver');
   String get nodeBypassAllBlocked => t('node.bypassAllBlocked');
 
   // ---- Aether config editor ----
@@ -1114,6 +1127,13 @@ class NovaStrings {
     'bypass.cipherSuites': 'Cipher suites (one per line)',
     'bypass.maskInvalid': 'This is not valid JSON.',
     'bypass.reset': 'Reset to defaults',
+    'ech.edit': 'Edit ECH lookup',
+    'ech.title': 'ECH lookup',
+    'ech.intro': 'Advanced. ECH needs a key, and Nova fetches that key from DNS every time it connects. This is where it looks: a domain, then the resolver to ask, in the same form other clients use. Leave it empty to use Nova\'s default.',
+    'ech.lookup': 'Lookup (domain+resolver)',
+    'ech.understood': 'Nova read that as',
+    'ech.domain': 'Domain',
+    'ech.resolver': 'Resolver',
 
     // Aether. The copy avoids promising speed: what these settings decide is
     // whether the tunnel comes up at all on a filtered network.
@@ -2229,6 +2249,18 @@ class NovaStrings {
     'bypass.cipherSuites': 'مجموعه رمزها (هر خط یکی)',
     'bypass.maskInvalid': 'این JSON معتبر نیست.',
     'bypass.reset': 'بازگردانی به پیش‌فرض',
+    'ech.edit': 'ویرایش جست‌وجوی \u2066ECH\u2069',
+    'ech.title': 'جست‌وجوی \u2066ECH\u2069',
+    'ech.intro':
+        'پیشرفته. \u2066ECH\u2069 به یک کلید نیاز دارد و \u2066Nova\u2069 آن کلید '
+            'را هر بار از \u2066DNS\u2069 می‌گیرد. اینجا می‌گویید از کجا '
+            'بگیرد: یک دامنه و بعد رزولوری که باید از آن پرسید، با همان قالبی که '
+            'کلاینت‌های دیگر دارند. برای استفاده از پیش‌فرض نوا خالی '
+            'بگذارید.',
+    'ech.lookup': 'آدرس جست‌وجو (دامنه + رزولور)',
+    'ech.understood': 'نوا این را این‌طور خواند',
+    'ech.domain': 'دامنه',
+    'ech.resolver': 'رزولور',
 
     // Aether.
     'aether.add': 'ساخت کانفیگ \u2066Aether\u2069',

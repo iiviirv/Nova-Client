@@ -29,6 +29,7 @@ import '../../theme/nova_theme.dart';
 import '../../widgets/nova_components.dart';
 import '../../widgets/nova_scope.dart';
 import 'bypass_editor_screen.dart';
+import 'ech_editor_screen.dart';
 
 /// Lists the nodes of a subscription with a live TCP latency for each, and lets
 /// the user pin a specific exit (or fall back to auto-select). Pinning updates
@@ -738,6 +739,16 @@ class _NodeListScreenState extends State<NodeListScreen> {
     );
   }
 
+  void _openEchEditor() {
+    final ProxyProfile? profile = _profile;
+    if (profile == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EchEditorScreen(profileId: profile.id),
+      ),
+    );
+  }
+
   Future<void> _pin(String? key, {String? name}) async {
     final scope = NovaScope.of(context);
     final profile = _profile;
@@ -896,7 +907,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
           note: _bypassSuggested ? s.nodeBypassAllBlocked : null,
         ),
         const Divider(height: 1),
-        _EchRow(on: _profile?.echSni ?? false, onChanged: _setEch),
+        _EchRow(
+          on: _profile?.echSni ?? false,
+          onChanged: _setEch,
+          onEdit: _openEchEditor,
+        ),
         const Divider(height: 1),
       ],
       if (_nodes.length > 6) _searchField(s),
@@ -1234,12 +1249,21 @@ class _BypassRow extends StatelessWidget {
   }
 }
 
-/// The ECH switch. Deliberately plain: one line saying what it is for, because
-/// the people who need it are being told to turn it on, not discovering it.
+/// The ECH switch, plus the way into its lookup editor. It keeps the line
+/// saying what ECH is for, because the people who need it are being told to
+/// turn it on rather than discovering it, and that sentence must not sit behind
+/// the tap that explains it.
 class _EchRow extends StatelessWidget {
-  const _EchRow({required this.on, required this.onChanged});
+  const _EchRow({
+    required this.on,
+    required this.onChanged,
+    required this.onEdit,
+  });
   final bool on;
   final ValueChanged<bool> onChanged;
+
+  /// Opens the lookup editor (which domain to ask, and which resolver).
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1248,31 +1272,41 @@ class _EchRow extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     return Row(
       children: <Widget>[
+        // Tapping the title opens the lookup editor; the switch stays its own
+        // target so turning ECH on never costs a trip through the editor.
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: NovaSpace.lg, vertical: NovaSpace.md),
-            child: Row(
-              children: <Widget>[
-                NovaIconChip(
-                    icon: Icons.lock_person_rounded,
-                    color: nova.cyan,
-                    size: 36,
-                    radius: 10),
-                const SizedBox(width: NovaSpace.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(s.nodeEchTitle,
-                          style: text.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w600)),
-                      Text(s.nodeEchSub,
-                          style: text.labelSmall?.copyWith(color: nova.muted)),
-                    ],
+          child: InkWell(
+            onTap: onEdit,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: NovaSpace.lg, vertical: NovaSpace.md),
+              child: Row(
+                children: <Widget>[
+                  NovaIconChip(
+                      icon: Icons.lock_person_rounded,
+                      color: nova.cyan,
+                      size: 36,
+                      radius: 10),
+                  const SizedBox(width: NovaSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(s.nodeEchTitle,
+                            style: text.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        Text(s.nodeEchSub,
+                            style:
+                                text.labelSmall?.copyWith(color: nova.muted)),
+                        Text(s.echEdit,
+                            style:
+                                text.labelSmall?.copyWith(color: nova.cyan)),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Icon(Icons.tune_rounded, size: 18, color: nova.muted),
+                ],
+              ),
             ),
           ),
         ),

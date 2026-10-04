@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.29.0 (2026-10-05)
+
+- The ECH lookup can now be edited, next to the switch that turns it on. It
+  takes the same form other apps use, a domain and the resolver to ask, so a
+  setting that already works for you elsewhere can be pasted in rather than
+  translated. Leave it empty to use the default.
+- Nova now asks that resolver the way you asked for it. A resolver written as
+  udp is really asked over udp, not quietly over something else.
+- The key itself is still never typed, only fetched. A key entered by hand goes
+  stale, and a stale one stops every connection on the profile.
+
 ## v1.28.3 (2026-10-05)
 
 - Fixes every WireGuard, Gool and MASQUE profile failing to start since 1.28.0

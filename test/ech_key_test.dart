@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_client/src/core/models/proxy_profile.dart';
 import 'package:nova_client/src/core/proxy/ech_key.dart';
+import 'package:nova_client/src/core/proxy/ech_spec.dart';
 import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
 import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
 
@@ -114,6 +115,52 @@ void main() {
       expect(free.hardenTls, isFalse,
           reason: 'fragmentation is blocked on the network the free list is '
               'most used on, and the two are mutually exclusive');
+    });
+  });
+
+  group('a spec the user edited', () {
+    test('changing where to look drops what was fetched from elsewhere',
+        () async {
+      const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
+      const EchSpec b = EchSpec(domain: 'b.com', resolver: 'udp://1.1.1.1');
+      expect(await EchKey.current(spec: a, fetch: () async => 'FROM_A=='),
+          'FROM_A==');
+      int calls = 0;
+      final String got = await EchKey.current(
+          spec: b,
+          fetch: () async {
+            calls++;
+            return 'FROM_B==';
+          });
+      expect(got, 'FROM_B==');
+      expect(calls, 1,
+          reason: 'serving a key fetched from somewhere the user no longer '
+              'asked about is how a setting silently does nothing');
+    });
+
+    test('a failed fetch for a new spec does not serve the old answer',
+        () async {
+      const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
+      const EchSpec b = EchSpec(domain: 'b.com', resolver: 'udp://1.1.1.1');
+      await EchKey.current(spec: a, fetch: () async => 'FROM_A==');
+      expect(await EchKey.current(spec: b, fetch: () async => null),
+          kCloudflareEchConfig,
+          reason: 'the floor, not another spec\'s answer');
+    });
+
+    test('the same spec is still reused', () async {
+      const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
+      await EchKey.current(spec: a, fetch: () async => 'ONCE==');
+      int calls = 0;
+      expect(
+          await EchKey.current(
+              spec: a,
+              fetch: () async {
+                calls++;
+                return 'AGAIN==';
+              }),
+          'ONCE==');
+      expect(calls, 0);
     });
   });
 }
