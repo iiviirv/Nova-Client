@@ -5,6 +5,7 @@ import 'dart:math';
 
 import '../../core/proxy/singbox/nova_naming.dart';
 import '../../core/proxy/subscription.dart';
+import 'ipv6.dart';
 import 'models.dart';
 import 'sources.dart';
 
@@ -19,6 +20,30 @@ import 'sources.dart';
 ///
 /// Results are sorted fastest-first. Progress is streamed to the UI, throttled
 /// so the event rate stays UI-friendly even with hundreds of concurrent probes.
+/// The addresses a scan will try, given what the sources offered and whether
+/// this device can reach anything over IPv6.
+///
+/// Split out of [start] so the choice is assertable without a network. The
+/// first version of this was wired straight into the scan, and deleting the
+/// IPv6 half of it broke no test, which is the whole reason it now lives here.
+///
+/// IPv6 only when there is a global v6 address to dial from. On a network
+/// without one every v6 probe would time out, the scan would spend its whole
+/// budget learning nothing, and the user would be told no address was
+/// reachable rather than that their network has no IPv6. The share is a
+/// quarter rather than a half because IPv4 still works on most networks and
+/// this must not make the common case slower.
+List<String> buildCandidates(CandidatePool pool, int sampleSize,
+    {required bool hasIpv6}) {
+  final List<String> v6 = hasIpv6
+      ? Ipv6.sample(pool.cidrs6.isEmpty ? Ipv6.fallbackCidrs : pool.cidrs6,
+          (sampleSize / 4).ceil())
+      : const <String>[];
+  return NovaScanner.mergeCandidates(
+      <String>[...generateRandomIps(pool.cidrs, sampleSize), ...v6],
+      pool.directIps);
+}
+
 class NovaScanner {
   NovaScanner({
     this.sampleSize = 512,
@@ -98,7 +123,7 @@ class NovaScanner {
     try {
       final CandidatePool pool = await fetchIpsFromSources(sources);
       final List<String> ips =
-          mergeCandidates(generateRandomIps(pool.cidrs, sampleSize), pool.directIps);
+          buildCandidates(pool, sampleSize, hasIpv6: await Ipv6.available());
       if (ips.isEmpty || _stop) return const <ScanResult>[];
       ips.shuffle(_rng);
 
@@ -120,6 +145,7 @@ class NovaScanner {
       _emitStats(force: true);
     }
   }
+
 
   /// The addresses to scan: the random sample plus the ones a source named
   /// outright, each appearing once.
@@ -374,7 +400,10 @@ class NovaScanner {
   /// still enriches the name.
   String _novaLink(String ip, int port) {
     final String name = novaNodeName(colo: colo, suffix: suffix, rng: _rng);
-    return '$ip:$port#$name';
+    // Brackets around a v6 address, or the result cannot be split back apart:
+    // 2606:4700::1:443 is indistinguishable from an address ending in :443.
+    final String host = ip.contains(':') ? '[$ip]' : ip;
+    return '$host:$port#$name';
   }
 }
 

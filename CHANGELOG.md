@@ -2,6 +2,11 @@
 
 ## v1.28.0 (2026-10-04)
 
+- Nova Radar now looks for clean addresses over IPv6 as well as IPv4, on
+  devices that have IPv6 to use. On the networks where the IPv4 route to
+  Cloudflare has been narrowed, an IPv6 address is one of the few ways back on.
+  Devices without IPv6 are unaffected: the scan does not waste time looking for
+  something it could not reach.
 - The WARP core is updated. The registration it needs before it can connect at
   all can now be made behind an encrypted name, so a network that blocks that
   one request stops being a dead end rather than something to work around.

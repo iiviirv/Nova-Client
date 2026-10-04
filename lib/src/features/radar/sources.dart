@@ -2,11 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'ipv6.dart';
 import 'models.dart';
 
 /// The default IP sources, ported 1:1 from NovaRadar's `DefaultSources`.
 List<IpSource> defaultSources() => <IpSource>[
       IpSource(id: 'official', name: 'Cloudflare Official', url: 'https://www.cloudflare.com/ips-v4/', type: SourceType.cidr, enabled: true),
+      // On by default like its v4 sibling. On the networks that now cap IPv4
+      // WebSocket at six packets, a v6 address is the way back on.
+      IpSource(id: 'official6', name: 'Cloudflare Official (IPv6)', url: 'https://www.cloudflare.com/ips-v6/', type: SourceType.cidr, enabled: true),
       IpSource(id: 'cm', name: 'CM List', url: 'https://raw.githubusercontent.com/cmliu/cmliu/main/CF-CIDR.txt', type: SourceType.cidr, enabled: false),
       IpSource(id: 'as13335', name: 'AS13335 (Cloudflare)', url: 'https://raw.githubusercontent.com/ipverse/asn-ip/master/as/13335/ipv4-aggregated.txt', type: SourceType.cidr, enabled: false),
       IpSource(id: 'as209242', name: 'AS209242 (Cloudflare)', url: 'https://raw.githubusercontent.com/ipverse/asn-ip/master/as/209242/ipv4-aggregated.txt', type: SourceType.cidr, enabled: false),
@@ -27,15 +31,20 @@ const List<String> _fallbackCidrs = <String>[
 
 /// The collected candidate space from the enabled sources.
 class CandidatePool {
-  CandidatePool(this.cidrs, this.directIps);
+  CandidatePool(this.cidrs, this.directIps, {this.cidrs6 = const <String>[]});
   final List<String> cidrs;
   final List<String> directIps;
+
+  /// The v6 ranges a source offered, kept apart because they are sampled by
+  /// different arithmetic: a v6 range is far too large to walk.
+  final List<String> cidrs6;
 }
 
 /// Fetches all enabled sources in parallel and returns CIDRs + direct IPs.
 /// Falls back to the built-in Cloudflare ranges if no CIDRs are gathered.
 Future<CandidatePool> fetchIpsFromSources(List<IpSource> sources) async {
   final List<String> cidrs = <String>[];
+  final List<String> cidrs6 = <String>[];
   final List<String> directIps = <String>[];
 
   await Future.wait(sources.where((s) => s.enabled).map((s) async {
@@ -43,7 +52,12 @@ Future<CandidatePool> fetchIpsFromSources(List<IpSource> sources) async {
       final String text = await _fetchUrl(s.url);
       switch (s.type) {
         case SourceType.cidr:
-          cidrs.addAll(_parseCidrLines(text));
+          // One source can carry both families; sorted here rather than by the
+          // source's name, because a list that claims to be v4 and is not would
+          // otherwise have its v6 lines silently dropped.
+          for (final String line in _parseCidrAnyLines(text)) {
+            (Ipv6.parseCidr(line) != null ? cidrs6 : cidrs).add(line);
+          }
         case SourceType.proxyip:
           directIps.addAll(_parseProxyIpLines(text));
         case SourceType.domain:
@@ -58,7 +72,7 @@ Future<CandidatePool> fetchIpsFromSources(List<IpSource> sources) async {
   if (cidrs.isEmpty) {
     cidrs.addAll(_fallbackCidrs);
   }
-  return CandidatePool(cidrs, directIps);
+  return CandidatePool(cidrs, directIps, cidrs6: cidrs6);
 }
 
 /// Generates up to [count] random IPv4 addresses spread across [cidrs].
@@ -87,12 +101,13 @@ List<String> generateRandomIps(List<String> cidrs, int count) {
 // Parsing helpers (ported from sources.go)
 // ---------------------------------------------------------------------------
 
-List<String> _parseCidrLines(String text) {
+/// CIDR lines of either family, left for the caller to sort.
+List<String> _parseCidrAnyLines(String text) {
   final List<String> out = <String>[];
   for (String line in text.split('\n')) {
     line = line.trim();
     if (line.isEmpty || line.startsWith('#')) continue;
-    if (_parseCidr(line) != null) out.add(line);
+    if (_parseCidr(line) != null || Ipv6.parseCidr(line) != null) out.add(line);
   }
   return out;
 }

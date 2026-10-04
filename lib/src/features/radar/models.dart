@@ -92,7 +92,8 @@ class ScanResult {
   /// favouring stable exits over ones that merely handshake fast.
   final double score;
 
-  String get hostPort => '$ip:$port';
+  /// `host:port`, with a v6 address bracketed so it can be split back apart.
+  String get hostPort => ip.contains(':') ? '[$ip]:$port' : '$ip:$port';
 }
 
 /// Live scan statistics streamed to the UI (mirrors NovaRadar's ScanStats).

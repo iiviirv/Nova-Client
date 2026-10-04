@@ -43,13 +43,24 @@ void main() {
   });
 
   group('default sources', () {
-    test('match the NovaRadar source set', () {
+    test('match the NovaRadar source set, plus the IPv6 one', () {
       final sources = defaultSources();
-      expect(sources, hasLength(9));
+      expect(sources, hasLength(10));
       expect(sources.first.id, 'official');
       expect(sources.first.enabled, isTrue);
-      // Only the official source is enabled by default.
-      expect(sources.where((s) => s.enabled), hasLength(1));
+      // Two enabled by default now, not one. Cloudflare's v6 list joined the
+      // v4 one on 2026-10-04, when the six-packet WebSocket cap arrived on
+      // IPv4 only and IPv6 became one of the few routes left on that network.
+      // Everything else is still opt-in.
+      final enabled = sources.where((s) => s.enabled).toList();
+      expect(enabled.map((s) => s.id), <String>['official', 'official6']);
+    });
+
+    test('the IPv6 source points at the v6 list, not the v4 one', () {
+      final v6 = defaultSources().firstWhere((s) => s.id == 'official6');
+      expect(v6.url, endsWith('/ips-v6/'),
+          reason: 'pointing this at the v4 list would quietly scan nothing new');
+      expect(v6.type, SourceType.cidr);
     });
   });
 

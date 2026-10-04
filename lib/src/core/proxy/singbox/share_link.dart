@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../aether/aether_options.dart';
 import '../masterdns/masterdns_config.dart';
 import '../psiphon/psiphon_config.dart';
@@ -567,6 +568,22 @@ String _name(Uri uri, String fallback) {
   if (slash >= 0) hp = hp.substring(0, slash);
   final int q = hp.indexOf('?');
   if (q >= 0) hp = hp.substring(0, q);
+  // An IPv6 address is full of colons, so the bracket form is the only one
+  // that can be split at all: lastIndexOf(':') reads a bare 2606:4700::1 as
+  // host "2606:4700:" on port 1, which is wrong and silently so.
+  if (hp.startsWith('[')) {
+    final int close = hp.indexOf(']');
+    if (close > 0) {
+      final String host = hp.substring(1, close);
+      final String rest = hp.substring(close + 1);
+      final int port =
+          rest.startsWith(':') ? (int.tryParse(rest.substring(1)) ?? 0) : 0;
+      return (host, port);
+    }
+  }
+  // Unbracketed and more than one colon: a bare v6 address with no port, since
+  // a host:port has exactly one. Returning it whole beats cutting it in half.
+  if (':'.allMatches(hp).length > 1) return (hp, 0);
   final int colon = hp.lastIndexOf(':');
   if (colon < 0) return (hp, 0);
   final int port = int.tryParse(hp.substring(colon + 1)) ?? 0;
@@ -689,3 +706,8 @@ ProxyNode? _parseAether(String input) {
     aetherOpts: c.options.toQuery(),
   );
 }
+
+/// Exposed for tests: splitting host from port is where IPv6 breaks quietly,
+/// and the rule is worth asserting directly rather than through a whole link.
+@visibleForTesting
+(String, int) splitHostPortForTest(String hostPort) => _splitHostPort(hostPort);
