@@ -2,6 +2,9 @@
 
 ## v1.28.0 (2026-10-04)
 
+- The WARP core is updated. The registration it needs before it can connect at
+  all can now be made behind an encrypted name, so a network that blocks that
+  one request stops being a dead end rather than something to work around.
 - Adds ECH, which hides the server name by encrypting it instead of splitting
   it up. Turn it on per server list, next to the existing bypass. It is for
   Cloudflare servers, which is what the free list and Nova Proxy configs are,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart' as pkg_ffi;
 
+import 'aether_env.dart';
 import 'aether_options.dart';
 import 'aether_protocol.dart';
 
@@ -63,6 +64,8 @@ class AetherCore {
   static AetherCore open() {
     final AetherCore? existing = _instance;
     if (existing != null) return existing;
+    // Before the first job, because the core reads this when one asks for ECH.
+    AetherEnv.apply();
     try {
       // iOS embeds the core as a framework and opens it by name.
       //

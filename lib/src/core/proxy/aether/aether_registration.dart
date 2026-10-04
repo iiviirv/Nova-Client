@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:path_provider/path_provider.dart';
 
 import '../../logging/nova_log.dart';
@@ -123,18 +125,47 @@ abstract final class AetherRegistration {
 
     final AetherCore core = AetherCore.open();
     for (final AetherMode mode in _transports) {
-      try {
-        final bool ok = await _open(core, AetherOptions(mode: mode), base)
-            .timeout(budget, onTimeout: () => false);
-        if (ok) {
-          NovaLog.instance.write('WARP registration saved for ${mode.name}.');
+      for (final AetherOptions options in _attemptsFor(mode)) {
+        try {
+          final bool ok = await _open(core, options, base)
+              .timeout(budget, onTimeout: () => false);
+          if (ok) {
+            NovaLog.instance.write('WARP registration saved for ${mode.name}'
+                '${options.ech ? ' behind ECH' : ''}.');
+            break;
+          }
+        } catch (_) {
+          // The next attempt may still work, and none of this was asked for.
         }
-      } catch (_) {
-        // The next transport may still work, and none of this was asked for.
       }
     }
     return have(base);
   }
+
+  /// What to try for one transport, best first.
+  ///
+  /// ECH first for MASQUE, then the same call without it. Asking for ECH is not
+  /// free to get wrong: when the core cannot fetch a key it fails the job with
+  /// NO_ECH_KEY rather than carrying on unencrypted, so a network that blocks
+  /// the key lookup would be worse off than before. Hence the plain retry.
+  ///
+  /// WireGuard is never asked. The core fetches no ECH key for that transport
+  /// at all, so the request could only fail. That costs nothing here: the
+  /// networks ECH is for block UDP to Cloudflare, which rules WireGuard out
+  /// anyway.
+  static List<AetherOptions> _attemptsFor(AetherMode mode) => mode ==
+          AetherMode.wg
+      ? <AetherOptions>[AetherOptions(mode: mode)]
+      : <AetherOptions>[
+          AetherOptions(mode: mode, ech: true),
+          AetherOptions(mode: mode),
+        ];
+
+  /// Exposed so the fallback order can be asserted: it is the part that keeps a
+  /// failed ECH attempt from leaving WARP unregistered.
+  @visibleForTesting
+  static List<AetherOptions> attemptsForTest(AetherMode mode) =>
+      _attemptsFor(mode);
 
   static Future<bool> _open(
       AetherCore core, AetherOptions options, String base) async {

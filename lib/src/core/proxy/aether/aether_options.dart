@@ -53,7 +53,21 @@ class AetherOptions {
     this.fragmentSize = '16-32',
     this.fragmentDelay = '2-10',
     this.dns,
+    this.ech = false,
   });
+
+  /// Ask the core to hide the SNI of its own handshakes with ECH.
+  ///
+  /// New in the v2.3.0 core. It matters most for the registration: that call is
+  /// the first thing WARP makes and the one some networks block outright, which
+  /// is the fault build 174 works around by borrowing whatever tunnel is up.
+  /// With this the core can make it behind an encrypted name instead.
+  ///
+  /// Only MASQUE benefits. The core fetches no ECH key for a WireGuard
+  /// transport, by its own account, so this is inert there. That lines up with
+  /// where it is needed: UDP to Cloudflare is blocked on the networks this is
+  /// for, which rules WireGuard out anyway.
+  final bool ech;
 
   final AetherMode mode;
   final AetherTransport transport;
@@ -253,8 +267,10 @@ class AetherOptions {
     String? fragmentSize,
     String? fragmentDelay,
     String? dns,
+    bool? ech,
   }) =>
       AetherOptions(
+        ech: ech ?? this.ech,
         mode: mode ?? this.mode,
         transport: transport ?? this.transport,
         ip: ip ?? this.ip,

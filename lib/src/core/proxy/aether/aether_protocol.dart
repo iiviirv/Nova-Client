@@ -123,6 +123,9 @@ class AetherPayloads {
       jsonEncode(<String, dynamic>{
         'path': base,
         'transport': _transport(o),
+        // The registration is the call some networks block outright. Behind ECH
+        // the name it asks for is encrypted, so there is nothing to match on.
+        if (o.ech) 'ech': true,
       });
 
   /// For `aether_scan_start`.
@@ -139,6 +142,7 @@ class AetherPayloads {
         ..._fragment(o),
         'ip': o.ip.name,
         if (o.noize != null) 'profile': o.noize!.name,
+        if (o.ech) 'ech': true,
         if (excluded.isNotEmpty) 'excluded': excluded,
       });
 
@@ -171,6 +175,7 @@ class AetherPayloads {
         'mode': o.mode.name,
         ..._fragment(o),
         if (o.noize != null) 'profile': o.noize!.name,
+        if (o.ech) 'ech': true,
         'socks': socks,
       });
 
