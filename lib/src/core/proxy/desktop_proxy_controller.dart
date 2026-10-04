@@ -757,7 +757,7 @@ class DesktopProxyController extends ProxyController {
       _pendingXrayConfig = null;
       if (nodes.length == 1 && nodes.first.network == 'xhttp') {
         final ProxyNode x = await _resolveXhttpServer(nodes.first);
-        _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort);
+        _pendingXrayConfig = XrayConfig.build(x, socksPort: _xraySocksPort, ech: xrayEchFor(profile));
         // The server goes on the direct path so Xray's own dial is not captured
         // by the tunnel and fed back into the socks->Xray chain. It used to be
         // passed only when it had resolved to an IP, so a server whose name did
@@ -895,7 +895,7 @@ class DesktopProxyController extends ProxyController {
             directServers.add(x.server);
           }
           _pendingXrayConfig =
-              XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort);
+              XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort, ech: xrayEchFor(_active));
         }
         cfg = SingboxConfig.buildMultiMap(nodes,
             options: opts,
@@ -2061,7 +2061,7 @@ class DesktopProxyController extends ProxyController {
           for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
         ];
         xhttp = await _startXray(dir,
-            XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort));
+            XrayConfig.buildMulti(resolvedX, basePort: _xraySocksPort, ech: xrayEchFor(_active)));
       }
       // Inferred rather than spelled out: buildMeasureMap's record has grown
       // twice now, and each time the explicit copy here had to be edited in
@@ -3024,4 +3024,6 @@ class DesktopProxyController extends ProxyController {
     _cleanup();
     super.dispose();
   }
+
+
 }

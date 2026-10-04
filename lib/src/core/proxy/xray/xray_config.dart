@@ -29,12 +29,13 @@ class XrayConfig {
   /// in a shipped build.
   static bool debugFreedomOutbound = false;
 
-  static String build(ProxyNode node, {int socksPort = defaultSocksPort}) =>
+  static String build(ProxyNode node,
+          {int socksPort = defaultSocksPort, String? ech}) =>
       const JsonEncoder.withIndent('  ')
-          .convert(buildMap(node, socksPort: socksPort));
+          .convert(buildMap(node, socksPort: socksPort, ech: ech));
 
   static Map<String, dynamic> buildMap(ProxyNode node,
-      {int socksPort = defaultSocksPort}) {
+      {int socksPort = defaultSocksPort, String? ech}) {
     _assertXhttpVless(node);
     return <String, dynamic>{
       'log': <String, dynamic>{'loglevel': 'warning'},
@@ -43,7 +44,7 @@ class XrayConfig {
         _socksInbound('socks-in', socksPort),
       ],
       'outbounds': <Map<String, dynamic>>[
-        _outbound(node, tag: 'proxy'),
+        _outbound(node, tag: 'proxy', ech: ech),
         <String, dynamic>{'tag': 'direct', 'protocol': 'freedom'},
         <String, dynamic>{'tag': 'block', 'protocol': 'blackhole'},
       ],
@@ -80,12 +81,12 @@ class XrayConfig {
   /// caller can hand sing-box a socks outbound per node at `basePort + i` and
   /// keep the two cores' node lists aligned.
   static String buildMulti(List<ProxyNode> nodes,
-          {int basePort = defaultSocksPort}) =>
+          {int basePort = defaultSocksPort, String? ech}) =>
       const JsonEncoder.withIndent('  ')
-          .convert(buildMultiMap(nodes, basePort: basePort));
+          .convert(buildMultiMap(nodes, basePort: basePort, ech: ech));
 
   static Map<String, dynamic> buildMultiMap(List<ProxyNode> nodes,
-      {int basePort = defaultSocksPort}) {
+      {int basePort = defaultSocksPort, String? ech}) {
     if (nodes.isEmpty) {
       throw const FormatException('buildMulti needs at least one xhttp node.');
     }
@@ -101,7 +102,7 @@ class XrayConfig {
       final String inTag = 'socks-in-$i';
       final String outTag = 'out-$i';
       inbounds.add(_socksInbound(inTag, basePort + i));
-      outbounds.add(_outbound(nodes[i], tag: outTag));
+      outbounds.add(_outbound(nodes[i], tag: outTag, ech: ech));
       rules.add(<String, dynamic>{
         'type': 'field',
         'inboundTag': <String>[inTag],
@@ -148,7 +149,8 @@ class XrayConfig {
         },
       };
 
-  static Map<String, dynamic> _outbound(ProxyNode node, {required String tag}) {
+  static Map<String, dynamic> _outbound(ProxyNode node,
+      {required String tag, String? ech}) {
     if (debugFreedomOutbound) {
       return <String, dynamic>{'tag': tag, 'protocol': 'freedom'};
     }
@@ -186,6 +188,12 @@ class XrayConfig {
                 if ((node.fingerprint ?? '').isNotEmpty &&
                     node.fingerprint != 'unsafe')
                   'fingerprint': node.fingerprint,
+                // ECH, when the profile asks for it. Reported from the field:
+                // xhttp servers ignored the ECH switch, because xhttp runs on
+                // this core and the ECH work had gone into the sing-box config
+                // only. Xray does its own lookup from this string and will not
+                // take a key, so it is the one thing Nova cannot hand it.
+                if (ech != null) 'echConfigList': ech,
                 // NB: no `allowInsecure`. Xray 26.3.27 REMOVED it (setting it
                 // true makes the whole config fail to build: "the feature
                 // allowInsecure has been removed ... migrated to

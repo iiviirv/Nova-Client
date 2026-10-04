@@ -785,6 +785,7 @@ class SingboxProxyController extends ProxyController {
             for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
           ];
           xrayJson = XrayConfig.buildMulti(resolvedX,
+              ech: xrayEchFor(_active),
               basePort: XrayConfig.defaultSocksPort);
         }
       }
@@ -1500,7 +1501,8 @@ class SingboxProxyController extends ProxyController {
     if (xhttpPool && nodes.length == 1 && nodes.first.network == 'xhttp') {
       const int socksPort = XrayConfig.defaultSocksPort;
       final ProxyNode xNode = await _resolveXhttpServer(nodes.first);
-      _pendingXrayConfig = XrayConfig.build(xNode, socksPort: socksPort);
+      _pendingXrayConfig = XrayConfig.build(xNode,
+          socksPort: socksPort, ech: xrayEchFor(profile));
       NovaLog.instance.write(
           'xhttp node: running it on the Xray core, sing-box bridges the TUN.');
       final String bridge =
@@ -1529,7 +1531,8 @@ class SingboxProxyController extends ProxyController {
         final List<ProxyNode> resolvedX = <ProxyNode>[
           for (final ProxyNode x in xhttpNodes) await _resolveXhttpServer(x),
         ];
-        _pendingXrayConfig = XrayConfig.buildMulti(resolvedX, basePort: base);
+        _pendingXrayConfig =
+            XrayConfig.buildMulti(resolvedX, basePort: base, ech: xrayEchFor(profile));
         NovaLog.instance.write(
             'Auto pool includes ${xhttpNodes.length} xhttp node(s) on the Xray '
             'core; sing-box measures them as local socks exits.');
@@ -2537,6 +2540,7 @@ class SingboxProxyController extends ProxyController {
     _lifecycle = null;
     super.dispose();
   }
+
 }
 
 /// A minimal mutex for async sections (no package dependency).
@@ -2548,4 +2552,5 @@ class _AsyncLock {
     _tail = result.then<void>((_) {}, onError: (Object _) {});
     return result;
   }
+
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.29.1 (2026-10-05)
+
+- Fixes the ECH switch doing nothing for xhttp servers. Those run on a separate
+  core, which was never told about ECH, so the switch read on while the server
+  name was still sent in the open.
+
 ## v1.29.0 (2026-10-05)
 
 - The ECH lookup can now be edited, next to the switch that turns it on. It

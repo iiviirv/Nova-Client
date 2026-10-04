@@ -1,3 +1,6 @@
+import '../logging/nova_log.dart';
+import '../models/proxy_profile.dart';
+
 /// Where to get an ECH key from, in the form other clients already use.
 ///
 /// `cloudflare-ech.com+udp://1.1.1.1` means: look up the HTTPS record of
@@ -68,6 +71,25 @@ class EchSpec {
   bool get isDefault =>
       domain == fallback.domain && resolver == fallback.resolver;
 
+  /// The text to hand the Xray core, which does its own lookup.
+  ///
+  /// Xray takes only this `domain+resolver` form. Measured against the shipped
+  /// 26.3.27: a literal base64 key in `echConfigList` produces no ECH activity
+  /// at all, so Nova cannot pass the key it already fetched for sing-box and
+  /// the two cores necessarily look it up separately.
+  ///
+  /// It also speaks only `udp://` and `https://` there: a `tcp://` resolver
+  /// silently does nothing, which would turn ECH off for xhttp servers while
+  /// the switch still read on. ECH is what the user asked for and the resolver
+  /// is the means, so a tcp resolver falls back to the default for this core
+  /// only, and [xrayResolverChanged] says so for the log.
+  String get xrayText =>
+      '$domain+${xrayResolverChanged ? fallback.resolver : resolver}';
+
+  /// Whether [xrayText] had to use a different resolver than asked for.
+  bool get xrayResolverChanged =>
+      resolver.toLowerCase().startsWith('tcp://');
+
   /// A key for caching, since a different spec is a different answer.
   String get cacheKey => '$domain|$resolver';
 
@@ -80,4 +102,26 @@ class EchSpec {
 
   @override
   String toString() => text;
+}
+
+/// The ECH lookup to hand the Xray core for [profile], or null when this
+/// profile does not use ECH.
+///
+/// Reported from the field: xhttp servers ignored the ECH switch. xhttp runs on
+/// the Xray core and the ECH work had gone into the sing-box config only, so
+/// the switch read on and nothing was hidden.
+///
+/// One function rather than a copy in each controller, because the first
+/// version was a private method in both and neither could be tested: deleting
+/// the "is ECH even on" check broke nothing at all.
+String? xrayEchFor(ProxyProfile? profile) {
+  if (profile == null || !profile.echSni) return null;
+  final EchSpec spec = EchSpec.parse(profile.echConfigList);
+  if (spec.xrayResolverChanged) {
+    NovaLog.instance.write(
+        'The Xray core cannot look an ECH key up over tcp, so xhttp servers '
+        'use ${EchSpec.fallback.resolver} for it. Everything else uses the '
+        'resolver you set.');
+  }
+  return spec.xrayText;
 }
