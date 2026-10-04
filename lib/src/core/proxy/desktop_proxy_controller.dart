@@ -33,6 +33,7 @@ import 'singbox_proxy_controller.dart'
 import 'subscription.dart';
 import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
+import 'ech_key.dart';
 import 'singbox/singbox_config.dart';
 import 'xray/xray_config.dart';
 
@@ -722,6 +723,12 @@ class DesktopProxyController extends ProxyController {
         // The SNI-block bypass, per profile (see the mobile controller).
         hardenTls: profile.hardenTls,
       ech: profile.echSni,
+      // Fetched, not believed. Cloudflare rotates this key, and a stale one
+      // does not degrade: it fails every connection on the profile. Only
+      // looked up when ECH is actually on, so nobody else pays for it.
+      echConfig: profile.echSni
+          ? await EchKey.current()
+          : kCloudflareEchConfig,
         // Windows: keep the bypass's TLS-record split but drop its TCP-segment
         // split, whose ACK-wait an unelevated Windows core cannot drive (see
         // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.

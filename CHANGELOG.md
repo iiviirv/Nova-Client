@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.28.1 (2026-10-05)
+
+- Fixes ECH breaking after a few hours. Cloudflare changes the key ECH needs
+  from time to time, and Nova was shipping a copy of it rather than asking for
+  the current one. When it changed, every config using ECH stopped connecting,
+  on blocked and ordinary networks alike. Nova now fetches the key and keeps it
+  up to date, so this cannot happen again.
+- ECH and the older SNI bypass are now one choice rather than two switches.
+  Turning either on turns the other off: they hide the same thing in ways that
+  cannot both apply, and having both up showed a bypass that was not running.
+- Nova's free servers now use ECH by default instead of the older bypass, since
+  that is what still gets through on the networks they are most used on.
+- Fixes the connection test failing on any list holding a Reality server while
+  ECH was on. ECH is no longer asked for on those servers, which bring their
+  own handshake.
+
 ## v1.28.0 (2026-10-04)
 
 - Nova Radar now looks for clean addresses over IPv6 as well as IPv4, on

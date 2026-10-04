@@ -51,13 +51,18 @@ void main() {
         reason: 'seeded once, not once per launch');
   });
 
-  test('the free profile ships with the SNI bypass and the encryption filter',
-      () {
+  test('the free profile ships with ECH and the encryption filter', () {
     final ProxyProfile free = buildFreeProfile();
     expect(free.subscriptionUrl, kFreeSubUrl);
     expect(free.kind, ProxyKind.subscription);
-    expect(free.hardenTls, isTrue,
+    // Was the fragmenting bypass until 2026-10, when fragmentation stopped
+    // working on the MCI firewall and ECH did not. The people who need a free
+    // list are on the blocking networks, which is why the default moved rather
+    // than being left to them to find.
+    expect(free.echSni, isTrue,
         reason: 'the people who need a free list are on the blocking networks');
+    expect(free.hardenTls, isFalse,
+        reason: 'the two hide the same name and cannot both apply');
     expect(free.encryptedOnly, isTrue);
   });
 
@@ -134,7 +139,10 @@ void main() {
     final ProxyProfile back = ProxyProfile.decodeList(
         ProxyProfile.encodeList(<ProxyProfile>[buildFreeProfile()])).single;
     expect(back.encryptedOnly, isTrue);
-    expect(back.hardenTls, isTrue);
+    expect(back.hardenTls, isFalse);
+    expect(back.echSni, isTrue,
+        reason: 'the default that reaches the blocking networks must survive a '
+            'save, or it is only a default until the app restarts');
     expect(back.id, kFreeProfileId);
   });
 }

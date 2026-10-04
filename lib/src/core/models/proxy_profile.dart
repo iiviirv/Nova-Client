@@ -382,7 +382,13 @@ ProxyProfile buildFreeProfile({String name = 'Nova free servers'}) =>
       uri: kFreeSubUrl,
       subscriptionUrl: kFreeSubUrl,
       nodeCount: 0,
-      hardenTls: true,
+      // ECH rather than the fragmenting bypass, as of 2026-10. Fragmentation is
+      // now fully blocked on the MCI firewall, where ECH still gets through,
+      // and the free list is a Cloudflare-fronted subscription, which is
+      // exactly what ECH is for. The two are mutually exclusive, so this is a
+      // swap rather than an addition.
+      hardenTls: false,
+      echSni: true,
       encryptedOnly: true,
     );
 

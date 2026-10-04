@@ -21,6 +21,7 @@ import 'singbox/node_probe.dart';
 import '../../features/cloudflare/doh_resolver.dart';
 import 'singbox/awg_config.dart';
 import 'singbox/proxy_node.dart';
+import 'ech_key.dart';
 import 'singbox/singbox_config.dart';
 import 'subscription.dart';
 import 'aether/aether_platform_ready.dart';
@@ -1325,6 +1326,12 @@ class SingboxProxyController extends ProxyController {
       // are the user's edits from the bypass editor (null = field-tested default).
       hardenTls: profile.hardenTls,
       ech: profile.echSni,
+      // Fetched, not believed. Cloudflare rotates this key, and a stale one
+      // does not degrade: it fails every connection on the profile. Only
+      // looked up when ECH is actually on, so nobody else pays for it.
+      echConfig: profile.echSni
+          ? await EchKey.current()
+          : kCloudflareEchConfig,
       bypassFingerprint: profile.bypassFingerprint,
       bypassCipherSuites: profile.bypassCipherSuites,
       bypassFragmentMask: profile.bypassFragmentMask,

@@ -1,0 +1,119 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nova_client/src/core/models/proxy_profile.dart';
+import 'package:nova_client/src/core/proxy/ech_key.dart';
+import 'package:nova_client/src/core/proxy/singbox/proxy_node.dart';
+import 'package:nova_client/src/core/proxy/singbox/singbox_config.dart';
+
+/// Shipping Cloudflare's ECH key as a constant broke every ECH config in the
+/// field. A tester had it working for about two hours, then nothing connected
+/// at all, on filtered and unfiltered networks alike, while another client kept
+/// working because it reads the key from DNS on each connection. The log said
+/// it outright: "certificate is valid for cloudflare-ech.com, not `the host`",
+/// which is what a server returns when it cannot decrypt the inner hello.
+///
+/// A stale key does not degrade. It fails every connection on the profile, so
+/// the key is now fetched and the constant is only a floor.
+void main() {
+  setUp(EchKey.invalidate);
+
+  group('reading the answer', () {
+    const String answer = '''
+{"Status":0,"Answer":[{"name":"cloudflare-ech.com","type":65,
+"data":"1 . alpn=h3,h2 ipv4hint=104.18.10.118 ech=AEX+DQBBogAgACAW ipv6hint=2606:4700::6812:a76"}]}''';
+
+    test('the ech value is picked out of the record', () {
+      expect(EchKey.parseEch(answer), 'AEX+DQBBogAgACAW');
+    });
+
+    test('an answer without one is not mistaken for a key', () {
+      expect(EchKey.parseEch('{"Status":0,"Answer":[{"type":65,"data":"1 . alpn=h3"}]}'),
+          isNull);
+      expect(EchKey.parseEch('{"Status":3}'), isNull);
+      expect(EchKey.parseEch('not json at all'), isNull);
+      expect(EchKey.parseEch(''), isNull);
+    });
+  });
+
+  group('which key a config gets', () {
+    test('a fetched key is preferred over the built-in one', () async {
+      final String got = await EchKey.current(fetch: () async => 'FRESH==');
+      expect(got, 'FRESH==');
+      expect(got, isNot(kCloudflareEchConfig));
+    });
+
+    test('a failed fetch falls back rather than returning nothing', () async {
+      final String got = await EchKey.current(fetch: () async => null);
+      expect(got, kCloudflareEchConfig,
+          reason: 'no key at all would mean no connection at all');
+    });
+
+    test('a fetched key is reused rather than looked up every connection',
+        () async {
+      await EchKey.current(fetch: () async => 'FIRST==');
+      int calls = 0;
+      final String got = await EchKey.current(fetch: () async {
+        calls++;
+        return 'SECOND==';
+      });
+      expect(got, 'FIRST==');
+      expect(calls, 0, reason: 'a lookup per connection is a lookup too many');
+    });
+
+    test('a key older than its life is looked up again', () async {
+      await EchKey.current(fetch: () async => 'OLD==');
+      final String got = await EchKey.current(
+          now: DateTime.now().add(EchKey.maxAge * 2),
+          fetch: () async => 'NEW==');
+      expect(got, 'NEW==',
+          reason: 'this is the rotation that broke every config in the field');
+    });
+  });
+
+  group('what the config ends up carrying', () {
+    ProxyNode node({String? reality}) => ProxyNode(
+          protocol: NodeProtocol.vless,
+          server: '104.16.0.1',
+          port: 443,
+          uuid: '00000000-0000-0000-0000-000000000000',
+          tls: true,
+          sni: 'example.com',
+          network: 'ws',
+          wsPath: '/ws',
+          realityPublicKey: reality,
+          tag: 'n',
+        );
+
+    Map<String, dynamic> tlsOf(ProxyNode n, SingboxRouteOptions o) {
+      final Map<String, dynamic> m = SingboxConfig.buildMap(n, options: o);
+      final List<dynamic> outs = m['outbounds'] as List<dynamic>;
+      return (outs.first as Map<String, dynamic>)['tls']
+          as Map<String, dynamic>;
+    }
+
+    test('ECH is never asked for alongside Reality', () {
+      final Map<String, dynamic> tls = tlsOf(
+          node(reality: 'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA'),
+          const SingboxRouteOptions(ech: true));
+      expect(tls.containsKey('ech'), isFalse,
+          reason: 'Reality brings its own handshake; asking for both made the '
+              'core reject the outbound, which a tester saw as the lightning '
+              'test failing on any list holding one Reality node');
+      expect(tls['reality'], isNotNull);
+    });
+
+    test('a non-Reality node still gets it', () {
+      expect(tlsOf(node(), const SingboxRouteOptions(ech: true))['ech'],
+          isNotNull);
+    });
+  });
+
+  group('the two bypasses cannot both be on', () {
+    test('the free list ships with ECH, not the fragmenting bypass', () {
+      final ProxyProfile free = buildFreeProfile();
+      expect(free.echSni, isTrue);
+      expect(free.hardenTls, isFalse,
+          reason: 'fragmentation is blocked on the network the free list is '
+              'most used on, and the two are mutually exclusive');
+    });
+  });
+}

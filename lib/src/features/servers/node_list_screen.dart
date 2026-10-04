@@ -622,7 +622,11 @@ class _NodeListScreenState extends State<NodeListScreen> {
         'You turned the SNI-block bypass ${on ? 'on' : 'off'} for "${profile.name}"');
     // Mark it decided: a subscription can ask for this on by default, and once
     // the user has chosen, a refresh must not quietly change it back.
-    final updated = profile.copyWith(hardenTls: on, hardenTlsUserSet: true);
+    // Turning the bypass on turns ECH off. The two hide the same name in ways
+    // that cannot both apply: ECH already suppresses fragmentation in the
+    // config, so leaving both switches up showed a bypass that was not running.
+    final updated = profile.copyWith(
+        hardenTls: on, hardenTlsUserSet: true, echSni: on ? false : null);
     scope.profiles.update(updated);
     _bypassSuggested = false;
     if (mounted) setState(() {});
@@ -647,7 +651,9 @@ class _NodeListScreenState extends State<NodeListScreen> {
     if (profile == null || profile.echSni == on) return;
     NovaLog.instance.write(
         'You turned ECH ${on ? 'on' : 'off'} for "${profile.name}"');
-    final updated = profile.copyWith(echSni: on);
+    // And the reverse: ECH on takes the bypass off, for the same reason.
+    final updated =
+        profile.copyWith(echSni: on, hardenTls: on ? false : null);
     scope.profiles.update(updated);
     if (mounted) setState(() {});
     if (scope.proxy.activeProfile?.id == profile.id) {

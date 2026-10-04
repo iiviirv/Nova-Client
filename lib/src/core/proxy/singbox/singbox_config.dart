@@ -27,11 +27,19 @@ const int kDefaultUrlTestToleranceMs = 50;
 /// on a query that network drops.
 ///
 /// Every Cloudflare zone publishes this same key: ir.innovio.ae and
-/// cloudflare-ech.com returned byte-identical values on 2026-10-04. Cloudflare
-/// rotates it, so [AetherEchKey.refresh] replaces this at runtime over DoH on
-/// 443 when it can, and this is the floor it falls back to.
+/// cloudflare-ech.com returned byte-identical values when this was written.
+///
+/// This is a floor, not a source. Cloudflare rotates the key, and a stale one
+/// does not degrade gracefully: it fails every connection on the profile with
+/// a certificate for cloudflare-ech.com instead of the real host. That is
+/// exactly what happened in the field, which is why [EchKey] now fetches the
+/// live value and this is only what a first run with no network falls back to.
+///
+/// An earlier version of this comment claimed a refresh already existed. It
+/// did not. The claim is the reason nobody went looking when configs began
+/// failing everywhere at once.
 const String kCloudflareEchConfig =
-    'AEX+DQBBrwAgACB3V6T2X69/mCGQn8NhU8fkBpvDcuxha8C+xpuUHFRPGQAEAAEAAQAS'
+    'AEX+DQBBogAgACAWJCBFTDlxcVvIEKpDKAomZQL9Anjy4Rg+qMg7KbCTHAAEAAEAAQAS'
     'Y2xvdWRmbGFyZS1lY2guY29tAAA=';
 
 /// The PEM block sing-box wants in `tls.ech.config`.
@@ -1668,7 +1676,13 @@ class SingboxConfig {
           if (n.realityShortId != null && n.realityShortId!.isNotEmpty)
             'short_id': n.realityShortId,
         },
-      if (ech)
+      // Never alongside Reality, for the same reason fragmentation is not:
+      // Reality brings its own handshake, imitating a real session to a real
+      // site, and ECH is a second, conflicting way of hiding the same name.
+      // Asking for both made the core reject the outbound, which a tester saw
+      // as the lightning test failing on any list holding one Reality node,
+      // and which went away when only that node was removed.
+      if (ech && !n.isReality)
         'ech': <String, dynamic>{
           'enabled': true,
           'config': echConfigPem(echConfig),
