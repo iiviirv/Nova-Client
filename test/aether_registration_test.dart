@@ -98,4 +98,32 @@ void main() {
           AetherRegistrationSkip.aetherProfile);
     });
   });
+
+  group('where each transport actually puts the registration', () {
+    // Measured against the shipped core, because the two do not agree and the
+    // difference was invisible: WireGuard writes the identity to the base path
+    // exactly, with no suffix, while MASQUE writes it to base-masque.
+    test('a WireGuard registration is found, suffix or no suffix', () {
+      File(base()).writeAsStringSync('wireguard identity');
+      expect(AetherRegistration.have(base()), isTrue,
+          reason: 'only the suffixed form was checked, so a WireGuard '
+              'registration read as none at all and Nova registered again on '
+              'every connect for the life of the install');
+    });
+
+    test('an empty file at the base path is still not a registration', () {
+      File(base()).writeAsStringSync('');
+      expect(AetherRegistration.have(base()), isFalse);
+    });
+
+    test('a MASQUE registration is still found', () {
+      File('${base()}-masque').writeAsStringSync('masque identity');
+      expect(AetherRegistration.have(base()), isTrue);
+    });
+
+    test('a connection record at the base path is not mistaken for one', () {
+      File('${base()}-lastconn').writeAsStringSync('connection record');
+      expect(AetherRegistration.have(base()), isFalse);
+    });
+  });
 }

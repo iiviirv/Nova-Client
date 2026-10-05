@@ -2,6 +2,10 @@
 
 ## v1.30.2 (2026-10-05)
 
+- Stops Nova registering with Cloudflare for WARP over and over. It could not
+  recognise a registration it had already made, so on some devices it made a
+  new one on every single connection.
+
 - Fixes ECH failing on phones whose network profile uses a randomised TLS
   fingerprint. Those connections could not complete at all, so on some phones
   servers would test fine and then refuse to connect. ECH now always uses a

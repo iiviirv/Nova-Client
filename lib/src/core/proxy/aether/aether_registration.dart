@@ -93,7 +93,20 @@ abstract final class AetherRegistration {
   /// True when at least one registration already exists, so there is nothing
   /// to do and no reason to spend a call.
   static bool have(String base) {
-    final Directory dir = File(base).parent;
+    // The two transports do not agree on where to put this, which is measured
+    // rather than assumed: WireGuard writes the identity to `base` exactly,
+    // with no suffix, while MASQUE writes it to `base-masque`.
+    //
+    // Only the suffixed form was checked here, so a WireGuard registration was
+    // invisible. On a device where the MASQUE half fails and the WireGuard half
+    // succeeds, that reads as "no registration" forever and Nova registers
+    // again on every single connect, which is exactly what a tester reported
+    // seeing in his log. The registration was there the whole time; this could
+    // not see it.
+    final File exact = File(base);
+    if (exact.existsSync() && exact.lengthSync() > 0) return true;
+
+    final Directory dir = exact.parent;
     if (!dir.existsSync()) return false;
     final String prefix = base.split(Platform.pathSeparator).last;
     for (final FileSystemEntity e in dir.listSync()) {
