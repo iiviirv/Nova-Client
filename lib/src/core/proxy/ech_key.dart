@@ -33,6 +33,10 @@ abstract final class EchKey {
   static DateTime? _memoryAt;
   static String? _memoryFor;
 
+  /// The public name the remembered key belongs to, so a refusal naming that
+  /// name can be recognised as this key being refused.
+  static String? _memoryDomain;
+
   /// Resolvers to try, in order, before giving up.
   ///
   /// One was not enough. A tester on a fresh phone got no key at all: the
@@ -87,6 +91,7 @@ abstract final class EchKey {
       _memory = fresh;
       _memoryAt = DateTime.now();
       _memoryFor = spec.cacheKey;
+      _memoryDomain = spec.domain;
       await _saveCache(fresh, _memoryAt!, spec);
     } catch (_) {
       // Nobody asked for this and the connection is already working.
@@ -125,6 +130,7 @@ abstract final class EchKey {
       _memory = fresh;
       _memoryAt = at;
       _memoryFor = spec.cacheKey;
+      _memoryDomain = spec.domain;
       await _saveCache(fresh, at, spec);
       return fresh;
     }
@@ -165,12 +171,48 @@ abstract final class EchKey {
       _memoryFor == spec.cacheKey &&
       at.difference(_memoryAt!) < maxAge;
 
+  /// Whether a core log line is a server refusing the key we gave it.
+  ///
+  /// The signature is in this module's own doc comment: a server that cannot
+  /// decrypt the inner hello falls back to its public name, so Go reports
+  /// "certificate is valid for cloudflare-ech.com, not `the real host`".
+  ///
+  /// Pure and public so it can be tested against real log text rather than
+  /// against itself.
+  static bool looksLikeRefusedKey(String line, {String? domain}) {
+    final String name = (domain ?? _memoryDomain ?? '').toLowerCase();
+    if (name.isEmpty) return false;
+    final String l = line.toLowerCase();
+    return l.contains('certificate is valid for') && l.contains(name);
+  }
+
+  /// Drop the key when a core line says a server refused it.
+  ///
+  /// Without this the cache was a one-way door. [current] falls back to the
+  /// remembered key when a fresh lookup fails, and nothing in the app ever
+  /// called [invalidate], so a key that every server rejects stayed in use for
+  /// its full six hours and across restarts. That is bad enough when
+  /// Cloudflare has simply rotated; it is worse if the key was never
+  /// Cloudflare's, because a key supplied by someone else decrypts to them.
+  ///
+  /// Returns whether it dropped anything, which is what a test can assert on.
+  static Future<bool> noteCoreLine(String line) async {
+    if (_memory == null) return false;
+    if (!looksLikeRefusedKey(line)) return false;
+    NovaLog.instance.write(
+        'A server refused the ECH key, so it is being discarded and looked up '
+        'again on the next connection.');
+    await invalidate();
+    return true;
+  }
+
   /// Drops what is remembered, so the next [current] looks the key up again.
   /// Used when a connection fails the way a stale key makes it fail.
   static Future<void> invalidate() async {
     _memory = null;
     _memoryAt = null;
     _memoryFor = null;
+    _memoryDomain = null;
     try {
       final SharedPreferences p = await SharedPreferences.getInstance();
       await p.remove(_prefKey);

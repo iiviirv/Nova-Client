@@ -2,6 +2,30 @@
 
 ## v1.30.2 (2026-10-05)
 
+- Closes a hole in how Nova fetched the ECH key. It asked a DNS server for the
+  key and then used whatever answer arrived, without checking that the answer
+  came from the server it asked, answered the question it asked, or carried the
+  number it stamped on the question. Anyone able to see or guess that question
+  could supply their own key, and the holder of that key can read the real
+  server name out of the connection, which is the one thing ECH is there to
+  stop. ECH also turns fragmentation off, so a supplied key left the name more
+  exposed than running with ECH switched off. All three checks are now made.
+
+- Nova now throws the ECH key away when a server refuses it, instead of keeping
+  it for six hours and across restarts. Nothing in the app ever discarded a
+  key, so a key that no server would accept stayed in use until it timed out.
+
+- Fixes ECH settings being applied to servers that never receive ECH. On a
+  server ECH cannot work with, such as one reached by a plain address that is
+  not Cloudflare's, Nova switched fragmentation off and replaced the TLS
+  fingerprint chosen for your carrier, then sent no ECH. That left the real
+  server name going out in a single plain packet, which is exactly what the
+  filter looks for. Those servers now keep their own settings.
+
+- The log no longer includes your computer's home folder, which on a Mac or a
+  Windows PC usually contains your account name. Logs are made to be copied
+  into a support message, and that is not something to send along with them.
+
 - Stops Nova registering with Cloudflare for WARP over and over. It could not
   recognise a registration it had already made, so on some devices it made a
   new one on every single connection.

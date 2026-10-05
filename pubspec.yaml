@@ -4,7 +4,7 @@ description: >-
   fork) with the Nova Radar Cloudflare clean-IP scanner built in. Follows the
   Nova Proxy design language.
 publish_to: "none"
-version: 1.30.2+191
+version: 1.30.2+192
 
 environment:
   sdk: ">=3.6.0 <4.0.0"

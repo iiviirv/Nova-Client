@@ -132,15 +132,21 @@ abstract final class AetherRegistration {
     if (have(base)) return true;
     if (!AetherCore.available) return false;
 
-    // The path is in the line because a tester reported seeing the "saved"
+    // The filename is in the line because a tester reported seeing the "saved"
     // message on every connect, which should be impossible: this returns above
-    // when a registration already exists. It could not be reproduced here (a
-    // second ensure() skips), so the next report needs to show where it looked
-    // rather than only that it looked.
+    // when a registration already exists. The cause turned out to be that
+    // WireGuard writes to `base` exactly while this only looked for `base-*`,
+    // so the name is the diagnostic that matters.
+    //
+    // The name, not the path. This log is made to be pasted into a support
+    // chat, and the full path carries the OS account name, which on a desktop
+    // is usually the person's real one. NovaLog.redact now strips home
+    // directories as well, so this is belt and braces.
     NovaLog.instance.write(
-        'No Cloudflare registration for WARP yet (looked in $base). Taking one '
-        'through the tunnel that is up, so WARP can work later on networks '
-        'that block it.');
+        'No Cloudflare registration for WARP yet (looked for '
+        '${base.split(Platform.pathSeparator).last} in the app folder). '
+        'Taking one through the tunnel that is up, so WARP can work later on '
+        'networks that block it.');
 
     final AetherCore core = AetherCore.open();
     for (final AetherMode mode in _transports) {

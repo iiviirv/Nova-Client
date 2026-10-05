@@ -118,7 +118,8 @@ abstract final class DnsHttpsRecord {
       if (res.statusCode != 200) return null;
       final List<int> body =
           await res.fold<List<int>>(<int>[], (List<int> a, List<int> b) => a..addAll(b));
-      return parseWireAnswer(Uint8List.fromList(body));
+      return parseWireAnswer(Uint8List.fromList(body),
+          expectId: 0, expectName: domain);
     } catch (_) {
       return null;
     } finally {
@@ -138,21 +139,40 @@ abstract final class DnsHttpsRecord {
             : InternetAddress.anyIPv4,
         0);
     try {
-      final Uint8List query = buildQuery(domain);
+      final int id = Random().nextInt(0x10000);
+      final Uint8List query = buildQuery(domain, id: id);
       sock.send(query, addrs.first, port);
       final Completer<Uint8List?> done = Completer<Uint8List?>();
+      // Only an answer from the server we asked, to the question we asked,
+      // carrying the id we chose. None of that was checked, and the answer
+      // becomes the ECH key: whoever supplies it holds the private half, so
+      // they can decrypt the inner ClientHello and read the real server name.
+      // That is the one thing ECH exists to stop, and ECH also turns off
+      // fragmentation, so a forged key left the name MORE exposed than ECH off.
+      //
+      // Measured before the fix with a local server replying id=0xBEEF, zero
+      // questions and a record for another name entirely: accepted. On-path is
+      // not even needed, since without the id check only the source port has
+      // to be guessed.
       final StreamSubscription<RawSocketEvent> sub =
           sock.listen((RawSocketEvent e) {
         if (e != RawSocketEvent.read) return;
         final Datagram? d = sock.receive();
-        if (d != null && !done.isCompleted) {
-          done.complete(Uint8List.fromList(d.data));
-        }
+        if (d == null || done.isCompleted) return;
+        if (d.address != addrs.first || d.port != port) return;
+        final Uint8List bytes = Uint8List.fromList(d.data);
+        // Keep listening after a datagram that does not answer the question.
+        // Completing on it would let one forgery deny the real answer that is
+        // still in flight.
+        if (!_answersQuery(bytes, id, domain)) return;
+        done.complete(bytes);
       });
       try {
         final Uint8List? reply =
             await done.future.timeout(timeout, onTimeout: () => null);
-        return reply == null ? null : parseWireAnswer(reply);
+        return reply == null
+            ? null
+            : parseWireAnswer(reply, expectId: id, expectName: domain);
       } finally {
         await sub.cancel();
       }
@@ -161,13 +181,24 @@ abstract final class DnsHttpsRecord {
     }
   }
 
+  /// Whether [msg] is a reply to our query: our id, and the one question we
+  /// asked echoed back. Cheap enough to run on every datagram that arrives.
+  static bool _answersQuery(Uint8List msg, int id, String domain) {
+    if (msg.length < 12) return false;
+    if (((msg[0] << 8) | msg[1]) != id) return false;
+    if (((msg[4] << 8) | msg[5]) != 1) return false;
+    final (String qname, int _) = _nameAt(msg, 12);
+    return _sameName(qname, domain);
+  }
+
   static Future<String?> _overTcp(
       String domain, String hostPort, Duration timeout) async {
     final (String host, int port) = _hostPort(hostPort, 53);
     final Socket sock =
         await Socket.connect(host, port, timeout: timeout);
     try {
-      final Uint8List q = buildQuery(domain);
+      final int id = Random().nextInt(0x10000);
+      final Uint8List q = buildQuery(domain, id: id);
       // DNS over TCP prefixes the message with its length.
       sock.add(<int>[(q.length >> 8) & 0xFF, q.length & 0xFF, ...q]);
       await sock.flush();
@@ -177,7 +208,8 @@ abstract final class DnsHttpsRecord {
         if (buf.length >= 2) {
           final int want = (buf[0] << 8) | buf[1];
           if (buf.length >= 2 + want) {
-            return parseWireAnswer(Uint8List.fromList(buf.sublist(2, 2 + want)));
+            return parseWireAnswer(Uint8List.fromList(buf.sublist(2, 2 + want)),
+                expectId: id, expectName: domain);
           }
         }
       }
@@ -209,14 +241,27 @@ abstract final class DnsHttpsRecord {
   }
 
   /// The `ech=` value from a wire-format answer, or null.
-  static String? parseWireAnswer(Uint8List msg) {
+  ///
+  /// Pass [expectId] and [expectName] wherever the answer came off a socket
+  /// rather than out of an authenticated response body. Without them this
+  /// reads whatever arrived, and what it reads becomes the ECH key.
+  static String? parseWireAnswer(Uint8List msg,
+      {int? expectId, String? expectName}) {
     try {
       if (msg.length < 12) return null;
+      if (expectId != null && ((msg[0] << 8) | msg[1]) != expectId) return null;
       final int qd = (msg[4] << 8) | msg[5];
       final int an = (msg[6] << 8) | msg[7];
       if (an == 0) return null;
+      // A reply to one question echoes exactly that one question. Anything
+      // else is not answering what was asked.
+      if (expectName != null && qd != 1) return null;
       int i = 12;
       for (int q = 0; q < qd; q++) {
+        if (q == 0 && expectName != null) {
+          final (String qname, int _) = _nameAt(msg, i);
+          if (!_sameName(qname, expectName)) return null;
+        }
         i = _skipName(msg, i);
         i += 4; // type + class
       }
@@ -269,6 +314,52 @@ abstract final class DnsHttpsRecord {
   }
 
   /// Past a name, following a compression pointer if there is one.
+  /// The name at [i] as dotted text, and the offset just past it on the wire.
+  ///
+  /// Compression pointers are followed, so a question echoed by reference
+  /// still reads. The second value is the on-wire end, which for a pointer is
+  /// two bytes on from where it started, not the end of what it pointed at.
+  static (String name, int next) _nameAt(Uint8List msg, int i) {
+    final List<String> labels = <String>[];
+    int at = i;
+    int? next;
+    // Bounded: a malformed message must not spin here, and 64 hops is far
+    // more than any real name needs.
+    for (int hops = 0; hops < 64; hops++) {
+      if (at < 0 || at >= msg.length) break;
+      final int n = msg[at];
+      if (n == 0) {
+        next ??= at + 1;
+        break;
+      }
+      if ((n & 0xC0) == 0xC0) {
+        if (at + 1 >= msg.length) break;
+        next ??= at + 2;
+        at = ((n & 0x3F) << 8) | msg[at + 1];
+        continue;
+      }
+      if (at + 1 + n > msg.length) break;
+      labels.add(
+          String.fromCharCodes(msg.sublist(at + 1, at + 1 + n)));
+      at += 1 + n;
+    }
+    return (labels.join('.'), next ?? at);
+  }
+
+  /// DNS names compare without case and without a trailing root dot.
+  static bool _sameName(String a, String b) {
+    String trim(String s) {
+      String t = s.trim().toLowerCase();
+      while (t.endsWith('.')) {
+        t = t.substring(0, t.length - 1);
+      }
+      return t;
+    }
+
+    final String x = trim(a);
+    return x.isNotEmpty && x == trim(b);
+  }
+
   static int _skipName(Uint8List msg, int i) {
     while (i < msg.length) {
       final int n = msg[i];

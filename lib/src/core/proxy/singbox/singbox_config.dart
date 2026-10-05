@@ -1536,12 +1536,24 @@ class SingboxConfig {
     bool ech = false,
     String echConfig = kCloudflareEchConfig,
   }) {
+    // Whether ECH actually reaches THIS node, which is not the same question
+    // as whether the profile asked for it. The `ech` block below is emitted
+    // only for a node that can answer one, and the two decisions that follow
+    // used to read the profile-wide flag instead.
+    //
+    // So a user with ECH on and a bare non-Cloudflare IPv4 node got the worst
+    // of both: no ECH block, fragmentation switched off because ECH was
+    // "handling it", and their carrier-tuned fingerprint replaced. The real
+    // server name went out in one unfragmented plaintext packet, which is
+    // exactly what the SNI filter matches. That is worse than ECH off, from a
+    // switch whose whole promise is the opposite.
+    final bool echHere = ech && !n.isReality && _echCanWorkFor(n);
     // ECH replaces fragmentation rather than joining it. Fragmentation splits
     // the handshake so the filter cannot match the name; ECH encrypts the name
     // so there is nothing to match. Doing both costs the latency of the split
     // for no added hiding, and on the MCI firewall the split is now what gets
     // the connection dropped.
-    if (ech) fragment = false;
+    if (echHere) fragment = false;
     // Always forge a real browser's TLS ClientHello via uTLS, defaulting to
     // Chrome when the link didn't pin a fingerprint. Without this, a plain
     // worker VLESS node hands out Go's stock TLS fingerprint, which Iran's DPI
@@ -1567,7 +1579,7 @@ class SingboxConfig {
     // This was in the recipe this feature was built from, which says to set the
     // fingerprint to chrome. I implemented the other two lines of it, dropping
     // the fragment mask and supplying the config list, and skipped this one.
-    final String fingerprint = ech
+    final String fingerprint = echHere
         ? 'chrome'
         : _singboxFingerprint(
             (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
@@ -1698,7 +1710,7 @@ class SingboxConfig {
       // Asking for both made the core reject the outbound, which a tester saw
       // as the lightning test failing on any list holding one Reality node,
       // and which went away when only that node was removed.
-      if (ech && !n.isReality && _echCanWorkFor(n))
+      if (echHere)
         'ech': <String, dynamic>{
           'enabled': true,
           'config': echConfigPem(echConfig),

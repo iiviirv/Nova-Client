@@ -404,6 +404,10 @@ class SingboxProxyController extends ProxyController {
             final String message = '${line['message']}';
             final NovaLogLevel level =
                 novaLogLevelFromCore((line['level'] as num?)?.toInt() ?? 4);
+            // Before any verbosity filter: a server refusing the ECH key
+            // has to drop that key whether or not the user is reading the
+            // core log. Quiet mode must not decide which bugs get fixed.
+            unawaited(EchKey.noteCoreLine(message));
             // Connections the core sends to the `block` outbound are rejected BY
             // DESIGN (see isBlockedConnectionNoise); hide that flood unless the
             // user turned on Detailed core log.

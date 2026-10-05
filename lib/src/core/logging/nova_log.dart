@@ -133,11 +133,20 @@ class NovaLog extends ChangeNotifier {
   /// A UUID is a VLESS password, a long opaque token is usually a subscription
   /// key, and `user:pass@host` speaks for itself. Addresses are left alone: they
   /// are the thing being diagnosed, and the user already knows them.
+  ///
+  /// The home directory goes too. A desktop account name is very often the
+  /// person's legal name, and this log exists to be pasted into a support
+  /// chat: every field report this project works from arrived that way. Nobody
+  /// diagnosing a tunnel needs to know whose Mac it is, and a user in Iran
+  /// sending their real name along with proof that they run a circumvention
+  /// client is a cost they did not agree to. Done here rather than at each
+  /// call site so no future line can reintroduce it.
   static String redact(String line) {
     return line
         .replaceAll(_uuid, '<uuid>')
         .replaceAllMapped(_userInfo, (Match m) => '<credentials>@')
-        .replaceAllMapped(_token, (Match m) => '${m[1]}<token>');
+        .replaceAllMapped(_token, (Match m) => '${m[1]}<token>')
+        .replaceAllMapped(_homeDir, (Match m) => '${m[1]}<user>');
   }
 
   /// Removes the terminal colour codes the core wraps its level and tags in.
@@ -166,6 +175,13 @@ class NovaLog extends ChangeNotifier {
 
   /// `scheme://user:pass@host`
   static final RegExp _userInfo = RegExp(r'(?<=//)[^/@\s:]+:[^/@\s]+@');
+
+  /// The account name in a home-directory path: `/Users/<name>`,
+  /// `/home/<name>`, `C:\Users\<name>`. The leading part is kept so the line
+  /// still reads as a path.
+  static final RegExp _homeDir = RegExp(
+    r'((?:/Users/|/home/|[A-Za-z]:\\Users\\))[^/\\\s:"]+',
+  );
 
   /// `token=…`, `password=…`, `secret=…`, `auth=…` in a URL or a log field.
   static final RegExp _token = RegExp(

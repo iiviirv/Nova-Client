@@ -1901,6 +1901,10 @@ class DesktopProxyController extends ProxyController {
           raw.replaceAll(RegExp('\\x1B\\[[0-9;]*m'), '').trim();
       if (line.isEmpty) return;
       debugPrint('[sing-box:$label] $line');
+      // Same hook as mobile, and deliberately the same height in the function:
+      // the ECH work has now been fixed one-controller-at-a-time four times,
+      // so a new hook goes into both at once or not at all.
+      unawaited(EchKey.noteCoreLine(line));
       // Feed the in-app log too, so the desktop builds have the same Settings ->
       // Logs view as mobile instead of only a file on disk. The by-design `block`
       // outbound rejections (QUIC on a TCP-only exit, ad/geo blocks) are filtered

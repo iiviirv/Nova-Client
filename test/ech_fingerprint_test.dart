@@ -65,4 +65,75 @@ void main() {
     expect(fpOf(node(fingerprint: 'firefox'), const SingboxRouteOptions()),
         'firefox');
   });
+
+  /// The override has to follow the ECH block, not the profile switch. ECH is
+  /// emitted only for a node that can answer one, and these are the nodes that
+  /// cannot: for them, dropping the carrier fingerprint and the fragment mask
+  /// buys nothing and costs both defences.
+  group('a node that gets no ECH block keeps its own settings', () {
+    ProxyNode plainIp({String? fingerprint}) => ProxyNode(
+          protocol: NodeProtocol.vless,
+          server: '203.0.113.9', // not Cloudflare, so ECH cannot work
+          port: 443,
+          uuid: '00000000-0000-0000-0000-000000000000',
+          tls: true,
+          sni: 'example.com',
+          network: 'ws',
+          wsPath: '/ws',
+          fingerprint: fingerprint,
+          tag: 'n',
+        );
+
+    ProxyNode reality() => ProxyNode(
+          protocol: NodeProtocol.vless,
+          server: '203.0.113.9',
+          port: 443,
+          uuid: '00000000-0000-0000-0000-000000000000',
+          tls: true,
+          sni: 'example.com',
+          realityPublicKey: 'aaaabbbbccccddddeeeeffff',
+          fingerprint: 'firefox',
+          tag: 'n',
+        );
+
+    Map<String, dynamic> tlsOf(ProxyNode n, SingboxRouteOptions o) {
+      final Map<String, dynamic> m = SingboxConfig.buildMap(n, options: o);
+      final List<dynamic> outs = m['outbounds'] as List<dynamic>;
+      return (outs.first as Map<String, dynamic>)['tls']
+          as Map<String, dynamic>;
+    }
+
+    test('a non-Cloudflare plain IP keeps its carrier fingerprint', () {
+      const SingboxRouteOptions o = SingboxRouteOptions(
+          ech: true, echConfig: 'K==', fingerprintOverride: 'randomized');
+      expect(tlsOf(plainIp(), o).containsKey('ech'), isFalse,
+          reason: 'ECH cannot work for this node, so none is sent');
+      expect(fpOf(plainIp(), o), 'randomized',
+          reason: 'with no ECH on the wire the carrier profile is all it has');
+    });
+
+    test('a non-Cloudflare plain IP keeps its fragmentation', () {
+      const SingboxRouteOptions o =
+          SingboxRouteOptions(ech: true, echConfig: 'K==');
+      expect(tlsOf(plainIp(), o)['fragment'], isNotNull,
+          reason: 'ECH switched fragmentation off while sending no ECH, so the '
+              'real name went out in one plaintext packet');
+    });
+
+    test('a Reality node keeps the fingerprint it mimics', () {
+      expect(
+          fpOf(reality(),
+              const SingboxRouteOptions(ech: true, echConfig: 'K==')),
+          'firefox',
+          reason: 'Reality never carries ECH, and the browser it imitates is '
+              'part of what makes it work');
+    });
+
+    test('a Cloudflare node still gets both', () {
+      const SingboxRouteOptions o = SingboxRouteOptions(
+          ech: true, echConfig: 'K==', fingerprintOverride: 'randomized');
+      expect(tlsOf(node(), o).containsKey('ech'), isTrue);
+      expect(fpOf(node(), o), 'chrome');
+    });
+  });
 }
