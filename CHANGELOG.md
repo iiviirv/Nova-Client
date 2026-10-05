@@ -2,6 +2,11 @@
 
 ## v1.30.2 (2026-10-05)
 
+- Fixes ECH failing on phones whose network profile uses a randomised TLS
+  fingerprint. Those connections could not complete at all, so on some phones
+  servers would test fine and then refuse to connect. ECH now always uses a
+  real browser fingerprint, which is what it needs to work.
+
 - Fixes every server showing as unreachable when testing them on Windows, Mac
   and Linux. The test was run with the server-name encryption switched on but
   without the key it needs, so each server was judged dead when it was not. The

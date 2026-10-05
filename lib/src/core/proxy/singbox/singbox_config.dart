@@ -1554,12 +1554,27 @@ class SingboxConfig {
     // Per-ISP override wins over the node's pinned fingerprint, which wins over
     // the Chrome default. Reality keeps its own uTLS handshake, but the override
     // still applies to it (it only swaps which browser profile is forged).
-    final String fingerprint = _singboxFingerprint(
-        (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
-            ? fingerprintOverride
-            : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
-                ? n.fingerprint!
-                : 'chrome');
+    // ECH forces a real browser profile, overriding both the per-carrier
+    // override and whatever the link pinned.
+    //
+    // Field log from a Samsung whose carrier profile selected "randomized":
+    // every connection failed with "tls: malformed outer client hello", two
+    // hundred times in one session, while the same build on a phone that got
+    // "chrome" worked. A randomized ClientHello is assembled from a shuffled
+    // extension set and cannot carry the ECH extension in a shape the server
+    // will accept, so the outer hello is rejected before anything else happens.
+    //
+    // This was in the recipe this feature was built from, which says to set the
+    // fingerprint to chrome. I implemented the other two lines of it, dropping
+    // the fragment mask and supplying the config list, and skipped this one.
+    final String fingerprint = ech
+        ? 'chrome'
+        : _singboxFingerprint(
+            (fingerprintOverride != null && fingerprintOverride.isNotEmpty)
+                ? fingerprintOverride
+                : (n.fingerprint != null && n.fingerprint!.isNotEmpty)
+                    ? n.fingerprint!
+                    : 'chrome');
     // NaiveProxy's TLS belongs to cronet (Chromium's network stack), not to
     // sing-box: measured against the 1.13.13 core, the naive outbound rejects
     // `alpn`, `utls`, `fragment` AND `insecure` outright ("<x> is not supported

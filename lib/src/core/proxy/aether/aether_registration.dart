@@ -119,9 +119,15 @@ abstract final class AetherRegistration {
     if (have(base)) return true;
     if (!AetherCore.available) return false;
 
+    // The path is in the line because a tester reported seeing the "saved"
+    // message on every connect, which should be impossible: this returns above
+    // when a registration already exists. It could not be reproduced here (a
+    // second ensure() skips), so the next report needs to show where it looked
+    // rather than only that it looked.
     NovaLog.instance.write(
-        'No Cloudflare registration for WARP yet. Taking one through the '
-        'tunnel that is up, so WARP can work later on networks that block it.');
+        'No Cloudflare registration for WARP yet (looked in $base). Taking one '
+        'through the tunnel that is up, so WARP can work later on networks '
+        'that block it.');
 
     final AetherCore core = AetherCore.open();
     for (final AetherMode mode in _transports) {
@@ -134,6 +140,10 @@ abstract final class AetherRegistration {
                 '${options.ech ? ' behind ECH' : ''}.');
             break;
           }
+          NovaLog.instance.write(
+              'WARP registration for ${mode.name}'
+              '${options.ech ? ' behind ECH' : ''} did not take.',
+              level: NovaLogLevel.warn);
         } catch (_) {
           // The next attempt may still work, and none of this was asked for.
         }
