@@ -43,12 +43,26 @@ void main() {
         isTrue);
   });
 
-  test('the user\'s own VPS does not, because it cannot answer one', () {
-    expect(echOn(node(server: '203.0.113.9')), isFalse,
-        reason: 'this is the report: ECH on broke his own server while the '
-            'Cloudflare-fronted ones kept working');
+  test('a server behind Cloudflare on its own domain keeps ECH', () {
+    // The correction that matters. A tester's own server sits behind Cloudflare
+    // on its own domain, so it is addressed by name and no address check can
+    // see that it is Cloudflare. An earlier version of this gate allowed only a
+    // Cloudflare IP literal or a workers.dev name and would have switched ECH
+    // off for exactly the server he needs it for. Measured: ctcf.mayata.sbs
+    // resolves onto 104.21.24.149 and 172.67.219.67 and publishes an ECH key.
+    expect(echOn(node(server: 'ctcf.mayata.sbs', sni: 'ctcf.mayata.sbs')),
+        isTrue);
     expect(echOn(node(server: 'vpn.example.org', sni: 'vpn.example.org')),
-        isFalse);
+        isTrue,
+        reason: 'a name cannot be judged here without a lookup this code '
+            'cannot afford, and refusing to try is as wrong as always trying');
+  });
+
+  test('a bare non-Cloudflare address does not, since nothing can answer it',
+      () {
+    expect(echOn(node(server: '203.0.113.9')), isFalse,
+        reason: 'an address literal is the one case that can be judged: it is '
+            'not Cloudflare, so there is no edge to decrypt the inner name');
   });
 
   test('plain DNS to 1.1.1.1 is tried before DoH', () {

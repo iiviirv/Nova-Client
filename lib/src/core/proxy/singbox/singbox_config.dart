@@ -1,6 +1,6 @@
 import '../aether/aether_options.dart';
 import 'dart:convert';
-import 'dart:io' show InternetAddress;
+import 'dart:io' show InternetAddress, InternetAddressType;
 
 import 'awg_config.dart';
 import 'proxy_node.dart';
@@ -1771,24 +1771,26 @@ class SingboxConfig {
     },
   ];
 
-  /// Whether ECH has any chance of working for this node.
+  /// Whether ECH is worth trying for this node.
   ///
-  /// ECH is not a general privacy switch; it is a Cloudflare feature. The edge
-  /// decrypts the inner name, so a server that is not behind Cloudflare has
-  /// nothing to decrypt it with and refuses the handshake outright. Applying it
-  /// everywhere is why a tester could reach some Nova Proxy servers and none of
-  /// his own: the switch was on, so his own VPS got an ECH hello it could not
-  /// answer.
+  /// ECH is a Cloudflare feature: the edge decrypts the inner name, so a server
+  /// that is not behind Cloudflare has nothing to decrypt it with and refuses
+  /// the handshake. A bare VPS address is therefore the one case worth
+  /// excluding outright.
   ///
-  /// Decided from the address rather than a lookup, because this runs while the
-  /// config is built and a DNS round trip per node is not affordable. By then
-  /// clean-IP fronting has already put a Cloudflare address on the nodes that
-  /// have one, which is the case ECH is for.
+  /// Everything else is let through, including a plain domain, and that is a
+  /// deliberate correction rather than laziness. The first version of this
+  /// allowed only a Cloudflare IP literal or a workers.dev name, which looked
+  /// right and would have disabled ECH on a tester's own server: it sits behind
+  /// Cloudflare on its own domain, so it is addressed by name, and the check
+  /// could not see that without a lookup this code cannot afford. Refusing to
+  /// try is as wrong as always trying, and only one of the two is recoverable
+  /// by the user turning the switch off.
   static bool _echCanWorkFor(ProxyNode n) {
-    if (isCloudflareIp(n.server)) return true;
-    final String name =
-        '${n.sni ?? ''} ${n.wsHost ?? ''} ${n.server}'.toLowerCase();
-    return name.contains('.workers.dev') || name.contains('.pages.dev');
+    final InternetAddress? literal = InternetAddress.tryParse(n.server);
+    if (literal == null) return true; // a name: cannot tell, so let it try
+    if (literal.type == InternetAddressType.IPv6) return true;
+    return isCloudflareIp(n.server);
   }
 
   static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) {

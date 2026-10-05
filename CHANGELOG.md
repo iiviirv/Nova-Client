@@ -12,9 +12,9 @@
   every network. It also tops the key up whenever a connection is working, so
   the next connection has a current one even if the network blocks the lookup.
 - The log says when ECH was turned off for a connection and why.
-- ECH is now only used for servers behind Cloudflare, which is the only place
-  it can work. Turning it on used to apply it to your own servers too, where
-  there is nothing to decrypt the hidden name, so the switch broke them.
+- ECH is no longer sent to a server that cannot possibly answer it, which is a
+  plain address that is not Cloudflare's. Servers reached by name, including
+  your own domain behind Cloudflare, still use it.
 - Adds the Connect button on the server list reached from Subscriptions. It
   connects the server list you are looking at and takes you to the dashboard.
 
