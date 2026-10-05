@@ -4,6 +4,7 @@ import 'dart:io' show InternetAddress;
 
 import 'awg_config.dart';
 import 'proxy_node.dart';
+import '../../cleanip/cloudflare_ranges.dart';
 
 /// Routing behaviour, mapping onto the controls on the Routing screen.
 enum SingboxMode { rule, global, direct }
@@ -1682,7 +1683,7 @@ class SingboxConfig {
       // Asking for both made the core reject the outbound, which a tester saw
       // as the lightning test failing on any list holding one Reality node,
       // and which went away when only that node was removed.
-      if (ech && !n.isReality)
+      if (ech && !n.isReality && _echCanWorkFor(n))
         'ech': <String, dynamic>{
           'enabled': true,
           'config': echConfigPem(echConfig),
@@ -1769,6 +1770,26 @@ class SingboxConfig {
       'maxSplit': '11',
     },
   ];
+
+  /// Whether ECH has any chance of working for this node.
+  ///
+  /// ECH is not a general privacy switch; it is a Cloudflare feature. The edge
+  /// decrypts the inner name, so a server that is not behind Cloudflare has
+  /// nothing to decrypt it with and refuses the handshake outright. Applying it
+  /// everywhere is why a tester could reach some Nova Proxy servers and none of
+  /// his own: the switch was on, so his own VPS got an ECH hello it could not
+  /// answer.
+  ///
+  /// Decided from the address rather than a lookup, because this runs while the
+  /// config is built and a DNS round trip per node is not affordable. By then
+  /// clean-IP fronting has already put a Cloudflare address on the nodes that
+  /// have one, which is the case ECH is for.
+  static bool _echCanWorkFor(ProxyNode n) {
+    if (isCloudflareIp(n.server)) return true;
+    final String name =
+        '${n.sni ?? ''} ${n.wsHost ?? ''} ${n.server}'.toLowerCase();
+    return name.contains('.workers.dev') || name.contains('.pages.dev');
+  }
 
   static ProxyNode _maybeHarden(ProxyNode n, SingboxRouteOptions o) {
     if (!o.hardenTls) return n;

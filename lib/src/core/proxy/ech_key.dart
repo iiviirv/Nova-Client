@@ -48,14 +48,22 @@ abstract final class EchKey {
   /// HTTP/2, which this client does not speak, so it would have been a slot
   /// that always failed while looking like a fallback.
   static const List<String> kResolvers = <String>[
+    // Plain DNS to 1.1.1.1 first, which is not where this started. The order
+    // used to put DoH first, on the assumption that UDP to Cloudflare was
+    // blocked. A tester corrected that: every other client he tried does the
+    // lookup as udp://1.1.1.1 or 1.0.0.1 and all of them work on the same
+    // network where Nova's DoH call to 1.1.1.1 did not. The assumption came
+    // from a report about UDP carrying tunnel traffic, which is a different
+    // thing from a DNS query on port 53.
+    'udp://1.1.1.1',
+    'udp://1.0.0.1',
     'https://1.1.1.1/dns-query',
     'https://dns.google/resolve',
+    'udp://8.8.8.8',
     'https://doh.opendns.com/dns-query',
     'https://dns.nextdns.io/dns-query',
     'https://doh.sb/dns-query',
     'https://dns.adguard-dns.com/dns-query',
-    'udp://1.1.1.1',
-    'udp://8.8.8.8',
     'udp://9.9.9.9',
   ];
 

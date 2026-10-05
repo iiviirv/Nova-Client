@@ -38,4 +38,30 @@ void main() {
         reason: 'returning the built-in key on failure is the exact line that '
             'caused this');
   });
+
+  test('the lightning test is measured with the same key it will dial with',
+      () {
+    // Field log, 1.30.1: every free server failed its delay test with HTTP 503
+    // while the server the user picked connected perfectly. The measuring
+    // config set the ECH flag and left the key at its default, which is the
+    // built-in one, which goes stale within days. Setting the flag is not the
+    // setting; the key is.
+    final String src =
+        File('lib/src/core/proxy/singbox_proxy_controller.dart')
+            .readAsStringSync();
+    final int at = src.indexOf('routeOptions.copyWith(');
+    expect(at, isNot(-1), reason: 'the measuring options moved');
+    final String block = src.substring(at, at + 800);
+    expect(block, contains('echConfig:'),
+        reason: 'measuring with the flag but not the key reports every server '
+            'dead, which is worse than not measuring at all');
+    expect(block, contains('measureEchKey'));
+  });
+
+  test('measuring turns ECH off when there is no key, as connecting does', () {
+    final String src =
+        File('lib/src/core/proxy/singbox_proxy_controller.dart')
+            .readAsStringSync();
+    expect(src, contains('_active?.echSni == true && measureEchKey != null'));
+  });
 }

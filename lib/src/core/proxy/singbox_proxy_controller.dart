@@ -770,12 +770,23 @@ class SingboxProxyController extends ProxyController {
       // needs rule-sets any more (buildMeasureMap explains why). What still
       // matters is anything that changes how a node is DIALLED, so it is
       // measured exactly as it would run: the anti-censorship TLS settings.
+      final String? measureEchKey = (_active?.echSni ?? false)
+          ? await EchKey.current(spec: EchSpec.parse(_active?.echConfigList))
+          : null;
       final SingboxRouteOptions opts =
           routeOptions.copyWith(
               hardenTls: _active?.hardenTls ?? false,
               // Measured exactly as it is dialled: a node that only connects
               // with ECH must be probed with ECH, or the test reports it dead.
-              ech: _active?.echSni ?? false);
+              //
+              // Including the key. Setting the flag and leaving the key at its
+              // default sent the built-in one, which goes stale within days, so
+              // every server failed its delay test with 503 while the one the
+              // user picked connected perfectly. Seen in a field log, and the
+              // same mistake as the connect path had: the flag is not the
+              // setting, the key is.
+              ech: _active?.echSni == true && measureEchKey != null,
+              echConfig: measureEchKey ?? kCloudflareEchConfig);
       // xhttp nodes run on the Xray core, reached by the measuring core as
       // local socks exits, exactly as the tunnel's auto pool does. Without
       // this they read "not testable" even though they connect.
