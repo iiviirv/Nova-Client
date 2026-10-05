@@ -13,16 +13,22 @@ import '../models/proxy_profile.dart';
 class EchSpec {
   const EchSpec({required this.domain, required this.resolver});
 
-  /// The default: the name every Cloudflare zone publishes a key under, over
-  /// DNS-over-HTTPS by address.
+  /// The default: the name every Cloudflare zone publishes a key under, asked
+  /// over plain DNS at Cloudflare's own address.
   ///
-  /// DoH rather than the `udp://1.1.1.1` other clients default to, because UDP
-  /// to Cloudflare is blocked on the networks this feature exists for, and a
-  /// lookup those networks drop is not a lookup. By address so that resolving
-  /// the resolver is not a prerequisite.
+  /// This used to default to DNS-over-HTTPS, on my reasoning that UDP to
+  /// Cloudflare was blocked on the networks this feature exists for. That was
+  /// wrong, and the tester had said so from the first report: every other
+  /// client does this lookup as `udp://1.1.1.1` or `1.0.0.1` and they all work
+  /// on the network where Nova's DoH call to the same address did not. The
+  /// report I had generalised from was about UDP carrying tunnel traffic, which
+  /// is a different thing from a DNS query on port 53.
+  ///
+  /// By address either way, so that resolving the resolver is not a
+  /// prerequisite.
   static const EchSpec fallback = EchSpec(
     domain: 'cloudflare-ech.com',
-    resolver: 'https://1.1.1.1/dns-query',
+    resolver: 'udp://1.1.1.1',
   );
 
   final String domain;

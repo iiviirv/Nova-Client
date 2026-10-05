@@ -9,9 +9,12 @@ void main() {
     expect(EchSpec.parse(null), EchSpec.fallback);
     expect(EchSpec.parse(''), EchSpec.fallback);
     expect(EchSpec.fallback.domain, 'cloudflare-ech.com');
-    expect(EchSpec.fallback.resolver, startsWith('https://'),
-        reason: 'UDP to Cloudflare is blocked on the networks this is for, so '
-            'a udp default would be a lookup those networks drop');
+    expect(EchSpec.fallback.resolver, 'udp://1.1.1.1',
+        reason: 'the default was DoH on my assumption that UDP to Cloudflare '
+            'was blocked. The tester had said otherwise from the first report: '
+            'every other client asks udp://1.1.1.1 and works on the network '
+            'where Nova\'s DoH call to that same address did not. The first '
+            'attempt should be the one that answers, not the one that fails');
   });
 
   test('the form other clients use is understood', () {
