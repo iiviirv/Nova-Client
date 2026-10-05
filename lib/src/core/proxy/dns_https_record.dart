@@ -67,7 +67,21 @@ abstract final class DnsHttpsRecord {
     return (t.substring(0, c), int.tryParse(t.substring(c + 1)) ?? fallbackPort);
   }
 
+  /// DoH, in whichever dialect the endpoint speaks.
+  ///
+  /// There are two, and which one a provider offers is not something the URL
+  /// tells you. Cloudflare and Google answer a JSON query; Quad9 and OpenDNS
+  /// answer only RFC 8484 wire format, and measured against them the JSON
+  /// request simply fails. Since the point of having several resolvers is that
+  /// a blocking network may leave only one of them reachable, a provider that
+  /// is reachable and merely speaks the other dialect is not one to waste.
   static Future<String?> _overDoh(
+      String domain, String url, Duration timeout) async {
+    return await _dohJson(domain, url, timeout) ??
+        await _dohWire(domain, url, timeout);
+  }
+
+  static Future<String?> _dohJson(
       String domain, String url, Duration timeout) async {
     final HttpClient client = HttpClient()..connectionTimeout = timeout;
     try {
@@ -80,6 +94,33 @@ abstract final class DnsHttpsRecord {
       final HttpClientResponse res = await req.close().timeout(timeout);
       if (res.statusCode != 200) return null;
       return parseJsonAnswer(await res.transform(utf8.decoder).join());
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// RFC 8484: the query as base64url in `?dns=`, the answer in wire format,
+  /// which is the same bytes [parseWireAnswer] already reads off a socket.
+  static Future<String?> _dohWire(
+      String domain, String url, Duration timeout) async {
+    final HttpClient client = HttpClient()..connectionTimeout = timeout;
+    try {
+      final String q = base64Url
+          .encode(buildQuery(domain, id: 0))
+          .replaceAll('=', ''); // unpadded, as the RFC requires
+      final Uri u = Uri.parse(url)
+          .replace(queryParameters: <String, String>{'dns': q});
+      final HttpClientRequest req = await client.getUrl(u);
+      req.headers.set(HttpHeaders.acceptHeader, 'application/dns-message');
+      final HttpClientResponse res = await req.close().timeout(timeout);
+      if (res.statusCode != 200) return null;
+      final List<int> body =
+          await res.fold<List<int>>(<int>[], (List<int> a, List<int> b) => a..addAll(b));
+      return parseWireAnswer(Uint8List.fromList(body));
+    } catch (_) {
+      return null;
     } finally {
       client.close(force: true);
     }
@@ -219,6 +260,14 @@ abstract final class DnsHttpsRecord {
     return null;
   }
 
+  /// Strips a matched pair of surrounding quotes, and nothing else.
+  static String _unquote(String v) {
+    if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+      return v.substring(1, v.length - 1);
+    }
+    return v;
+  }
+
   /// Past a name, following a compression pointer if there is one.
   static int _skipName(Uint8List msg, int i) {
     while (i < msg.length) {
@@ -243,7 +292,12 @@ abstract final class DnsHttpsRecord {
         if (data is! String) continue;
         for (final String part in data.split(RegExp(r'\s+'))) {
           if (part.startsWith('ech=')) {
-            final String v = part.substring(4).trim();
+            // Some providers quote the value inside the record text and some
+            // do not. Measured: NextDNS and doh.sb return ech="AEX..." while
+            // Cloudflare and Google return it bare. A key carrying a stray
+            // quote is not a key; it is refused exactly like a stale one, and
+            // silently, which is the failure this whole area keeps producing.
+            final String v = _unquote(part.substring(4).trim());
             if (v.isNotEmpty) return v;
           }
         }

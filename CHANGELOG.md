@@ -7,8 +7,10 @@
   instead of using the one built into the app. That key goes out of date within
   days, and an out of date key is not merely less private: every server refuses
   it, so nothing connects at all.
-- Nova now tries several resolvers for that key rather than one, because the
-  single one it used does not answer on every network.
+- Nova now tries nine different places to get that key rather than one, over
+  two different methods, because the single one it used does not answer on
+  every network. It also tops the key up whenever a connection is working, so
+  the next connection has a current one even if the network blocks the lookup.
 - The log says when ECH was turned off for a connection and why.
 - Adds the Connect button on the server list reached from Subscriptions. It
   connects the server list you are looking at and takes you to the dashboard.

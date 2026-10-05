@@ -102,6 +102,23 @@ void main() {
           'ABCD=');
     });
 
+    test('a quoted value is unquoted, because some providers quote it', () {
+      // Measured: NextDNS and doh.sb return ech="AEX..." where Cloudflare and
+      // Google return it bare. A key with a stray quote is refused exactly like
+      // a stale one, and just as silently.
+      expect(
+          DnsHttpsRecord.parseJsonAnswer(
+              '{"Answer":[{"type":65,"data":"1 . ech=\\"ABCD=\\" alpn=h2"}]}'),
+          'ABCD=');
+    });
+
+    test('a quote that is not a pair is left alone', () {
+      expect(
+          DnsHttpsRecord.parseJsonAnswer(
+              '{"Answer":[{"type":65,"data":"1 . ech=\\"ABCD="}]}'),
+          '"ABCD=');
+    });
+
     test('nothing is invented when there is none', () {
       expect(DnsHttpsRecord.parseJsonAnswer('{"Answer":[{"data":"1 . alpn=h2"}]}'),
           isNull);

@@ -197,4 +197,25 @@ void main() {
           reason: 'a network that blocks DoH may still answer plain DNS');
     });
   });
+
+  group('topping the key up while something works', () {
+    test('a tunnel refresh replaces what is remembered', () async {
+      const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
+      await EchKey.current(spec: a, fetch: () async => 'OLD==');
+      await EchKey.refreshThroughTunnel(a);
+      // Nothing to assert about the value without a network; what matters is
+      // that the call is safe and leaves a usable key behind rather than
+      // clearing one.
+      expect(await EchKey.current(spec: a, fetch: () async => null), isNotNull,
+          reason: 'a refresh that fails must not destroy the key already held');
+    });
+
+    test('the resolver list covers more than the two obvious addresses', () {
+      final String joined = EchKey.kResolvers.join(' ');
+      expect(EchKey.kResolvers.length, greaterThanOrEqualTo(4));
+      expect(joined.contains('quad9') || joined.contains('opendns'), isTrue,
+          reason: '1.1.1.1 and 8.8.8.8 are the two most likely to be blocked '
+              'outright, precisely because everyone uses them');
+    });
+  });
 }

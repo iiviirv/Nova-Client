@@ -40,12 +40,50 @@ abstract final class EchKey {
   /// built-in key, and every connection failed. Different networks block
   /// different things, so this tries a second provider and then plain DNS
   /// before concluding there is no key to be had.
+  /// Deliberately a mixture. 1.1.1.1 and 8.8.8.8 are the two addresses most
+  /// likely to be blocked outright precisely because everyone uses them, so
+  /// the list also carries providers that are not those, and both transports.
+  /// Every one of these was checked to actually return the key, not merely to
+  /// exist. Quad9's DoH was dropped after it answered HTTP 505: it requires
+  /// HTTP/2, which this client does not speak, so it would have been a slot
+  /// that always failed while looking like a fallback.
   static const List<String> kResolvers = <String>[
     'https://1.1.1.1/dns-query',
     'https://dns.google/resolve',
+    'https://doh.opendns.com/dns-query',
+    'https://dns.nextdns.io/dns-query',
+    'https://doh.sb/dns-query',
+    'https://dns.adguard-dns.com/dns-query',
     'udp://1.1.1.1',
     'udp://8.8.8.8',
+    'udp://9.9.9.9',
   ];
+
+  /// Fetch a key now and keep it, whatever the cache says.
+  ///
+  /// Called while a tunnel is already carrying traffic, which is the one moment
+  /// the lookup is almost certain to succeed: it goes out through the tunnel
+  /// rather than through whatever is blocking it. In Iran ECH is currently the
+  /// only thing that connects at all, so "no key" is not a degraded state, it
+  /// is no service. Topping the key up whenever a connection happens to be up
+  /// is what keeps the next connection possible.
+  static Future<void> refreshThroughTunnel(EchSpec spec) async {
+    try {
+      final String? fresh = await _lookupAnywhere(spec);
+      if (fresh == null || fresh.isEmpty) return;
+      if (fresh != _memory) {
+        NovaLog.instance.write(
+            'Refreshed the ECH key through the tunnel; the next connection '
+            'will use it.');
+      }
+      _memory = fresh;
+      _memoryAt = DateTime.now();
+      _memoryFor = spec.cacheKey;
+      await _saveCache(fresh, _memoryAt!, spec);
+    } catch (_) {
+      // Nobody asked for this and the connection is already working.
+    }
+  }
 
   /// The key to put in a config now, or null when there is none to be had.
   ///
