@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../logging/nova_log.dart';
@@ -81,7 +82,8 @@ abstract final class EchKey {
   /// is what keeps the next connection possible.
   static Future<void> refreshThroughTunnel(EchSpec spec) async {
     try {
-      final String? fresh = await _lookupAnywhere(spec);
+      final String? fresh =
+          await _lookupAnywhere(spec, budget: backgroundBudget);
       if (fresh == null || fresh.isEmpty) return;
       if (fresh != _memory) {
         NovaLog.instance.write(
@@ -145,14 +147,63 @@ abstract final class EchKey {
     return null;
   }
 
+  /// How long one resolver gets before the next is tried.
+  ///
+  /// Was eight seconds, the module default, and ten resolvers of that in a row
+  /// is eighty seconds of a user waiting. Measured on a blackholed resolver:
+  /// 8011ms, every time. A DNS answer that is coming arrives in well under a
+  /// second, so a long per-try timeout buys nothing and costs the whole chain.
+  static const Duration perResolver = Duration(seconds: 2, milliseconds: 500);
+
+  /// How long the whole chain gets when someone is waiting for it.
+  ///
+  /// Field report from Windows: server testing "does not work, you have to
+  /// pick one at random and connect". With no budget at all, a network that
+  /// drops the first resolvers made both connecting and measuring sit for up
+  /// to eighty seconds before anything else could happen.
+  static const Duration lookupBudget = Duration(seconds: 12);
+
+  /// The same chain with room to finish, for the background top-up through a
+  /// tunnel that is already working. Nobody is waiting on that one.
+  static const Duration backgroundBudget = Duration(seconds: 40);
+
   /// The first resolver that answers, starting with the one the user chose.
-  static Future<String?> _lookupAnywhere(EchSpec spec) async {
+  ///
+  /// Sequential on purpose. Asking ten resolvers at once would answer sooner
+  /// on a bad network, but on a good one it would send ten plaintext queries
+  /// for cloudflare-ech.com where one was needed, and that query is close to a
+  /// signature for this kind of client. One query in the common case is worth
+  /// more than a faster worst case.
+  static Future<String?> _lookupAnywhere(
+    EchSpec spec, {
+    Duration? budget,
+    Duration? perTry,
+    List<String>? resolvers,
+  }) async {
+    final List<String> pool = resolvers ?? kResolvers;
     final List<String> tried = <String>[
       spec.resolver,
-      ...kResolvers.where((String r) => r != spec.resolver),
+      ...pool.where((String r) => r != spec.resolver),
     ];
+    final Stopwatch spent = Stopwatch()..start();
+    final Duration total = budget ?? lookupBudget;
     for (final String r in tried) {
-      final String? k = await DnsHttpsRecord.lookup(spec.domain, r);
+      final Duration left = total - spent.elapsed;
+      if (left <= Duration.zero) {
+        NovaLog.instance.write(
+            'Gave up looking for the ECH key after ${total.inSeconds}s; the '
+            'resolvers that answer on this network were not reached in time.',
+            level: NovaLogLevel.warn);
+        return null;
+      }
+      // Never hand a timeout that is not positive to the lookup. A negative
+      // Duration makes it fail instantly rather than loudly, which looks
+      // exactly like a resolver that does not answer and hides the fact that
+      // the budget is what ran out.
+      final Duration want = perTry ?? perResolver;
+      final Duration slice = want < left ? want : left;
+      final String? k =
+          await DnsHttpsRecord.lookup(spec.domain, r, timeout: slice);
       if (k != null && k.isNotEmpty) {
         if (r != spec.resolver) {
           NovaLog.instance.write(
@@ -164,6 +215,20 @@ abstract final class EchKey {
     }
     return null;
   }
+
+  /// The resolver chain with its list supplied, so a test can make every
+  /// resolver unreachable and watch the budget bite. Without this the only
+  /// list is the real one, which answers from any machine a test runs on, so
+  /// the give-up path could not be reached at all.
+  @visibleForTesting
+  static Future<String?> lookupChainForTest(
+    EchSpec spec, {
+    required List<String> resolvers,
+    Duration? budget,
+    Duration? perTry,
+  }) =>
+      _lookupAnywhere(spec,
+          resolvers: resolvers, budget: budget, perTry: perTry);
 
   static bool _fresh(DateTime at, EchSpec spec) =>
       _memory != null &&

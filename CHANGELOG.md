@@ -2,6 +2,24 @@
 
 ## v1.30.2 (2026-10-05)
 
+- Fixes Windows, Mac and Linux dropping the connection after a few hours. Those
+  builds never refreshed the server-name encryption key while a tunnel was up,
+  which the phone app has always done. The key is trusted for six hours, so
+  after six hours Nova looked it up again with the tunnel already down, on the
+  very network that was blocking the lookup. Typing a different DNS server into
+  the ECH box by hand worked around it, because that forced a fresh lookup.
+
+- Looking up that key is no longer able to hold everything else up. Nova tries
+  ten DNS servers one after another, and each one had eight seconds to answer,
+  with no limit on the total. On a network that silently drops the first few,
+  connecting or testing your servers could sit there for over a minute before
+  anything happened. Each server now gets two and a half seconds and the whole
+  search is capped, so a bad network costs seconds instead of minutes.
+
+- When testing servers without a key, Nova now says so in the log. It tested
+  them without encryption of the server name and said nothing, so a list of
+  servers that only answer with it came back entirely dead with no reason given.
+
 - Closes a hole in how Nova fetched the ECH key. It asked a DNS server for the
   key and then used whatever answer arrived, without checking that the answer
   came from the server it asked, answered the question it asked, or carried the

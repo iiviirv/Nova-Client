@@ -480,6 +480,19 @@ class DesktopProxyController extends ProxyController {
       // networks block goes through the tunnel and succeeds, and is reused
       // everywhere afterwards. Same hook as the mobile core, same rules.
       unawaited(AetherRegistration.afterConnect(_active));
+      // And top up the ECH key while something works, which the mobile core
+      // has done since the key stopped being a constant and this one never
+      // did. Field report from Windows, 1.30.1: "it still drops after a few
+      // hours, and entering cloudflare-ech.com+udp://1.0.0.1 by hand fixes
+      // it". That is this hook missing. The key is trusted for six hours, so
+      // after six hours Nova looks it up again with the tunnel DOWN, on the
+      // network that was blocking the lookup in the first place. Typing a new
+      // resolver in by hand fixed it because it changed the cache key and
+      // forced a lookup through a resolver that answers.
+      //
+      // Fifth time this pair of controllers has been fixed one at a time.
+      unawaited(EchKey.refreshThroughTunnel(
+          EchSpec.parse(_active?.echConfigList)));
       // Auto (subscription) post-connect health check, proxy mode only (a TUN
       // rebuild would re-prompt for admin). Mirrors the mobile core.
       if (!_healing && !tunMode && (_active?.isSubscription ?? false)) {
@@ -2063,6 +2076,18 @@ class DesktopProxyController extends ProxyController {
       final String? measureEchKey = (_active?.echSni ?? false)
           ? await EchKey.current(spec: EchSpec.parse(_active?.echConfigList))
           : null;
+      // Say so. The connect path warns when ECH is on and no key could be
+      // had; this one measured without ECH and said nothing, so a list of
+      // servers that only answer with ECH came back entirely dead with no
+      // reason given anywhere. That is the same silent failure this whole
+      // round of work is about, in the one place a user goes to find out
+      // which server to pick.
+      if ((_active?.echSni ?? false) && measureEchKey == null) {
+        NovaLog.instance.write(
+            'Testing without ECH: no key could be fetched. Servers that only '
+            'answer with ECH will look dead here.',
+            level: NovaLogLevel.warn);
+      }
       final SingboxRouteOptions opts = routeOptions.copyWith(
         localRuleSets: true,
         hardenTls: _active?.hardenTls ?? false,
