@@ -39,6 +39,29 @@ void main() {
             'caused this');
   });
 
+  test('BOTH cores measure with the key, not just the flag', () {
+    // The reason this is a loop and not a single check: the measuring fix went
+    // into the mobile controller and not the desktop one, so Windows reported
+    // 0 of 17 servers answering while the identical build worked on Android.
+    // Nova has two controllers and this project has now been bitten by that
+    // four times; a test that names only one of them is how.
+    for (final String path in <String>[
+      'lib/src/core/proxy/singbox_proxy_controller.dart',
+      'lib/src/core/proxy/desktop_proxy_controller.dart',
+    ]) {
+      final String src = File(path).readAsStringSync();
+      expect(src, contains('measureEchKey'),
+          reason: '$path measures with the ECH flag set and the key left at '
+              'its default, which is the built-in one, which goes stale within '
+              'days and makes every server read as dead');
+      expect(src, contains('echConfig: measureEchKey ?? kCloudflareEchConfig'),
+          reason: '$path sets the flag without passing the key');
+      expect(src,
+          contains('ech: _active?.echSni == true && measureEchKey != null'),
+          reason: '$path keeps ECH on while measuring even with no key');
+    }
+  });
+
   test('the lightning test is measured with the same key it will dial with',
       () {
     // Field log, 1.30.1: every free server failed its delay test with HTTP 503

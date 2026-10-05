@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.30.2 (2026-10-05)
+
+- Fixes every server showing as unreachable when testing them on Windows, Mac
+  and Linux. The test was run with the server-name encryption switched on but
+  without the key it needs, so each server was judged dead when it was not. The
+  same fault was fixed on phones in 1.30.1 and missed on desktop.
+
 ## v1.30.1 (2026-10-05)
 
 - Fixes ECH stopping after a few hours, and failing outright on a fresh

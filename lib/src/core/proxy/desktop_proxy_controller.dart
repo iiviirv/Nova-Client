@@ -2050,10 +2050,20 @@ class DesktopProxyController extends ProxyController {
     try {
       final int mixedPort = await _freeLoopbackPort();
       final int apiPort = await _freeLoopbackPort();
+      // The key, not just the flag. Measuring with ECH on and the key left at
+      // its default sends the built-in one, which goes stale within days, so
+      // every server fails its delay test with 503 and the list reads as
+      // entirely dead. Fixed on the mobile core first and missed here, which is
+      // why Windows reported 0 of 17 answering while the same build worked on
+      // Android.
+      final String? measureEchKey = (_active?.echSni ?? false)
+          ? await EchKey.current(spec: EchSpec.parse(_active?.echConfigList))
+          : null;
       final SingboxRouteOptions opts = routeOptions.copyWith(
         localRuleSets: true,
         hardenTls: _active?.hardenTls ?? false,
-      ech: _active?.echSni ?? false,
+        ech: _active?.echSni == true && measureEchKey != null,
+        echConfig: measureEchKey ?? kCloudflareEchConfig,
         hardenPacketFragment: !Platform.isWindows,
       );
       final List<ProxyNode> resolved =
