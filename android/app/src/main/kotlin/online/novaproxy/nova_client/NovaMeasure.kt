@@ -110,6 +110,22 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
                 // its inbounds are up before sing-box dials them. No socket
                 // protector: there is no VPN to escape while measuring.
                 if (!xrayConfig.isNullOrEmpty()) {
+                    // Forward Xray's own log the way the tunnel path does. Without
+                    // this a measurement is sing-box-only, so an xhttp node that
+                    // fails reports the Clash API's generic "An error occurred in
+                    // the delay test" and Xray's actual reason is thrown away. A
+                    // tester's xhttp server failed every delay test while his
+                    // other servers passed, and nothing in the log could say why,
+                    // because this was the one path that started Xray silently.
+                    io.nekohasekai.novaxray.Novaxray.setLogger(
+                        object : io.nekohasekai.novaxray.Logger {
+                            override fun log(line: String?) {
+                                val msg = line ?: return
+                                NovaProxyBridge.emitLog(
+                                    listOf(mapOf("level" to 3, "message" to "[xray] $msg"))
+                                )
+                            }
+                        })
                     val err = io.nekohasekai.novaxray.Novaxray.start(xrayConfig)
                     if (!err.isNullOrEmpty()) return@Thread answer("Xray failed to start: $err")
                     xrayRunning = true
@@ -144,6 +160,7 @@ object NovaMeasure : PlatformInterface, CommandServerHandler {
         runCatching { s?.close() }
         if (xrayRunning) {
             xrayRunning = false
+            runCatching { io.nekohasekai.novaxray.Novaxray.setLogger(null) }
             runCatching { io.nekohasekai.novaxray.Novaxray.stop() }
         }
     }

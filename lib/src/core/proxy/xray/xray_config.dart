@@ -38,6 +38,10 @@ class XrayConfig {
       {int socksPort = defaultSocksPort, String? ech}) {
     _assertXhttpVless(node);
     return <String, dynamic>{
+      // Warning, not info. Xray at info narrates every connection, which on a
+      // measuring run is dozens of lines a second into the app's log. Warning
+      // still carries the transport errors that explain a failed node, which is
+      // what this log is read for.
       'log': <String, dynamic>{'loglevel': 'warning'},
       'dns': _dns(),
       'inbounds': <Map<String, dynamic>>[

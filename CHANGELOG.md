@@ -15,6 +15,10 @@
 - ECH is no longer sent to a server that cannot possibly answer it, which is a
   plain address that is not Cloudflare's. Servers reached by name, including
   your own domain behind Cloudflare, still use it.
+- When testing servers, the second core's own errors now reach the log. An
+  xhttp server that failed the test could only ever report a generic message,
+  because the one place that judges it dead was also the one place running that
+  core silently.
 - Adds the Connect button on the server list reached from Subscriptions. It
   connects the server list you are looking at and takes you to the dashboard.
 
