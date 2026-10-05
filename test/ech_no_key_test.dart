@@ -1,0 +1,41 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+/// The bug this exists to prevent, stated plainly: a tester could not connect
+/// at all on a brand new phone, with ECH on and nothing cached. The key fetch
+/// did not succeed on his network, Nova fell back to the key built into the
+/// app, Cloudflare had rotated since that build, and a stale key is not
+/// "slightly less private". It is refused by every server, so every single
+/// connection failed with a certificate for cloudflare-ech.com.
+///
+/// The rule now: never send a key that cannot be vouched for. A connection
+/// without ECH may work. A connection with a stale key cannot.
+void main() {
+  for (final String path in <String>[
+    'lib/src/core/proxy/singbox_proxy_controller.dart',
+    'lib/src/core/proxy/desktop_proxy_controller.dart',
+  ]) {
+    final String src = File(path).readAsStringSync();
+
+    test('$path turns ECH off when there is no key', () {
+      expect(src, contains('ech: profile.echSni && echKey != null'),
+          reason: 'sending ECH with a key we could not fetch is the failure '
+              'this whole file is about');
+    });
+
+    test('$path says so in the log rather than failing quietly', () {
+      expect(src, contains('no key could be fetched'),
+          reason: 'the first report of this took two rounds to diagnose '
+              'because nothing in the log said the key was the problem');
+    });
+  }
+
+  test('the built-in key is not what gets sent when the fetch fails', () {
+    final String src =
+        File('lib/src/core/proxy/ech_key.dart').readAsStringSync();
+    expect(src, isNot(contains('return kCloudflareEchConfig;')),
+        reason: 'returning the built-in key on failure is the exact line that '
+            'caused this');
+  });
+}

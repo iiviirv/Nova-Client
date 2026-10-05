@@ -1398,6 +1398,17 @@ class SingboxProxyController extends ProxyController {
     // interface") and is blocked outright in Iran, so the core never starts. The
     // core shares this app's sandbox, so we extract the .srs to disk and point the
     // config's path token at them, exactly like the desktop core does.
+    // Looked up before the options are built, and only when the profile asks
+    // for ECH, so nobody else pays for a DNS query.
+    final String? echKey = profile.echSni
+        ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
+        : null;
+    if (profile.echSni && echKey == null) {
+      NovaLog.instance.write(
+          'ECH is on for "${profile.name}" but no key could be fetched, so '
+          'this connection goes out without it.',
+          level: NovaLogLevel.warn);
+    }
     final SingboxRouteOptions opts = routeOptions.copyWith(
       lean: Platform.isIOS,
       localRuleSets: Platform.isAndroid,
@@ -1405,13 +1416,13 @@ class SingboxProxyController extends ProxyController {
       // by the user, applied only to clean-IP fronted nodes. The three overrides
       // are the user's edits from the bypass editor (null = field-tested default).
       hardenTls: profile.hardenTls,
-      ech: profile.echSni,
-      // Fetched, not believed. Cloudflare rotates this key, and a stale one
-      // does not degrade: it fails every connection on the profile. Only
-      // looked up when ECH is actually on, so nobody else pays for it.
-      echConfig: profile.echSni
-          ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
-          : kCloudflareEchConfig,
+      // Fetched, not believed, and switched off rather than guessed at.
+      // Cloudflare rotates this key and a stale one does not degrade: it fails
+      // every connection on the profile. So a profile with ECH on but no key
+      // to be had connects without ECH, which may work, instead of with a key
+      // that certainly will not.
+      ech: profile.echSni && echKey != null,
+      echConfig: echKey ?? kCloudflareEchConfig,
       bypassFingerprint: profile.bypassFingerprint,
       bypassCipherSuites: profile.bypassCipherSuites,
       bypassFragmentMask: profile.bypassFragmentMask,

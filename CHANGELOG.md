@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.30.1 (2026-10-05)
+
+- Fixes ECH stopping after a few hours, and failing outright on a fresh
+  install. If Nova cannot fetch the current key, it now connects without ECH
+  instead of using the one built into the app. That key goes out of date within
+  days, and an out of date key is not merely less private: every server refuses
+  it, so nothing connects at all.
+- Nova now tries several resolvers for that key rather than one, because the
+  single one it used does not answer on every network.
+- The log says when ECH was turned off for a connection and why.
+- Adds the Connect button on the server list reached from Subscriptions. It
+  connects the server list you are looking at and takes you to the dashboard.
+
 ## v1.30.0 (2026-10-05)
 
 The first public release since 1.26.2. Everything below it, from 1.27.0 on, is

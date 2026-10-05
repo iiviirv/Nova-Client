@@ -719,17 +719,28 @@ class DesktopProxyController extends ProxyController {
       // with fragment on). Keeping fragmentation matters in Iran, without it the
       // SNI is exposed in one packet and DPI can block the tunnel to the worker.
       // If a future desktop core ever lacks the key, add `tlsFragment: false`.
-      final SingboxRouteOptions opts = routeOptions.copyWith(
+      // Looked up before the options are built, and only when the profile asks
+    // for ECH, so nobody else pays for a DNS query.
+    final String? echKey = profile.echSni
+        ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
+        : null;
+    if (profile.echSni && echKey == null) {
+      NovaLog.instance.write(
+          'ECH is on for "${profile.name}" but no key could be fetched, so '
+          'this connection goes out without it.',
+          level: NovaLogLevel.warn);
+    }
+    final SingboxRouteOptions opts = routeOptions.copyWith(
         localRuleSets: true,
         // The SNI-block bypass, per profile (see the mobile controller).
         hardenTls: profile.hardenTls,
-      ech: profile.echSni,
-      // Fetched, not believed. Cloudflare rotates this key, and a stale one
-      // does not degrade: it fails every connection on the profile. Only
-      // looked up when ECH is actually on, so nobody else pays for it.
-      echConfig: profile.echSni
-          ? await EchKey.current(spec: EchSpec.parse(profile.echConfigList))
-          : kCloudflareEchConfig,
+      // Fetched, not believed, and switched off rather than guessed at.
+      // Cloudflare rotates this key and a stale one does not degrade: it fails
+      // every connection on the profile. So a profile with ECH on but no key
+      // to be had connects without ECH, which may work, instead of with a key
+      // that certainly will not.
+      ech: profile.echSni && echKey != null,
+      echConfig: echKey ?? kCloudflareEchConfig,
         // Windows: keep the bypass's TLS-record split but drop its TCP-segment
         // split, whose ACK-wait an unelevated Windows core cannot drive (see
         // SingboxRouteOptions.hardenPacketFragment). macOS/Linux keep both.

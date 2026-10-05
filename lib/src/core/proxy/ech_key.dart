@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logging/nova_log.dart';
 import 'dns_https_record.dart';
 import 'ech_spec.dart';
-import 'singbox/singbox_config.dart';
 
 /// Cloudflare's current ECH key, fetched rather than believed.
 ///
@@ -34,12 +33,34 @@ abstract final class EchKey {
   static DateTime? _memoryAt;
   static String? _memoryFor;
 
-  /// The key to put in a config now: the freshest one available, never null.
+  /// Resolvers to try, in order, before giving up.
+  ///
+  /// One was not enough. A tester on a fresh phone got no key at all: the
+  /// single DoH endpoint did not answer on his network, Nova fell back to the
+  /// built-in key, and every connection failed. Different networks block
+  /// different things, so this tries a second provider and then plain DNS
+  /// before concluding there is no key to be had.
+  static const List<String> kResolvers = <String>[
+    'https://1.1.1.1/dns-query',
+    'https://dns.google/resolve',
+    'udp://1.1.1.1',
+    'udp://8.8.8.8',
+  ];
+
+  /// The key to put in a config now, or null when there is none to be had.
+  ///
+  /// Null matters and is not a detail. A key that cannot be vouched for is
+  /// worse than no ECH at all: Cloudflare rotates this value, and a stale one
+  /// does not degrade, it fails every single connection on the profile with a
+  /// certificate for cloudflare-ech.com. An earlier version of this returned
+  /// the built-in key when it could not fetch one, which is precisely how a
+  /// tester ended up unable to connect on a brand new phone. The caller must
+  /// turn ECH off for the connection rather than send a guess.
   ///
   /// [spec] is where to look, which the user can change. A different spec is a
   /// different answer, so changing it drops what was remembered rather than
   /// serving a key fetched from somewhere the user no longer asked about.
-  static Future<String> current({
+  static Future<String?> current({
     EchSpec spec = EchSpec.fallback,
     DateTime? now,
     Future<String?> Function()? fetch,
@@ -48,8 +69,7 @@ abstract final class EchKey {
     if (_fresh(at, spec)) return _memory!;
     await _loadCache();
     if (_fresh(at, spec)) return _memory!;
-    final String? fresh =
-        await (fetch ?? () => DnsHttpsRecord.lookup(spec.domain, spec.resolver))();
+    final String? fresh = await (fetch ?? () => _lookupAnywhere(spec))();
     if (fresh != null && fresh.isNotEmpty) {
       if (fresh != _memory) {
         NovaLog.instance.write(
@@ -62,12 +82,35 @@ abstract final class EchKey {
       await _saveCache(fresh, at, spec);
       return fresh;
     }
-    // Nothing fresh. A cached key, however old, beats the built-in one, which
-    // is only a floor so that a first run with no network still has something.
-    // Only if it came from the same place: a key fetched for a different spec
-    // answers a question the user is no longer asking.
+    // Nothing fresh. A cached key for this same lookup is still worth using:
+    // it was real when it was fetched and Cloudflare keeps old keys working for
+    // a while. A key fetched for a different lookup is not, and neither is the
+    // built-in one, which is older than anything and is why this used to fail.
     if (_memory != null && _memoryFor == spec.cacheKey) return _memory!;
-    return kCloudflareEchConfig;
+    NovaLog.instance.write(
+        'Could not get an ECH key from any resolver, so this connection goes '
+        'out without ECH rather than with a key that would be refused.');
+    return null;
+  }
+
+  /// The first resolver that answers, starting with the one the user chose.
+  static Future<String?> _lookupAnywhere(EchSpec spec) async {
+    final List<String> tried = <String>[
+      spec.resolver,
+      ...kResolvers.where((String r) => r != spec.resolver),
+    ];
+    for (final String r in tried) {
+      final String? k = await DnsHttpsRecord.lookup(spec.domain, r);
+      if (k != null && k.isNotEmpty) {
+        if (r != spec.resolver) {
+          NovaLog.instance.write(
+              'The ECH key did not come from ${spec.resolver}; got it from $r '
+              'instead.');
+        }
+        return k;
+      }
+    }
+    return null;
   }
 
   static bool _fresh(DateTime at, EchSpec spec) =>

@@ -37,22 +37,29 @@ void main() {
 
   group('which key a config gets', () {
     test('a fetched key is preferred over the built-in one', () async {
-      final String got = await EchKey.current(fetch: () async => 'FRESH==');
+      final String? got = await EchKey.current(fetch: () async => 'FRESH==');
       expect(got, 'FRESH==');
       expect(got, isNot(kCloudflareEchConfig));
     });
 
-    test('a failed fetch falls back rather than returning nothing', () async {
-      final String got = await EchKey.current(fetch: () async => null);
-      expect(got, kCloudflareEchConfig,
-          reason: 'no key at all would mean no connection at all');
+    test('a failed fetch returns nothing rather than a guess', () async {
+      expect(await EchKey.current(fetch: () async => null), isNull,
+          reason: 'this is the whole bug: returning the built-in key here is '
+              'what left a tester unable to connect on a brand new phone, '
+              'because Cloudflare had rotated and a stale key is refused by '
+              'every server rather than merely being less private');
+    });
+
+    test('the built-in key is never handed out as an answer', () async {
+      expect(await EchKey.current(fetch: () async => null),
+          isNot(kCloudflareEchConfig));
     });
 
     test('a fetched key is reused rather than looked up every connection',
         () async {
       await EchKey.current(fetch: () async => 'FIRST==');
       int calls = 0;
-      final String got = await EchKey.current(fetch: () async {
+      final String? got = await EchKey.current(fetch: () async {
         calls++;
         return 'SECOND==';
       });
@@ -62,7 +69,7 @@ void main() {
 
     test('a key older than its life is looked up again', () async {
       await EchKey.current(fetch: () async => 'OLD==');
-      final String got = await EchKey.current(
+      final String? got = await EchKey.current(
           now: DateTime.now().add(EchKey.maxAge * 2),
           fetch: () async => 'NEW==');
       expect(got, 'NEW==',
@@ -126,7 +133,7 @@ void main() {
       expect(await EchKey.current(spec: a, fetch: () async => 'FROM_A=='),
           'FROM_A==');
       int calls = 0;
-      final String got = await EchKey.current(
+      final String? got = await EchKey.current(
           spec: b,
           fetch: () async {
             calls++;
@@ -143,9 +150,8 @@ void main() {
       const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
       const EchSpec b = EchSpec(domain: 'b.com', resolver: 'udp://1.1.1.1');
       await EchKey.current(spec: a, fetch: () async => 'FROM_A==');
-      expect(await EchKey.current(spec: b, fetch: () async => null),
-          kCloudflareEchConfig,
-          reason: 'the floor, not another spec\'s answer');
+      expect(await EchKey.current(spec: b, fetch: () async => null), isNull,
+          reason: 'another lookup\'s answer is not this lookup\'s answer');
     });
 
     test('the same spec is still reused', () async {
@@ -161,6 +167,34 @@ void main() {
               }),
           'ONCE==');
       expect(calls, 0);
+    });
+  });
+
+  group('when no key can be had', () {
+    test('a cached key for the same lookup is still used', () async {
+      const EchSpec a = EchSpec(domain: 'a.com', resolver: 'udp://1.1.1.1');
+      await EchKey.current(spec: a, fetch: () async => 'REAL==');
+      // Age it past its life so the next call tries to refetch and fails.
+      expect(
+          await EchKey.current(
+              spec: a,
+              now: DateTime.now().add(EchKey.maxAge * 2),
+              fetch: () async => null),
+          'REAL==',
+          reason: 'it was real when it was fetched, and Cloudflare keeps old '
+              'keys working for a while; the built-in one is older than '
+              'anything');
+    });
+
+    test('more than one resolver is tried before giving up', () {
+      expect(EchKey.kResolvers.length, greaterThan(1),
+          reason: 'one endpoint not answering is exactly what happened; '
+              'different networks block different things');
+      expect(EchKey.kResolvers.where((String r) => r.startsWith('https://')),
+          isNotEmpty);
+      expect(EchKey.kResolvers.where((String r) => r.startsWith('udp://')),
+          isNotEmpty,
+          reason: 'a network that blocks DoH may still answer plain DNS');
     });
   });
 }
