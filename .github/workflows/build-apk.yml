@@ -150,8 +150,12 @@ jobs:
       # app that installs on a device it cannot serve; the next step refuses it.
       # Sign the release APK with the permanent Nova upload key so it is a real,
       # updatable, trusted build (a debug-signed APK trips Play Protect's "unsafe
-      # app" warning on sideload). The key lives only in GitHub secrets; without
-      # them the build still runs but falls back to debug signing (build.gradle.kts).
+      # app" warning on sideload). The key lives only in GitHub secrets.
+      #
+      # Without them the build now FAILS rather than quietly debug-signing, so a
+      # tag build that has lost its secrets cannot publish an APK that nobody
+      # already running Nova can install. Pull requests, which get no secrets by
+      # design, opt into debug signing explicitly in the build step below.
       - name: Set up release signing
         # Never decode the keystore during a pull-request build (a public repo
         # accepts PRs). Fork PRs get no secrets from GitHub anyway; this also
@@ -164,7 +168,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "No ANDROID_KEYSTORE_BASE64 secret set; release APK will be debug-signed."
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set. The release"
+            echo "::warning::build will refuse to run rather than debug-sign."
             exit 0
           fi
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/nova-release.jks
@@ -177,6 +182,12 @@ jobs:
           echo "Release signing configured (keystore staged, key.properties written)."
 
       - name: Build release APK
+        # A pull request never receives the signing secrets, so it says plainly
+        # that it wants a debug-signed build. Every other trigger must have the
+        # real key or fail: see the signing gate in android/app/build.gradle.kts.
+        env:
+          ORG_GRADLE_PROJECT_novaAllowDebugSigning: >-
+            ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
         run: flutter build apk --release
 
       # An ABI can run the app only if libflutter.so is in it, so those are the
