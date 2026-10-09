@@ -345,6 +345,7 @@ void main() {
     // Card eyebrows are upper-cased in Latin, which is what is on screen.
     const List<String> advancedOnly = <String>[
       'Transport',
+      'MASQUE server name',
       'OBFUSCATION',
       'IP VERSION',
       'Scan mode',
@@ -773,5 +774,115 @@ void main() {
     expect(find.text('Find a gateway now'), findsNothing);
     expect(
         find.textContaining('This build ships no Aether core'), findsOneWidget);
+  });
+
+  testWidgets('the MASQUE server name is offered for MASQUE and nowhere else',
+      (WidgetTester tester) async {
+    await _open(tester);
+    final Finder field =
+        find.byKey(const ValueKey<String>('aether-masque-sni'));
+
+    // Simple takes every default, and this is one of them.
+    await _choose(tester, 'MASQUE');
+    expect(field, findsNothing);
+
+    await _advanced(tester);
+    expect(field, findsOneWidget);
+    expect(
+        tester.widget<TextField>(field).controller!.text, 'www.cloudflare.com');
+
+    // A WireGuard transport makes no TLS handshake to put a name in, and the
+    // core refuses the name there rather than ignoring it, so offering the
+    // field would be a setting that changes nothing.
+    await _choose(tester, 'WireGuard');
+    expect(field, findsNothing);
+    await _choose(tester, 'gool');
+    expect(field, findsNothing);
+
+    await _choose(tester, 'MASQUE');
+    expect(field, findsOneWidget,
+        reason: 'it applies to either transport, so it is not inside the '
+            'HTTP/2 block the fragment controls live in');
+    await _choose(tester, 'HTTP/2');
+    expect(field, findsOneWidget);
+  });
+
+  testWidgets('a typed server name is what gets searched with, and saved',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+    await _advanced(tester);
+    await _choose(tester, 'MASQUE');
+
+    await tester.enterText(
+        find.byKey(const ValueKey<String>('aether-masque-sni')),
+        '  cdn.example.org  ');
+    await tester.pump();
+    expect(_saveEnabled(tester), isFalse,
+        reason: 'a gateway proven under one server name is not proven under '
+            'another');
+
+    await _findGateway(tester, search);
+    expect(search.asked!.masqueSni, 'cdn.example.org',
+        reason: 'the sweep has to use the name the config will dial with, or '
+            'it proves an address against a handshake nobody will send');
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final AetherConfig read = AetherConfig.parse(profiles.profiles
+        .firstWhere((ProxyProfile p) =>
+            p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
+        .uri)!;
+    expect(read.options.masqueSni, 'cdn.example.org');
+  });
+
+  testWidgets('an emptied server name saves as empty, not as the default',
+      (WidgetTester tester) async {
+    final _FakeSearch search = _FakeSearch();
+    await _open(tester, search: search);
+    await _advanced(tester);
+    await _choose(tester, 'MASQUE');
+
+    await tester.enterText(
+        find.byKey(const ValueKey<String>('aether-masque-sni')), '');
+    await _findGateway(tester, search);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final AetherConfig read = AetherConfig.parse(profiles.profiles
+        .firstWhere((ProxyProfile p) =>
+            p.kind == ProxyKind.aether && !p.isBuiltInFreeOption)
+        .uri)!;
+    expect(read.options.masqueSni, isEmpty,
+        reason: 'empty is a third choice, not the default: it sends the name '
+            'built into the core, which is what Nova did before the name was '
+            'settable');
+    expect(read.options.effectiveMasqueSni, isNull);
+  });
+
+  testWidgets('a saved server name reopens on the depth that shows it',
+      (WidgetTester tester) async {
+    final ProxyProfile saved = _aether(
+        'sni',
+        'Tehran',
+        const AetherConfig(
+          options: AetherOptions(masqueSni: 'cdn.example.org'),
+          name: 'Tehran',
+        ).toLink());
+    await _open(tester, seed: <ProxyProfile>[saved], existing: saved);
+
+    // Simple would claim this config takes every default, which it does not.
+    final Finder field =
+        find.byKey(const ValueKey<String>('aether-masque-sni'));
+    expect(field, findsOneWidget);
+    expect(tester.widget<TextField>(field).controller!.text, 'cdn.example.org');
+
+    await _choose(tester, 'Simple');
+    await _choose(tester, 'Advanced');
+    await _choose(tester, 'MASQUE');
+    expect(tester.widget<TextField>(field).controller!.text,
+        'www.cloudflare.com',
+        reason: 'Simple says every other setting takes its default, so a name '
+            'it has hidden must not still be in force');
   });
 }

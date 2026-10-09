@@ -123,6 +123,8 @@ class NovaStrings {
   String get aetherTransportH2 => t('aether.transportH2');
   String get aetherTransportH3Sub => t('aether.transportH3Sub');
   String get aetherTransportH2Sub => t('aether.transportH2Sub');
+  String get aetherMasqueSni => t('aether.masqueSni');
+  String get aetherMasqueSniHint => t('aether.masqueSniHint');
   String get aetherFragment => t('aether.fragment');
   String get aetherFragmentSize => t('aether.fragmentSize');
   String get aetherFragmentDelay => t('aether.fragmentDelay');
@@ -1180,6 +1182,16 @@ class NovaStrings {
     'aether.transportH2Sub':
         'TCP. Slower to open, cheaper to run, and it survives a network that '
             'blocks QUIC.',
+    'aether.masqueSni': 'MASQUE server name',
+    // Says why the default is not the core's own name, because that is the one
+    // thing someone deciding whether to touch this needs to know. Field
+    // evidence, 2026-10-09: a whole ClientHello whose name ends in
+    // cloudflareclient.com is reset, and one carrying this name is not.
+    'aether.masqueSniHint':
+        'The name Nova puts in the MASQUE handshake. Iran resets one carrying '
+            'the name built into the Aether core, so the default here is a '
+            'different name. Leave it unless the tunnel will not open. Empty '
+            'sends the built-in name.',
     'aether.fragment': 'Split the TLS hello',
     'aether.fragmentSize': 'Fragment size (bytes)',
     'aether.fragmentDelay': 'Fragment delay (ms)',
@@ -2307,6 +2319,13 @@ class NovaStrings {
     'aether.transportH2Sub':
         '\u2066TCP\u2069. دیرتر باز می‌شود، کم‌مصرف‌تر است و روی شبکه‌ای که '
             '\u2066QUIC\u2069 را می‌بندد هم کار می‌کند.',
+    'aether.masqueSni': 'نام سرور \u2066MASQUE\u2069',
+    'aether.masqueSniHint':
+        'نامی که نوا در دست‌دهی \u2066MASQUE\u2069 می‌فرستد. فیلترینگ ایران '
+            'دست‌دهی‌ای را که نام داخلی هسته‌ی \u2066Aether\u2069 را دارد '
+            'ریست می‌کند، پس پیش‌فرض اینجا نام دیگری است. تا وقتی تونل بالا '
+            'می‌آید همین را نگه دارید. اگر خالی بماند، نام داخلی هسته فرستاده '
+            'می‌شود.',
     'aether.fragment': 'تکه‌تکه کردن پیام \u2066TLS Hello\u2069',
     'aether.fragmentSize': 'اندازهٔ فرگمنت (بایت)',
     'aether.fragmentDelay': 'تأخیر فرگمنت (میلی‌ثانیه)',

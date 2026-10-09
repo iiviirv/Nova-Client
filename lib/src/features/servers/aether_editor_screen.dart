@@ -69,6 +69,13 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   final TextEditingController _fragmentDelay =
       TextEditingController(text: '2-10');
 
+  /// The name the MASQUE handshakes carry. A free text field rather than a row
+  /// of pills, because the name that gets through a given network is not a list
+  /// anyone has: the evidence for the default is one network on one day, and
+  /// the next one may want something else entirely.
+  final TextEditingController _masqueSni =
+      TextEditingController(text: kAetherDefaultMasqueSni);
+
   bool get _fragmentValid =>
       !_fragment ||
       _mode != AetherMode.masque ||
@@ -166,6 +173,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     _fragment = o.fragment;
     _fragmentSize.text = o.effectiveFragmentSize;
     _fragmentDelay.text = o.effectiveFragmentDelay;
+    _masqueSni.text = o.masqueSni;
     _dns = o.dns;
     _wiwOuter = o.wiwOuter;
     _wiwInner = o.wiwInner;
@@ -195,6 +203,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     _address.dispose();
     _fragmentSize.dispose();
     _fragmentDelay.dispose();
+    _masqueSni.dispose();
     super.dispose();
   }
 
@@ -207,6 +216,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       !o.fragment &&
       o.fragmentSize == '16-32' &&
       o.fragmentDelay == '2-10' &&
+      o.masqueSni == kAetherDefaultMasqueSni &&
       (o.wiwOuter ?? '').isEmpty &&
       (o.wiwInner ?? '').isEmpty;
 
@@ -243,6 +253,7 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
         _fragment = false;
         _fragmentSize.text = '16-32';
         _fragmentDelay.text = '2-10';
+        _masqueSni.text = kAetherDefaultMasqueSni;
       });
 
   void _pickMode(AetherMode m) => _set(() {
@@ -292,6 +303,9 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
           _transport == AetherTransport.h2,
       fragmentSize: _fragmentSize.text.trim(),
       fragmentDelay: _fragmentDelay.text.trim(),
+      // Trimmed, because a stray space typed here would otherwise be saved
+      // into the link as a server name that resolves to nothing.
+      masqueSni: _masqueSni.text.trim(),
       dns: _dns,
     );
   }
@@ -526,6 +540,12 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                                 : s.aetherTransportH2Sub,
                             style: text.bodySmall?.copyWith(color: nova.muted),
                           ),
+                          // Between the transport and the fragment controls
+                          // because all three are about the same handshake.
+                          // Unlike fragmenting it, this one applies to either
+                          // transport, so it sits outside the HTTP/2 block.
+                          const SizedBox(height: NovaSpace.md),
+                          _masqueSniField(s),
                           if (_transport == AetherTransport.h2) ...<Widget>[
                             const SizedBox(height: NovaSpace.sm),
                             _Toggle(
@@ -791,6 +811,34 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
       ),
     );
   }
+
+  /// The name the MASQUE handshake carries.
+  ///
+  /// MASQUE only, like the fragment controls above it and for the same reason:
+  /// a WireGuard transport makes no TLS handshake to put a name in, and the
+  /// core refuses the flag outside MASQUE rather than ignoring it.
+  ///
+  /// No hint showing the default when the field is empty, tempting as that is.
+  /// Empty is not the default here, it is the core's own built-in name, and a
+  /// hint would say those are the same thing.
+  Widget _masqueSniField(NovaStrings s) => TextField(
+        key: const ValueKey<String>('aether-masque-sni'),
+        controller: _masqueSni,
+        // A hostname reads left to right in an RTL locale too.
+        textDirection: TextDirection.ltr,
+        autocorrect: false,
+        keyboardType: TextInputType.url,
+        textCapitalization: TextCapitalization.none,
+        // A gateway proven under one server name is not proven under another,
+        // so a keystroke here drops the verified address exactly as one in the
+        // fragment fields does.
+        onChanged: (_) => _set(() {}),
+        decoration: InputDecoration(
+          labelText: s.aetherMasqueSni,
+          helperText: s.aetherMasqueSniHint,
+          helperMaxLines: 4,
+        ),
+      );
 
   Widget _pill(String label, bool selected, VoidCallback onTap) =>
       NovaPill(label: label, selected: selected, onTap: onTap);
