@@ -125,7 +125,7 @@ index 13bfc0f..2c054bd 100644
  
  pub const ECH_PUBLIC_NAME: &str = "cloudflare-ech.com";
 diff --git a/aether/src/ffi.rs b/aether/src/ffi.rs
-index 0f39fb8..d5e60c5 100644
+index 0f39fb8..9a02460 100644
 --- a/aether/src/ffi.rs
 +++ b/aether/src/ffi.rs
 @@ -132,7 +132,10 @@ where
@@ -179,7 +179,7 @@ index 0f39fb8..d5e60c5 100644
  #[no_mangle]
  pub extern "C" fn aether_version() -> *mut c_char {
 -    respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION")})))
-+    respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION"), "nova_h2_fragment": 1})))
++    respond(|| Ok(json!({"version": env!("CARGO_PKG_VERSION"), "nova_h2_fragment": 1, "nova_masque_sni": 1})))
  }
  
  #[no_mangle]

@@ -169,6 +169,34 @@ class AetherCore {
     return r.ok ? (r['version']?.toString() ?? r['result']?.toString()) : null;
   }
 
+  /// Whether this core takes the MASQUE server name from the job.
+  ///
+  /// Upstream Aether compiles that name in and offers no way to change it, so
+  /// the field only means anything against Nova's patched core. Sending it to
+  /// a core without the patch is not an error: serde ignores an unknown field,
+  /// the job runs, and the name stays the built-in one. In other words the
+  /// setting would appear in the editor, accept a value, and do nothing, with
+  /// no way for anyone to tell. That is the failure this release spent its
+  /// time removing from the ECH paths, so it is not one to introduce here.
+  ///
+  /// The patch answers `aether_version` with this key, the way it already
+  /// answers with `nova_h2_fragment`. A core that does not know the question
+  /// returns neither.
+  bool get supportsMasqueSni => _versionFlag('nova_masque_sni');
+
+  /// Whether this core takes the HTTP/2 and fragment settings from the job.
+  /// The patch has published this since those fields were added and nothing
+  /// has ever read it, which is how the question above went unasked.
+  bool get supportsH2Fragment => _versionFlag('nova_h2_fragment');
+
+  bool _versionFlag(String key) {
+    final AetherReply r = _take(
+        _lib.lookupFunction<_StrFnC, _StrFn>('aether_version')());
+    if (!r.ok) return false;
+    final Object? v = r[key];
+    return v == 1 || v == true || v == '1';
+  }
+
   /// Opens (or creates) the WARP identity. Everything else needs its handle.
   ///
   /// Asynchronous: the reply carries a job id, and the identity handle arrives
