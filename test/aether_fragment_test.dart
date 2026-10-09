@@ -60,8 +60,12 @@ void main() {
     expect(o.effectiveFragmentDelay, '2-10');
   });
   test('HTTP3 and WireGuard never receive TLS fragment fields', () {
+    // HTTP/3 named, not taken from the default. This read the default and
+    // meant "h3", which stopped being true in 1.31.0 when the default became
+    // HTTP/2, and the test then asserted that an HTTP/2 config gets no
+    // fragment fields, which is the opposite of what it exists to check.
     for (final o in [
-      const AetherOptions(fragment: true),
+      const AetherOptions(transport: AetherTransport.h3, fragment: true),
       const AetherOptions(
           mode: AetherMode.wg, transport: AetherTransport.h2, fragment: true)
     ]) {

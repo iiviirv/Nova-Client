@@ -16,6 +16,19 @@
   alone unless a tunnel will not open. Emptying the box sends the name built
   into the core.
 
+- A new WARP config now defaults to the settings that actually connect, so
+  there is nothing to change before the first attempt: MASQUE over HTTP/2, the
+  new server name, and no splitting of the handshake. HTTP/2 is the change
+  here. The default was HTTP/3, which runs over UDP, and the networks this app
+  is for block UDP to Cloudflare, so the setting people got by default was the
+  one least likely to work where they needed it. HTTP/3 is still there to pick.
+
+- Psiphon now prefers to run over a MASQUE tunnel when it has a choice.
+  Psiphon cannot reach its own network from inside Iran unaided, so the WARP
+  tunnel underneath it is the part that has to work, and it was previously
+  picking whichever tunnel happened to be saved first, which could be a
+  WireGuard one on a network where WireGuard cannot connect.
+
 ## v1.30.2 (2026-10-05)
 
 - Fixes Windows, Mac and Linux dropping the connection after a few hours. Those

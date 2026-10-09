@@ -11,9 +11,17 @@ import 'package:nova_client/src/core/proxy/aether/aether_options.dart';
 void main() {
   _loopPrevention();
   group('the command line matches what the binary accepts', () {
-    test('a default MASQUE config', () {
+    test('a default MASQUE config, which is HTTP/2 since 1.31.0', () {
       expect(const AetherOptions().toCliArgs(),
-          <String>['--masque', '--scan', 'balanced', '-4']);
+          <String>['--masque', '--scan', 'balanced', '-4', '--h2']);
+    });
+
+    test('HTTP/3 is still reachable, just no longer the default', () {
+      expect(
+          const AetherOptions(transport: AetherTransport.h3).toCliArgs(),
+          <String>['--masque', '--scan', 'balanced', '-4'],
+          reason: 'the binary takes HTTP/3 by saying nothing, so an empty '
+              'transport flag is what h3 looks like');
     });
 
     test('HTTP/2 with ClientHello fragmentation', () {
@@ -210,9 +218,29 @@ void main() {
   test('the CPU-expensive transport is identified', () {
     // HTTP/3 measured 0.66 CPU-seconds per 20 MB against 0.37 for HTTP/2, so
     // the device tier needs to be able to ask which one this is.
-    expect(const AetherOptions().isQuic, isTrue);
+    //
+    // Named explicitly rather than taken from the default. This used to read
+    // the default and assert isQuic, which quietly stopped testing anything
+    // about h3 the moment the default moved to h2 in 1.31.0.
+    expect(const AetherOptions(transport: AetherTransport.h3).isQuic, isTrue);
     expect(const AetherOptions(transport: AetherTransport.h2).isQuic, isFalse);
     expect(const AetherOptions(mode: AetherMode.wg).isQuic, isFalse);
+    expect(
+        const AetherOptions(mode: AetherMode.wg, transport: AetherTransport.h3)
+            .isQuic,
+        isFalse,
+        reason: 'WireGuard has no MASQUE transport to be QUIC');
+  });
+
+  test('the default transport is the one that gets through', () {
+    // Field report, 2026-10-09, across both Iranian firewalls: MASQUE over
+    // HTTP/2 connects on nearly every ISP, and the networks this app exists
+    // for block UDP to Cloudflare, which is what HTTP/3 needs.
+    expect(const AetherOptions().transport, AetherTransport.h2);
+    expect(AetherOptions.fromQuery('protocol=masque').transport,
+        AetherTransport.h2,
+        reason: 'a link from another client that names no transport should '
+            'get the one that works, not the one that was first');
   });
 }
 

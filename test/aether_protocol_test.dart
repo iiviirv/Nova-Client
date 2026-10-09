@@ -91,11 +91,20 @@ void main() {
         jsonDecode(s) as Map<String, dynamic>;
 
     test('MASQUE names its HTTP transport', () {
-      expect(dec(AetherPayloads.scan(const AetherOptions()))['transport'], 'h3');
+      // Each transport named rather than one of them taken from the default.
+      // The h3 case used to read the default, so when the default moved to
+      // HTTP/2 in 1.31.0 this would have gone on passing while testing h2
+      // twice and h3 not at all.
+      expect(
+          dec(AetherPayloads.scan(
+              const AetherOptions(transport: AetherTransport.h3)))['transport'],
+          'h3');
       expect(
           dec(AetherPayloads.scan(
               const AetherOptions(transport: AetherTransport.h2)))['transport'],
           'h2');
+      expect(dec(AetherPayloads.scan(const AetherOptions()))['transport'], 'h2',
+          reason: 'and the default is the one that gets through');
     });
 
     test('gool declares the WireGuard transport, with the mode alongside', () {
@@ -146,7 +155,8 @@ void main() {
       // ".../aether", so the core appends the transport rather than treating
       // this as a directory.
       final Map<String, dynamic> p = dec(AetherPayloads.identity(
-          const AetherOptions(), base: '/data/user/0/app/files/aether'));
+          const AetherOptions(transport: AetherTransport.h3),
+          base: '/data/user/0/app/files/aether'));
       expect(p['path'], '/data/user/0/app/files/aether');
       expect(p['transport'], 'h3');
       expect(p.containsKey('socks'), isFalse,

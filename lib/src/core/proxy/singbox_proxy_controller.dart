@@ -1782,9 +1782,30 @@ class SingboxProxyController extends ProxyController {
   /// takes about two minutes to find a gateway where the other two take tens
   /// of seconds.
   Future<String?> _resolveAetherCarrier() async {
-    final List<ProxyProfile> all =
-        aetherCarriers?.call() ?? const <ProxyProfile>[];
-    for (final ProxyProfile candidate in all) {
+    final List<ProxyProfile> all = <ProxyProfile>[
+      ...(aetherCarriers?.call() ?? const <ProxyProfile>[])
+    ];
+    // MASQUE first, whatever order they are stored in.
+    //
+    // Psiphon cannot reach its own network from inside Iran unaided, so the
+    // WARP tunnel underneath it is the part that has to work, and the field
+    // report of 2026-10-09 is unambiguous about which transport does: MASQUE
+    // over HTTP/2 connects on nearly every ISP on both firewalls, while the
+    // WireGuard modes connect only where nothing is blocked. Picking whichever
+    // carrier happened to be stored first meant a WireGuard one could be
+    // chosen on exactly the network where it cannot work, and the Psiphon
+    // profile would fail for a reason that had nothing to do with Psiphon.
+    //
+    // A stable sort, so among equals the caller's order still decides.
+    final List<ProxyProfile> masque = <ProxyProfile>[];
+    final List<ProxyProfile> rest = <ProxyProfile>[];
+    for (final ProxyProfile p in all) {
+      (AetherConfig.parse(p.uri)?.options.mode == AetherMode.masque
+              ? masque
+              : rest)
+          .add(p);
+    }
+    for (final ProxyProfile candidate in <ProxyProfile>[...masque, ...rest]) {
       final AetherConfig? c = AetherConfig.parse(candidate.uri);
       if (c == null) continue;
       if (c.gateway?.isNotEmpty ?? false) return candidate.uri.trim();

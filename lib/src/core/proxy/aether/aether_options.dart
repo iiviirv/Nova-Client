@@ -28,6 +28,14 @@ enum AetherMode {
 
 /// Which MASQUE transport to use. Ignored for [AetherMode.wg] and
 /// [AetherMode.gool], which are not carried over HTTP at all.
+/// How a MASQUE tunnel is carried. HTTP/3 is QUIC over UDP; HTTP/2 is TCP.
+///
+/// [h2] is the default, which it was not until 1.31.0. HTTP/3 was, on the
+/// reasoning that QUIC is the protocol WARP is built around. Field report,
+/// 2026-10-09, after a week of testing across both Iranian firewalls: MASQUE
+/// over HTTP/2 connects on nearly every ISP, and the networks that matter
+/// block UDP to Cloudflare outright, so the default was the one transport
+/// least likely to work where it was needed. HTTP/3 is still there to choose.
 enum AetherTransport { h3, h2 }
 
 /// Which address family the scan and the tunnel use.
@@ -59,7 +67,7 @@ const String kAetherStockMasqueSni = 'consumer-masque.cloudflareclient.com';
 class AetherOptions {
   const AetherOptions({
     this.mode = AetherMode.masque,
-    this.transport = AetherTransport.h3,
+    this.transport = AetherTransport.h2,
     this.ip = AetherIpMode.v4,
     this.scan = AetherScan.balanced,
     this.noize,
@@ -279,7 +287,7 @@ class AetherOptions {
       mode: pick(
           AetherMode.values, q['protocol'] ?? q['mode'], AetherMode.masque),
       transport:
-          pick(AetherTransport.values, q['transport'], AetherTransport.h3),
+          pick(AetherTransport.values, q['transport'], AetherTransport.h2),
       ip: pick(AetherIpMode.values, q['ip'], AetherIpMode.v4),
       scan: pick(AetherScan.values, q['scan'], AetherScan.balanced),
       noize: q['noize'] == null

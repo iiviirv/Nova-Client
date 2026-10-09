@@ -853,8 +853,24 @@ class DesktopProxyController extends ProxyController {
           // takes whichever WARP tunnel the user already has.
           // Prefers a carrier that already has a gateway, so a connection does
           // not pay for a search it has already paid for once.
-          final List<ProxyProfile> carriers =
+          // MASQUE first, for the reason spelled out in the mobile
+          // controller: it is the transport that connects on nearly every
+          // Iranian ISP, and the WireGuard modes only where nothing is
+          // blocked, so choosing by storage order could pick the one carrier
+          // that cannot work on the network in front of it.
+          //
+          // Both controllers, at once. This pair has now been fixed one at a
+          // time six times over: _stopPsiphon, the opportunistic WARP
+          // registration, the ECH lookup wiring, the measuring key, the
+          // through-tunnel key refresh, and this.
+          bool isMasque(ProxyProfile p) =>
+              AetherConfig.parse(p.uri)?.options.mode == AetherMode.masque;
+          final List<ProxyProfile> all =
               aetherCarriers?.call() ?? const <ProxyProfile>[];
+          final List<ProxyProfile> carriers = <ProxyProfile>[
+            ...all.where(isMasque),
+            ...all.where((ProxyProfile p) => !isMasque(p)),
+          ];
           final List<ProxyProfile> ready = carriers
               .where((ProxyProfile p) =>
                   AetherConfig.parse(p.uri)?.gateway?.isNotEmpty ?? false)
