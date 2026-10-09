@@ -140,6 +140,7 @@ class AetherPayloads {
         'transport': _transport(o),
         'mode': o.mode.name,
         ..._fragment(o),
+        ..._sni(o),
         'ip': o.ip.name,
         if (o.noize != null) 'profile': o.noize!.name,
         if (o.ech) 'ech': true,
@@ -174,6 +175,7 @@ class AetherPayloads {
         // The scan has always carried mode. Dropping it here was wrong.
         'mode': o.mode.name,
         ..._fragment(o),
+        ..._sni(o),
         if (o.noize != null) 'profile': o.noize!.name,
         if (o.ech) 'ech': true,
         'socks': socks,
@@ -200,6 +202,26 @@ class AetherPayloads {
   /// identity itself because only it knows its own container path. It needs the
   /// transport to do that, and taking it from here keeps one answer to what the
   /// transport is rather than a second opinion in Swift.
+  /// The MASQUE server name, when the config asks for one that is not the
+  /// core's own.
+  ///
+  /// Sent for both transports, not just HTTP/2. The name goes into the
+  /// ClientHello of the MASQUE handshake either way, and HTTP/3 carries one
+  /// too; it is the fragmenting workaround that is HTTP/2 only, not the name.
+  ///
+  /// Omitted entirely for a WireGuard mode. There is no TLS handshake there to
+  /// put a name in, and sending a field the job has no use for is how a core
+  /// starts refusing payloads it used to accept.
+  ///
+  /// Requires Nova's patched core, like the fragment fields beside it: upstream
+  /// compiles the name in as a constant and offers no way to change it. See
+  /// tool/core/aether-h2-fragment.patch.
+  static Map<String, dynamic> _sni(AetherOptions o) {
+    if (o.mode == AetherMode.wg) return const <String, dynamic>{};
+    final String? sni = o.effectiveMasqueSni;
+    return sni == null ? const <String, dynamic>{} : <String, dynamic>{'sni': sni};
+  }
+
   static Map<String, dynamic> _fragment(AetherOptions o) =>
       o.mode == AetherMode.masque && o.transport == AetherTransport.h2
           ? <String, dynamic>{

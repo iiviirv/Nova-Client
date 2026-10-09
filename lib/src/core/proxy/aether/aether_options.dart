@@ -39,6 +39,23 @@ enum AetherScan { turbo, balanced, thorough, stealth, ironclad }
 /// The obfuscation profile applied to the handshake.
 enum AetherNoize { off, light, firewall, balanced, gfw, aggressive }
 
+/// The name Nova asks the core to put in the MASQUE ClientHello.
+///
+/// The core's own name is `consumer-masque.cloudflareclient.com`, and its help
+/// text says what that costs: "Iran's firewall resets a whole ClientHello whose
+/// SNI ends in cloudflareclient.com". Upstream answers that by fragmenting the
+/// hello so the name straddles a packet boundary. This is the other answer, and
+/// the one measured working in the field on 2026-10-09: send a name the filter
+/// has no reason to match, and leave the hello whole.
+///
+/// Blank means the core's built-in name, which is the behaviour before this
+/// existed and the fallback the connect ladder drops to.
+const String kAetherDefaultMasqueSni = 'www.cloudflare.com';
+
+/// The core's own name, kept here so the fallback attempt can ask for it by
+/// value rather than by sending nothing and hoping.
+const String kAetherStockMasqueSni = 'consumer-masque.cloudflareclient.com';
+
 class AetherOptions {
   const AetherOptions({
     this.mode = AetherMode.masque,
@@ -54,6 +71,7 @@ class AetherOptions {
     this.fragmentDelay = '2-10',
     this.dns,
     this.ech = false,
+    this.masqueSni = kAetherDefaultMasqueSni,
   });
 
   /// Ask the core to hide the SNI of its own handshakes with ECH.
@@ -68,6 +86,20 @@ class AetherOptions {
   /// where it is needed: UDP to Cloudflare is blocked on the networks this is
   /// for, which rules WireGuard out anyway.
   final bool ech;
+
+  /// The name the MASQUE handshakes carry. See [kAetherDefaultMasqueSni].
+  ///
+  /// Only MASQUE reads it. A WireGuard transport makes no TLS handshake to put
+  /// a name in, so this is inert there, exactly as [ech] is.
+  final String masqueSni;
+
+  /// What to actually send, or null to leave the core on its built-in name.
+  /// Trimmed, because a stray space typed in the editor would otherwise become
+  /// a server name that resolves to nothing.
+  String? get effectiveMasqueSni {
+    final String v = masqueSni.trim();
+    return v.isEmpty ? null : v;
+  }
 
   final AetherMode mode;
   final AetherTransport transport;
@@ -122,6 +154,12 @@ class AetherOptions {
 
   /// The command-line arguments for this config, excluding `--bind`, which is
   /// the caller's to choose because it owns the port.
+  ///
+  /// [masqueSni] is deliberately absent. The patched core takes the name over
+  /// the FFI, as a field on the scan and tunnel payloads; it adds no CLI flag,
+  /// because nothing here launches the binary. A test pins every value emitted
+  /// here against the flags the binary actually lists, and it caught exactly
+  /// this when an earlier version of this method invented `--masque-sni`.
   List<String> toCliArgs() {
     final List<String> a = <String>[
       switch (mode) {
@@ -199,6 +237,9 @@ class AetherOptions {
     if (wiwInner != null && wiwInner!.isNotEmpty) {
       p.add('inner=${Uri.encodeComponent(wiwInner!)}');
     }
+    if (mode == AetherMode.masque && masqueSni != kAetherDefaultMasqueSni) {
+      p.add('sni=${Uri.encodeComponent(masqueSni)}');
+    }
     if (fragment) p.add('fragment=1');
     if (fragmentSize != '16-32') p.add('fragment_size=$effectiveFragmentSize');
     if (fragmentDelay != '2-10') {
@@ -247,6 +288,7 @@ class AetherOptions {
       peer: nonEmpty(peer) ?? nonEmpty(q['peer']),
       wiwOuter: nonEmpty(q['outer']),
       wiwInner: nonEmpty(q['inner']),
+      masqueSni: q['sni'] ?? kAetherDefaultMasqueSni,
       fragment: q['fragment'] == '1' || q['fragment'] == 'true',
       fragmentSize: q['fragment_size'] ?? '16-32',
       fragmentDelay: q['fragment_delay'] ?? '2-10',
@@ -268,9 +310,11 @@ class AetherOptions {
     String? fragmentDelay,
     String? dns,
     bool? ech,
+    String? masqueSni,
   }) =>
       AetherOptions(
         ech: ech ?? this.ech,
+        masqueSni: masqueSni ?? this.masqueSni,
         mode: mode ?? this.mode,
         transport: transport ?? this.transport,
         ip: ip ?? this.ip,

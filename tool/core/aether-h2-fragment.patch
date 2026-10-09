@@ -1,5 +1,5 @@
 diff --git a/aether/src/api.rs b/aether/src/api.rs
-index 8296ce9..b6ccc63 100644
+index 8296ce9..8c593f0 100644
 --- a/aether/src/api.rs
 +++ b/aether/src/api.rs
 @@ -352,6 +352,8 @@ impl Endpoint {
@@ -20,15 +20,17 @@ index 8296ce9..b6ccc63 100644
              mode: "balanced".to_string(),
              ip: prober::IpScan::V4,
              ports: transport.default_ports(),
-@@ -397,6 +401,8 @@ pub async fn scan(identity: &Identity, request: &ScanRequest, cancel: &Cancel) -
+@@ -397,7 +401,9 @@ pub async fn scan(identity: &Identity, request: &ScanRequest, cancel: &Cancel) -
      match request.transport {
          Transport::Masque => {
              let probe = prober::MasqueProbe {
+-                sni: consts::CONNECT_SNI.to_string(),
 +                http2: request.http2,
 +                fragment: request.fragment,
-                 sni: consts::CONNECT_SNI.to_string(),
++                sni: consts::connect_sni(),
                  authority: quic::default_authority().to_string(),
                  path: quic::default_path().to_string(),
+                 cert_pem: Arc::from(identity.cert_pem.clone()),
 @@ -447,6 +453,8 @@ fn wg_local_v4(identity: &Identity) -> Result<Ipv4Addr> {
  
  #[derive(Debug, Clone)]
@@ -74,8 +76,56 @@ index 8296ce9..b6ccc63 100644
              guard(cancel, attempt).await
          }
          Transport::WireGuard => {
+diff --git a/aether/src/consts.rs b/aether/src/consts.rs
+index 13bfc0f..2c054bd 100644
+--- a/aether/src/consts.rs
++++ b/aether/src/consts.rs
+@@ -3,6 +3,43 @@ pub const API_VERSION: &str = "v0a4471";
+ 
+ pub const CONNECT_SNI: &str = "consumer-masque.cloudflareclient.com";
+ pub const L4_CONNECT_SNI: &str = "consumer-masque-proxy.cloudflareclient.com";
++
++/// The name the MASQUE handshakes put in the ClientHello, which [CONNECT_SNI]
++/// unless a job asked for another one.
++///
++/// Iran's firewall resets a whole ClientHello whose SNI ends in
++/// cloudflareclient.com, which is exactly what [CONNECT_SNI] is. Upstream's
++/// answer is `--fragment`, splitting the hello so the name crosses a packet
++/// boundary. This is the other answer: send a name the filter has no reason to
++/// match, and leave the hello in one piece. Measured in the field on networks
++/// where the fragmenting answer had stopped working.
++///
++/// A global rather than a field on the job, because the name is read in nine
++/// places across the scan, the probe and both tunnel paths, and threading it
++/// through all of them would be a far larger change to carry against upstream.
++/// Set once when a job starts, read for the length of it.
++static MASQUE_SNI: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
++
++/// Point the MASQUE handshakes at [sni]. None, or blank, restores the built-in
++/// name. Jobs set this as they start, so the caller can try one name and then
++/// fall back to the other.
++pub fn set_masque_sni(sni: Option<String>) {
++    let want = sni
++        .map(|s| s.trim().to_string())
++        .filter(|s| !s.is_empty());
++    if let Ok(mut slot) = MASQUE_SNI.write() {
++        *slot = want;
++    }
++}
++
++/// The name in force now.
++pub fn connect_sni() -> String {
++    MASQUE_SNI
++        .read()
++        .ok()
++        .and_then(|slot| slot.clone())
++        .unwrap_or_else(|| CONNECT_SNI.to_string())
++}
+ pub const CONNECT_URI: &str = "https://cloudflareaccess.com";
+ 
+ pub const ECH_PUBLIC_NAME: &str = "cloudflare-ech.com";
 diff --git a/aether/src/ffi.rs b/aether/src/ffi.rs
-index 0f39fb8..a5d122f 100644
+index 0f39fb8..d5e60c5 100644
 --- a/aether/src/ffi.rs
 +++ b/aether/src/ffi.rs
 @@ -132,7 +132,10 @@ where
@@ -90,10 +140,14 @@ index 0f39fb8..a5d122f 100644
          let reply = match outcome {
              Ok(Ok(value)) => ok_value(value),
              Ok(Err(message)) => error_value(message),
-@@ -226,6 +229,12 @@ struct OpenPayload {
+@@ -226,6 +229,16 @@ struct OpenPayload {
  
  #[derive(serde::Deserialize)]
  struct ScanPayload {
++    /// The name the MASQUE ClientHello carries. Absent or blank keeps the
++    /// built-in one. See consts::set_masque_sni.
++    #[serde(default)]
++    sni: Option<String>,
 +    #[serde(default)]
 +    fragment: bool,
 +    #[serde(default)]
@@ -103,10 +157,14 @@ index 0f39fb8..a5d122f 100644
      #[serde(default)]
      transport: Option<String>,
      #[serde(default)]
-@@ -244,6 +253,12 @@ struct ScanPayload {
+@@ -244,6 +257,16 @@ struct ScanPayload {
  
  #[derive(serde::Deserialize)]
  struct TunnelPayload {
++    /// The name the MASQUE ClientHello carries. Absent or blank keeps the
++    /// built-in one. See consts::set_masque_sni.
++    #[serde(default)]
++    sni: Option<String>,
 +    #[serde(default)]
 +    fragment: bool,
 +    #[serde(default)]
@@ -116,7 +174,7 @@ index 0f39fb8..a5d122f 100644
      peer: String,
      #[serde(default)]
      transport: Option<String>,
-@@ -274,7 +289,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
+@@ -274,7 +297,7 @@ fn socket_of(raw: &str, label: &str) -> std::result::Result<SocketAddr, String>
  
  #[no_mangle]
  pub extern "C" fn aether_version() -> *mut c_char {
@@ -125,25 +183,27 @@ index 0f39fb8..a5d122f 100644
  }
  
  #[no_mangle]
-@@ -392,6 +407,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
+@@ -392,6 +415,9 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
          let transport = transport_of(&payload.transport);
  
          let mut request = api::ScanRequest::for_transport(transport);
++        crate::consts::set_masque_sni(payload.sni.clone());
 +        request.http2 = payload.transport.as_deref() == Some("h2");
 +        request.fragment = fragment_options(request.http2 && payload.fragment, payload.fragment_size.as_deref(), payload.fragment_delay.as_deref())?;
          if let Some(profile) = &payload.profile {
              request = request.with_profile(profile);
          }
-@@ -430,6 +447,8 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
+@@ -430,6 +456,9 @@ pub unsafe extern "C" fn aether_scan_start(identity: u64, payload: *const c_char
  fn tunnel_spec_of(payload: &TunnelPayload) -> std::result::Result<api::TunnelSpec, String> {
      let transport = transport_of(&payload.transport);
      let mut spec = api::TunnelSpec::for_transport(transport);
++    crate::consts::set_masque_sni(payload.sni.clone());
 +    spec.http2 = payload.transport.as_deref() == Some("h2");
 +    spec.fragment = fragment_options(spec.http2 && payload.fragment, payload.fragment_size.as_deref(), payload.fragment_delay.as_deref())?;
  
      if let Some(profile) = &payload.profile {
          spec = spec.with_profile(profile);
-@@ -868,3 +887,52 @@ mod tests {
+@@ -868,3 +897,98 @@ mod tests {
          assert!(peer.recv_from(&mut packet).is_err());
      }
  }
@@ -169,8 +229,18 @@ index 0f39fb8..a5d122f 100644
 +#[cfg(test)]
 +mod nova_fragment_tests {
 +    use super::*;
++
++    /// The MASQUE name is process-wide, like the transport and fragment
++    /// settings the core already reads from the environment, so two tests
++    /// building a spec at the same time overwrite each other's. Every test
++    /// that touches it takes this first. Found the honest way: the assertion
++    /// below failed under the default parallel runner and passed under
++    /// --test-threads=1.
++    static SNI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
++
 +    #[test]
 +    fn nova_h2_options_reach_tunnel_spec_and_do_not_change_h3() {
++        let _guard = SNI_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 +        let payload: TunnelPayload = serde_json::from_value(json!({
 +            "peer":"127.0.0.1:443", "transport":"h2", "fragment":true,
 +            "fragment_size":"17-23", "fragment_delay":"3-7"
@@ -184,6 +254,42 @@ index 0f39fb8..a5d122f 100644
 +        assert!(!other.http2 && !other.fragment.enabled);
 +        assert!(spec.http2 && spec.fragment.enabled);
 +    }
++    /// The whole point of the field: the name actually reaches the handshake.
++    /// Asserting on the payload parsing alone would pass even if nothing read
++    /// it, which is the shape of mistake this core has already shipped once.
++    #[test]
++    fn nova_sni_override_reaches_the_handshake_and_blank_restores_the_default() {
++        let _guard = SNI_LOCK.lock().unwrap_or_else(|e| e.into_inner());
++        let payload: TunnelPayload = serde_json::from_value(json!({
++            "peer":"127.0.0.1:443", "transport":"h2", "sni":"www.cloudflare.com"
++        })).unwrap();
++        tunnel_spec_of(&payload).unwrap();
++        assert_eq!(crate::consts::connect_sni(), "www.cloudflare.com");
++
++        // Blank is "use the built-in name", not "use an empty name". An empty
++        // SNI makes Cloudflare serve a self-signed cert for an unrecognised
++        // name, which is a different failure and a confusing one.
++        for blank in [json!(""), json!("   "), json!(null)] {
++            let p: TunnelPayload = serde_json::from_value(json!({
++                "peer":"127.0.0.1:443", "transport":"h2", "sni": blank
++            })).unwrap();
++            tunnel_spec_of(&p).unwrap();
++            assert_eq!(crate::consts::connect_sni(), crate::consts::CONNECT_SNI);
++        }
++
++        // A job that says nothing about the name must not inherit the last
++        // one, or a fallback attempt would silently reuse the name that just
++        // failed.
++        let prev: TunnelPayload = serde_json::from_value(json!({
++            "peer":"127.0.0.1:443", "transport":"h2", "sni":"example.invalid"
++        })).unwrap();
++        tunnel_spec_of(&prev).unwrap();
++        let quiet: TunnelPayload =
++            serde_json::from_value(json!({"peer":"127.0.0.1:443"})).unwrap();
++        tunnel_spec_of(&quiet).unwrap();
++        assert_eq!(crate::consts::connect_sni(), crate::consts::CONNECT_SNI);
++    }
++
 +    #[test]
 +    fn nova_fragment_ranges_reject_invalid_values_and_keep_defaults() {
 +        let c = fragment_options(true,None,None).unwrap();
@@ -229,28 +335,32 @@ index 49c179a..56ba62f 100644
 +    }
 +}
 diff --git a/aether/src/lib.rs b/aether/src/lib.rs
-index 258a77d..4d85f36 100644
+index 258a77d..d88c654 100644
 --- a/aether/src/lib.rs
 +++ b/aether/src/lib.rs
-@@ -1103,6 +1103,8 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
+@@ -1103,7 +1103,9 @@ async fn select_peer(identity: &account::Identity, protocol: Protocol) -> Result
              log::info!("[*] hunting for a working MASQUE gateway (deep connect-ip verification)");
              let mode = prober::ScanMode::parse(&mode_str);
              let probe = prober::MasqueProbe {
+-                sni: consts::CONNECT_SNI.to_string(),
 +                http2: masque_h2::enabled(),
 +                fragment: fragment::FragmentConfig::from_env(),
-                 sni: consts::CONNECT_SNI.to_string(),
++                sni: consts::connect_sni(),
                  authority: quic::default_authority().to_string(),
                  path: quic::default_path().to_string(),
-@@ -1260,6 +1262,8 @@ async fn hunt_masque_peer(
+                 cert_pem: std::sync::Arc::from(identity.cert_pem.clone()),
+@@ -1260,7 +1262,9 @@ async fn hunt_masque_peer(
      );
      let mode = prober::ScanMode::parse(mode_str);
      let probe = prober::MasqueProbe {
+-        sni: consts::CONNECT_SNI.to_string(),
 +                http2: masque_h2::enabled(),
 +                fragment: fragment::FragmentConfig::from_env(),
-         sni: consts::CONNECT_SNI.to_string(),
++        sni: consts::connect_sni(),
          authority: quic::default_authority().to_string(),
          path: quic::default_path().to_string(),
-@@ -1296,10 +1300,31 @@ fn lastconn_path(config_path: &str) -> String {
+         cert_pem: std::sync::Arc::from(identity.cert_pem.clone()),
+@@ -1296,14 +1300,35 @@ fn lastconn_path(config_path: &str) -> String {
  
  /// Whether `peer` serves MASQUE, by a quick check on the carrier the session uses, which
  /// offers `ech`: the session's key, or that of a job of the library.
@@ -282,7 +392,12 @@ index 258a77d..4d85f36 100644
  ) -> bool {
      let vp = quic::VerifyParams {
          peer,
-@@ -1314,8 +1339,9 @@ async fn quick_verify_masque_peer(
+-        sni: consts::CONNECT_SNI.to_string(),
++        sni: consts::connect_sni(),
+         authority: quic::default_authority().to_string(),
+         path: quic::default_path().to_string(),
+         cert_pem: identity.cert_pem.clone(),
+@@ -1314,10 +1339,11 @@ async fn quick_verify_masque_peer(
          local_ipv4: parse_local_v4(&identity.ipv4),
      };
  
@@ -291,8 +406,11 @@ index 258a77d..4d85f36 100644
          let cfg = masque_h2::H2TunnelConfig {
 +            fragment,
              peer: masque_h2::h2_peer(peer),
-             sni: consts::CONNECT_SNI.to_string(),
+-            sni: consts::CONNECT_SNI.to_string(),
++            sni: consts::connect_sni(),
              authority: quic::default_authority().to_string(),
+             path: quic::default_path().to_string(),
+             cert_pem: identity.cert_pem.clone(),
 @@ -1492,6 +1518,7 @@ async fn establish_masque(
      peer: SocketAddr,
      ech: Option<Vec<u8>>,
@@ -301,14 +419,26 @@ index 258a77d..4d85f36 100644
      mtu: usize,
      datagram: usize,
      version_bait: bool,
-@@ -1528,6 +1555,7 @@ async fn establish_masque(
+@@ -1528,8 +1555,9 @@ async fn establish_masque(
  
      let tunnel_task = if h2 {
          let h2cfg = masque_h2::H2TunnelConfig {
 +            fragment,
              peer,
-             sni: consts::CONNECT_SNI.to_string(),
+-            sni: consts::CONNECT_SNI.to_string(),
++            sni: consts::connect_sni(),
              authority: quic::default_authority().to_string(),
+             path: quic::default_path().to_string(),
+             cert_pem: identity.cert_pem.clone(),
+@@ -1550,7 +1578,7 @@ async fn establish_masque(
+     } else {
+         let cfg = quic::TunnelConfig {
+             peer,
+-            sni: consts::CONNECT_SNI.to_string(),
++            sni: consts::connect_sni(),
+             authority: quic::default_authority().to_string(),
+             path: quic::default_path().to_string(),
+             cert_pem: identity.cert_pem.clone(),
 @@ -1615,7 +1643,10 @@ async fn run_masque_tunnel(
      ech: Option<Vec<u8>>,
      listen: SocketAddr,
@@ -389,7 +519,7 @@ index 1f37a71..4cfc16d 100644
          log_or_debug(
              quiet,
 diff --git a/aether/src/prober.rs b/aether/src/prober.rs
-index 3253919..f367ee8 100644
+index 3253919..41b3565 100644
 --- a/aether/src/prober.rs
 +++ b/aether/src/prober.rs
 @@ -244,6 +244,8 @@ struct Strategy {
@@ -421,16 +551,29 @@ index 3253919..f367ee8 100644
              peer: SocketAddr::new(ip, port),
              sni: probe.sni.clone(),
              authority: probe.authority.clone(),
-@@ -957,6 +962,9 @@ mod tests {
+@@ -727,8 +732,8 @@ mod tests {
+         rand::rng().fill(&mut scid[..]);
+         let scid = quiche::ConnectionId::from_ref(&scid);
+ 
+-        let sni = crate::consts::CONNECT_SNI;
+-        let mut conn = quiche::connect(Some(sni), &scid, local, peer, &mut config).ok()?;
++        let sni = crate::consts::connect_sni();
++        let mut conn = quiche::connect(Some(sni.as_str()), &scid, local, peer, &mut config).ok()?;
+ 
+         let mut out = [0u8; 1350];
+         let (written, _) = conn.send(&mut out).ok()?;
+@@ -957,7 +962,10 @@ mod tests {
          let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
          let address = peer.local_addr().unwrap();
          let probe = |ech: Option<Vec<u8>>| MasqueProbe {
+-            sni: crate::consts::CONNECT_SNI.to_string(),
 +            // Added by Nova's patch; upstream's test predates them.
 +            http2: false,
 +            fragment: crate::fragment::FragmentConfig::disabled(),
-             sni: crate::consts::CONNECT_SNI.to_string(),
++            sni: crate::consts::connect_sni(),
              authority: quic::default_authority().to_string(),
              path: quic::default_path().to_string(),
+             cert_pem: Arc::from(identity.cert_pem.clone()),
 diff --git a/aether/src/tunnelping.rs b/aether/src/tunnelping.rs
 index dc11891..9c2912e 100644
 --- a/aether/src/tunnelping.rs

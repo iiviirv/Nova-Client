@@ -678,8 +678,20 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
           error: 'cancelled');
     }
     if (!eligible || (result.ok && !timedOut)) return result;
-    final AetherOptions fallback =
-        options.copyWith(transport: AetherTransport.h2, fragment: true);
+    // The fallback is exactly what Nova did before the server name became
+    // settable: the core's own name, and the fragmented hello that upstream
+    // ships to get that name past the filter.
+    //
+    // So the two phases are the two answers to the same problem. First, send a
+    // name the filter has no reason to match and leave the hello whole, which
+    // is what a tester measured connecting on nearly every network on
+    // 2026-10-09. Then, if that network is not one of them, the old remedy
+    // unchanged. Putting the stock name here rather than in a third phase
+    // keeps the worst case at the same two scans it already was.
+    final AetherOptions fallback = options.copyWith(
+        transport: AetherTransport.h2,
+        fragment: true,
+        masqueSni: kAetherStockMasqueSni);
     final AetherGatewaySearch second = _active = _createSearch();
     // The protocol is unchanged by the fallback, which swaps the transport
     // under it, so it rides through rather than being dropped here.
