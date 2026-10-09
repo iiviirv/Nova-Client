@@ -169,33 +169,24 @@ class AetherCore {
     return r.ok ? (r['version']?.toString() ?? r['result']?.toString()) : null;
   }
 
-  /// Whether this core takes the MASQUE server name from the job.
-  ///
-  /// Upstream Aether compiles that name in and offers no way to change it, so
-  /// the field only means anything against Nova's patched core. Sending it to
-  /// a core without the patch is not an error: serde ignores an unknown field,
-  /// the job runs, and the name stays the built-in one. In other words the
-  /// setting would appear in the editor, accept a value, and do nothing, with
-  /// no way for anyone to tell. That is the failure this release spent its
-  /// time removing from the ECH paths, so it is not one to introduce here.
-  ///
-  /// The patch answers `aether_version` with this key, the way it already
-  /// answers with `nova_h2_fragment`. A core that does not know the question
-  /// returns neither.
-  bool get supportsMasqueSni => _versionFlag('nova_masque_sni');
-
-  /// Whether this core takes the HTTP/2 and fragment settings from the job.
-  /// The patch has published this since those fields were added and nothing
-  /// has ever read it, which is how the question above went unasked.
-  bool get supportsH2Fragment => _versionFlag('nova_h2_fragment');
-
-  bool _versionFlag(String key) {
-    final AetherReply r = _take(
-        _lib.lookupFunction<_StrFnC, _StrFn>('aether_version')());
-    if (!r.ok) return false;
-    final Object? v = r[key];
-    return v == 1 || v == true || v == '1';
-  }
+  // There was a capability check here, reading `nova_masque_sni` back from
+  // aether_version, so the app could say when a core was too old to honour the
+  // MASQUE server name. It is gone, because it could not be trusted.
+  //
+  // The patch does add that key, and the macOS core returns it: calling
+  // aether_version on the built dylib answers
+  // {"version":"2.3.0","nova_h2_fragment":1,"nova_masque_sni":1,"ok":true}.
+  // But the key is absent from the raw bytes of the linux, windows and
+  // android-x86_64 builds of the same commit, and nova_h2_fragment is absent
+  // from armeabi-v7a although it has shipped for a year, while all eight
+  // carry the payload field itself. So on most platforms the check would have
+  // answered "this core cannot do it" about a core that can, and logged a
+  // warning saying the user's setting was being ignored when it was not.
+  //
+  // A check that is wrong on four platforms out of seven is worse than none.
+  // What guards this instead is the build: every core is read before it enters
+  // the tree, and one without the field is refused. That is the right place
+  // for it, because a core and the Dart that drives it ship together.
 
   /// Opens (or creates) the WARP identity. Everything else needs its handle.
   ///

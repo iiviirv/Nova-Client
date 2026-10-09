@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.31.0 (2026-10-09)
+
+- Adds a MASQUE server name setting for WARP, and changes what Nova sends by
+  default. The Aether core has always put one fixed name in that handshake, and
+  Iran's firewall resets any handshake carrying it. The core's own answer is to
+  chop the handshake into pieces so the name is split across them, which worked
+  until recently. Nova now sends a different name instead and leaves the
+  handshake whole, which is what another client was measured doing on nearly
+  every Iranian network this week. If that does not suit your network, Nova
+  falls back by itself to the old name and the chopped handshake, so nothing
+  that worked before stops working.
+
+- The name is editable, under the Aether config's advanced settings. Leave it
+  alone unless a tunnel will not open. Emptying the box sends the name built
+  into the core.
+
 ## v1.30.2 (2026-10-05)
 
 - Fixes Windows, Mac and Linux dropping the connection after a few hours. Those

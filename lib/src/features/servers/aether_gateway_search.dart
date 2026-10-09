@@ -162,18 +162,6 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final AetherCore core = AetherCore.open();
     _log(
         'engine ${AetherSearchLog.scrub(core.version())}, proof budget ${proofBudget.inSeconds}s');
-    // Say it rather than let it be silent. A core without the patch ignores an
-    // unknown payload field, so a config asking for a server name would scan
-    // with the built-in one, fail on the networks the name exists to get past,
-    // and report nothing unusual anywhere. Somebody would then conclude the
-    // name does not help, from a run that never used it.
-    if (options.effectiveMasqueSni != null &&
-        options.mode != AetherMode.wg &&
-        !core.supportsMasqueSni) {
-      _log('this engine has no MASQUE server name setting, so '
-          '${options.effectiveMasqueSni} is being ignored and the built-in '
-          'name is used instead');
-    }
     _core = core;
 
     // A path prefix, not a directory: the core appends the transport, so this
