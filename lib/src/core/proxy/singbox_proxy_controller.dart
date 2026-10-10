@@ -2342,35 +2342,27 @@ class SingboxProxyController extends ProxyController {
   /// both apply, and ECH suppresses fragmentation in the config anyway, so
   /// leaving the old switch up while turning the new one on would show a bypass
   /// that was not running.
-  Future<bool> _escalateToBypass(ProxyProfile profile, String because) async {
-    // Nothing left: the last rung of the ladder has already been tried.
-    if (profile.hardenTls) return false;
-    List<ProxyNode> nodes;
-    try {
-      nodes = await resolveProfileNodes(profile, fetch: subFetcher);
-    } catch (_) {
-      return false;
-    }
-    if (!nodes.any((ProxyNode n) => n.isCleanIpFronted)) return false;
-
-    final ProxyProfile? next = nextBypassStep(profile);
-    if (next == null) return false;
-    final bool toEch = next.echSni;
-    _active = next;
-    await persistProfile?.call(next);
-    NovaLog.instance.write(
-      toEch
-          ? 'Turning on ECH for "${profile.name}" ($because): the server name '
-              'is encrypted rather than split up, on its clean-IP servers.'
-          : 'ECH did not get through for "${profile.name}" ($because); '
-              'switching to the SNI-block bypass: Go TLS with the bypass '
-              'cipher list, TLS-record and TCP fragmentation.',
-      level: NovaLogLevel.warn,
-    );
-    notice.value = toEch ? ProxyNotice.echOn : ProxyNotice.sniBypassOn;
-    await reconnect();
-    return true;
-  }
+  /// Nothing escalates on its own any more. Returns false, always.
+  ///
+  /// This used to turn ECH on when a profile would not carry traffic, and then
+  /// the SNI-block bypass with its fragmentation if ECH did not help, saving
+  /// each step to the profile and reconnecting. The intent was to spare the
+  /// user a setting they could not be expected to know about.
+  ///
+  /// It was removed in 1.31.1 at a tester's request, after a week on both
+  /// Iranian firewalls. Two reasons, and the second is the one that matters.
+  /// Fragmentation no longer gets through any ISP he could find, so the second
+  /// rung could only waste a reconnect. And both rungs were being reached from
+  /// ordinary slowness rather than from a real failure, so a profile that was
+  /// merely taking its time ended up with settings the user never chose,
+  /// written to their config, changing how every later connection behaved. A
+  /// switch that turns itself on and stays on is worse than one that is off.
+  ///
+  /// Kept as a function returning false rather than deleted at every call
+  /// site, so the two places that ask still read as "is there another way to
+  /// try this", and so this explanation sits where someone would look for it.
+  Future<bool> _escalateToBypass(ProxyProfile profile, String because) async =>
+      false;
 
   /// Fetches a tiny reliability endpoint. On mobile the core runs as a full
   /// device TUN, so the app's own request egresses through the tunnel: a

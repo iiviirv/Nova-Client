@@ -96,11 +96,17 @@ void main() {
     });
   });
 
-  /// Two phases, two answers to the same problem. The second is exactly what
-  /// Nova did before the name was settable, so a network the new name does not
-  /// suit is no worse off than it was.
-  group('the fallback ladder', () {
-    test('the second phase asks for the core own name and fragments it',
+  /// There is no second phase any more.
+  ///
+  /// There was: the new name with the hello whole, then the core's own name
+  /// with the hello fragmented. Removed in 1.31.1 at a tester's request, with
+  /// every other automatic escalation, because fragmentation no longer gets
+  /// through any Iranian ISP he could find and the retry was being reached
+  /// from ordinary slowness rather than from a real failure.
+  ///
+  /// So the name is simply what the config says, on every attempt.
+  group('the name is not swapped behind the user', () {
+    test('a search that finds nothing is not retried with the old name',
         () async {
       final List<AetherOptions> seen = <AetherOptions>[];
       final AetherAdaptiveSearch search = AetherAdaptiveSearch(
@@ -108,13 +114,16 @@ void main() {
         fallbackAfter: const Duration(milliseconds: 50),
       );
       await search.run(const AetherOptions(), (_) {});
-      expect(seen.length, 2, reason: 'one scan, then the fallback');
-      expect(seen.first.masqueSni, kAetherDefaultMasqueSni);
-      expect(seen.first.fragment, isFalse,
-          reason: 'the whole point is to leave the hello in one piece');
-      expect(seen.last.masqueSni, kAetherStockMasqueSni);
-      expect(seen.last.fragment, isTrue);
-      expect(seen.last.transport, AetherTransport.h2);
+      expect(seen.length, 1);
+      expect(seen.single.masqueSni, kAetherDefaultMasqueSni);
+      expect(seen.single.fragment, isFalse);
+    });
+
+    test('a config naming its own server name keeps it', () async {
+      final List<AetherOptions> seen = <AetherOptions>[];
+      await AetherAdaptiveSearch(createSearch: () => _Recording(seen))
+          .run(const AetherOptions(masqueSni: 'cdn.example.org'), (_) {});
+      expect(seen.single.masqueSni, 'cdn.example.org');
     });
   });
 }

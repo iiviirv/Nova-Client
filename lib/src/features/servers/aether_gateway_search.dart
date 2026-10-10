@@ -176,21 +176,57 @@ class AetherCoreSearch implements AetherGatewaySearch {
     // simply never returns, so waiting the full search budget spends ninety
     // seconds to learn something knowable in fifteen. The same log shows that:
     // 90348ms, cancelled, having never got past this step.
-    // Say what is happening rather than going quiet. Past the quick path the
-    // core is working through camouflaged routes, which takes minutes, and a
-    // silent wait that long is indistinguishable from a hang.
-    final Timer slow = Timer(identityQuickPath, () {
-      _log('This network is not answering the usual Cloudflare registration. '
-          'Trying camouflaged routes instead, which can take a few minutes.');
-    });
-    final AetherJobStatus opened;
-    try {
+    // Three ways of getting the registration, in the order a tester asked for
+    // after a week of watching all three on both Iranian firewalls: the plain
+    // call, then the same call behind ECH, and the core's camouflaged routes
+    // last.
+    //
+    // The order used to be plain, then straight to camouflage, because
+    // camouflage is what the core does by itself when the plain call is
+    // blocked and nothing stopped it. His finding: camouflage takes minutes
+    // and does not work on any ISP he could reach, while ECH gets the
+    // registration on most of them in seconds. So the slowest and least
+    // likely route was being tried before the fastest and most likely, and on
+    // a blocked network that was most of the wait.
+    //
+    // Camouflage is still tried. It is the only thing left when ECH is
+    // refused, and a registration taken once on any network is saved and
+    // reused everywhere after, so it is worth minutes on the one occasion it
+    // works.
+    AetherJobStatus opened =
+        const AetherJobStatus(AetherJobState.failed, error: 'not attempted');
+    final List<String> what = <String>[
+      'directly',
+      'behind ECH',
+      'over camouflaged routes',
+    ];
+    // Behind ECH the name the registration asks for is encrypted, so there is
+    // nothing on the wire for the filter to match. The resolver the core asks
+    // for that key is set in AetherEnv, and is plain DNS to 1.1.1.1 because
+    // that is what answers on these networks.
+    final List<AetherOptions> how = <AetherOptions>[
+      options.copyWith(ech: false),
+      options.copyWith(ech: true),
+      options.copyWith(ech: false),
+    ];
+    final List<Duration> within = <Duration>[
+      identityQuickPath,
+      identityEchBudget,
+      identityBudget,
+    ];
+    for (int i = 0; i < what.length; i++) {
+      if (_cancelled) break;
+      if (i > 0) {
+        _log('The Cloudflare registration did not go through ${what[i - 1]}. '
+            'Trying ${what[i]}'
+            '${i == 2 ? ', which can take a few minutes' : ''}.');
+      }
       opened = await _awaitWithin(
-          core,
-          core.identityOpen(options, base: '${dir.path}/aether'),
-          identityBudget);
-    } finally {
-      slow.cancel();
+          core, core.identityOpen(how[i], base: '${dir.path}/aether'), within[i]);
+      if (opened.state == AetherJobState.done) {
+        if (i > 0) _log('Registration went through ${what[i]}.');
+        break;
+      }
     }
     if (opened.state != AetherJobState.done) {
       _log(
@@ -511,6 +547,13 @@ class AetherCoreSearch implements AetherGatewaySearch {
   /// running. A working network is registered well inside this.
   static const Duration identityQuickPath = Duration(seconds: 8);
 
+  /// How long the ECH attempt gets before the camouflaged routes are tried.
+  ///
+  /// Longer than the plain call because it has a DNS lookup in front of it,
+  /// and far shorter than [identityBudget] because the whole point of putting
+  /// it before camouflage is that it either works quickly or not at all.
+  static const Duration identityEchBudget = Duration(seconds: 20);
+
   /// [_await] with a deadline. Cancels the job so the core is not left holding
   /// a request that will never answer.
   Future<AetherJobStatus> _awaitWithin(
@@ -631,12 +674,10 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
     _active?.cancel();
     _cancelled = false;
     final int generation = ++_generation;
-    final bool eligible = options.mode == AetherMode.masque &&
-        (options.transport != AetherTransport.h2 || !options.fragment);
-    // WireGuard and Gool never try fragmentation. It is a MASQUE remedy: some
-    // Iranian networks block fragmented hellos outright and others pass only
-    // those, so applying it where it was never needed turns a working protocol
-    // into a failing one. A tester watched exactly that happen.
+    // WireGuard and Gool never fragment. It is a MASQUE remedy: some Iranian
+    // networks block fragmented hellos outright and others pass only those, so
+    // applying it where it was never needed turns a working protocol into a
+    // failing one. A tester watched exactly that happen.
     final AetherOptions effective = options.mode == AetherMode.masque
         ? options
         : options.copyWith(fragment: false);
@@ -646,11 +687,15 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
     //
     // It used to start here, which put registration inside it. On a network
     // that blocks the direct registration the core spends minutes working
-    // through camouflaged routes, so a ninety second cap reached in the middle
+    // through its alternatives, so a ninety second cap reached in the middle
     // of that cancelled the one thing that could have succeeded, and the user
-    // was told "cancelled" about a step they had never been shown. Registration
-    // has its own budget in AetherCoreSearch; this one waits for the first sign
-    // that scanning has begun.
+    // was told "cancelled" about a step they had never been shown.
+    // Registration has its own budget above; this one waits for the first
+    // sign that scanning has begun.
+    //
+    // What the cap no longer does is start a second search. It is a limit
+    // now, not a trigger. Left uncapped a WireGuard scan runs until the core
+    // gives up, measured at three and a half minutes, which is why it stays.
     Timer? timer;
     void startScanCap() {
       timer ??= Timer(fallbackAfter, () {
@@ -677,54 +722,31 @@ class AetherAdaptiveSearch implements AetherGatewaySearch {
           rejected: result.rejected,
           error: 'cancelled');
     }
-    if (!eligible || (result.ok && !timedOut)) return result;
-    // The fallback is exactly what Nova did before the server name became
-    // settable: the core's own name, and the fragmented hello that upstream
-    // ships to get that name past the filter.
-    //
-    // So the two phases are the two answers to the same problem. First, send a
-    // name the filter has no reason to match and leave the hello whole, which
-    // is what a tester measured connecting on nearly every network on
-    // 2026-10-09. Then, if that network is not one of them, the old remedy
-    // unchanged. Putting the stock name here rather than in a third phase
-    // keeps the worst case at the same two scans it already was.
-    final AetherOptions fallback = options.copyWith(
-        transport: AetherTransport.h2,
-        fragment: true,
-        masqueSni: kAetherStockMasqueSni);
-    final AetherGatewaySearch second = _active = _createSearch();
-    // The protocol is unchanged by the fallback, which swaps the transport
-    // under it, so it rides through rather than being dropped here.
-    void report(AetherSearchProgress p) => onProgress(AetherSearchProgress(
-        attempt: p.attempt,
-        verifying: p.verifying,
-        ruledOut: p.ruledOut,
-        usingFallback: true,
-        mode: p.mode));
-    report(
-        const AetherSearchProgress(attempt: 1, verifying: false, ruledOut: 0));
-    // A gateway rejected on QUIC may work over TCP. Do not carry those
-    // exclusions into a different transport.
-    //
-    // Capped like the first phase. Ninety seconds on HTTP/3 and ninety on
-    // HTTP/2 with a split hello is what a tester found sufficient; past that
-    // the answer is that this network will not give up a gateway today, and
-    // saying so beats a spinner that never ends.
-    final Timer secondTimer = Timer(fallbackAfter, second.cancel);
-    final AetherFindResult found;
-    try {
-      found = await second.run(fallback, report);
-    } finally {
-      secondTimer.cancel();
+    if (timedOut && !result.ok) {
+      return AetherFindResult(
+          endpoint: null,
+          attempts: result.attempts,
+          rejected: result.rejected,
+          error: 'No gateway answered in ${fallbackAfter.inSeconds} seconds on '
+              'this network. Trying again sometimes finds one, and a different '
+              'protocol or transport may do better.');
     }
-    return AetherFindResult(
-        endpoint:
-            _cancelled || generation != _generation ? null : found.endpoint,
-        attempts: result.attempts + found.attempts,
-        rejected: found.rejected,
-        error: found.error,
-        options: found.ok && !_cancelled && generation == _generation
-            ? fallback
-            : null);
+    // The second phase is gone, and with it every automatic switch to a split
+    // ClientHello.
+    //
+    // It used to wait ninety seconds and then scan again with HTTP/2 and
+    // fragmentation on. Two things were wrong with that by October 2026.
+    // Fragmentation no longer gets through any Iranian ISP a tester could
+    // find, so the second phase could only ever spend ninety more seconds to
+    // arrive at the same answer. And worse, the clock started while the first
+    // phase was still doing something useful: a blocked registration makes the
+    // core work through camouflaged routes for minutes, so the timer fired in
+    // the middle of that and replaced a search that was progressing with one
+    // that could not succeed. The tester's words: every problem that appeared
+    // at the start was caused by HTTP/2 fragment turning itself on.
+    //
+    // Fragmentation is still there to switch on by hand, for the networks and
+    // the day when it works again. Nothing turns it on for you.
+    return result;
   }
 }

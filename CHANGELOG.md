@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.31.1 (2026-10-10)
+
+- Nova no longer turns anything on by itself when a connection is slow or
+  fails. It used to start splitting the TLS handshake after ninety seconds of
+  searching, and separately to switch on server-name encryption and then the
+  SNI bypass when a server carried no traffic, saving each of those to your
+  config. Splitting the handshake no longer gets past any Iranian network we
+  can find, and all of it was being triggered by ordinary slowness rather than
+  by a real failure, so people ended up with settings they never chose that
+  did not help. Every one of those switches is still there to turn on by hand.
+
+- Registering with Cloudflare, which WARP needs before it can connect, now
+  tries the quick way first, then the same request with the name encrypted,
+  and only then the slow camouflaged routes. Those routes take minutes and in
+  recent testing did not get through on any network, so they were the worst
+  thing to try second and are now tried last.
+
+- Nova asks Cloudflare for the encryption key over plain DNS instead of
+  DNS-over-HTTPS. Plain DNS is what answers on the networks this matters on.
+  The same correction was made inside Nova a release ago and this second copy
+  of it, in the settings handed to the WARP engine, was missed.
+
+- A search that runs out of time now says so plainly instead of quietly
+  starting a different search.
+
 ## v1.31.0 (2026-10-09)
 
 - Adds a MASQUE server name setting for WARP, and changes what Nova sends by

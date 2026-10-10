@@ -27,9 +27,21 @@ typedef _Putenv = int Function(Pointer<Utf8>, Pointer<Utf8>);
 /// core is opened, which is the only ordering that matters: the core reads the
 /// variable when a job asks for ECH, not at load time.
 abstract final class AetherEnv {
-  /// Cloudflare's DoH endpoint by address, so this needs no name resolved
-  /// before it can resolve a name.
-  static const String kEchDns = 'https://1.1.1.1/dns-query';
+  /// Plain DNS to 1.1.1.1, which is what answers on the networks this is for.
+  ///
+  /// This was `https://1.1.1.1/dns-query` on the reasoning that DoH is private
+  /// and needs no name resolved first. Both true, and beside the point: the
+  /// tester's correction in October was "we said from the start that udp
+  /// works, but it was fetching from dns-query". The same assumption had
+  /// already been found and fixed in Nova's own ECH key lookup, where plain
+  /// DNS now leads the resolver list; this copy of it in the core's
+  /// environment was missed, so the core went on asking the one way that does
+  /// not answer.
+  ///
+  /// The query is for cloudflare-ech.com, a public name with no user data in
+  /// it, so plaintext costs little here and getting an answer is the whole
+  /// job.
+  static const String kEchDns = 'udp://1.1.1.1';
 
   static bool _done = false;
 

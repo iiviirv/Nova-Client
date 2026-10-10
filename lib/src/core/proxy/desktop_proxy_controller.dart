@@ -576,26 +576,19 @@ class DesktopProxyController extends ProxyController {
     _autoHealTried = true;
     _healing = true;
     try {
-      // Spend the one rebuild on the SNI-block bypass when the subscription has
-      // clean-IP fronted nodes and none carried traffic (the mobile controller
-      // does the same; see its _escalateToBypass). Persisted, and announced.
-      if (!profile.hardenTls) {
-        List<ProxyNode> nodes = const <ProxyNode>[];
-        try {
-          nodes = await resolveProfileNodes(profile, fetch: subFetcher);
-        } catch (_) {/* fall through to a plain rebuild */}
-        if (nodes.any((ProxyNode n) => n.isCleanIpFronted)) {
-          final ProxyProfile hardened = profile.copyWith(hardenTls: true);
-          _active = hardened;
-          await persistProfile?.call(hardened);
-          NovaLog.instance.write(
-            'Turning on the SNI-block bypass for "${profile.name}" (no traffic '
-            'on any server).',
-            level: NovaLogLevel.warn,
-          );
-          notice.value = ProxyNotice.sniBypassOn;
-        }
-      }
+      // This used to spend the one rebuild on turning the SNI-block bypass on,
+      // writing it to the profile and announcing it. Removed in 1.31.1 at a
+      // tester's request, for the reason given at the mobile controller's
+      // _escalateToBypass: the bypass carries fragmentation, fragmentation no
+      // longer gets through any Iranian ISP he could find, and the trigger
+      // fired on ordinary slowness, so profiles ended up permanently carrying
+      // a setting the user never chose and which did not help.
+      //
+      // Both controllers, at once. This pair has now been fixed one at a time
+      // seven times over.
+      //
+      // A plain rebuild is still worth one attempt: the fault is often the
+      // tunnel rather than the config.
       await reconnect();
     } finally {
       _healing = false;

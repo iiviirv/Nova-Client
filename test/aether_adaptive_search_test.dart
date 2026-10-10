@@ -42,8 +42,18 @@ class Search implements AetherGatewaySearch {
 void main() {
   _firstConnectionGetsTheFallback();
 
-  testWidgets('90 seconds cancels and awaits old work before HTTP2 fallback',
+  testWidgets('the cap gives up on the scan and starts nothing else',
       (tester) async {
+    // This used to assert the opposite: that the cap cancelled the scan and
+    // then ran a second one with HTTP/2 and a split ClientHello. Removed in
+    // 1.31.1 at a tester's request, after a week on both Iranian firewalls.
+    // Fragmentation no longer gets through any ISP he could find, and the
+    // clock was being reached from ordinary slowness, so the retry could only
+    // replace a search that might still succeed with one that could not.
+    //
+    // The cap itself stays, as a limit rather than a trigger. Without it a
+    // WireGuard scan runs until the core gives up, measured at three and a
+    // half minutes.
     final first = Search(), second = Search();
     int calls = 0;
     final progress = <AetherSearchProgress>[];
@@ -55,29 +65,21 @@ void main() {
         excludedFirst: ['1.2.3.4:443']);
     // The cap is on the scan and starts when the scan reports its first
     // attempt, so registration can run past it on a network that blocks the
-    // direct call. Start a scan here, which is what this test is about.
+    // direct call.
     first.report!(const AetherSearchProgress(
         attempt: 1, verifying: false, ruledOut: 0));
     await tester.pump(const Duration(seconds: 89));
     expect(first.stopped, isFalse);
-    expect(calls, 1);
     await tester.pump(const Duration(seconds: 1));
-    expect(first.stopped, isTrue);
-    expect(calls, 1);
+    expect(first.stopped, isTrue, reason: 'the scan is given up on');
     first.done.complete(failed);
     await tester.pump();
-    expect(calls, 2);
-    expect(second.excluded, isEmpty);
-    expect(second.options!.transport, AetherTransport.h2);
-    expect(second.options!.fragment, isTrue);
-    expect(second.options!.fragmentSize, '20-30');
-    expect(second.options!.fragmentDelay, '4-8');
-    expect(progress.last.usingFallback, isTrue);
-    second.done.complete(success);
+    expect(calls, 1, reason: 'and nothing else is started');
     final found = await result;
-    expect(found.endpoint, '1.2.3.4:443');
-    expect(found.options!.transport, AetherTransport.h2);
-    expect(found.options!.fragment, isTrue);
+    expect(found.ok, isFalse);
+    expect(found.error, contains('90 seconds'),
+        reason: 'the user is told the scan was given up on, not left guessing');
+    expect(progress.any((p) => p.usingFallback), isFalse);
   });
   testWidgets('explicit cancellation never starts fallback', (tester) async {
     final first = Search();
@@ -138,7 +140,7 @@ void main() {
               'be no second search');
     }
   });
-  testWidgets('an early failure starts fallback without wasting 90 seconds',
+  testWidgets('an early failure is simply reported, with no second attempt',
       (tester) async {
     final first = Search(), second = Search();
     int calls = 0;
@@ -147,9 +149,9 @@ void main() {
     final result = search.run(const AetherOptions(), (_) {});
     first.done.complete(failed);
     await tester.pump();
-    expect(calls, 2);
-    second.done.complete(success);
-    expect((await result).ok, isTrue);
+    expect(calls, 1,
+        reason: 'a failed search used to immediately start a fragmenting one');
+    expect((await result).ok, isFalse);
   });
 }
 

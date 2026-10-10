@@ -58,13 +58,20 @@ void main() {
             'turns a working call into NO_ECH_KEY');
   });
 
-  test('the resolver is DoH, not the core default that gets blocked', () {
-    // The core defaults to udp://1.1.1.1, which is exactly what the networks
-    // this feature is for block. Plain DNS over TCP on 53 is as blockable.
-    expect(AetherEnv.kEchDns, startsWith('https://'));
-    expect(AetherEnv.kEchDns, isNot(contains('udp://')));
-    // By address, so resolving the resolver is not a prerequisite.
-    expect(AetherEnv.kEchDns, matches(RegExp(r'^https://\d+\.\d+\.\d+\.\d+/')));
+  test('the resolver is the one that answers, which is plain DNS', () {
+    // This test used to assert the opposite, on the reasoning that "the core
+    // defaults to udp://1.1.1.1, which is exactly what the networks this
+    // feature is for block". That was never measured, and it is wrong. The
+    // tester's correction, twice now: plain DNS to 1.1.1.1 answers on those
+    // networks and the DoH endpoint does not. Nova's own ECH key lookup was
+    // already fixed to lead with udp://; this copy of the assumption, in the
+    // environment handed to the core, outlived it.
+    //
+    // A test that states a belief rather than a measurement will keep a bug
+    // alive through every rewrite, which is what this one did.
+    expect(AetherEnv.kEchDns, 'udp://1.1.1.1');
+    // By address either way, so resolving the resolver is not a prerequisite.
+    expect(AetherEnv.kEchDns, matches(RegExp(r'^udp://\d+\.\d+\.\d+\.\d+$')));
   });
 
   test('setting the variable actually works on this platform', () {
