@@ -79,6 +79,29 @@ abstract final class AetherEnv {
         socksHostPort == null ? '' : 'socks5://$socksHostPort');
   }
 
+  /// Send the WARP API calls, which register and enroll the keys, to [address]
+  /// instead of whatever api.cloudflareclient.com resolves to. Null restores
+  /// the default.
+  ///
+  /// The server name and the HTTP host stay api.cloudflareclient.com, so this
+  /// changes only which edge the connection is opened to. Cloudflare routes it
+  /// by name from there.
+  ///
+  /// Why it is worth trying. Field log, 2026-10-10, on a network where another
+  /// client registered fine: Nova failed directly, failed behind ECH, and was
+  /// still grinding through camouflaged routes two minutes later, with
+  /// "api.cloudflareclient.com did not answer within 20s". The other client had
+  /// a tunnel to dial through and Nova had none. Without a tunnel the remaining
+  /// lever is which address is dialled: the name's usual address can be blocked
+  /// while other Cloudflare edges are not, which is the whole premise of the
+  /// clean-IP lists this app already ships for ordinary configs.
+  ///
+  /// Behind ECH the server name is encrypted too, so the connection is a TLS
+  /// handshake to an ordinary Cloudflare address with nothing in it to match.
+  static void setEnrollAddress(String? address) {
+    _set('AETHER_ENROLL_ADDRESS', address ?? '');
+  }
+
   static void _set(String key, String value) {
     final Pointer<Utf8> k = key.toNativeUtf8();
     final Pointer<Utf8> v = value.toNativeUtf8();

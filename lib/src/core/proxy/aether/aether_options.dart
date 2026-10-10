@@ -422,6 +422,31 @@ const List<String> kAetherDirectCidrs = <String>[
   '2606:4700:d1::/48',
 ];
 
+/// Cloudflare edges to try the WARP registration against when the name's own
+/// address will not answer.
+///
+/// Field log, 2026-10-10: on a network where another client registered fine,
+/// Nova failed directly, failed behind ECH, and spent over two minutes on
+/// camouflaged routes, reporting "api.cloudflareclient.com did not answer
+/// within 20s". The other client had a tunnel to dial through. With no tunnel
+/// the only lever left is which address is dialled, and the core takes one:
+/// the server name and HTTP host stay api.cloudflareclient.com while the
+/// connection opens to the address given.
+///
+/// These come from [kAetherDirectCidrs], the ranges the core's own scanner
+/// dials, so they are addresses WARP actually answers on rather than guesses.
+/// The first is the one both the core's own help text and the field notes from
+/// Iran name as a clean edge.
+///
+/// A short list on purpose. Each one costs a round of the registration budget,
+/// and if three Cloudflare edges will not answer then the network is not
+/// blocking an address, it is blocking Cloudflare.
+const List<String> kAetherEnrollAddresses = <String>[
+  '188.114.97.6',
+  '162.159.198.6',
+  '188.114.96.6',
+];
+
 /// The host Aether registers its WARP identity against, which must also escape
 /// the tunnel for a first run to succeed.
 const String kAetherRegistrationHost = 'engage.cloudflareclient.com';

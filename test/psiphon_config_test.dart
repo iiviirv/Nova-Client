@@ -139,9 +139,9 @@ void main() {
 
     test('travels inside the link, so the profile is self-contained', () {
       final String link =
-          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaLink: aether);
       expect(PsiphonConfig.modeFromLink(link), PsiphonMode.throughAether);
-      expect(PsiphonConfig.aetherLinkFrom(link), aether,
+      expect(PsiphonConfig.viaLinkFrom(link), aether,
           reason: 'Nova has one active profile, so the tunnel this rides on '
               'cannot be a separate connection the user made; this profile '
               'has to know which gateway to bring up');
@@ -149,23 +149,93 @@ void main() {
 
     test('survives the query characters an aether link contains', () {
       final String link =
-          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaLink: aether);
       expect(link, contains('%'), reason: 'the inner link must be encoded');
-      expect(PsiphonConfig.aetherLinkFrom(link), contains('protocol=wg'));
-      expect(PsiphonConfig.aetherLinkFrom(link), contains('scan=balanced'));
+      expect(PsiphonConfig.viaLinkFrom(link), contains('protocol=wg'));
+      expect(PsiphonConfig.viaLinkFrom(link), contains('scan=balanced'));
     });
 
     test('direct mode carries none', () {
       expect(
-          PsiphonConfig.aetherLinkFrom(
-              PsiphonConfig.linkFor(PsiphonMode.direct, viaAetherLink: aether)),
+          PsiphonConfig.viaLinkFrom(
+              PsiphonConfig.linkFor(PsiphonMode.direct, viaLink: aether)),
           isNull);
     });
 
     test('a chained link with no config is readable but carries nothing', () {
       expect(PsiphonConfig.modeFromLink('psiphon://aether'),
           PsiphonMode.throughAether);
-      expect(PsiphonConfig.aetherLinkFrom('psiphon://aether'), isNull);
+      expect(PsiphonConfig.viaLinkFrom('psiphon://aether'), isNull);
+    });
+
+    /// Chaining over any config, not only WARP, asked for 2026-10-10. Google
+    /// refuses requests from a Cloudflare address, so Gemini says "not
+    /// available in your region" through a Worker config however well it
+    /// carries everything else; Psiphon's exit is not a Cloudflare address.
+    group('riding on a config that is not WARP', () {
+      const String node =
+          'vless://00000000-0000-0000-0000-000000000000@edge.example.com:443'
+          '?security=tls&type=ws&path=/&sni=edge.example.com#carrier';
+
+      test('the two chained kinds are told apart by the link, not guessed', () {
+        final String warp = PsiphonConfig.linkFor(PsiphonMode.throughAether,
+            viaLink: 'aether://1.2.3.4:443?protocol=masque');
+        final String other =
+            PsiphonConfig.linkFor(PsiphonMode.throughCarrier, viaLink: node);
+        expect(PsiphonConfig.modeFromLink(warp), PsiphonMode.throughAether);
+        expect(PsiphonConfig.modeFromLink(other), PsiphonMode.throughCarrier);
+        expect(warp, isNot(other));
+      });
+
+      test('the carrier survives a round trip, query characters and all', () {
+        final String link =
+            PsiphonConfig.linkFor(PsiphonMode.throughCarrier, viaLink: node);
+        expect(PsiphonConfig.viaLinkFrom(link), node,
+            reason: 'the profile has to be self-contained: Nova has one active '
+                'profile, so the carrier cannot be a connection made '
+                'separately');
+      });
+
+      test('both chained kinds need an upstream port, and say so', () {
+        for (final PsiphonMode m in <PsiphonMode>[
+          PsiphonMode.throughAether,
+          PsiphonMode.throughCarrier,
+        ]) {
+          expect(psiphonIsChained(m), isTrue, reason: m.name);
+          expect(
+              PsiphonConfig(socksPort: 1080, dataDir: '/tmp/p', mode: m)
+                  .problem,
+              isNotNull,
+              reason: 'a chained config with no upstream would dial direct, '
+                  'which is the one outcome the user did not ask for');
+        }
+      });
+
+      test('both chained kinds drop the QUIC protocols', () {
+        // A SOCKS5 upstream carries TCP. A QUIC protocol would dial, fail, and
+        // burn an attempt a working one could have used.
+        for (final PsiphonMode m in <PsiphonMode>[
+          PsiphonMode.throughAether,
+          PsiphonMode.throughCarrier,
+        ]) {
+          final List<Object?> protos = PsiphonConfig(
+                  socksPort: 1080,
+                  dataDir: '/tmp/p',
+                  mode: m,
+                  upstreamSocksPort: 1081)
+              .engineJson()['LimitTunnelProtocols']! as List<Object?>;
+          expect(protos.any((Object? p) => '$p'.contains('QUIC')), isFalse,
+              reason: m.name);
+        }
+      });
+
+      test('an older build reads a carrier link as direct, not as broken', () {
+        // modeFromLink falls back to direct for a host it does not know, which
+        // is what a build from before this feature does with one of these
+        // links. Opening in the safer mode beats refusing to open.
+        expect(PsiphonConfig.modeFromLink('psiphon://somethingnew?via=x'),
+            PsiphonMode.direct);
+      });
     });
   });
 }
@@ -182,15 +252,15 @@ void _carrierModel() {
       const String link = 'psiphon://aether';
       expect(PsiphonConfig.modeFromLink(link), PsiphonMode.throughAether,
           reason: 'this is what the editor writes, and it must remain usable');
-      expect(PsiphonConfig.aetherLinkFrom(link), isNull,
+      expect(PsiphonConfig.viaLinkFrom(link), isNull,
           reason: 'the controller supplies the carrier, not the profile');
     });
 
     test('a saved config still wins when one is present', () {
       const String aether = 'aether://188.114.97.3:2408?protocol=wg';
       final String link =
-          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaAetherLink: aether);
-      expect(PsiphonConfig.aetherLinkFrom(link), aether);
+          PsiphonConfig.linkFor(PsiphonMode.throughAether, viaLink: aether);
+      expect(PsiphonConfig.viaLinkFrom(link), aether);
     });
   });
 }

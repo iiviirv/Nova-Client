@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/logging/nova_log.dart';
 import '../../core/proxy/aether/aether_core.dart';
+import '../../core/proxy/aether/aether_env.dart';
 import '../../core/proxy/aether/aether_gateway_finder.dart';
 import '../../core/proxy/aether/aether_identity_recovery.dart';
 import '../../core/proxy/aether/aether_options.dart';
@@ -198,6 +199,7 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final List<String> what = <String>[
       'directly',
       'behind ECH',
+      'behind ECH to a clean Cloudflare address',
       'over camouflaged routes',
     ];
     // Behind ECH the name the registration asks for is encrypted, so there is
@@ -207,10 +209,20 @@ class AetherCoreSearch implements AetherGatewaySearch {
     final List<AetherOptions> how = <AetherOptions>[
       options.copyWith(ech: false),
       options.copyWith(ech: true),
+      options.copyWith(ech: true),
       options.copyWith(ech: false),
+    ];
+    // Only the third rung redirects the API. The others are left alone so a
+    // failure there still means what it has always meant.
+    final List<String?> at = <String?>[
+      null,
+      null,
+      kAetherEnrollAddresses.first,
+      null,
     ];
     final List<Duration> within = <Duration>[
       identityQuickPath,
+      identityEchBudget,
       identityEchBudget,
       identityBudget,
     ];
@@ -221,8 +233,14 @@ class AetherCoreSearch implements AetherGatewaySearch {
             'Trying ${what[i]}'
             '${i == 2 ? ', which can take a few minutes' : ''}.');
       }
-      opened = await _awaitWithin(
-          core, core.identityOpen(how[i], base: '${dir.path}/aether'), within[i]);
+      AetherEnv.setEnrollAddress(at[i]);
+      try {
+        opened = await _awaitWithin(core,
+            core.identityOpen(how[i], base: '${dir.path}/aether'), within[i]);
+      } finally {
+        // Process-wide, so it must not outlive the rung that asked for it.
+        AetherEnv.setEnrollAddress(null);
+      }
       if (opened.state == AetherJobState.done) {
         if (i > 0) _log('Registration went through ${what[i]}.');
         break;

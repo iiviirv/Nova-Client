@@ -869,7 +869,7 @@ class DesktopProxyController extends ProxyController {
               .where((ProxyProfile p) =>
                   AetherConfig.parse(p.uri)?.gateway?.isNotEmpty ?? false)
               .toList();
-          final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
+          final String? via = PsiphonConfig.viaLinkFrom(conf) ??
               (ready.isNotEmpty ? ready.first : carriers.firstOrNull)
                   ?.uri
                   .trim();
@@ -900,7 +900,7 @@ class DesktopProxyController extends ProxyController {
         _pendingPsiphon = _PendingPsiphon(
           mode: mode,
           port: port,
-          via: PsiphonConfig.aetherLinkFrom(conf),
+          via: PsiphonConfig.viaLinkFrom(conf),
         );
         cfg = SingboxConfig.buildPsiphonSocksBridgeMap(port,
             options: opts,

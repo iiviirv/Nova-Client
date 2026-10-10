@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.31.3 (2026-10-10)
+
+- Registering with Cloudflare, which WARP needs before it can connect at all,
+  now tries a clean Cloudflare address before falling back to the slow
+  camouflaged routes. On a network where the usual address will not answer,
+  the connection is opened to a different Cloudflare edge while still asking
+  for the same thing, with the server name encrypted so there is nothing in it
+  to match. That is the same idea as the clean addresses Nova already uses for
+  ordinary configs, applied to the one call everything else waits on.
+
+- Psiphon can now be set to run over any config, not only WARP. Groundwork in
+  this release: the plumbing and the settings format are in, the chooser is
+  not, so there is nothing to see yet.
+
 ## v1.31.2 (2026-10-10)
 
 - The Cloudflare registration WARP needs is now taken through the tunnel you

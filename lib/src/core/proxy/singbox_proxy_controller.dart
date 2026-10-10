@@ -1726,7 +1726,7 @@ class SingboxProxyController extends ProxyController {
       // not reach its network from inside Iran unaided, so a chained profile
       // has to work out of the box: it takes whichever WARP tunnel the user
       // already has, preferring one with a gateway already verified.
-      final String? via = PsiphonConfig.aetherLinkFrom(conf) ??
+      final String? via = PsiphonConfig.viaLinkFrom(conf) ??
           await _resolveAetherCarrier();
       if (via == null) {
         throw StateError('Psiphon needs a WARP tunnel to go out through, and '

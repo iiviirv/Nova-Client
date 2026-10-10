@@ -18,7 +18,7 @@ void main() {
   test('it carries no WARP config of its own', () {
     // The app supplies the carrier, so the profile stays valid however the
     // user's WARP profiles change.
-    expect(PsiphonConfig.aetherLinkFrom(buildFreePsiphonProfile().uri), isNull);
+    expect(PsiphonConfig.viaLinkFrom(buildFreePsiphonProfile().uri), isNull);
   });
 
   test('it is a built-in free option, so it cannot be deleted by accident', () {

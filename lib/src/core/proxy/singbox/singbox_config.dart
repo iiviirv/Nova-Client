@@ -623,6 +623,89 @@ class SingboxConfig {
     };
   }
 
+  /// The tag of the loopback listener a chained Psiphon dials out through.
+  static const String kPsiphonCarrierInbound = 'nova-carrier';
+
+  /// sing-box carrying the device into Psiphon, with Psiphon itself dialling
+  /// out through a config of the user's choosing.
+  ///
+  /// Chaining has only ever been offered over WARP. The engine already takes
+  /// any local SOCKS port as its upstream, so the limit was never the engine,
+  /// it was that nothing but an Aether tunnel was ever offered as the thing on
+  /// the other end of that port.
+  ///
+  /// Asked for 2026-10-10, with a reason worth recording: Google refuses
+  /// requests arriving from a Cloudflare address, so Gemini and Google sign-in
+  /// answer "not available in your region" through a Worker config however well
+  /// it carries everything else. Psiphon's exit is not a Cloudflare address.
+  /// Chaining it over whatever config gets the user out of their country fixes
+  /// that without anyone hand-picking a third-party proxy, which is the other
+  /// remedy and which dies silently the week that proxy does.
+  ///
+  /// The shape, which is all inside one sing-box rather than a second process:
+  ///
+  ///     device  -> proxy outbound (SOCKS to the engine) -> engine
+  ///     engine  -> direct, by process path, so its own dials are not
+  ///                routed back into itself
+  ///     engine  -> 127.0.0.1:[carrierPort] -> this config's own listener
+  ///                -> the carrier outbound -> the internet
+  ///
+  /// The engine reaching loopback is what makes that work: its traffic is sent
+  /// direct, and direct to loopback arrives at the listener below rather than
+  /// leaving the machine.
+  static Map<String, dynamic> buildPsiphonOverCarrierMap(
+    int psiphonSocksPort, {
+    required ProxyNode carrier,
+    required int carrierPort,
+    SingboxRouteOptions options = const SingboxRouteOptions(),
+    String? enginePath,
+  }) {
+    final Map<String, dynamic> route =
+        _routeForPsiphon(options, enginePath: enginePath);
+    // Ahead of everything except the engine's own direct rule, and matched on
+    // the listener rather than on an address, so nothing the user browses can
+    // ever be mistaken for the carrier's traffic.
+    (route['rules'] as List<dynamic>).insert(
+        enginePath != null && enginePath.isNotEmpty ? 1 : 0,
+        <String, dynamic>{
+          'inbound': <String>[kPsiphonCarrierInbound],
+          'outbound': 'carrier',
+        });
+    return <String, dynamic>{
+      'log': <String, dynamic>{'level': options.logLevel, 'timestamp': true},
+      'dns': _dns(options, directDomains: <String>{
+        ..._ruleSetHosts,
+        ..._directHosts,
+      }),
+      'inbounds': <Map<String, dynamic>>[
+        ..._inbounds(options),
+        <String, dynamic>{
+          'type': 'mixed',
+          'tag': kPsiphonCarrierInbound,
+          'listen': '127.0.0.1',
+          'listen_port': carrierPort,
+        },
+      ],
+      'outbounds': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'socks',
+          'tag': 'proxy',
+          'server': '127.0.0.1',
+          'server_port': psiphonSocksPort,
+          'version': '5',
+        },
+        _outbound(_maybeHarden(carrier, options),
+            tag: 'carrier',
+            fragment: options.tlsFragment,
+            fingerprintOverride: options.fingerprintOverride,
+            hardenPacketFragment: options.hardenPacketFragment),
+        <String, dynamic>{'type': 'direct', 'tag': 'direct'},
+        <String, dynamic>{'type': 'block', 'tag': 'block'},
+      ],
+      'route': route,
+    };
+  }
+
   static Map<String, dynamic> _routeForPsiphon(SingboxRouteOptions o,
       {String? enginePath}) {
     // QUIC is blocked, as it is for MasterDNS. Psiphon's local SOCKS carries

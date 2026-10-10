@@ -22,10 +22,29 @@ enum PsiphonMode {
   /// reached at all.
   direct,
 
-  /// Psiphon dials out through a local SOCKS5 proxy, which in practice is a
-  /// running Aether (WARP) tunnel. This is the shape the tester asked for.
+  /// Psiphon dials out through a WARP tunnel this profile brings up.
   throughAether,
+
+  /// Psiphon dials out through any other config: a node, a subscription, a
+  /// worker, whatever the user picked.
+  ///
+  /// Asked for 2026-10-10, and the reason is Google rather than censorship.
+  /// Google refuses requests arriving from a Cloudflare address, so Gemini and
+  /// Google sign-in answer "not available in your region" through a Worker
+  /// config however well it carries everything else. Psiphon's exit is not a
+  /// Cloudflare address. Chaining it over whatever config gets the user out of
+  /// their country fixes that, without anyone hand-picking a third-party proxy
+  /// that works today and is dead next week.
+  ///
+  /// The engine never cared which tunnel it dialled through: it takes a local
+  /// SOCKS port and always has. The limit was that nothing but an Aether
+  /// tunnel was ever offered on the other end of that port.
+  throughCarrier,
 }
+
+/// Whether [mode] rides on another config rather than dialling out itself.
+bool psiphonIsChained(PsiphonMode mode) =>
+    mode == PsiphonMode.throughAether || mode == PsiphonMode.throughCarrier;
 
 class PsiphonConfig {
   const PsiphonConfig({
@@ -47,7 +66,9 @@ class PsiphonConfig {
 
   final PsiphonMode mode;
 
-  /// The Aether tunnel's SOCKS5 port, when [mode] is [PsiphonMode.throughAether].
+  /// The local SOCKS5 port the engine dials out through, when [mode] is
+  /// chained. A WARP tunnel's port, or a listener sing-box opens onto whatever
+  /// config the user chose; the engine has never cared which.
   final int? upstreamSocksPort;
 
   final String clientPlatform;
@@ -111,10 +132,11 @@ class PsiphonConfig {
     if (socksPort <= 0 || socksPort > 65535) {
       return 'The local proxy port must be between 1 and 65535.';
     }
-    if (mode == PsiphonMode.throughAether) {
+    if (psiphonIsChained(mode)) {
       final int? up = upstreamSocksPort;
       if (up == null || up <= 0 || up > 65535) {
-        return 'Running Psiphon through Aether needs the tunnel\'s local port.';
+        return 'Running Psiphon through another config needs that tunnel\'s '
+            'local port.';
       }
       if (up == socksPort) {
         return 'Psiphon cannot use its own port as its way out.';
@@ -129,7 +151,7 @@ class PsiphonConfig {
   /// The JSON the engine reads. Field names are Psiphon's own and are
   /// case-sensitive.
   Map<String, Object?> engineJson() {
-    final bool chained = mode == PsiphonMode.throughAether;
+    final bool chained = psiphonIsChained(mode);
     return <String, Object?>{
       'PropagationChannelId': propagationChannelId,
       'SponsorId': sponsorId,
@@ -164,7 +186,7 @@ class PsiphonConfig {
   /// mean a profile that stops working when that port is taken.
   static const String scheme = 'psiphon';
 
-  /// [viaAetherLink] is the `aether://` config the tunnel rides on, carried
+  /// [viaLink] is the config the engine rides on, carried
   /// inside the link rather than looked up elsewhere.
   ///
   /// Nova has exactly one active profile, so "through Aether" cannot mean an
@@ -173,16 +195,25 @@ class PsiphonConfig {
   /// which means it has to know which gateway and settings to use. Keeping
   /// that inside the link makes the profile self-contained, re-shareable, and
   /// independent of whatever else is in the user's list.
-  static String linkFor(PsiphonMode mode, {String? viaAetherLink}) {
-    if (mode != PsiphonMode.throughAether) return '$scheme://direct';
-    final String? via = viaAetherLink?.trim();
-    if (via == null || via.isEmpty) return '$scheme://aether';
-    return '$scheme://aether?via=${Uri.encodeQueryComponent(via)}';
+  static String linkFor(PsiphonMode mode, {String? viaLink}) {
+    if (!psiphonIsChained(mode)) return '$scheme://direct';
+    // The host says which kind of thing is underneath, because the two are
+    // brought up in completely different ways: one is the WARP engine, the
+    // other is a sing-box outbound. Reading it from the inner link's scheme
+    // would work until somebody stored a link this did not expect.
+    final String host =
+        mode == PsiphonMode.throughAether ? 'aether' : 'chain';
+    final String? via = viaLink?.trim();
+    if (via == null || via.isEmpty) return '$scheme://$host';
+    return '$scheme://$host?via=${Uri.encodeQueryComponent(via)}';
   }
 
-  /// The `aether://` config a chained link rides on, or null when it carries
-  /// none. A chained profile without one cannot bring a tunnel up.
-  static String? aetherLinkFrom(String link) {
+  /// The config a chained link rides on, or null when it carries none. A
+  /// chained profile without one cannot bring anything up.
+  ///
+  /// Called aetherLinkFrom until 2026-10-10, when the thing underneath stopped
+  /// being an Aether link only.
+  static String? viaLinkFrom(String link) {
     final Uri? u = Uri.tryParse(link.trim());
     if (u == null || u.scheme.toLowerCase() != scheme) return null;
     final String? via = u.queryParameters['via'];
@@ -200,7 +231,16 @@ class PsiphonConfig {
     if (u == null || u.scheme.toLowerCase() != scheme) return null;
     final String where = (u.host.isNotEmpty ? u.host : u.path.replaceAll('/', ''))
         .toLowerCase();
-    return where == 'aether' ? PsiphonMode.throughAether : PsiphonMode.direct;
+    return switch (where) {
+      'aether' => PsiphonMode.throughAether,
+      'chain' => PsiphonMode.throughCarrier,
+      // An unrecognised host reads as direct rather than being refused. A
+      // profile that will not open at all is worse than one that opens in the
+      // safer of the modes, and direct is the one that needs nothing else
+      // running. It is also what an older build does with a link from a newer
+      // one, which is the kinder of the two failures.
+      _ => PsiphonMode.direct,
+    };
   }
 
   String toJsonText() => const JsonEncoder.withIndent('  ').convert(engineJson());
