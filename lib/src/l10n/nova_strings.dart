@@ -212,6 +212,21 @@ class NovaStrings {
   String get aetherChecking => t('aether.checking');
   String get aetherCheckFailed => t('aether.checkFailed');
 
+  // ---- Aether: replacing the Cloudflare registration ----
+  /// The eyebrow on the recovery card. It says "registration" rather than
+  /// naming this config, because the registration is the device's and every
+  /// WARP tunnel on it reads the same one.
+  String get aetherRegistration => t('aether.registration');
+  String get aetherRenewSub => t('aether.renewSub');
+  String get aetherRenewKeys => t('aether.renewKeys');
+
+  /// Why a live tunnel matters here: the registration call goes out through
+  /// it, which is how it gets past a network that blocks Cloudflare.
+  String get aetherRenewHint => t('aether.renewHint');
+  String get aetherRenewing => t('aether.renewing');
+  String get aetherRenewed => t('aether.renewed');
+  String get aetherRenewFailed => t('aether.renewFailed');
+
   /// Said for a gool config imported with both of its hops written into the
   /// link, which is where it dials and why it needs no search.
   String get aetherHopsPinned => t('aether.hopsPinned');
@@ -1276,6 +1291,28 @@ class NovaStrings {
     'aether.checkFailed':
         'This address did not carry traffic. Try another, or let Nova find '
             'one.',
+    // The way out of a registration that was saved but does not work. A
+    // tester's WARP registration was taken through a tunnel that was up and
+    // carrying nothing; it saved, it never worked, and because a saved one
+    // existed Nova stopped asking for another, so reinstalling the app was the
+    // only remedy left. The copy says what pressing this throws away.
+    'aether.registration': 'WARP registration',
+    'aether.renewSub':
+        'Nova registers with Cloudflare once and reuses that registration for '
+            'every WARP tunnel. One taken on a network that was blocking does '
+            'not work, and Nova will not replace it on its own. This throws it '
+            'away and takes a new one.',
+    'aether.renewKeys': 'Get new WARP keys',
+    'aether.renewHint':
+        'Do this while you are connected to a server that works. The request '
+            'goes out through that tunnel, which is how it gets past a network '
+            'that blocks Cloudflare.',
+    'aether.renewing': 'Getting new keys from Cloudflare',
+    'aether.renewed':
+        'New WARP keys saved. The next WARP connection uses them.',
+    'aether.renewFailed':
+        'Nova could not get new keys. Connect to a server that works, then try '
+            'again.',
     'aether.hopsPinned':
         'This config dials two hops written into the link it came from. Nova '
             'keeps them as they are. Finding a gateway replaces them.',
@@ -2413,6 +2450,24 @@ class NovaStrings {
     'aether.checkFailed':
         'این آدرس ترافیک را عبور نداد. آدرس دیگری بزنید یا بگذارید نوا یکی '
             'پیدا کند.',
+    'aether.registration': 'ثبت \u2066WARP\u2069',
+    'aether.renewSub':
+        'نوا یک بار در کلودفلر ثبت می‌شود و همان ثبت را برای همه‌ی تونل‌های '
+            '\u2066WARP\u2069 به کار می‌برد. ثبتی که روی شبکه‌ای مسدودکننده '
+            'گرفته شده باشد کار نمی‌کند و نوا خودش جایش را عوض نمی‌کند. این '
+            'گزینه آن را دور می‌ریزد و یکی تازه می‌گیرد.',
+    'aether.renewKeys': 'گرفتن کلیدهای تازه‌ی \u2066WARP\u2069',
+    'aether.renewHint':
+        'این کار را وقتی انجام دهید که به سروری وصل هستید که کار می‌کند. '
+            'درخواست از همان تونل بیرون می‌رود و همین است که آن را از شبکه‌ی '
+            'مسدودکننده عبور می‌دهد.',
+    'aether.renewing': 'در حال گرفتن کلیدهای تازه از کلودفلر',
+    'aether.renewed':
+        'کلیدهای تازه‌ی \u2066WARP\u2069 ذخیره شد. اتصال بعدی '
+            '\u2066WARP\u2069 از همین‌ها استفاده می‌کند.',
+    'aether.renewFailed':
+        'نوا نتوانست کلید تازه بگیرد. به سروری که کار می‌کند وصل شوید و دوباره '
+            'تلاش کنید.',
     'aether.hopsPinned':
         'این کانفیگ دو پرش دارد که در لینک اصلی‌اش نوشته شده‌اند. نوا آن‌ها را '
             'دست‌نخورده نگه می‌دارد. اگر دروازه‌ای پیدا کنید، جای آن‌ها را '

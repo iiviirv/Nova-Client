@@ -479,7 +479,8 @@ class DesktopProxyController extends ProxyController {
       // been registered, take the registration through it: the call that some
       // networks block goes through the tunnel and succeeds, and is reused
       // everywhere afterwards. Same hook as the mobile core, same rules.
-      unawaited(AetherRegistration.afterConnect(_active));
+      unawaited(AetherRegistration.afterConnect(_active,
+          throughPort: localProxyPort));
       // And top up the ECH key while something works, which the mobile core
       // has done since the key stopped being a constant and this one never
       // did. Field report from Windows, 1.30.1: "it still drops after a few

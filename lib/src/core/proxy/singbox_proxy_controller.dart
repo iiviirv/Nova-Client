@@ -487,7 +487,8 @@ class SingboxProxyController extends ProxyController {
           // that some networks block goes through the tunnel and succeeds, and
           // the registration is saved and reused everywhere afterwards. Costs
           // one request, and only ever happens once.
-          unawaited(AetherRegistration.afterConnect(_active));
+          unawaited(AetherRegistration.afterConnect(_active,
+          throughPort: localProxyPort));
           // And top up the ECH key while something works. The lookup that
           // fails on a blocking network succeeds through the tunnel, and in
           // Iran ECH is currently the only thing that connects at all, so a

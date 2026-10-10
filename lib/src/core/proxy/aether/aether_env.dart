@@ -56,6 +56,29 @@ abstract final class AetherEnv {
     _set('AETHER_ECH_DNS', kEchDns);
   }
 
+  /// Point the core's own outbound calls at a proxy already running here, or
+  /// clear it with null.
+  ///
+  /// This is how a WARP registration gets taken on a network that blocks it.
+  /// Field comparison, 2026-10-10, two clients on the same connection: pattNG
+  /// logged "dialling out through the socks5 proxy at 127.0.0.1:41505" and
+  /// "1.1.1.1:53 is reached through the upstream relay", fetched the ECH key
+  /// and registered in seconds. Nova, with a tunnel up, dialled out directly
+  /// and failed all three ways in 137 seconds: "api.cloudflareclient.com did
+  /// not answer within 20s".
+  ///
+  /// Nova had the tunnel and did not use it. afterConnect existed exactly to
+  /// register through a working tunnel, and relied on the operating system
+  /// routing the core's sockets into it, which is not something to leave to
+  /// chance when the remedy is one environment variable.
+  ///
+  /// Process-wide, like everything the core takes from its environment, so it
+  /// is set immediately before a call and cleared immediately after.
+  static void setUpstream(String? socksHostPort) {
+    _set('AETHER_UPSTREAM',
+        socksHostPort == null ? '' : 'socks5://$socksHostPort');
+  }
+
   static void _set(String key, String value) {
     final Pointer<Utf8> k = key.toNativeUtf8();
     final Pointer<Utf8> v = value.toNativeUtf8();

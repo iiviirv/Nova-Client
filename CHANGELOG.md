@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.31.2 (2026-10-10)
+
+- The Cloudflare registration WARP needs is now taken through the tunnel you
+  are connected to, rather than straight at the network. That is what it was
+  always meant to do, but it relied on the system routing it there, which on a
+  blocking network it does not. Compared side by side with another client on
+  the same connection: it registered in seconds through its own tunnel, Nova
+  went direct and failed every way in over two minutes.
+
+- Adds a way to get new WARP keys, under the Aether config's settings. Nova
+  registers with Cloudflare once and reuses that registration forever, so one
+  taken while a tunnel was up but carrying nothing was saved, did not work, and
+  was never replaced, even after connecting to a server that did work. There
+  was no way out of that except reinstalling the app. Do it while connected to
+  something that works.
+
 ## v1.31.1 (2026-10-10)
 
 - Nova no longer turns anything on by itself when a connection is slow or

@@ -105,6 +105,33 @@ class _FakeSearch implements AetherGatewaySearch {
   }
 }
 
+/// The registration call, driven by hand. It cannot run on a test host: it
+/// reads the app support directory and dials Cloudflare through the core.
+class _FakeRenew {
+  int calls = 0;
+
+  /// The local port of the live tunnel it was told to dial out through, or
+  /// null when it was told there was none.
+  int? port;
+
+  Completer<bool>? _pending;
+
+  Future<bool> call({int? throughPort}) {
+    calls++;
+    port = throughPort;
+    return (_pending = Completer<bool>()).future;
+  }
+
+  void finish(bool ok) => _pending!.complete(ok);
+}
+
+/// A tunnel that is up, for the one thing the registration takes from the app:
+/// the local port it should go out through.
+class _ConnectedProxy extends MockProxyController {
+  @override
+  int? get localProxyPort => 2080;
+}
+
 late ProfilesController profiles;
 
 /// Pumps the editor on a route of its own, so Save's pop has somewhere to go.
@@ -112,16 +139,28 @@ Future<void> _open(
   WidgetTester tester, {
   AetherGatewaySearch? search,
 
+  /// The registration call, for the recovery action at the bottom.
+  Future<bool> Function({int? throughPort})? renew,
+
+  /// The live tunnel, when the test needs one. Nothing is connected by
+  /// default, which is the state someone with broken WARP is often in.
+  ProxyController? proxy,
+
   /// Profiles already on the list, for the duplicate-name check.
   List<ProxyProfile> seed = const <ProxyProfile>[],
 
   /// The config being edited, when this is an edit rather than a new one.
   ProxyProfile? existing,
+
+  /// English unless a test is about the Farsi copy. A missing Farsi string
+  /// falls back to English without a word about it, so the only way to prove
+  /// a pair was written is to read the screen in Farsi.
+  Locale locale = const Locale('en'),
 }) async {
   // Tall enough that the whole editor is built at once: a ListView does not
   // build what is off screen, and every one of these checks is about what is
   // on the page.
-  tester.view.physicalSize = const Size(420, 3000);
+  tester.view.physicalSize = const Size(420, 3600);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -132,18 +171,18 @@ Future<void> _open(
   for (final ProxyProfile p in seed) {
     profiles.add(p);
   }
-  final ProxyController proxy = MockProxyController();
+  final ProxyController controller = proxy ?? MockProxyController();
   final RelayController relay = RelayController();
 
   await tester.pumpWidget(NovaScope(
     theme: theme,
-    proxy: proxy,
-    connInfo: ConnInfoController(proxy),
+    proxy: controller,
+    connInfo: ConnInfoController(controller),
     profiles: profiles,
     radar: RadarController()..attachPrefs(prefs),
     settings: SettingsController(prefs: prefs),
     appRouting: AppRouting(),
-    vps: VpsController(profiles, proxy, relay),
+    vps: VpsController(profiles, controller, relay),
     relay: relay,
     tunnel: TunnelController(relay.transportFor),
     child: MaterialApp(
@@ -154,16 +193,17 @@ Future<void> _open(
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: NovaTheme.light(const Locale('en')),
-      darkTheme: NovaTheme.dark(const Locale('en')),
+      locale: locale,
+      theme: NovaTheme.light(locale),
+      darkTheme: NovaTheme.dark(locale),
       themeMode: ThemeMode.dark,
       home: Scaffold(
         body: Builder(
           builder: (BuildContext ctx) => TextButton(
             onPressed: () => Navigator.of(ctx).push<void>(
               MaterialPageRoute<void>(
-                  builder: (_) =>
-                      AetherEditorScreen(search: search, existing: existing)),
+                  builder: (_) => AetherEditorScreen(
+                      search: search, renew: renew, existing: existing)),
             ),
             child: const Text('open'),
           ),
@@ -208,6 +248,15 @@ Future<void> _findGateway(WidgetTester tester, _FakeSearch search,
   search.finish(AetherFindResult(
       endpoint: endpoint, attempts: 1, rejected: const <String>[]));
   await tester.pumpAndSettle();
+}
+
+/// Presses the registration card's button. It sits below Save, at the very
+/// bottom of the page, so it is the one thing a shorter viewport would leave
+/// out of the build.
+Future<void> _tapRenew(WidgetTester tester) async {
+  await tester.ensureVisible(find.text('Get new WARP keys'));
+  await tester.tap(find.text('Get new WARP keys'));
+  await tester.pump();
 }
 
 /// A gool config with both hops pinned, the shape another client writes and
@@ -884,5 +933,101 @@ void main() {
         'www.cloudflare.com',
         reason: 'Simple says every other setting takes its default, so a name '
             'it has hidden must not still be in force');
+  });
+
+  // The registration recovery. A tester's WARP registration was taken through
+  // a tunnel that was up and carrying nothing; it saved, it never worked, and
+  // because a saved one exists Nova stopped asking for another, so
+  // reinstalling the app was the only way out he had.
+  testWidgets('new WARP keys are taken through the tunnel that is up',
+      (WidgetTester tester) async {
+    final _FakeRenew renew = _FakeRenew();
+    await _open(tester,
+        search: _FakeSearch(), renew: renew.call, proxy: _ConnectedProxy());
+
+    await _tapRenew(tester);
+    expect(renew.calls, 1);
+    expect(renew.port, 2080,
+        reason: 'going straight at the network is how the registration that '
+            'could not be used was taken in the first place');
+    expect(find.text('Getting new keys from Cloudflare'), findsOneWidget,
+        reason: 'this takes as long as a connection, so a button that only '
+            'dimmed would leave the screen looking stuck');
+
+    renew.finish(true);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('New WARP keys saved'), findsOneWidget);
+    expect(find.text('Getting new keys from Cloudflare'), findsNothing);
+  });
+
+  testWidgets('new WARP keys can be asked for with nothing connected',
+      (WidgetTester tester) async {
+    final _FakeRenew renew = _FakeRenew();
+    await _open(tester, search: _FakeSearch(), renew: renew.call);
+
+    expect(find.textContaining('connected to a server that works'),
+        findsOneWidget,
+        reason: 'the request rides whatever tunnel is up, so the card says so '
+            'rather than withholding the button');
+
+    await _tapRenew(tester);
+    expect(renew.calls, 1);
+    expect(renew.port, isNull,
+        reason: 'nothing is connected, and a port that is not listening would '
+            'be worse than going direct');
+
+    // Pressing it again while the first call is out would spend a second
+    // registration on the same device.
+    await tester.tap(find.text('Get new WARP keys'));
+    await tester.pump();
+    expect(renew.calls, 1);
+
+    renew.finish(true);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a renewal that failed says so rather than going quiet',
+      (WidgetTester tester) async {
+    final _FakeRenew renew = _FakeRenew();
+    await _open(tester, search: _FakeSearch(), renew: renew.call);
+
+    await _tapRenew(tester);
+    renew.finish(false);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('could not get new keys'), findsOneWidget);
+    expect(find.textContaining('New WARP keys saved'), findsNothing,
+        reason: 'the field report is a registration that said it was saved '
+            'and was not, so this screen must never say it twice');
+  });
+
+  testWidgets('the recovery reads in Farsi, with its Latin runs isolated',
+      (WidgetTester tester) async {
+    await _open(tester,
+        search: _FakeSearch(),
+        renew: _FakeRenew().call,
+        locale: const Locale('fa'));
+
+    // The isolates are in the expected string, so finding it is also what
+    // proves the Latin run is wrapped: an unisolated WARP reads back to front
+    // in the middle of a Farsi sentence.
+    expect(find.text('گرفتن کلیدهای تازه‌ی \u2066WARP\u2069'), findsOneWidget);
+    expect(find.text('Get new WARP keys'), findsNothing,
+        reason: 'the English fallback is silent, so this is the only place a '
+            'missing Farsi string shows up');
+  });
+
+  testWidgets('new WARP keys are not a gateway, so Save stays shut',
+      (WidgetTester tester) async {
+    final _FakeRenew renew = _FakeRenew();
+    await _open(tester, search: _FakeSearch(), renew: renew.call);
+
+    await _tapRenew(tester);
+    renew.finish(true);
+    await tester.pumpAndSettle();
+
+    expect(_saveEnabled(tester), isFalse,
+        reason: 'the registration is the device\'s and says nothing about '
+            'whether this config has a gateway that carries traffic');
   });
 }

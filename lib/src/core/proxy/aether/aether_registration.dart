@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../logging/nova_log.dart';
 import '../../models/proxy_profile.dart';
 import 'aether_core.dart';
+import 'aether_env.dart';
 import 'aether_options.dart';
 import 'aether_protocol.dart';
 
@@ -77,17 +78,110 @@ abstract final class AetherRegistration {
   /// are written once and tested once, instead of drifting apart between the
   /// mobile and desktop copies the way `_stopPsiphon` did.
   /// Returns the reason it did nothing, or null when it made an attempt.
+  /// [throughPort] is the local proxy the live tunnel is serving on, when
+  /// there is one. The registration dials out through it instead of straight
+  /// at the network, which is the whole point of doing this after a connect.
   static Future<AetherRegistrationSkip?> afterConnect(ProxyProfile? active,
-      {bool? iOS}) async {
+      {bool? iOS, int? throughPort}) async {
     if (!ownsRegistration(iOS: iOS)) return AetherRegistrationSkip.iosExtension;
     if (isAetherLink(active?.uri)) return AetherRegistrationSkip.aetherProfile;
     try {
       final Directory support = await getApplicationSupportDirectory();
-      await ensure(base: baseIn(support));
+      // Say so plainly rather than relying on the operating system to route
+      // the core's sockets into the tunnel. Measured against another client on
+      // the same connection: it dialled the WARP API through its own proxy and
+      // registered in seconds, while Nova, with a tunnel up, went direct and
+      // failed every way in 137 seconds.
+      if (throughPort != null) {
+        AetherEnv.setUpstream('127.0.0.1:$throughPort');
+        NovaLog.instance.write(
+            'Taking the Cloudflare registration for WARP through the tunnel '
+            'that is up, on 127.0.0.1:$throughPort.');
+      }
+      try {
+        await ensure(base: baseIn(support));
+      } finally {
+        // Process-wide, so it must not outlive this call: a later connection
+        // with nothing listening there would dial a port that is gone.
+        if (throughPort != null) AetherEnv.setUpstream(null);
+      }
     } catch (_) {
       // Nobody asked for this; a failure is not the user's to see.
     }
     return null;
+  }
+
+  /// Throw away every saved registration, so the next connection takes a new
+  /// one.
+  ///
+  /// Field report, 2026-10-10: a registration was taken through a tunnel that
+  /// was up but carrying nothing, the log said it was saved, and from then on
+  /// WARP could never connect. [have] saw a file and skipped the call on every
+  /// later attempt, including after connecting to a server that worked, so the
+  /// only way out was to reinstall the app. His words: "even when I connected
+  /// to a healthy server afterwards it never tried to get the key again, even
+  /// though the key was broken".
+  ///
+  /// A saved registration has to be disposable for that reason. One that does
+  /// not work is worse than none at all: none at least gets replaced.
+  ///
+  /// Returns how many files were removed, so a caller can say whether there
+  /// was anything to remove.
+  static int forget(String base) {
+    int gone = 0;
+    final File exact = File(base);
+    try {
+      if (exact.existsSync()) {
+        exact.deleteSync();
+        gone++;
+      }
+    } catch (_) {
+      // A file that cannot be deleted is not worth failing a connection over.
+    }
+    final Directory dir = exact.parent;
+    if (!dir.existsSync()) return gone;
+    final String prefix = base.split(Platform.pathSeparator).last;
+    for (final FileSystemEntity e in dir.listSync()) {
+      final String name = e.path.split(Platform.pathSeparator).last;
+      if (!name.startsWith('$prefix-')) continue;
+      try {
+        if (e is File) {
+          e.deleteSync();
+          gone++;
+        }
+      } catch (_) {}
+    }
+    return gone;
+  }
+
+  /// Drop the saved registration and take a fresh one, through [throughPort]
+  /// when a tunnel is up.
+  ///
+  /// This is the way out of a registration that was saved but does not work.
+  /// Without it the only remedy was reinstalling the app.
+  static Future<bool> renew({int? throughPort}) async {
+    if (!ownsRegistration()) return false;
+    try {
+      final Directory support = await getApplicationSupportDirectory();
+      final String base = baseIn(support);
+      final int gone = forget(base);
+      NovaLog.instance.write(gone == 0
+          ? 'No saved WARP registration to replace; taking a new one.'
+          : 'Threw away the saved WARP registration ($gone file'
+              '${gone == 1 ? '' : 's'}); taking a new one.');
+      if (throughPort != null) {
+        AetherEnv.setUpstream('127.0.0.1:$throughPort');
+      }
+      try {
+        return await ensure(base: base);
+      } finally {
+        if (throughPort != null) AetherEnv.setUpstream(null);
+      }
+    } catch (e) {
+      NovaLog.instance.write('Could not renew the WARP registration: $e',
+          level: NovaLogLevel.warn);
+      return false;
+    }
   }
 
   /// True when at least one registration already exists, so there is nothing

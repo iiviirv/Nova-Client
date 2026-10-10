@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/proxy/aether/aether_gateway_finder.dart';
 import '../../core/proxy/aether/aether_options.dart';
+import '../../core/proxy/aether/aether_registration.dart';
 import '../../l10n/nova_strings.dart';
 import '../../theme/nova_colors.dart';
 import '../../theme/nova_radii.dart';
@@ -35,11 +36,16 @@ import 'aether_search_widgets.dart';
 /// tunnel will not open and noise for everyone else. Simple offers the protocol
 /// and the search; Advanced offers the rest.
 class AetherEditorScreen extends StatefulWidget {
-  const AetherEditorScreen({super.key, this.search, this.existing});
+  const AetherEditorScreen({super.key, this.search, this.renew, this.existing});
 
   /// Injected by tests. The native core cannot be loaded on a test host, so
   /// without this the scan states would have no way to be exercised at all.
   final AetherGatewaySearch? search;
+
+  /// Injected by tests for the same reason [search] is: the registration call
+  /// needs the app support directory and the native core, and a test host has
+  /// neither.
+  final Future<bool> Function({int? throughPort})? renew;
 
   /// The profile being edited, or null when building a new one.
   final ProxyProfile? existing;
@@ -128,6 +134,15 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
   AetherSearchProgress? _progress;
   AetherFindResult? _result;
   bool _stopped = false;
+
+  late final Future<bool> Function({int? throughPort}) _renew =
+      widget.renew ?? AetherRegistration.renew;
+
+  /// The registration recovery: in flight, and how the last one ended. Null
+  /// means it has not been asked for on this screen, which is not the same as
+  /// a renewal that failed.
+  bool _renewing = false;
+  bool? _renewed;
 
   bool get _searching => _progress != null;
 
@@ -415,6 +430,36 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
     });
   }
 
+  /// Throws away the saved Cloudflare registration and takes a new one.
+  ///
+  /// Nothing above this belongs to the config being edited. It is here because
+  /// this is the screen someone is on when WARP will not connect.
+  Future<void> _renewKeys() async {
+    if (_renewing) return;
+    // Through the live tunnel when there is one. Read before the await, and
+    // read from the controller rather than remembered, because a registration
+    // dialled straight at a network that blocks Cloudflare is how the unusable
+    // one was taken in the first place.
+    final int? port = NovaScope.of(context).proxy.localProxyPort;
+    setState(() {
+      _renewing = true;
+      _renewed = null;
+    });
+    bool ok;
+    try {
+      ok = await _renew(throughPort: port);
+    } catch (_) {
+      // Across an FFI boundary, same as the address check, so a throw here
+      // would otherwise leave the button spinning for good.
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() {
+      _renewing = false;
+      _renewed = ok;
+    });
+  }
+
   void _save() {
     final String name = _name.text.trim();
     final AetherConfig config = AetherConfig(
@@ -613,6 +658,20 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
                     textAlign: TextAlign.center,
                     style: text.bodySmall?.copyWith(color: nova.muted)),
               ],
+
+              // Below Save, not beside it: this replaces something the whole
+              // device shares and builds no part of the config above, so it
+              // must not read as a step on the way to saving one.
+              //
+              // Hidden where a registration taken in this process is not the
+              // one the tunnel reads, which is iOS: there the Network
+              // Extension builds the identity path from its own container, so
+              // this would spend the call and write the file somewhere nothing
+              // ever looks (see AetherRegistration.ownsRegistration).
+              if (AetherRegistration.ownsRegistration()) ...<Widget>[
+                const SizedBox(height: NovaSpace.xl),
+                _registrationCard(s, nova, text),
+              ],
             ],
           ),
         ),
@@ -699,6 +758,60 @@ class _AetherEditorScreenState extends State<AetherEditorScreen> {
             const SizedBox(height: NovaSpace.sm),
             const AetherWaitHint(),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// The way out of a Cloudflare registration that was saved but does not
+  /// work.
+  ///
+  /// Field report, 2026-10-10: a tester's registration was taken through a
+  /// tunnel that was up and carrying nothing. It saved, WARP could never
+  /// connect with it, and because a saved registration exists Nova skipped the
+  /// call from then on, including after he connected to a server that worked.
+  /// Reinstalling the app was the only way out he had.
+  ///
+  /// Offered whether or not something is connected, because someone whose WARP
+  /// is broken may have nothing up at all. The hint says which of the two gets
+  /// a usable registration.
+  Widget _registrationCard(NovaStrings s, NovaColors nova, TextTheme text) {
+    final bool? done = _renewed;
+    return NovaCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          NovaEyebrow(s.aetherRegistration),
+          const SizedBox(height: NovaSpace.md),
+          Text(s.aetherRenewSub,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
+          const SizedBox(height: NovaSpace.md),
+          // The states the address check spells out, spelled out here for the
+          // same reason: a call in flight, one that worked, and one that did
+          // not are three different things to look at. This one takes as long
+          // as a connection, so a button that only dimmed would say nothing.
+          if (_renewing)
+            _line(Icons.hourglass_top_rounded, nova.cyan, s.aetherRenewing,
+                text)
+          else if (done != null)
+            _line(
+                done ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                done ? nova.success : nova.danger,
+                done ? s.aetherRenewed : s.aetherRenewFailed,
+                text),
+          if (_renewing || done != null) const SizedBox(height: NovaSpace.sm),
+          // Ghost, like the address check and unlike the sweep: it is a
+          // recovery, and nobody needs it on the way to a working config.
+          NovaButton(
+            label: s.aetherRenewKeys,
+            icon: Icons.vpn_key_outlined,
+            variant: NovaButtonVariant.ghost,
+            loading: _renewing,
+            onPressed: _renewing ? null : _renewKeys,
+          ),
+          const SizedBox(height: NovaSpace.sm),
+          Text(s.aetherRenewHint,
+              style: text.bodySmall?.copyWith(color: nova.muted)),
         ],
       ),
     );
